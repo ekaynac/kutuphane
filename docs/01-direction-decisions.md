@@ -1,4 +1,7 @@
-# Kobra — yön kararları (karar kaydı)
+# Kütüphane — yön kararları (karar kaydı)
+
+> Ürünün adı **Kütüphane**dir (D20). Bu kayıtta 2026-10-07 öncesi çalışma adı "Kobra" geçen yerler,
+> o anki adlandırmayla bırakıldı; Kobra artık Kütüphane'nin ajan/sohbet yüzüdür.
 
 Canlı karar kaydı. Her karar tarihli; reddedilen seçenekler ve gerekçeleri korunur.
 Kaynak: `docs/00-kickoff-brief.md` §5 soruları, operatörle 2026-10-07 oturumu.
@@ -71,7 +74,14 @@ Kobra için boşluklar:
 Upstream issue'lar (2026-10-07): `ekaynac/LLMDAP#222` (governed embeddings route),
 `ekaynac/LLMDAP#223` (stok gateway'de env ile OIDC/JWT çağıran doğrulama).
 
-## 4. Açık sorular
+## 4. Kararlar — 2026-10-07, üçüncü tur
 
-1. InfraMedic'in Kobra'yı tüketmesi: ne zaman ve hangi yüzeyden (Python kütüphanesi mi, HTTP/MCP servisi mi)?
-2. #222/#223 gelene kadar geçiş: embedder doğrudan mı (audit'te "unverified egress" etiketiyle), yoksa milestone bunlara mı bekler?
+| # | Konu | Karar | Reddedilen |
+|---|---|---|---|
+| D18 | #222/#223 öncesi geçiş | **M1 bu iki upstream işi bekler**: embedding egress bridge'den, kimlik OIDC/LDAP ile gelmeden "tek egress" ve kimlik iddiaları milestone'da tamamlanmış sayılmaz. Bağımsız işler (katalog, ingest, indeks, arayüz) paralel ilerler. | Geçici doğrudan embedder + "unverified egress" etiketi (önerilmişti): operatör iddiaların baştan doğru olmasını tercih etti. |
+| D19 | InfraMedic'in tüketimi | **HTTP + MCP servisi**; sürümlü sözleşme şeması bu repoda yaşar. Şimdilik yalnız sözleşme tasarlanır, InfraMedic'e dokunulmaz. | Python kütüphanesi olarak tüketim: süreç sınırı ve yetki sınırı bulanıklaşır. |
+| D20 | Ad | **Ürünün adı Kütüphane.** Kobra, Kütüphane'nin içindeki ajan/sohbet yüzü olarak kalır. GitHub repo `ekaynac/kobra` → `ekaynac/kutuphane` olarak yeniden adlandırıldı (eski URL yönlendirir). | Kobra adının tamamen kalkması; Kütüphane'nin yalnız bir alt sistem adı olması. |
+
+## 5. Açık sorular
+
+- (yok — yön kapandı; sıradaki adım ürün brifi, yol haritası ve M1 tanımı)
