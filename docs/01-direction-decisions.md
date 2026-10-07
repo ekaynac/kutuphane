@@ -40,6 +40,22 @@ bağımsız yetki modeli.
 - **Runbook'lar birinci sınıf.** Atıf kadar operasyonel gelişim de önemli: runbook'ların kullanım/sonuç geri
   bildirimiyle evrilebileceği doküman türleri.
 
+## 2b. LLMDAP upstream okuması — 2026-10-07 (`ekaynac/LLMDAP` @ b9d48eb)
+
+TypeScript/Node 20; core `llmdap` 1.16.0, `@llmdap/gateway` 0.22.0 (0.x API, yakın zamanda kırıcı değişiklikler).
+Güçlü yanlar: bridge (ollama/openai/anthropic şemaları, exact model pin, öncesi/sonrası audit), **governed
+streaming artık var** (route başına `allowStreaming`), imzalı sorgulanabilir audit + evidence, Casbin politika,
+LDAP dizin kimliği, tarball ile air-gapped kurulum, MCP `/mcp` + tek downstream proxy.
+
+Kobra için boşluklar:
+1. **RAG araması koleksiyon boyutunda O(n):** her sorguda tüm chunk'lar çözülür ve kaba kuvvet cosine; ANN,
+   hibrit/BM25, rerank, meta filtre yok. Chunking sabit 1000/100 karakter.
+2. **Paylaşılan korpus:** gateway `rag.index` aracı `recipients` açmıyor; ekip paylaşımı kütüphane seviyesinde
+   rol anahtarı yönetimi ister.
+3. **Embedding çağrıları bridge'den geçmiyor** → "tek egress" iddiası embedder için ayrıca kapatılmalı.
+4. **Gateway çağıranı doğrulamıyor** (header + paylaşılan sır); OIDC yalnız kütüphanede. Kimlik doğrulama Kobra'nın işi.
+5. **Redaksiyon/DLP kancası yok** → Ketum Kobra hattında ya da upstream bridge dönüşümü olarak girer.
+
 ## 3. Açık sorular (sonraki tur)
 
 1. Depolama: SQLite (tek kutu, air-gapped kolay) mı, Postgres (çok kullanıcılı enterprise) mı?
@@ -48,3 +64,7 @@ bağımsız yetki modeli.
 4. Kimlik: v1'de LLMDAP'ın OIDC/LDAP modu mu, yerel kullanıcılar mı?
 5. Ön yüz yığını ve kurulum biçimi (docker compose / tek kutu imajı).
 6. InfraMedic'in Kobra'yı tüketmesi: ne zaman ve hangi yüzeyden (Python kütüphanesi mi, HTTP/MCP servisi mi)?
+7. Retrieval nerede yaşar (§2b-1): Kobra kendi indeksini mi tutar (öneri: Postgres + pgvector + tam metin, hibrit
+   arama + rerank, at-rest şifreli; model ve embedding çağrıları yine LLMDAP bridge'inden), yoksa LLMDAP RAG'ı mı
+   kullanır ve ölçek işi upstream'e mi açılır?
+8. Embedding egress'i (§2b-3): upstream'e bridge'e embeddings route'u eklenmesi istenir mi?
