@@ -56,15 +56,22 @@ Kobra için boşluklar:
 4. **Gateway çağıranı doğrulamıyor** (header + paylaşılan sır); OIDC yalnız kütüphanede. Kimlik doğrulama Kobra'nın işi.
 5. **Redaksiyon/DLP kancası yok** → Ketum Kobra hattında ya da upstream bridge dönüşümü olarak girer.
 
-## 3. Açık sorular (sonraki tur)
+## 3. Kararlar — 2026-10-07, ikinci tur
 
-1. Depolama: SQLite (tek kutu, air-gapped kolay) mı, Postgres (çok kullanıcılı enterprise) mı?
-2. Ketum nerede yaşıyor (repo / API biçimi)? Kobra'ya hangi adımda girer: ingest'te mi, egress'te mi, ikisinde mi?
-3. Runbook'lar v1'de yalnız doküman mı (sürüm, `tested_on`, sonuç geri bildirimi), yoksa çalıştırılabilir adımlar mı?
-4. Kimlik: v1'de LLMDAP'ın OIDC/LDAP modu mu, yerel kullanıcılar mı?
-5. Ön yüz yığını ve kurulum biçimi (docker compose / tek kutu imajı).
-6. InfraMedic'in Kobra'yı tüketmesi: ne zaman ve hangi yüzeyden (Python kütüphanesi mi, HTTP/MCP servisi mi)?
-7. Retrieval nerede yaşar (§2b-1): Kobra kendi indeksini mi tutar (öneri: Postgres + pgvector + tam metin, hibrit
-   arama + rerank, at-rest şifreli; model ve embedding çağrıları yine LLMDAP bridge'inden), yoksa LLMDAP RAG'ı mı
-   kullanır ve ölçek işi upstream'e mi açılır?
-8. Embedding egress'i (§2b-3): upstream'e bridge'e embeddings route'u eklenmesi istenir mi?
+| # | Konu | Karar | Reddedilen |
+|---|---|---|---|
+| D11 | Depolama | **Baştan Postgres.** | SQLite: çok kullanıcılı enterprise ve InfraMedic'in servis olarak tüketmesi (D8) için yetmez. |
+| D12 | Ketum | **Şimdilik kapsam dışı.** Bileşen/plugin ilkesi (§2) yine de geçerli; Ketum hazır olunca takılır. | — |
+| D13 | Runbook'lar v1 | **Doküman olarak**: sürümlü, `tested_on`, uygulayanın sonuç geri bildirimi (işe yaradı / yaramadı / değişti) ile evrilir. Çalıştırma yok. | Çalıştırılabilir adımlar (D4 ile çelişir). |
+| D14 | Kimlik | **LLMDAP'ın OIDC/LDAP modu**; yerel admin yalnız ilk kurulum için. Stok gateway'de OIDC yok → upstream ask. | Kobra'nın kendi kullanıcı sistemi. |
+| D15 | Kurulum / ön yüz | **docker compose tek kutu** (Kobra + LLMDAP + Postgres + embedder) + offline imaj paketi; ön yüz **React + TypeScript**. | — |
+| D16 | Retrieval | **Kobra kendi indeksini tutar**: Postgres + pgvector + tam metin, hibrit arama + rerank, at-rest şifreli. Model ve embedding çağrıları LLMDAP bridge'inden. LLMDAP RAG'ı kullanılmaz. | LLMDAP RAG'ı + ölçeği upstream'e bırakmak (O(n) arama, rerank/hibrit yok). |
+| D17 | Embedding egress | **Bridge'den geçer**; upstream ask açıldı. | Embedder'ı doğrudan çağırmak ("tek egress" iddiası bozulur). |
+
+Upstream issue'lar (2026-10-07): `ekaynac/LLMDAP#222` (governed embeddings route),
+`ekaynac/LLMDAP#223` (stok gateway'de env ile OIDC/JWT çağıran doğrulama).
+
+## 4. Açık sorular
+
+1. InfraMedic'in Kobra'yı tüketmesi: ne zaman ve hangi yüzeyden (Python kütüphanesi mi, HTTP/MCP servisi mi)?
+2. #222/#223 gelene kadar geçiş: embedder doğrudan mı (audit'te "unverified egress" etiketiyle), yoksa milestone bunlara mı bekler?
