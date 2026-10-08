@@ -115,10 +115,128 @@ Context7 "kütüphane dokümanını sürümlü ve kısa biçimde ver" yapar; tek
 
 **Açık:** Master platform ayrı bir ürün mü, Core'un admin yüzü mü? `inframedic-master` ile ilişkisi?
 
-## 4. Araştırma yüzeyleri (2026-10-08, sürüyor)
+## 4. Araştırma yüzeyleri (2026-10-08)
 
-- RAG'da güncel durum (hibrit, rerank, late chunking, GraphRAG ailesi, agentic RAG, değerlendirme).
-- Bilgi yönetimi ürün manzarası ve "hiçbir ürünün birleştirmediği" özellik kümesi.
-- "jev" benzeri karar tabanlı modeller: ne kastedildiği, platformda nasıl değerlendirilebileceği.
+Üç yüzey, üç paralel web araştırması: ürün manzarası, RAG güncel durum, Jev/karar modelleri. Özetler §5'te;
+tam raporlar ve kaynak listeleri `docs/research/2026-10-08-*.md`.
 
-Bulgular bu dosyanın §5'ine eklenecek.
+## 5. Araştırma bulguları
+
+### 5.1 Bilgi yönetimi ürün manzarası
+
+**Segmentler.** (i) Ajanlar için geliştirici dokümanı: Context7 (9k+ kütüphane, iki MCP aracı, git tag/branch
+sürümleme, özel kaynak yalnız Pro/Enterprise, self-host yok), llms.txt (Mintlify/GitBook varsayılan), DeepWiki,
+Ref.tools — hiçbirinde entity bazlı ACL, delegasyon, audit yok; hepsi SaaS. (ii) Kurumsal bilgi/arama: Glean
+(müşteri-hosted), **Onyx** (MIT, self-host/air-gap, izin senkronu, sorgu audit'i, MCP — en yakın OSS rakip), M365
+Copilot (bulut), **NotebookLM Enterprise → "Gemini Notebook Enterprise"** (bulut, residency, IAM, audit log,
+Discovery Engine API; resmi MCP yok), Elastic Agent Builder, Vectara (on-prem/air-gap), RAGFlow/Dify/AnythingLLM
+(self-host, zayıf ACL/audit), deepset/Cohere North (sovereign on-prem). (iii) Ajan bellek katmanları: Mem0,
+Zep/Graphiti (bi-temporal graf), Letta (paylaşılan bellek blokları), Cognee (tam yerel), Honcho (insan ve ajan aynı
+"peer" türü) — hiçbirinde delegasyon, imzalı provenance, açıklanabilir erişim yok. (iv) Paketleme: Agent Skills
+(SKILL.md, açık standart 2025-12; imza/ACL yok), AGENTS.md (Linux Foundation AAIF), MCP resources/prompts (sürüm
+semantiği yok), **Google OKF v0.1 (2026-06)**: Markdown + YAML frontmatter dizini; ACL/sürüm/provenance alanı yok →
+**Kütüphane OKF import/export etmeli.** (v) Sürümleme/provenance: lakeFS "git for agent knowledge" (Enterprise'da
+ABAC + audit), Dolt, W3C PROV, C2PA 2.4, Sigstore model signing. "Açıklanabilir erişim" yalnız niş ürünlerde
+(TrustGraph, Sourcegraph, Provena). (vi) Erişim/kimlik: OpenFGA/SpiceDB RAG desenleri (pre-filter), MCP 2026-07-28
+OAuth 2.1 sertleştirme (ajan kimliği/delegasyon/audit kapsam dışı), IETF ajan kimliği taslakları (WIMSE, SPIFFE
+WIT-SVID, draft-klrc-aiagent-auth), AIP (Biscuit tabanlı yetki zinciri). Hiçbir ürün hepsini birden sunmuyor.
+
+**Hiçbir ürünün birleştirmediği küme (kama):**
+1. İnsan ve ajan **eşit birinci sınıf principal** + NotebookLM kalitesinde insan arayüzü.
+2. **Delegasyon modellenmiş nesne**: kullanıcı→ajan grant'ı; kapsam, TTL, derinlik; zincir saklanır.
+3. **İçerik adresli sürümleme + retrieval**: her cevap `doc@commit` atfı; ajan oturumu sürüme sabitlenir.
+4. **Açıklanabilir erişim defteri**: kim/hangi ajan, kimin delegasyonuyla, hangi parça/sürüm, hangi sorguda, hangi
+   politika kararıyla; W3C PROV olarak dışa aktarılabilir.
+5. **İmzalı, taşınabilir bilgi paketleri** (OKF + Skills düzeni, Sigstore/C2PA tarzı manifest) — air-gap import/export.
+6. **Air-gapped, at-rest şifreli kurulum + ayrık MCP ürünü.**
+7. **Bi-temporal semantik** ("ajan X, D tarihinde ne biliyordu?").
+
+**Riskler:** Google (OKF + Gemini Notebook Enterprise + Distributed Cloud → on-prem NotebookLM; en yüksek), Onyx
+(sürüm+delegasyon eklemesi artımlı), lakeFS (retrieval/UI ekleyebilir), Microsoft (Entra Agent ID + Purview),
+standart kayması (MCP auth, WIMSE/SPIFFE, A2A — delegasyon modeli bunları izlemeli), "docs over MCP" metalaşması →
+**kama retrieval değil, yönetişim.**
+
+### 5.2 RAG ve ajan bilgi erişiminde güncel durum
+
+**Kanıtlanmış taban:** hibrit (BM25 + dense) + cross-encoder rerank. RRF tek başına bazı setlerde dense'i *düşürüyor*
+→ füzyonu rerank ile yap, ölç. Postgres'te BM25 gerçek: ParadeDB `pg_search` (AGPL), VectorChord `vchord_bm25`,
+TigerData `pg_textsearch` 1.0 (2026-03). pgvector 0.8 iteratif tarama ile ACL filtreli ANN recall çökmüyor.
+VectorChord 1.1 MaxSim (ColBERT tarzı çok-vektör) mevcut. Ayrık vektör deposu eşiği: >50–100M vektör.
+**Postgres + RLS yönetişimde kazanır.**
+
+**Reranker:** bge-reranker-v2-m3 güvenli varsayılan; Qwen3-Reranker 0.6B/4B/8B (Apache-2.0, talimat-duyarlı) daha
+güçlü. **Gömücü:** bge-m3 hâlâ en esnek (dense+sparse+multi-vector, Türkçe dahil); **Qwen3-Embedding 4B/8B**
+(Apache-2.0) MMTEB +~10 puan, TR-TEB Türkçe 75–76 → paralel kolonla A/B. jina v4/v5 ticari lisanssız on-prem
+**kullanılamaz**.
+
+**Parçalama/ayrıştırma:** contextual retrieval (chunk'a 50–100 token LLM bağlam öneki) kalitede late chunking'i geçiyor
+(72.4 vs 61.0 nDCG@10), maliyet vLLM prefix cache ile düşük; yapı-duyarlı parçalama ana akım. Ayrıştırıcı: **Docling**
+varsayılan, MinerU formül/CJK, Marker hız, PyMuPDF4LLM yerel-metin PDF, unstructured Office/e-posta.
+**Doküman türüne göre yönlendirme** → sunum profili fikrini doğrular; tabloları HTML sakla.
+
+**Graf RAG:** GraphRAG 500 sayfa için $50–200 / 45 dk; GraphRAG-Bench'te basit QA'da vanilla RAG'ın altında. HippoRAG 2
+en iyi ama araştırma kodu. Graphiti/Mem0 *ajan belleği* için. **v1: yalnız "Tip 1" graf** (varlık meta verisi filtre
+olarak).
+
+**Agentic RAG ve grep karşı-akımı:** Claude Code vektörsüz (grep/glob + ağaç); Context7 iki araç; PageIndex ağaç
+gezinme. Karşı kanıt: "Context Rot" — 32k–128k arası çok-adımlı doğruluk düşer. **Sentez: ajanlar ikisini de ister**
+— `search` (hibrit+rerank, ACL filtreli) **ve** `read_section` / `grep` / `tree` (ayrıştırılmış tam doküman) +
+doküman başına llms.txt tarzı harita.
+
+**Atıf:** karakter aralığı atfı üretimde (Anthropic Citations API; NotebookLM "kaynaklarda yok"). On-prem Qwen3 için:
+numaralı chunk, cümle başına `[n]`, ardından NLI/reranker doğrulama geçişi (doğrulanmamış atıf yaygın).
+
+**Güvenlik:** her chunk'ta sınıflandırma/ACL/provenance; **pre-filter** (RLS) — post-filter yakın-kopya sondasıyla
+sızdırıyor; embedding inversion gerçek → vektörler gizli veri; indeks zehirlenmesine karşı insan onaylı ingest.
+
+**Değerlendirme:** Ragas (offline) + DeepEval (CI) + TruLens (drift); indeks anlık görüntüsü, embedder/chunker sürümü,
+prompt hash sürümlenir; yeniden gömme paralel tabloda A/B → cutover (InfraMedic gen-N ile aynı fikir).
+
+**v1 önerileri (sıralı):** (1) Postgres-only: pgvector HNSW + BM25 eklentisi (spike) + reranker; (2) bge-m3 v1,
+Qwen3-Embedding-4B paralel A/B; (3) Docling + yapı-duyarlı parçalama + bağlam öneki; (4) ajanlara çift yüzey;
+(5) span atfı + doğrulama; (6) şemaya gömülü yönetişim; (7) ilk günden golden set + CI; (8) ertelenen: ColPali,
+GraphRAG, Graphiti tarzı bellek.
+
+### 5.3 Jev ve karar tabanlı modeller
+
+**Jev nedir:** TypeSafe AI'ın "System One" modeli (duyuru 2026-10-08; erken erişim 2026-09-15). Otoregresif değil:
+bir `state` (metin/JSON, 32k) + N tipli soru → paralel, tek geçişte, **şema dışına çıkamayan** tipli kararlar ve
+**kalibre olasılıklar**. Üç ilkel: **Choice** (seçenek listesinden seç), **Score** (rubrik/sıralı), **Noul**
+(evet/hayır olasılığı). Eğitim: RLCD (kalibre kararlar için RL; yayımlanmamış). İddialar: 70–500 ms, frontier LLM'lere
+göre 40–200x hızlı; kendi eval'inde ~%67.8 vs GPT-5.6 %74.1 (referans etiketler frontier ortalaması, insan değil).
+Zayıflıklar: *geçerli ama yanlış* değerde kendinden emin; aritmetik/tarih; olumsuzlama; çok-doküman uzlaştırma.
+**Yalnız hosted API; açık ağırlık, self-host, VPC yok → air-gapped platformda Jev'in kendisi kullanılamaz.**
+
+**Sınıf:** "muhakeme adımları *arasına* konan küçük, hızlı, şema-kısıtlı, kalibre sınıflandırıcı/skorlayıcı".
+On-prem açık ağırlık karşılıkları: **Laya** (ModernBERT/mmBERT tabanlı, Apache-2.0, aynı choice/score/noul
+ilkelleri, ~35 ms; ince ayar şart, mmBERT varyantı Türkçe kapsar), Kev (Qwen3.5 LoRA), ince ayarlı encoder'lar +
+kalibrasyon (temperature scaling, MCGrad), guard modelleri (Qwen3Guard 0.6B/4B/8B — Türkçe dahil 119 dil, Llama Guard 4,
+gpt-oss-safeguard), ödül/süreç modelleri (Skywork-Reward-V2, AgentPRM). Sıfır-atış kalitede Jev önde; etiketli karar
+verisi biriktikçe fark kapanır.
+
+**Kütüphane'de karar noktaları (her biri küçük bir state dilimi üstünde Choice/Score/Noul):**
+1. sorgu yönlendirme — kategori / koleksiyon / sunum profili / "hibrit mi leksik mi";
+2. ingest sınıflandırma — doküman türü, hassasiyet sınıfı, runbook/skill/referans, "bunun sürümü mü?";
+3. ilgililik ve atıf doğrulama — "P pasajı C iddiasını destekliyor mu?";
+4. erişim politikası risk skoru — "bu ajan bu görevde bu dokümanı okusun mu / dışa aktarsın mı?";
+5. runbook sonuç tahmini — "sonraki adım başarılı olur mu / insan gerekir mi?";
+6. ajan-okuma guardrail'i — getirilen içerikte prompt injection / politika taraması.
+
+**Kütüphane ürünü olarak değerlendirme (fizibilite sırasıyla):** (1) soru tipi başına golden set + kalibrasyon raporu
+(accuracy, macro-F1, Brier, ECE, reliability diyagramı; eşikler soru tipleri arasında taşınmaz) — rapor model kartının
+yanında sürümlü doküman; (2) **shadow mode** — mevcut kural/LLM yoluyla paralel koşar, anlaşmazlıklar loglanır, insan
+gözden geçirir, taban çizgiyi geçince terfi; (3) **karar defteri** — her karar (soru id, state hash, cevap, olasılık,
+sonuç, maliyet, gecikme) bir kütüphane kaydı; ince ayar ve kalibrasyon drift'i için korpus; (4) **yörünge replay
+harness'ı** — loglanmış ajan yörüngeleri karar modeli kapı noktalarına takılarak yeniden oynatılır; (5) **model
+kayıt defteri** — karar modeli, eval raporu soy kütüğüyle, runbook gibi provenance'lı bir kütüphane öğesi (K7).
+
+**Çıkarım:** K7 ("model / karar artefaktları") kategorisi ve **karar defteri** ontolojide yer almalı; v1'de karar
+modelleri **shadow mode** ile girer (yetki vermez, yalnız ölçülür), kapı yetkisi insan kuralında kalır. Bu, operatörün
+"LLM teknolojilerini test ettiğimiz platform" hedefinin somut ilk örneği olabilir.
+
+## 6. Sentez — operatöre sorular (2026-10-08)
+
+Araştırmanın yön kararlarına etkisi ve açık sorular sohbet kaydında; verilen kararlar `01-direction-decisions.md`'ye
+D21+ olarak işlenecek. Başlıklar: ontoloji eksenleri ve v1 kategorileri; "kitap" tanımı ve sunum profili; ürün
+ayrımı (Core / MCP / Master / LLMDAP / Kobra); OKF import/export; delegasyon modeli; karar defteri + shadow-mode;
+retrieval yığını (D16 ayrıntısı); Jev sorularının cevapları.
