@@ -69,6 +69,18 @@ def book_state(conn, book: str) -> dict | None:
             "files": row[5], "content_versions": versions}
 
 
+def current_policy(conn, book: str) -> str | None:
+    row = conn.execute("SELECT current_policy FROM book WHERE slug = %s", (book,)).fetchone()
+    return row[0] if row else None
+
+
+def manifest_entry(conn, book: str, content_id: str, path: str) -> dict | None:
+    row = conn.execute("SELECT m.entry FROM content_version c "
+                       "CROSS JOIN LATERAL jsonb_array_elements(c.manifest) AS m(entry) "
+                       "WHERE c.book = %s AND c.id = %s AND m.entry->>'path' = %s", (book, content_id, path)).fetchone()
+    return row[0] if row else None
+
+
 def read_file(conn, book: str, content_id: str, path: str) -> bytes | None:
     """Bytes of one file in a specific content version (old versions stay readable, AT-07)."""
     row = conn.execute("SELECT b.data FROM content_version c "
