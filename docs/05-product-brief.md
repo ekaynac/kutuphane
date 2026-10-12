@@ -1,6 +1,6 @@
 # Kütüphane — ürün brifi
 
-Tarih: 2026-10-12. Durum: **taslak, operatör onayı bekliyor.** Dayanak: `01-direction-decisions.md` D1–D44.
+Tarih: 2026-10-12. Durum: **onaylandı (D45).** Dayanak: `01-direction-decisions.md` D1–D44.
 Çelişki olursa 01 geçerlidir; bu doküman kararları ürün diliyle bir araya getirir, yeni karar koymaz.
 
 ## 1. Tek cümle
@@ -21,7 +21,8 @@ Kurumlar yerel ajan çalıştırmaya başladı. Ajanlar kurum bilgisini okuyor, 
   hangi ajanda etkin olduğu bilinmiyor.
 - **Air-gap'e bilgi elle ve imzasız giriyor.** USB ile taşınan güncellemenin kaynağı ve bütünlüğü kanıtlanmıyor.
 - **Mevcut ürünler bu boşluğu kapatmıyor.** NotebookLM Enterprise bulut; Onyx ve benzerleri arama odaklı ve
-  delegasyonu modellemiyor; Context7 tek kategori, tek sunum.
+  delegasyonu modellemiyor; Context7 tek kategori, tek sunum. *(Rakip ve MCP genellemeleri 2026-10 araştırmasına
+  dayanır; satış/pazarlama dilinde kullanılmadan önce yeniden doğrulanmalı.)*
 
 ## 3. Kimin için
 
@@ -69,8 +70,10 @@ Regüle ya da air-gapped kurumların bilgi ve operasyon ekipleri (D1): hukuk, uy
 - **Hiçbir şey içeri erişmez** (D23). **Tek egress LLMDAP** (D3).
 - **Dürüst ürün dili.** "Ajana sır verilmez", "asla öğrenemez" değil (D33); "eski cevabın kanıtı gösterilir",
   "cevap birebir yeniden üretilir" değil (D36); "şemada var" ürün vaadi değildir (D25).
-- **Bileşenler takılabilir ve sürümlü.** Ayrıştırıcı, parçalayıcı, gömücü, reranker birer profil bileşeni;
-  kimlikleri provenance'a girer (§2 operatör ilkeleri).
+- **Sadelik (D46).** Servis ve soyutlama sayısı asgari: tek Python uygulaması; sadeleştirme yönetişim
+  kapılarından değil, parça sayısından yapılır.
+- **Bileşenler değiştirilebilir ve sürümlü.** Ayrıştırıcı, parçalayıcı, gömücü, reranker küçük, sürümlü fonksiyon
+  arayüzleri; kimlikleri provenance'a girer. Plugin altyapısı kurulmaz (D46).
 - **Geliştirmeye ve ajana açık.** Her şey CLI + API + MCP ile sürülebilir; deterministik fixture'lar.
 
 ## 7. Kapsam dışı
