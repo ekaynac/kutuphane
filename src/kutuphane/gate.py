@@ -52,16 +52,28 @@ def guard(conn, actor: Actor, obj: str, modes: list[str], fetch, *, action: str,
         if not d.allowed:
             log(mode, d, first.policy_id)
             raise Denied(f"{mode} on {obj}: {d.reason}")
-    data = fetch()
-    # Again, right before handing anything out: one statement for every mode and the policy in force.
-    final = authz.decide(conn, actor.principal, actor.on_behalf_of, obj, modes)
-    for mode, d in final.decisions.items():
-        if not d.allowed:
-            log(mode, d, final.policy_id, f"revoked before delivery: {d.reason}")
-            raise Denied(f"{mode} on {obj}: revoked before delivery")
+    # The work (a read, or a write such as feedback) and the final decision share one transaction: if the final
+    # decision says no, a write is rolled back and nothing is handed out. The refusal is logged after rollback.
+    revoked = None
+    try:
+        with conn.transaction():
+            data = fetch()
+            # Again, right before handing anything out: one statement for every mode and the policy in force.
+            final = authz.decide(conn, actor.principal, actor.on_behalf_of, obj, modes)
+            revoked = next(((m, d) for m, d in final.decisions.items() if not d.allowed), None)
+            if revoked:
+                raise _Rollback
+    except _Rollback:
+        mode, d = revoked
+        log(mode, d, final.policy_id, f"revoked before delivery: {d.reason}")
+        raise Denied(f"{mode} on {obj}: revoked before delivery") from None
     for mode, d in final.decisions.items():
         log(mode, d, final.policy_id)
     return data
+
+
+class _Rollback(Exception):
+    pass
 
 
 def modes_for(actor: Actor, instruction: bool) -> list[str]:

@@ -47,3 +47,23 @@ def test_feedback_input_is_validated(conn, okf_dir, kwargs):
     v1 = publish(conn, okf_dir)
     with pytest.raises(ValueError):
         feedback.record(conn, Actor(U), book="kitap", content_id=v1.content_id, path=RUNBOOK, **kwargs)
+
+
+def test_feedback_written_while_rights_vanish_is_rolled_back(conn, conn2, okf_dir, monkeypatch):  # security review
+    from kutuphane import authz as az
+    v1 = publish(conn, okf_dir)
+    az.grant(conn, "book:kitap", "read", U)
+    real = az.decide
+    calls = []
+
+    def decide_then_revoke(*args):
+        calls.append(1)
+        if len(calls) == 2:  # the final decision, after the insert ran inside the transaction
+            az.revoke(conn2, "book:kitap", "read", U)
+        return real(*args)
+    monkeypatch.setattr(az, "decide", decide_then_revoke)
+    with pytest.raises(Denied, match="revoked before delivery"):
+        feedback.record(conn, Actor(U), book="kitap", content_id=v1.content_id, path=RUNBOOK, outcome="worked")
+    assert conn.execute("SELECT count(*) FROM runbook_feedback").fetchone()[0] == 0
+    (allowed,) = conn.execute("SELECT allowed FROM access_event WHERE action = 'feedback'").fetchone()
+    assert allowed is False  # the refusal itself survived the rollback
