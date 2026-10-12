@@ -50,7 +50,13 @@ def test_delegated_token_uses_rfc8693_actor_claim(verifier, keys):
 
 
 def test_email_subject_maps_to_principal(verifier, keys):
-    assert verifier.verify(token(keys, sub="Ayse@Kurum.local")).principal == "user:ayse@kurum.local"
+    assert verifier.verify(token(keys, sub="ayse@kurum.local")).principal == "user:ayse@kurum.local"
+
+
+@pytest.mark.parametrize("sub", ["Ayse", "AYSE@kurum.local", "ayşe", "İrem"])
+def test_subjects_are_not_normalized_into_collisions(verifier, keys, sub):
+    with pytest.raises(AuthenticationError):
+        verifier.verify(token(keys, sub=sub))
 
 
 @pytest.mark.parametrize("bad", [

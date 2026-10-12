@@ -169,3 +169,27 @@ def authorize(conn, principal: str, on_behalf_of: str | None, obj: str, mode: st
 def direct(conn, principal: str, obj: str, mode: str) -> Decision:
     """The principal's own right: a direct tuple, or membership in a role that holds it."""
     return authorize(conn, principal, None, obj, mode)
+
+
+_ALLOWED = """
+SELECT DISTINCT g.object FROM grant_tuple g
+  LEFT JOIN grant_tuple mem ON mem.relation = 'member' AND mem.subject = %(holder)s AND mem.revoked_at IS NULL
+       AND g.subject = mem.object || '#member'
+ WHERE g.relation = %(mode)s AND g.revoked_at IS NULL AND g.object LIKE 'book:%%'
+   AND (g.subject = %(holder)s OR mem.id IS NOT NULL)
+   AND (%(behalf)s::text IS NULL OR EXISTS (
+        SELECT 1 FROM delegation d
+         WHERE d.delegate = %(p)s AND d.delegator = %(behalf)s AND d.object = g.object AND d.mode = %(mode)s
+           AND d.revoked_at IS NULL AND clock_timestamp() < d.expires_at))
+"""
+
+
+def allowed_objects(conn, principal: str, on_behalf_of: str | None, mode: str) -> set[str]:
+    """Every book the caller may use in `mode` right now: the search pre-filter (same rules as `decide`)."""
+    _check(PRINCIPAL, principal, "principal")
+    _mode(mode)
+    if on_behalf_of is not None:
+        _check(PRINCIPAL, on_behalf_of, "on_behalf_of")
+    rows = conn.execute(_ALLOWED, {"p": principal, "behalf": on_behalf_of, "holder": on_behalf_of or principal,
+                                   "mode": mode}).fetchall()
+    return {r[0] for r in rows}

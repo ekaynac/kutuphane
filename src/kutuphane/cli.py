@@ -1,6 +1,7 @@
 """`kutuphane` command line. Output is JSON so agents and scripts can drive it (operator principle §2).
 
-Authorization arrives in M1b; until then the CLI is an operator tool on the host.
+Administrative commands (ingest, grant, delegate) trust the operator on the host; content commands (read, search)
+go through the authorization gate. Network surfaces (API, MCP) arrive in M1e and require a verified token.
 """
 import argparse
 import dataclasses
@@ -9,7 +10,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import audit, authz, catalog, db, gate, identity
+from . import audit, authz, catalog, db, gate, identity, profiles, search
 from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, make_policy
 from .source import read_source
 
@@ -27,7 +28,7 @@ def cmd_ingest(conn, args) -> int:
     policy = make_policy(sensitivity=args.sensitivity, egress=args.egress, protection=args.protection)
     files = read_source(Path(args.path))
     result = catalog.publish(conn, book=args.book, title=args.title or args.book, files=files, policy=policy,
-                             profile=catalog.whole_profile())
+                             profile=profiles.spec(args.profile))
     _print(dataclasses.asdict(result))
     return 0
 
@@ -78,6 +79,13 @@ def cmd_read(conn, args) -> int:
     return 0
 
 
+def cmd_search(conn, args) -> int:
+    hits = search.search(conn, gate.Actor(args.principal, args.on_behalf_of), args.query, args.k)
+    _print([{"citation": h.citation.handle, "page": h.page, "score": round(h.score, 4), "text": h.text}
+            for h in hits])
+    return 0
+
+
 def cmd_whoami(_conn, args) -> int:
     token = sys.stdin.readline().strip()  # never on the command line (shell history, process list)
     try:
@@ -106,6 +114,7 @@ def parser() -> argparse.ArgumentParser:
     ing.add_argument("--sensitivity", required=True, choices=SENSITIVITY)
     ing.add_argument("--egress", required=True, choices=EGRESS)
     ing.add_argument("--protection", required=True, choices=PROTECTION_M1)
+    ing.add_argument("--profile", choices=("chunked", "whole"), default="chunked")
     ing.set_defaults(fn=cmd_ingest)
     show = sub.add_parser("show", help="current versions and files of a book")
     show.add_argument("book")
@@ -135,6 +144,12 @@ def parser() -> argparse.ArgumentParser:
     rd.add_argument("path")
     rd.add_argument("--on-behalf-of")
     rd.set_defaults(fn=cmd_read)
+    se = sub.add_parser("search", help="search the books the principal may read now")
+    se.add_argument("principal")
+    se.add_argument("query")
+    se.add_argument("--on-behalf-of")
+    se.add_argument("-k", type=int, default=search.DEFAULT_K)
+    se.set_defaults(fn=cmd_search)
     sub.add_parser("whoami", help="verify an access token read from stdin").set_defaults(fn=cmd_whoami)
     ex = sub.add_parser("explain", help="unified audit for one correlation id")
     ex.add_argument("correlation_id")

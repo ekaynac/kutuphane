@@ -8,16 +8,9 @@
 """
 import uuid
 from dataclasses import dataclass, field
-from pathlib import PurePosixPath
 
 from . import authz, catalog
-
-# Frontmatter `type`s and file names that mark an agent instruction (K3), compared case- and separator-
-# insensitively so `Skill`, `agent_card` or `agents.md` cannot slip past the activation gate. K3 status is
-# curator-declared metadata; content that hides instructions under another type is caught (if at all) by the
-# import scan (D29, M1f), not here.
-INSTRUCTION_TYPES = frozenset({"skill", "prompt", "agentcard", "agentinstructions", "systemprompt"})
-INSTRUCTION_FILES = frozenset({"agents.md", "claude.md", "skill.md", "gemini.md"})
+from .profiles import is_instruction  # noqa: F401  (re-exported: the gate owns the K3 rule's use)
 
 
 class Denied(PermissionError):
@@ -35,16 +28,6 @@ class Actor:
     correlation_id: str = field(default_factory=lambda: uuid.uuid4().hex)
 
 
-def _fold(value: str) -> str:
-    return "".join(ch for ch in value.casefold() if ch.isalnum())
-
-
-def is_instruction(entry: dict) -> bool:
-    okf_type = entry.get("okf_type") or ""
-    name = PurePosixPath(entry["path"]).name.casefold()
-    return _fold(okf_type) in INSTRUCTION_TYPES or name in INSTRUCTION_FILES
-
-
 def _log(conn, actor: Actor, action: str, obj: str, mode: str, d: authz.Decision, policy_id, content_id, path,
          reason: str | None = None) -> None:
     conn.execute("INSERT INTO access_event (correlation_id, principal, on_behalf_of, action, object, mode, allowed, "
@@ -54,30 +37,36 @@ def _log(conn, actor: Actor, action: str, obj: str, mode: str, d: authz.Decision
                   reason or d.reason, policy_id, list(d.grant_ids), d.delegation_id, content_id, path))
 
 
-def deliver_file(conn, actor: Actor, book: str, content_id: str, path: str) -> bytes:
-    obj = f"book:{book}"
-    entry = catalog.manifest_entry(conn, book, content_id, path)
-    modes = ["read"]
-    if entry and actor.principal.startswith("agent:") and is_instruction(entry):
-        modes.append("activate")
-
+def guard(conn, actor: Actor, obj: str, modes: list[str], fetch, *, action: str, content_id=None, path=None):
+    """Decide, fetch, decide again, then log and hand out. Every content path goes through here."""
     first = authz.decide(conn, actor.principal, actor.on_behalf_of, obj, modes)
     for mode, d in first.decisions.items():
         if not d.allowed:
-            _log(conn, actor, mode, obj, mode, d, first.policy_id, content_id, path)
+            _log(conn, actor, action if mode == "read" else mode, obj, mode, d, first.policy_id, content_id, path)
             raise Denied(f"{mode} on {obj}: {d.reason}")
-    if entry is None:
-        raise NotFound(f"{book}@{content_id}:{path}")
-
-    data = catalog.read_file(conn, book, content_id, path)
-
+    data = fetch()
     # Again, right before handing anything out: one statement for every mode and the policy in force.
     final = authz.decide(conn, actor.principal, actor.on_behalf_of, obj, modes)
     for mode, d in final.decisions.items():
         if not d.allowed:
-            _log(conn, actor, mode, obj, mode, d, final.policy_id, content_id, path,
+            _log(conn, actor, action if mode == "read" else mode, obj, mode, d, final.policy_id, content_id, path,
                  f"revoked before delivery: {d.reason}")
             raise Denied(f"{mode} on {obj}: revoked before delivery")
     for mode, d in final.decisions.items():
-        _log(conn, actor, mode, obj, mode, d, final.policy_id, content_id, path)
+        _log(conn, actor, action if mode == "read" else mode, obj, mode, d, final.policy_id, content_id, path)
     return data
+
+
+def modes_for(actor: Actor, instruction: bool) -> list[str]:
+    return ["read", "activate"] if instruction and actor.principal.startswith("agent:") else ["read"]
+
+
+def deliver_file(conn, actor: Actor, book: str, content_id: str, path: str) -> bytes:
+    entry = catalog.manifest_entry(conn, book, content_id, path)
+    modes = modes_for(actor, bool(entry) and is_instruction(entry))
+
+    def fetch():
+        if entry is None:
+            raise NotFound(f"{book}@{content_id}:{path}")
+        return catalog.read_file(conn, book, content_id, path)
+    return guard(conn, actor, f"book:{book}", modes, fetch, action="read", content_id=content_id, path=path)
