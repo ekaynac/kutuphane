@@ -116,10 +116,11 @@ def read_file(rel: str, data: bytes) -> SourceFile:
     return SourceFile(path, data, sha256_hex(data), media_type, okf_type)
 
 
-def _read_regular(path: Path, shown: str) -> bytes:
-    """Open without following symlinks, then check the opened file itself (no check-then-read race)."""
+def _read_regular(name: str, shown: str, dir_fd: int | None = None) -> bytes:
+    """Open without following symlinks, relative to an already-open directory, then check the opened file
+    itself: neither the file nor a parent directory can be swapped for a symlink between check and read."""
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=dir_fd)
     except OSError as exc:
         if exc.errno == errno.ELOOP:
             raise SourceError(f"{shown}: symlinks are not followed") from None
@@ -133,7 +134,9 @@ def _read_regular(path: Path, shown: str) -> bytes:
     return data
 
 
-def _entries(root: Path) -> list[tuple[str, Path]]:
+def _raw_files(root: Path):
+    """Yield (relative path, bytes). Directories are walked with os.fwalk (directory fds, symlinks never
+    followed), so the tree cannot be redirected mid-walk."""
     try:
         mode = os.lstat(root).st_mode
     except FileNotFoundError:
@@ -141,28 +144,27 @@ def _entries(root: Path) -> list[tuple[str, Path]]:
     if stat.S_ISLNK(mode):
         raise SourceError(f"{root}: symlinks are not followed")
     if stat.S_ISREG(mode):
-        return [(root.name, root)]
+        yield root.name, _read_regular(str(root), root.name)
+        return
     if not stat.S_ISDIR(mode):
         raise SourceError(f"{root}: not a file or directory")
-    entries = []
-    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-        here = Path(dirpath)
-        for d in [d for d in dirnames if not d.startswith(".") and (here / d).is_symlink()]:
-            raise SourceError(f"{(here / d).relative_to(root)}: symlinks are not followed")
+    for dirpath, dirnames, filenames, dir_fd in os.fwalk(root, follow_symlinks=False):
+        rel_dir = Path(dirpath).relative_to(root)
+        for d in dirnames:
+            if not d.startswith(".") and stat.S_ISLNK(os.stat(d, dir_fd=dir_fd, follow_symlinks=False).st_mode):
+                raise SourceError(f"{(rel_dir / d).as_posix()}: symlinks are not followed")
         dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
-        entries += [((here / f).relative_to(root).as_posix(), here / f)
-                    for f in sorted(filenames) if not f.startswith(".")]
-    return entries
+        for f in sorted(filenames):
+            if not f.startswith("."):
+                rel = (rel_dir / f).as_posix()
+                yield rel, _read_regular(f, rel, dir_fd=dir_fd)
 
 
 def read_source(root: Path) -> list[SourceFile]:
     """Directory: every non-hidden regular file below it. File: just that file."""
-    entries = _entries(root)
-    if not entries:
-        raise SourceError(f"{root}: no files")
     files, seen, total = [], set(), 0
-    for rel, p in entries:
-        sf = read_file(rel, _read_regular(p, rel))
+    for rel, data in _raw_files(root):
+        sf = read_file(rel, data)
         if sf.path in seen:  # e.g. NFC and NFD spellings of one name
             raise SourceError(f"{sf.path}: two files normalize to the same path")
         seen.add(sf.path)
@@ -170,4 +172,6 @@ def read_source(root: Path) -> list[SourceFile]:
         if total > MAX_SOURCE_BYTES:
             raise SourceError(f"{root}: larger than {MAX_SOURCE_BYTES} bytes")
         files.append(sf)
+    if not files:
+        raise SourceError(f"{root}: no files")
     return files
