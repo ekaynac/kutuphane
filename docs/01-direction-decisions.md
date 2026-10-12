@@ -134,5 +134,6 @@ Kaynak: `03-2026-10-12-decision-briefs.md` (Claude brifleri), Astra incelemesi
 
 ## 7. Açık sorular
 
-- Ürün brifi, yol haritası ve M1 tanımı (kabul testleriyle) yazılacak — sıradaki adım.
-- Mevzuat (D41 b) bu makineden erişilemiyor (mevzuat.gov.tr ve resmigazete.gov.tr zaman aşımı); kaynak yolu seçilecek.
+- Ürün brifi, yol haritası ve M1 tanımı taslak olarak yazıldı (`05`, `06`, `07`); operatör onayı bekliyor.
+- Mevzuat (D41 b): mevzuat.gov.tr bu makineden erişilemiyor; aday kaynak HF `CtnkyaABC/turkish-law-corpus`
+  (CC BY 4.0) + elle kontrollü `mtntasci/turkish-legal-rag` soruları. Metin-katmanlı PDF fixture'ı ayrıca gerekli.
