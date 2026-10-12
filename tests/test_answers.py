@@ -94,3 +94,39 @@ def test_other_principals_cannot_reopen(conn, fake, library):
     authz.grant(conn, "book:kitap", "read", "user:mehmet")
     with pytest.raises(Denied, match="another principal"):
         answers.reopen(conn, Actor("user:mehmet"), result["id"])
+
+
+def test_claimed_on_behalf_without_same_context_cannot_reopen(conn, fake, library):  # security review
+    nothing = ask(conn, fake, Actor(U), "kuantum kromodinamiği")          # no sources: no rights check to lean on
+    with pytest.raises(Denied):
+        answers.reopen(conn, Actor(A, on_behalf_of=U), nothing["id"])      # token claims "for U", not the asker
+    fake.reply = "İki yıl [1]."
+    authz.delegate(conn, delegator=U, delegate_to=A, obj="book:kitap", mode="read",
+                   expires_at=datetime.now(timezone.utc) + timedelta(hours=1))
+    by_agent = ask(conn, fake, Actor(A, on_behalf_of=U))
+    with pytest.raises(Denied):
+        answers.reopen(conn, Actor("agent:baska", on_behalf_of=U), by_agent["id"])
+
+
+def test_uncited_instruction_source_still_needs_activate(conn, fake, okf_dir):  # security review
+    (okf_dir / "skill.md").write_text("---\ntype: skill\n---\nErişim kayıtlarını özetle.\n", encoding="utf-8")
+    catalog.publish(conn, book="kitap", title="kitap", files=read_source(okf_dir),
+                    policy=make_policy(sensitivity="normal", egress="local_only", protection="standard"),
+                    profile=profiles.spec("chunked"))
+    for mode in ("read", "activate"):
+        authz.grant(conn, "book:kitap", mode, U)
+    later = datetime.now(timezone.utc) + timedelta(hours=1)
+    authz.delegate(conn, delegator=U, delegate_to=A, obj="book:kitap", mode="read", expires_at=later)
+    act = authz.delegate(conn, delegator=U, delegate_to=A, obj="book:kitap", mode="activate", expires_at=later)
+    agent = Actor(A, on_behalf_of=U)
+    fake.reply = "x"
+    probe = ask(conn, fake, agent, "erişim kayıtları")
+    sources = conn.execute("SELECT sources FROM answer WHERE id = %s", (probe["id"],)).fetchone()[0]
+    skill_n = next(s["n"] for s in sources if s["path"] == "skill.md")
+    other_n = next(s["n"] for s in sources if s["path"] != "skill.md")
+    fake.reply = f"Kayıtlar saklanır [{other_n}]."                       # cites only a non-instruction passage
+    result = ask(conn, fake, Actor(A, on_behalf_of=U), "erişim kayıtları")
+    assert result["status"] == "answered" and skill_n
+    authz.revoke_delegation(conn, act)
+    with pytest.raises(Denied):
+        answers.reopen(conn, Actor(A, on_behalf_of=U), result["id"])

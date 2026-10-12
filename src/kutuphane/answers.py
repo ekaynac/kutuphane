@@ -74,18 +74,24 @@ def reopen(conn, actor: Actor, answer_id: str) -> dict:
     if row is None:
         raise NotFound(answer_id)
     question, status, body, cited, sources, books, asker, asked_for = row
-    parties = {asker, asked_for} - {None}
-    if actor.principal not in parties and actor.on_behalf_of not in parties:
+    # Same context only (the same principal acting for the same user), or the user an answer was made for.
+    # A token's claim to act for someone is not enough on its own: that is what the context check enforces.
+    same_context = (actor.principal, actor.on_behalf_of) == (asker, asked_for)
+    owner = asked_for is not None and actor.on_behalf_of is None and actor.principal == asked_for
+    if not (same_context or owner):
         raise Denied(f"answer {answer_id} belongs to another principal")  # sharing answers is not in M1
-    texts = {}
-    for ref in cited:
-        texts[ref["n"]] = conn.execute(
+
+    def chunk(ref):
+        return conn.execute(
             "SELECT text, instruction FROM chunk WHERE book = %s AND content_id = %s AND profile_id = %s AND path = %s "
             "AND ordinal = %s", (ref["book"], ref["content_id"], ref["profile_id"], ref["path"], ref["ordinal"])
         ).fetchone()
+    texts = {ref["n"]: chunk(ref) for ref in cited}
     needs = {f"book:{b}": {"read"} for b in books}
-    for ref in cited:
-        if texts[ref["n"]] and texts[ref["n"]][1]:
+    # Every passage the model saw shaped the body, cited or not: instruction passages need `activate` again.
+    for ref in sources:
+        row = texts.get(ref["n"]) or chunk(ref)
+        if row and row[1]:
             needs[f"book:{ref['book']}"].update(gate.modes_for(actor, True))
     modes = ["read", "activate"] if any("activate" in m for m in needs.values()) else ["read"]
 
