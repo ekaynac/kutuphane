@@ -24,6 +24,14 @@ export KUTUPHANE_TEST_DSN="${KUTUPHANE_DSN}_test"
 
 Disk encryption is a deployment requirement at the volume level (D48); the application does not encrypt.
 
+Run the API + MCP server (M1e) behind the ingress proxy, with core isolated on an internal network:
+
+```sh
+KUTUPHANE_PUBLIC_URL=http://127.0.0.1:8080 KUTUPHANE_OIDC_ISSUER=<issuer> KUTUPHANE_ANSWER_MODEL=<model> \
+KUTUPHANE_OIDC_JWKS_FILE=<jwks.json> docker compose --profile app up -d --build
+docker compose --profile app exec -T core python -I - < deploy/egress_probe.py   # AT-10 network check
+```
+
 Identity and egress (M1c) are configured by environment:
 `KUTUPHANE_OIDC_ISSUER`, `KUTUPHANE_OIDC_AUDIENCE`, `KUTUPHANE_OIDC_JWKS` (path to a JWKS file);
 `KUTUPHANE_LLMDAP_URL`, `KUTUPHANE_LLMDAP_ROUTE`, `KUTUPHANE_LLMDAP_TRUST_SECRET`, `KUTUPHANE_LLMDAP_ROUTE_CLASS` (`local` or `cloud`; local_only books never go to a cloud route).

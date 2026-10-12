@@ -1,4 +1,11 @@
-# M1a: Postgres only. LLMDAP, IdP and the core/models network split arrive in M1c (docs/07 §3).
+# Single box (D15). Network layout (docs/07 §3, AT-10):
+#   core   (internal): core, postgres, llmdap — no route to the outside world
+#   models (internal): llmdap and the model servers only
+#   edge             : the ingress proxy, the only bridge between users and core
+# Core therefore has no path to anything but Postgres and LLMDAP. LLMDAP joins once #222/#223 land (D49).
+#
+# Dev: `docker compose up -d --wait postgres` (port 55432 on localhost for tests).
+# App: `docker compose --profile app up -d --build` (needs the KUTUPHANE_* variables in .env).
 name: kutuphane
 
 services:
@@ -9,13 +16,53 @@ services:
       POSTGRES_USER: kutuphane
       POSTGRES_PASSWORD: ${KUTUPHANE_DB_PASSWORD:?set KUTUPHANE_DB_PASSWORD}
     ports:
-      - "127.0.0.1:55432:5432"
+      - "127.0.0.1:55432:5432"   # dev and tests only; drop in production
     volumes:
       - pgdata:/var/lib/postgresql/data
+    networks: [core, dev]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U kutuphane -d kutuphane"]
       interval: 2s
       retries: 30
 
+  core:
+    profiles: [app]
+    build: .
+    environment:
+      KUTUPHANE_DSN: postgresql://kutuphane:${KUTUPHANE_DB_PASSWORD}@postgres:5432/kutuphane
+      KUTUPHANE_PUBLIC_URL: ${KUTUPHANE_PUBLIC_URL:-}
+      KUTUPHANE_OIDC_ISSUER: ${KUTUPHANE_OIDC_ISSUER:-}
+      KUTUPHANE_OIDC_AUDIENCE: ${KUTUPHANE_OIDC_AUDIENCE:-kutuphane}
+      KUTUPHANE_OIDC_JWKS: /run/kutuphane/jwks.json
+      KUTUPHANE_ANSWER_MODEL: ${KUTUPHANE_ANSWER_MODEL:-}
+      KUTUPHANE_LLMDAP_URL: ${KUTUPHANE_LLMDAP_URL:-}
+      KUTUPHANE_LLMDAP_ROUTE: ${KUTUPHANE_LLMDAP_ROUTE:-}
+      KUTUPHANE_LLMDAP_TRUST_SECRET: ${KUTUPHANE_LLMDAP_TRUST_SECRET:-}
+      KUTUPHANE_LLMDAP_ROUTE_CLASS: ${KUTUPHANE_LLMDAP_ROUTE_CLASS:-local}
+    volumes:
+      - ${KUTUPHANE_OIDC_JWKS_FILE:-./deploy/jwks.json}:/run/kutuphane/jwks.json:ro
+    networks: [core]
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  ingress:
+    profiles: [app]
+    image: nginx:1.27-alpine
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "${KUTUPHANE_BIND:-127.0.0.1}:8080:8080"
+    networks: [edge, core]
+    depends_on: [core]
+
+  # llmdap:                      # added with LLMDAP #222/#223 (D49): networks [core, models]
+  # model servers:               # networks [models] only
+
 volumes:
   pgdata:
+
+networks:
+  core: {internal: true}
+  models: {internal: true}
+  edge: {}
+  dev: {}

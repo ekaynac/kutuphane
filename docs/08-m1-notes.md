@@ -138,3 +138,21 @@ manifest ile ona işaret eder. Değişmeyen dosya yeni sürümde tekrar saklanma
 - **Cevaptan denetim:** `audit.explain_answer(cevap_id)`; CLI `explain <id> --answer`.
 - **M1e notu (arayüz):** cevap gövdesi model çıktısıdır; arayüz onu **düz metin** olarak gösterir, Markdown
   görseli/HTML yüklemez (pasaj metni dış URL'ye sızmasın).
+
+# M1e (1. kısım): HTTP API, Kütüphane MCP, ağ düzeni
+
+- **Tek ASGI uygulaması** (`server.py`, Starlette + MCP SDK): `/v1/search`, `/v1/citation`, `/v1/ask`,
+  `/v1/answers/{id}`, `/v1/files/{book}/{content}/{path}`, `/mcp` (streamable HTTP, stateless). MCP araçları:
+  `search_library`, `open_citation`, `ask_library`, `reopen_answer`, `read_document`. HTTP ve MCP aynı fonksiyonları
+  çağırır.
+- **Kimlik yalnız token'dan:** `Authorization: Bearer <jwt>`; MCP'de aynı doğrulayıcı (`TokenVerifier`
+  uyarlaması). Başlıklar principal'ı ya da "adına" kullanıcıyı değiştiremez (testli). Her istek yeni korelasyon
+  kimliği alır. MCP'nin DNS rebinding koruması açık; izinli host `KUTUPHANE_PUBLIC_URL`'den.
+- **Hatalar:** 401 (`WWW-Authenticate: Bearer`), 403, 404, 400, 409 (arama sırasında yetki değişti), 502 (model);
+  gövdede iç ayrıntı yok. Dosyalar `Content-Disposition: attachment` + `nosniff` ile döner.
+- **Ağ (AT-10'un ağ yarısı):** Core yalnız `internal` `core` ağında (Postgres, ileride LLMDAP); kullanıcılar
+  `edge` + `core` ağlarındaki nginx ters vekilden gelir. `deploy/egress_probe.py` Core konteyneri içinden
+  doğrular: yalnız Postgres erişilebilir; internet, dış DNS ve makinedeki model servisleri erişilemez (2026-10-12'de
+  geçti). LLMDAP bağlanınca izinli listeye eklenir; AT-10 #222 ile tamamlanır.
+- **Henüz değil:** React arayüz (M1e 2. kısım), Core'un açılışta migration çalıştırması (şimdilik `kutuphane
+  migrate`).
