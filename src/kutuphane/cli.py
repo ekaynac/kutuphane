@@ -41,15 +41,6 @@ def cmd_show(conn, args) -> int:
     return 0
 
 
-def cmd_cat(conn, args) -> int:
-    data = catalog.read_file(conn, args.book, args.content_id, args.path)
-    if data is None:
-        print(f"not found: {args.book}@{args.content_id}:{args.path}", file=sys.stderr)
-        return 1
-    sys.stdout.buffer.write(data)
-    return 0
-
-
 def cmd_grant(conn, args) -> int:
     if args.mode == "member":
         _print({"id": authz.add_member(conn, args.object, args.subject)})
@@ -127,11 +118,6 @@ def parser() -> argparse.ArgumentParser:
     rd.add_argument("path")
     rd.add_argument("--on-behalf-of")
     rd.set_defaults(fn=cmd_read)
-    cat = sub.add_parser("cat", help="operator: print one file of a version, bypassing authorization")
-    cat.add_argument("book")
-    cat.add_argument("content_id")
-    cat.add_argument("path")
-    cat.set_defaults(fn=cmd_cat)
     return ap
 
 

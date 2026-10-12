@@ -53,3 +53,10 @@ def conn():
         c.execute("CREATE SCHEMA public")
         db.migrate(c)
         yield c
+
+
+@pytest.fixture
+def conn2(conn):
+    """A second, independent session on the same test database (for race tests)."""
+    with db.connect(os.environ[TEST_DSN_ENV]) as c:
+        yield c

@@ -21,3 +21,11 @@ def make_policy(*, sensitivity: str, egress: str, protection: str) -> dict:
     if sensitivity == "restricted" and egress == "cloud_ok":
         raise PolicyError("restricted content cannot be cloud_ok")
     return {"v": POLICY_VERSION, "sensitivity": sensitivity, "egress": egress, "protection": protection}
+
+
+def check_policy(doc) -> dict:
+    """Re-validate a policy document at the shared write boundary (catalog.publish), not only in the CLI."""
+    if not isinstance(doc, dict) or set(doc) != {"v", "sensitivity", "egress", "protection"} \
+            or doc.get("v") != POLICY_VERSION:
+        raise PolicyError("policy must be exactly {v, sensitivity, egress, protection} (D24: E5 and E8 mandatory)")
+    return make_policy(sensitivity=doc["sensitivity"], egress=doc["egress"], protection=doc["protection"])

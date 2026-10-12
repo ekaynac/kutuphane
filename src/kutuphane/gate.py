@@ -54,32 +54,30 @@ def _log(conn, actor: Actor, action: str, obj: str, mode: str, d: authz.Decision
                   reason or d.reason, policy_id, list(d.grant_ids), d.delegation_id, content_id, path))
 
 
-def _decide(conn, actor: Actor, modes: list[str], obj: str) -> list[authz.Decision]:
-    return [authz.authorize(conn, actor.principal, actor.on_behalf_of, obj, m) for m in modes]
-
-
 def deliver_file(conn, actor: Actor, book: str, content_id: str, path: str) -> bytes:
     obj = f"book:{book}"
-    policy_id = catalog.current_policy(conn, book)
     entry = catalog.manifest_entry(conn, book, content_id, path)
     modes = ["read"]
     if entry and actor.principal.startswith("agent:") and is_instruction(entry):
         modes.append("activate")
 
-    for mode, d in zip(modes, _decide(conn, actor, modes, obj)):
+    first = authz.decide(conn, actor.principal, actor.on_behalf_of, obj, modes)
+    for mode, d in first.decisions.items():
         if not d.allowed:
-            _log(conn, actor, mode, obj, mode, d, policy_id, content_id, path)
+            _log(conn, actor, mode, obj, mode, d, first.policy_id, content_id, path)
             raise Denied(f"{mode} on {obj}: {d.reason}")
     if entry is None:
         raise NotFound(f"{book}@{content_id}:{path}")
 
     data = catalog.read_file(conn, book, content_id, path)
 
-    final = _decide(conn, actor, modes, obj)  # again, right before handing anything out
-    for mode, d in zip(modes, final):
+    # Again, right before handing anything out: one statement for every mode and the policy in force.
+    final = authz.decide(conn, actor.principal, actor.on_behalf_of, obj, modes)
+    for mode, d in final.decisions.items():
         if not d.allowed:
-            _log(conn, actor, mode, obj, mode, d, policy_id, content_id, path, f"revoked before delivery: {d.reason}")
+            _log(conn, actor, mode, obj, mode, d, final.policy_id, content_id, path,
+                 f"revoked before delivery: {d.reason}")
             raise Denied(f"{mode} on {obj}: revoked before delivery")
-    for mode, d in zip(modes, final):
-        _log(conn, actor, mode, obj, mode, d, policy_id, content_id, path)
+    for mode, d in final.decisions.items():
+        _log(conn, actor, mode, obj, mode, d, final.policy_id, content_id, path)
     return data
