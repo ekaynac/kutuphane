@@ -6,11 +6,13 @@ go through the authorization gate. Network surfaces (API, MCP) arrive in M1e and
 import argparse
 import dataclasses
 import json
+import os
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import answers, audit, authz, catalog, db, devauth, gate, identity, llmdap, profiles, search
+from . import (answers, audit, authz, catalog, db, devauth, gate, identity, llmdap, packages, profiles, search,
+               signing)
 from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, make_policy
 from .source import read_source
 
@@ -113,6 +115,57 @@ def cmd_dev_token(_conn, args) -> int:
     return 0
 
 
+def cmd_keygen(_conn, args) -> int:
+    _print(signing.generate(Path(args.private_key)))
+    return 0
+
+
+def cmd_trust(conn, args) -> int:
+    fp = packages.trust(conn, Path(args.public_key).read_bytes(), expected_fingerprint=args.fingerprint,
+                        name=args.name, by=args.by)
+    _print({"trusted": fp})
+    return 0
+
+
+def cmd_untrust(conn, args) -> int:
+    _print({"revoked": packages.revoke_key(conn, args.fingerprint)})
+    return 0
+
+
+def cmd_export(conn, args) -> int:
+    data = packages.export(conn, args.book, signing.load_private())
+    fd = os.open(args.out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    with os.fdopen(fd, "wb") as f:
+        f.write(data)
+    _print({"package": args.out, "bytes": len(data)})
+    return 0
+
+
+def cmd_receive(conn, args) -> int:
+    result = packages.receive(conn, Path(args.package).read_bytes())
+    _print(result)
+    return 0 if result["status"] == "verified" else 5
+
+
+def cmd_approve(conn, args) -> int:
+    policy = make_policy(sensitivity=args.sensitivity, egress=args.egress, protection=args.protection)
+    _print(dataclasses.asdict(packages.approve(conn, args.id, by=args.by, policy=policy, profile=args.profile)))
+    return 0
+
+
+def cmd_reject(conn, args) -> int:
+    _print({"rejected": packages.reject(conn, args.id, by=args.by, reason=args.reason)})
+    return 0
+
+
+def cmd_imports(conn, _args) -> int:
+    rows = conn.execute("SELECT id, received_at, status, issuer, book, sequence, reasons, findings, diff, decided_by "
+                        "FROM package_import ORDER BY id DESC LIMIT 50").fetchall()
+    keys = ("id", "received_at", "status", "issuer", "book", "sequence", "reasons", "findings", "diff", "decided_by")
+    _print([{**dict(zip(keys, r)), "received_at": r[1].isoformat()} for r in rows])
+    return 0
+
+
 def cmd_whoami(_conn, args) -> int:
     token = sys.stdin.readline().strip()  # never on the command line (shell history, process list)
     try:
@@ -202,6 +255,39 @@ def parser() -> argparse.ArgumentParser:
     dt.add_argument("--agent", action="store_true", help="the subject is an agent")
     dt.add_argument("--act", help="agent acting for the user `sub` (RFC 8693)")
     dt.set_defaults(fn=cmd_dev_token, no_db=True)
+    kg = sub.add_parser("keygen", help="create this installation's Ed25519 package signing key")
+    kg.add_argument("private_key")
+    kg.set_defaults(fn=cmd_keygen, no_db=True)
+    tr = sub.add_parser("trust", help="trust a signing key; give the fingerprint you confirmed out of band")
+    tr.add_argument("public_key")
+    tr.add_argument("--fingerprint", required=True)
+    tr.add_argument("--name", required=True)
+    tr.add_argument("--by", required=True, help="the administrator, e.g. user:admin")
+    tr.set_defaults(fn=cmd_trust)
+    ut = sub.add_parser("untrust", help="revoke a trusted signing key")
+    ut.add_argument("fingerprint")
+    ut.set_defaults(fn=cmd_untrust)
+    ex_ = sub.add_parser("export", help="write a signed package of a book's current version (KUTUPHANE_SIGNING_KEY)")
+    ex_.add_argument("book")
+    ex_.add_argument("--out", required=True)
+    ex_.set_defaults(fn=cmd_export)
+    rc = sub.add_parser("receive", help="quarantine and verify a package; nothing is published")
+    rc.add_argument("package")
+    rc.set_defaults(fn=cmd_receive)
+    ap_ = sub.add_parser("approve-import", help="publish a verified package with THIS installation's policy")
+    ap_.add_argument("id", type=int)
+    ap_.add_argument("--by", required=True)
+    ap_.add_argument("--sensitivity", required=True, choices=SENSITIVITY)
+    ap_.add_argument("--egress", required=True, choices=EGRESS)
+    ap_.add_argument("--protection", required=True, choices=PROTECTION_M1)
+    ap_.add_argument("--profile", choices=("chunked", "whole"), default="chunked")
+    ap_.set_defaults(fn=cmd_approve)
+    rj = sub.add_parser("reject-import", help="refuse a verified package (kept on record)")
+    rj.add_argument("id", type=int)
+    rj.add_argument("--by", required=True)
+    rj.add_argument("--reason", required=True)
+    rj.set_defaults(fn=cmd_reject)
+    sub.add_parser("imports", help="received packages and their verdicts").set_defaults(fn=cmd_imports)
     sub.add_parser("whoami", help="verify an access token read from stdin").set_defaults(fn=cmd_whoami)
     ex = sub.add_parser("explain", help="unified audit for a correlation id (or, with --answer, an answer id)")
     ex.add_argument("id")
