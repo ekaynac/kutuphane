@@ -195,3 +195,88 @@ def test_racing_approvals_of_two_sequences_never_move_backwards(conn, conn_b, ke
     assert last == 2 + 1 or last == 2  # whichever order: never below the highest published
     published = conn_b.execute("SELECT sequence FROM package_import WHERE status = 'published'").fetchall()
     assert last == max(s for (s,) in published)
+
+
+def test_revocation_during_approval_refuses_the_package(conn, conn_b, key, source_book):  # AT-13, Astra #4
+    """A revocation that is in flight when approval reads the key decides the outcome: approval waits for it."""
+    import os
+    import threading
+    import time
+    from kutuphane import db
+    private, info = key
+    trust(conn_b, info)
+    received = packages.receive(conn_b, packages.export(conn, "kitap", private))
+    dsn = os.environ["KUTUPHANE_TEST_DSN"] + "?options=-csearch_path%3Dinstall_b"
+    outcome = []
+    with db.connect(dsn) as admin, db.connect(dsn) as approver:
+        with admin.transaction():
+            packages.revoke_key(admin, info["fingerprint"])           # not committed yet: holds the key row
+
+            def approve():
+                try:
+                    packages.approve(approver, received["id"], by="user:admin", policy=POLICY)
+                    outcome.append("published")
+                except packages.PackageError as exc:
+                    outcome.append(str(exc))
+            worker = threading.Thread(target=approve)
+            worker.start()
+            for _ in range(100):                                          # wait until approval blocks on the key
+                if conn_b.execute("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' "
+                                  "AND query LIKE '%%trusted_key%%'").fetchone()[0]:
+                    break
+                time.sleep(0.05)
+            else:
+                pytest.fail("approval did not wait for the key row")
+        worker.join(10)
+    assert outcome == ["signed by a revoked key"]
+    assert catalog.book_state(conn_b, "kitap") is None
+
+
+def raw_package(manifest: bytes) -> bytes:
+    out = io.BytesIO()
+    with tarfile.open(fileobj=out, mode="w", format=tarfile.PAX_FORMAT) as tar:
+        for name, data in (("MANIFEST.json", manifest), ("MANIFEST.sig", b"AAAA")):
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+    return out.getvalue()
+
+
+@pytest.mark.parametrize("manifest,reason", [
+    (b'{"format":"kutuphane-package/1","x":"\\ud800"}', "not valid JSON"),        # lone surrogate
+    (b'[' * 100_000 + b']' * 100_000, "not valid JSON"),
+    (b'{"book":"kitap","content_id":"ct_x","created_at":1,"files":[{"path":7,"sha256":"x","size":1}],'
+     b'"format":"kutuphane-package/1","issuer":"ed25519:x","sequence":1,"title":"t"}', "file entry"),
+    (b'{"book":"kitap","content_id":"ct_x","created_at":1,"files":[],"format":"kutuphane-package/1",'
+     b'"issuer":"ed25519:x","sequence":true,"title":"t"}', "'sequence'"),
+])
+def test_malformed_manifests_are_rejected_on_record(conn_b, manifest, reason):  # AT-14, Astra #4
+    result = packages.receive(conn_b, raw_package(manifest))
+    assert result["status"] == "rejected" and reason in result["reasons"][0]
+
+
+def test_oversized_input_is_refused_without_storing_it(conn_b, monkeypatch):  # Astra #4
+    monkeypatch.setattr(packages, "MAX_PACKAGE_BYTES", 1024)
+    result = packages.receive(conn_b, b"x" * 2048)
+    assert result["reasons"] == ["package too large"]
+    stored = conn_b.execute("SELECT length(package) FROM package_import WHERE id = %s", (result["id"],)).fetchone()
+    assert stored == (0,)
+
+
+def test_failed_publication_is_on_record_and_can_be_retried(conn, conn_b, key, source_book, monkeypatch):
+    private, info = key
+    trust(conn_b, info)
+    received = packages.receive(conn_b, packages.export(conn, "kitap", private))
+    real_publish = catalog.publish
+
+    def too_long(c, **kw):
+        raise ValueError("document exceeds the whole profile limit")
+    monkeypatch.setattr(catalog, "publish", too_long)
+    with pytest.raises(ValueError):
+        packages.approve(conn_b, received["id"], by="user:admin", policy=POLICY, profile="whole")
+    status, reasons = conn_b.execute("SELECT status, reasons FROM package_import WHERE id = %s",
+                                     (received["id"],)).fetchone()
+    assert status == "verified" and "profile limit" in reasons[-1]
+    monkeypatch.setattr(catalog, "publish", real_publish)
+    assert packages.approve(conn_b, received["id"], by="user:admin", policy=POLICY).content_id == \
+        source_book.content_id

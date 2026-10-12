@@ -56,8 +56,26 @@ function Login({ onToken }: { onToken: (t: string) => void }) {
   );
 }
 
+// The workspace is keyed by the token: signing out or in as someone else unmounts it, so no answer, passage or
+// result of a previous session survives, and replies to its pending requests have nowhere to land (Astra review #4).
 export default function App() {
   const [token, setToken] = useState(loadToken());
+
+  function signIn(t: string) {
+    saveToken(t);
+    setToken(t);
+  }
+
+  function signOut() {
+    saveToken("");
+    setToken("");
+  }
+
+  if (!token) return <Login onToken={signIn} />;
+  return <Workspace key={token} token={token} onSignOut={signOut} />;
+}
+
+function Workspace({ token, onSignOut }: { token: string; onSignOut: () => void }) {
   const [me, setMe] = useState<Me | null>(null);
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
@@ -68,23 +86,11 @@ export default function App() {
   const [answerId, setAnswerId] = useState("");
 
   const fail = (e: unknown) => {
-    if (e instanceof ApiError && e.status === 401) signOut();
+    if (e instanceof ApiError && e.status === 401) onSignOut();
     setError(e instanceof Error ? e.message : "Beklenmeyen hata.");
   };
 
-  function signIn(t: string) {
-    saveToken(t);
-    setToken(t);
-  }
-
-  function signOut() {
-    saveToken("");
-    setToken("");
-    setMe(null);
-  }
-
   useEffect(() => {
-    if (!token) return;
     api.whoami(token).then(setMe).catch(fail);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
@@ -126,8 +132,6 @@ export default function App() {
     else if (handle) open(refHandle(handle));
   };
 
-  if (!token) return <Login onToken={signIn} />;
-
   return (
     <div className="shell">
       <header className="top">
@@ -135,7 +139,7 @@ export default function App() {
         <span className="meta">
           {me ? `${me.principal}${me.on_behalf_of ? ` · ${me.on_behalf_of} adına` : ""}` : "…"}
         </span>
-        <button className="ghost" onClick={signOut}>
+        <button className="ghost" onClick={onSignOut}>
           Çıkış
         </button>
       </header>

@@ -193,3 +193,24 @@ manifest ile ona işaret eder. Değişmeyen dosya yeni sürümde tekrar saklanma
 - **Testler:** iki kurulum aynı test veritabanında iki şemayla (`install_b`); içerik kimliği iki kurulumda aynı;
   kurcalama (içerik, manifest, kanonik olmayan biçim), tekrar oynatma ve eski sıra, eşzamanlı onay yarışı, yarıda
   hata, insan reddi.
+
+# Astra incelemesi #4 (PR #14–#21) ve düzeltmeler
+
+Ham metin: `docs/research/2026-10-12-astra-review-m1-4-raw.md`. Altı bulgunun hepsi düzeltildi:
+
+1. **Arayüzde önceki oturumun içeriği (yüksek):** çalışma alanı token'a anahtarlı ayrı bileşen; çıkış ya da başka
+   kullanıcıyla giriş onu söker. Önceki cevap/pasaj/sonuç kalmaz, bekleyen isteklerin yanıtı düşecek yer bulamaz.
+2. **Onay ile anahtar iptali yarışı (yüksek):** anahtar satırı `FOR SHARE` okunur. Sürmekte olan iptal önce
+   biter ve onay reddedilir; ya da iptal onayın bitmesini bekler. İki bağlantılı test, kilit olmadan kırmızı.
+3. **MCP hata gövdeleri (orta):** HTTP'nin hata eşlemesi (`_classify`) MCP araçlarına da sarıldı; beklenmeyen hata
+   sunucuda kaydedilir, istemciye yalnız "internal error" gider.
+4. **Ret kaydı bırakmayan paketler (orta):** manifest ayrıştırma (tek vekil karakter, aşırı iç içe JSON) ve alan
+   türleri açıkça denetlenir → kayıtlı ret. Onayda yayın hatası (ör. profil sınırı) gerekçeyle kaydedilir; paket
+   `verified` kalır, başka profille yeniden onaylanabilir.
+5. **Boyut sınırı (orta):** CLI en çok sınır+1 bayt okur; sınırı aşan girdi saklanmaz, yalnız reddedilir.
+6. **AT-10 probu (orta):** üç katman ayrı denetlenir: varsayılan rota yok, dış adlar çözülmüyor, yasak adreslere
+   bağlantı yok; kurulumun gerçek model/ağ geçidi adresleri argüman olarak eklenir. Canlı: Core konteynerinde
+   yeşil, host'ta beş ayrı kırmızı (prob boş geçmiyor).
+
+Test boşlukları da kapandı: AT-03 artık gerçek `/mcp` `tools/call` ile (arama + pasaj açma, HTTP ile aynı);
+AT-11 için dokuz bozuk-token durumu hem HTTP'de hem MCP'de (`initialize` ve `tools/call`) 401.
