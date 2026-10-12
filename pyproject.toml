@@ -8,6 +8,7 @@ dependencies = [
     "psycopg[binary]>=3.2,<4",
     "PyYAML>=6.0,<7",
     "pypdf>=5.0,<7",
+    "PyJWT[crypto]>=2.9,<3",
 ]
 
 [project.optional-dependencies]

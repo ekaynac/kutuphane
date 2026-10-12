@@ -12,8 +12,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 MODES = ("discover", "read", "use", "activate")
-PRINCIPAL = re.compile(r"^(user|agent|role):[a-z0-9][a-z0-9._-]{0,62}$")
-OBJECT = re.compile(r"^book:[a-z0-9][a-z0-9-]{0,62}$")
+PRINCIPAL = re.compile(r"^(user|agent|role):[a-z0-9][a-z0-9._@-]{0,126}\Z")
+OBJECT = re.compile(r"^book:[a-z0-9][a-z0-9-]{0,62}\Z")
 
 
 class AuthzError(ValueError):
