@@ -3,3 +3,6 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .env
+web/node_modules/
+web/dist/
+deploy/dev/

@@ -140,3 +140,25 @@ def test_mcp_endpoint_requires_a_token(app_env, keys):
         assert client.post("/mcp", json=init, headers=headers).status_code == 401
         ok = client.post("/mcp", json=init, headers={**headers, **bearer(keys)})
         assert ok.status_code == 200, ok.text
+
+
+def test_security_headers_and_whoami(app_env, keys):
+    app, _, _ = app_env
+    with TestClient(app) as client:
+        r = client.get("/v1/whoami", headers=bearer(keys, act={"sub": "kobra-7"}))
+        assert r.json() == {"principal": "agent:kobra-7", "on_behalf_of": "user:ayse"}
+        csp = r.headers["content-security-policy"]
+        assert "default-src 'none'" in csp and "img-src 'self'" in csp and "frame-ancestors 'none'" in csp
+        assert r.headers["x-frame-options"] == "DENY" and r.headers["referrer-policy"] == "no-referrer"
+
+
+def test_server_refuses_a_schema_it_does_not_match(conn, monkeypatch, verifier, tmp_path):
+    conn.execute("DELETE FROM schema_migration WHERE name = '007_answer.sql'")
+    monkeypatch.setenv("KUTUPHANE_DSN", os.environ["KUTUPHANE_TEST_DSN"])
+    monkeypatch.setenv("KUTUPHANE_PUBLIC_URL", PUBLIC)
+    monkeypatch.setenv("KUTUPHANE_ANSWER_MODEL", "qwen")
+    monkeypatch.setenv("KUTUPHANE_OIDC_ISSUER", ISS)
+    monkeypatch.setenv("KUTUPHANE_OIDC_AUDIENCE", AUD)
+    monkeypatch.setenv("KUTUPHANE_OIDC_JWKS", str(tmp_path / "unused.json"))
+    with pytest.raises(RuntimeError, match="kutuphane migrate"):
+        server.app_from_env()
