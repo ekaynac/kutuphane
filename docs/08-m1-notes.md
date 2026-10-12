@@ -170,3 +170,10 @@ manifest ile ona işaret eder. Değişmeyen dosya yeni sürümde tekrar saklanma
   `KUTUPHANE_DEV=1` iken çalışır). Kurum IdP'siyle OIDC PKCE girişi #223 + IdP bağlantısıyla gelir.
 - **Şema koruması:** sunucu bekleyen migration varsa açılmaz (`kutuphane migrate` ister) — yerel denemede yakalanan
   gerçek bir 500 hatasının kalıcı çözümü.
+
+# M1f (1. kısım): runbook geri bildirimi (AT-15)
+
+- `runbook_feedback`: sonuç (`worked`/`failed`/`changed`), uygulayan principal (+ adına), `tested_on`, not,
+  **tam içerik sürümü**. Yeni sürüm eskisinin geri bildirimini sahiplenmez; eski sürüm sorgusunda eskiler görünür.
+- Kayıt ve okuma kitap üzerinde güncel `read` ister; kapıdan geçer (`feedback`, `read_feedback` olayları).
+- Yüzeyler: `POST/GET /v1/feedback`, MCP `record_runbook_feedback`. Runbook çalıştırma yok (D4, D13).
