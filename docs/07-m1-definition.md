@@ -99,18 +99,18 @@ dış bağımlılığa bağlı.
 |---|---|---|
 | AT-01 | yeşil | `test_ingest.py` (kimlikler, tek bayt, zaman damgası, politika, PDF) |
 | AT-02 | yeşil | `test_search.py` (tam parça sınırları, PDF sayfa/ofset, bileşen sürümü → yeni profil) |
-| AT-03 | yeşil | `test_server.py` (HTTP kullanıcı ve MCP ajan aynı kanıt kümesi) |
+| AT-03 | yeşil | `test_server.py` (HTTP kullanıcı ve gerçek `/mcp` üzerinden ajan: aynı kanıt kümesi, aynı pasajlar) |
 | AT-04 | yeşil | dosya, arama, atıf, cevap, yeniden açma yolları; iki oturumlu iptal yarışları. Paket export'u yönetici işlemidir (ajan yolu değil). |
 | AT-05 | yeşil | `test_authz.py`, `test_search.py`, `test_answers.py` |
 | AT-06 | yeşil | kapsam/kip, sahte devreden, derinlik, bitiş anı, `read`≠`use` |
 | AT-07 | yeşil | eski cevap + kanıt modeli çağırmadan, güncel yetkiyle; delegasyon iptali |
 | AT-08 | **mekanizma yeşil, eşik açık** | "kütüphanede yok", geçersiz atıf reddi; sayısal eşik M0 ölçümünü bekliyor |
 | AT-09 | **Core yeşil** | erişim + `model_call` + LLMDAP export birleşimi, cevap kimliğinden; gerçek LLMDAP kaydı #222/#223 sonrası |
-| AT-10 | **ağ yarısı yeşil** | `deploy/egress_probe.py` (Core yalnız Postgres'e ulaşır); embedding egress LLMDAP #222 bekliyor |
-| AT-11 | **Core yeşil** | JWT doğrulama, başlıkla kimlik değiştirilemez; LLMDAP tarafı #223 bekliyor |
+| AT-10 | **ağ yarısı yeşil** | `deploy/egress_probe.py`: varsayılan rota yok, dış ad çözülmüyor, yalnız Postgres'e bağlanır; embedding egress LLMDAP #222 bekliyor |
+| AT-11 | **Core yeşil** | dokuz bozuk-token durumu HTTP ve MCP'de 401; başlıkla kimlik değiştirilemez; LLMDAP tarafı #223 bekliyor |
 | AT-12 | yeşil | K3 `activate` kapısı, harf/CRLF varyantları, atıf yapılmamış K3 kaynakları |
-| AT-13 | yeşil | `test_packages.py` (iki kurulum, güven kökü, anahtar yenileme/iptal) |
-| AT-14 | yeşil | kurcalama, tekrar oynatma, eşzamanlı onay yarışı, yarıda hata, ret kaydı |
+| AT-13 | yeşil | `test_packages.py` (iki kurulum, güven kökü, anahtar yenileme/iptal, onay sırasında iptal) |
+| AT-14 | yeşil | kurcalama, tekrar oynatma, eşzamanlı onay yarışı, yarıda hata, bozuk manifest ve büyük girdi ret kaydı |
 | AT-15 | yeşil | `test_feedback.py` (sürüme bağlı geri bildirim) |
 | AT-16 | yeşil | zorunlu E5/E8/E9, `purpose` kaydı, `publish` sınırında doğrulama |
 

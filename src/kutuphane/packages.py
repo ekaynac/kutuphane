@@ -6,9 +6,10 @@ memory with size limits; links, devices and unexpected names are refused.
 
 Receiving side: receive() quarantines, verifies (trusted and unrevoked key, signature, every digest, recomputed
 content id, sequence newer than any accepted), scans and diffs, and stores the verdict — rejected packages are
-kept. Nothing reaches the catalog until a person approves: approve() re-checks key and sequence under a row lock
-and publishes in ONE transaction, with the receiving installation's own policy (D23). Any failure leaves the
-catalog unchanged and the failure on record.
+kept. Nothing reaches the catalog until a person approves: approve() re-checks key and sequence under row locks
+(the key row FOR SHARE, so a revocation either lands first and refuses, or waits for the approval to finish) and
+publishes in ONE transaction, with the receiving installation's own policy (D23). Any failure leaves the catalog
+unchanged and the failure on record.
 """
 import base64
 import io
@@ -27,6 +28,9 @@ FORMAT = "kutuphane-package/1"
 MANIFEST, SIGNATURE, CONTENT = "MANIFEST.json", "MANIFEST.sig", "content/"
 MAX_PACKAGE_BYTES = MAX_SOURCE_BYTES + 1024 * 1024
 # Instruction-like phrases worth a human look before approval (findings never approve or reject by themselves).
+MANIFEST_FIELDS = {"issuer": str, "book": str, "title": str, "content_id": str, "sequence": int, "created_at": int,
+                   "files": list}
+FILE_FIELDS = {"path": str, "sha256": str, "size": int}
 SUSPICIOUS = re.compile(r"(?i)(ignore (all |the )?(previous|above) instructions|önceki talimatları (yok say|unut)|"
                         r"system prompt|sistem istemi|you are now|bundan sonra sen)")
 
@@ -94,21 +98,34 @@ def _members(data: bytes) -> dict[str, bytes]:
     return out
 
 
+def _manifest(body: bytes) -> dict:
+    """Parse and type-check before anything else reads a field: a malformed manifest is a recorded rejection."""
+    try:
+        manifest = json.loads(body)
+        canonical = ids.canonical(manifest)
+    except (ValueError, RecursionError):  # includes lone surrogates that cannot be re-encoded
+        raise PackageError("manifest is not valid JSON") from None
+    if not isinstance(manifest, dict) or manifest.get("format") != FORMAT:
+        raise PackageError("unknown package format")
+    if canonical != body:
+        raise PackageError("manifest is not in canonical form")
+    for name, kind in MANIFEST_FIELDS.items():
+        if type(manifest.get(name)) is not kind:
+            raise PackageError(f"manifest field {name!r} is missing or not a {kind.__name__}")
+    for f in manifest["files"]:
+        if not isinstance(f, dict) or any(type(f.get(n)) is not k for n, k in FILE_FIELDS.items()):
+            raise PackageError("every manifest file entry needs path, sha256 and size")
+    return manifest
+
+
 def _verify(conn, members: dict[str, bytes]) -> tuple[dict, list]:
     """Returns (manifest, source files). Raises PackageError with the first reason it is not acceptable."""
     if MANIFEST not in members or SIGNATURE not in members:
         raise PackageError("manifest or signature missing")
     body = members[MANIFEST]
-    try:
-        manifest = json.loads(body)
-    except ValueError:
-        raise PackageError("manifest is not JSON") from None
-    if not isinstance(manifest, dict) or manifest.get("format") != FORMAT:
-        raise PackageError("unknown package format")
-    if ids.canonical(manifest) != body:
-        raise PackageError("manifest is not in canonical form")
-    key = conn.execute("SELECT public_key, revoked_at FROM trusted_key WHERE fingerprint = %s",
-                       (manifest.get("issuer"),)).fetchone()
+    manifest = _manifest(body)
+    key = conn.execute("SELECT public_key, revoked_at FROM trusted_key WHERE fingerprint = %s FOR SHARE",
+                       (manifest["issuer"],)).fetchone()
     if key is None:
         raise PackageError("signed by an unknown key")
     if key[1] is not None:
@@ -119,24 +136,24 @@ def _verify(conn, members: dict[str, bytes]) -> tuple[dict, list]:
         raise PackageError("signature is not base64") from None
     if not signing.verify(bytes(key[0]), signature, body):
         raise PackageError("signature does not verify")
-    listed = manifest.get("files")
-    if not isinstance(listed, list) or not listed:
+    listed = manifest["files"]
+    if not listed:
         raise PackageError("manifest lists no files")
-    names = {CONTENT + f.get("path", "") for f in listed if isinstance(f, dict)}
+    names = {CONTENT + f["path"] for f in listed}
     if names != {n for n in members if n.startswith(CONTENT)} or len(names) != len(listed):
         raise PackageError("package content does not match the manifest file list")
     files = []
     for f in listed:
         data = members[CONTENT + f["path"]]
-        if ids.sha256_hex(data) != f.get("sha256") or len(data) != f.get("size"):
+        if ids.sha256_hex(data) != f["sha256"] or len(data) != f["size"]:
             raise PackageError(f"{f['path']}: digest or size mismatch")
         try:
             files.append(read_file(f["path"], data))
         except (SourceError, ValueError) as exc:
             raise PackageError(str(exc)) from None
-    if ids.content_id({sf.path: sf.sha256 for sf in files}) != manifest.get("content_id"):
+    if ids.content_id({sf.path: sf.sha256 for sf in files}) != manifest["content_id"]:
         raise PackageError("content id does not match the files")
-    if not isinstance(manifest.get("sequence"), int) or manifest["sequence"] < 1:
+    if manifest["sequence"] < 1:
         raise PackageError("invalid sequence")
     last = _last_sequence(conn, manifest["issuer"], manifest["book"])
     if manifest["sequence"] <= last:
@@ -175,8 +192,9 @@ def receive(conn, data: bytes) -> dict:
     try:
         manifest, files = _verify(conn, _members(data))
     except PackageError as exc:
+        kept = data if len(data) <= MAX_PACKAGE_BYTES else b""  # an oversized input is not stored, only refused
         pid = conn.execute("INSERT INTO package_import (status, package, reasons) VALUES ('rejected', %s, %s) "
-                           "RETURNING id", (data, Jsonb([str(exc)]))).fetchone()[0]
+                           "RETURNING id", (kept, Jsonb([str(exc)]))).fetchone()[0]
         return {"id": pid, "status": "rejected", "reasons": [str(exc)]}
     findings, diff = _scan(files), _diff(conn, manifest["book"], files)
     pid = conn.execute(
@@ -215,10 +233,14 @@ def approve(conn, import_id: int, *, by: str, policy: dict, profile: str = "chun
             conn.execute("UPDATE package_import SET status = 'published', decided_by = %s, decided_at = now() "
                          "WHERE id = %s", (by, import_id))
             return published
-    except PackageError as exc:
+    except PackageError as exc:  # the package itself is not acceptable (any more): final
         conn.execute("UPDATE package_import SET status = 'rejected', reasons = reasons || %s, decided_by = %s, "
                      "decided_at = now() WHERE id = %s AND status = 'verified'",
                      (Jsonb([f"at approval: {exc}"]), by, import_id))
+        raise
+    except ValueError as exc:  # the chosen publication failed (e.g. profile limits): on record, can be retried
+        conn.execute("UPDATE package_import SET reasons = reasons || %s WHERE id = %s AND status = 'verified'",
+                     (Jsonb([f"approval by {by} failed: {exc}"]), import_id))
         raise
 
 

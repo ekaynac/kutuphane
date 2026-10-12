@@ -3,6 +3,7 @@ human (HTTP) and agent (MCP) reach the same evidence (AT-03)."""
 import asyncio
 import json
 import os
+import time
 
 import jwt
 import pytest
@@ -175,3 +176,75 @@ def test_feedback_over_http(app_env, keys):  # AT-15 through the API
         assert [f["outcome"] for f in listed.json()] == ["worked"]
         assert client.post("/v1/feedback", json={**body, "outcome": 3}, headers=h).status_code == 400
         assert client.post("/v1/feedback", json=body, headers=bearer(keys, sub="mehmet")).status_code == 403
+
+
+MCP_HEADERS = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
+
+
+def mcp_tool_over_http(client, auth: dict, name: str, args: dict) -> dict:
+    """A real tools/call through /mcp (stateless transport; the reply is one SSE message)."""
+    body = {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": name, "arguments": args}}
+    r = client.post("/mcp", json=body, headers={**MCP_HEADERS, **auth})
+    assert r.status_code == 200, r.text
+    return json.loads([line[5:] for line in r.text.splitlines() if line.startswith("data:")][-1])["result"]
+
+
+def test_agent_over_mcp_and_human_over_http_open_the_same_passages(app_env, keys, conn):  # AT-03, Astra #4
+    from datetime import datetime, timedelta, timezone
+    app, _, _ = app_env
+    authz.delegate(conn, delegator=U, delegate_to=A, obj="book:kitap", mode="read",
+                   expires_at=datetime.now(timezone.utc) + timedelta(hours=1))
+    with TestClient(app, base_url=PUBLIC) as client:
+        human = client.get("/v1/search", params={"q": "kayıtlar saklanır"}, headers=bearer(keys)).json()["results"]
+        agent = bearer(keys, act={"sub": "kobra-7"})
+        found = mcp_tool_over_http(client, agent, "search_library", {"query": "kayıtlar saklanır"})
+        assert [r["citation"] for r in found["structuredContent"]["result"]] == [r["citation"] for r in human]
+        handle = human[0]["citation"]
+        opened = mcp_tool_over_http(client, agent, "open_citation", {"handle": handle})
+        by_agent = json.loads(opened["content"][0]["text"])
+        by_human = client.get("/v1/citation", params={"handle": handle}, headers=bearer(keys)).json()
+        assert by_agent["text"] == by_human["text"] and by_agent["citation"] == by_human["citation"]
+
+
+BAD_TOKENS = {
+    "none": lambda keys: {},
+    "not a jwt": lambda keys: {"Authorization": "Bearer x.y.z"},
+    "not bearer": lambda keys: {"Authorization": f"Basic {token(keys)}"},
+    "unknown key": lambda keys: bearer(keys, key=1),
+    "unknown kid": lambda keys: bearer(keys, kid="k9"),
+    "expired": lambda keys: bearer(keys, iat=int(time.time()) - 600, exp=int(time.time()) - 300),
+    "other audience": lambda keys: bearer(keys, aud="baska"),
+    "other issuer": lambda keys: bearer(keys, iss="https://idp.test/realms/baska"),
+    "no subject": lambda keys: bearer(keys, sub=None),
+}
+
+
+@pytest.mark.parametrize("case", BAD_TOKENS)
+def test_every_bad_token_is_refused_on_both_surfaces(app_env, keys, case):  # AT-11 (Core), Astra #4
+    app, _, _ = app_env
+    auth = BAD_TOKENS[case](keys)
+    init = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                       "clientInfo": {"name": "t", "version": "0"}}}
+    call = {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": {"name": "search_library", "arguments": {"query": "kayıt"}}}
+    with TestClient(app, base_url=PUBLIC) as client:
+        assert client.get("/v1/whoami", headers=auth).status_code == 401
+        assert client.post("/mcp", json=init, headers={**MCP_HEADERS, **auth}).status_code == 401
+        assert client.post("/mcp", json=call, headers={**MCP_HEADERS, **auth}).status_code == 401
+
+
+def test_mcp_errors_are_uniform_and_hide_internals(app_env, keys, verifier, monkeypatch):  # Astra #4
+    app, _, dsn = app_env
+    mcp = server.build_mcp(dsn=dsn, verifier=verifier, bridge=None, model=None, public_url=PUBLIC)
+    claims = asyncio.run(server._Verifier(verifier).verify_token(token(keys, sub="mehmet"))).claims
+    with pytest.raises(Exception, match="forbidden") as denied:
+        call_tool(mcp, claims, "open_citation", {"handle": "kitap@ct_x/pf_x/a.md#0"})
+    assert "Denied" not in str(denied.value)
+
+    def broken(*_a, **_k):
+        raise RuntimeError("INTERNAL_MARKER database host /internal/path")
+    monkeypatch.setattr(server, "op_search", broken)
+    with pytest.raises(Exception) as failed:
+        call_tool(mcp, claims, "search_library", {"query": "kayıt"})
+    assert "internal error" in str(failed.value) and "INTERNAL_MARKER" not in str(failed.value)

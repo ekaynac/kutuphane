@@ -142,7 +142,9 @@ def cmd_export(conn, args) -> int:
 
 
 def cmd_receive(conn, args) -> int:
-    result = packages.receive(conn, Path(args.package).read_bytes())
+    with open(args.package, "rb") as f:  # at most one byte past the limit: an oversized file is refused, not loaded
+        data = f.read(packages.MAX_PACKAGE_BYTES + 1)
+    result = packages.receive(conn, data)
     _print(result)
     return 0 if result["status"] == "verified" else 5
 

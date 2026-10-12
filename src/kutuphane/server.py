@@ -6,6 +6,8 @@
 - Errors are short and uniform (401/403/404/400/409/502); no stack traces or internals in responses.
 """
 import contextlib
+import functools
+import logging
 import os
 import urllib.parse
 import uuid
@@ -14,6 +16,7 @@ from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
@@ -26,6 +29,7 @@ from . import answers, db, feedback, gate, identity, llmdap, search
 from .gate import Actor
 from .ids import normalize_path
 
+log = logging.getLogger(__name__)
 ENV = {"model": "KUTUPHANE_ANSWER_MODEL", "public_url": "KUTUPHANE_PUBLIC_URL"}
 TEXT_TYPES = ("text/markdown", "text/plain")
 
@@ -112,12 +116,21 @@ ERRORS = [  # order matters: subclasses first
 ]
 
 
-def _error(exc: Exception) -> Response:
+def _classify(exc: Exception) -> tuple[int, str] | None:
+    """(status, safe message) for expected errors; None for anything else (never shown to the caller)."""
     for kind, status, message in ERRORS:
         if isinstance(exc, kind):
-            headers = {"WWW-Authenticate": "Bearer"} if status == 401 else None
-            return JSONResponse({"error": message or str(exc)}, status_code=status, headers=headers)
-    raise exc
+            return status, message or str(exc)
+    return None
+
+
+def _error(exc: Exception) -> Response:
+    known = _classify(exc)
+    if known is None:
+        raise exc
+    status, message = known
+    headers = {"WWW-Authenticate": "Bearer"} if status == 401 else None
+    return JSONResponse({"error": message}, status_code=status, headers=headers)
 
 
 class SecurityHeaders:
@@ -254,6 +267,21 @@ class _Verifier:
                                    "kutuphane_on_behalf_of": actor.on_behalf_of})
 
 
+def _mcp_errors(tool):
+    """The same short, uniform errors as HTTP (Astra review #4): the SDK would otherwise send the exception text,
+    internals included, to the client. Unexpected errors are logged here and reported generically."""
+    @functools.wraps(tool)
+    async def wrapper(*args, **kwargs):
+        try:
+            return await tool(*args, **kwargs)
+        except Exception as exc:
+            known = _classify(exc)
+            if known is None:
+                log.exception("MCP tool %s failed", tool.__name__)
+            raise ToolError(known[1] if known else "internal error") from None
+    return wrapper
+
+
 def _mcp_actor() -> Actor:
     token = get_access_token()
     if token is None or not token.claims:
@@ -271,16 +299,19 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
                                     validate_token_resource=False))  # our verifier checks `aud` itself
 
     @mcp.tool()
+    @_mcp_errors
     async def search_library(query: str, k: int = search.DEFAULT_K) -> list[dict]:
         """Search the books you may read now. Results carry citation handles for open_citation."""
         return await run_in_threadpool(op_search, dsn, _mcp_actor(), query, k)
 
     @mcp.tool()
+    @_mcp_errors
     async def open_citation(handle: str) -> dict:
         """Open a citation handle: the exact passage of that version, if you may read it now."""
         return await run_in_threadpool(op_citation, dsn, _mcp_actor(), handle)
 
     @mcp.tool()
+    @_mcp_errors
     async def ask_library(question: str) -> dict:
         """Answer from the library with [n] citations, or status not_in_library."""
         if bridge is None or not model:
@@ -288,11 +319,13 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
         return await run_in_threadpool(op_ask, dsn, bridge, model, _mcp_actor(), question)
 
     @mcp.tool()
+    @_mcp_errors
     async def reopen_answer(answer_id: str) -> dict:
         """Show a stored answer and its evidence again (no model call; current rights apply)."""
         return await run_in_threadpool(op_reopen, dsn, _mcp_actor(), answer_id)
 
     @mcp.tool()
+    @_mcp_errors
     async def read_document(book: str, content_id: str, path: str) -> str:
         """Read a text document of a specific version (agent instructions need an activate grant)."""
         data, media_type = await run_in_threadpool(op_file, dsn, _mcp_actor(), book, content_id, path)
@@ -301,6 +334,7 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
         return data.decode("utf-8")
 
     @mcp.tool()
+    @_mcp_errors
     async def record_runbook_feedback(book: str, content_id: str, path: str, outcome: str,
                                       tested_on: str | None = None, note: str | None = None) -> dict:
         """Record how applying a runbook went: outcome is worked, failed or changed (for that exact version)."""
