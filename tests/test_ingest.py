@@ -93,6 +93,32 @@ def test_hidden_files_and_symlinks(tmp_path, okf_dir):
         read_source(okf_dir)
 
 
+def test_symlinked_directory_is_rejected(okf_dir, tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.md").write_text("x")
+    (okf_dir / "baglanti").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(SourceError, match="symlink"):
+        read_source(okf_dir)
+
+
+def test_nfc_nfd_collision_is_rejected(tmp_path):
+    (tmp_path / "ş.md").write_text("a")      # ş precomposed
+    (tmp_path / "ş.md").write_text("b")     # s + combining cedilla
+    with pytest.raises(SourceError, match="same path"):
+        read_source(tmp_path)
+
+
+@pytest.mark.parametrize("front", [
+    "a: &x [1, 2]\nb: *x\n",             # aliases refused (expansion bombs)
+    "type:\n  - not\n  - a string\n",   # type must be a short string
+])
+def test_hostile_frontmatter_is_rejected(tmp_path, front):
+    (tmp_path / "x.md").write_text(f"---\n{front}---\nbody\n", encoding="utf-8")
+    with pytest.raises(SourceError):
+        read_source(tmp_path)
+
+
 @pytest.mark.parametrize("kwargs", [
     {"sensitivity": "normal", "egress": "local_only", "protection": "sealed"},
     {"sensitivity": "secret", "egress": "local_only", "protection": "standard"},

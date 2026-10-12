@@ -33,6 +33,8 @@ def manifest_of(files: list[SourceFile]) -> list[dict]:
 
 
 def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dict, profile: dict) -> Published:
+    if len({f.path for f in files}) != len(files):
+        raise ValueError("duplicate file paths: the content id would not cover every stored file")
     content_id = ids.content_id({f.path: f.sha256 for f in files})
     policy_id = ids.policy_id(policy)
     profile_id = ids.profile_id(profile)
