@@ -239,6 +239,11 @@ Operatör: Jev bir model sınıfı; Laya öncelikli; Jev API anahtarı var; Jev 
   (ollama/openai/anthropic) taşıyor, Jev'in `/v1/systemone` uç noktasını değil → LLMDAP'a **genel yönetişimli
   HTTP route** (ya da `systemone` şeması) upstream işi gerekir. O gelene kadar Jev testleri "LLMDAP dışı,
   etiketli deney" olarak mı koşsun, beklesin mi? → operatör kararı.
+- **2026-10-12 operatör:** Jev ve benzerleri için LLMDAP issue'su açılsın; Laya da LLMDAP üzerinden kullanılsın;
+  bu katmana security review yapılsın → **`ekaynac/LLMDAP#225`** (governed `systemone` şeması; Laya'nın
+  `laya-serve`'ü Jev ile aynı `POST /v1/systemone` sözleşmesini sunduğu için tek şema ikisini kapsar; hosted/local
+  egress sınıfı, şema dışı cevabı reddetme, yerel ağırlık digest'i, shadow çift korelasyonu, zorunlu güvenlik
+  incelemesi).
 - **Jev API anahtarı sohbete yazılmamalı.** LLMDAP'ın route anahtarı olarak (`apiKeyEnv`) ya da ortam
   değişkeninde tutulur. (Bu, K8 "sealed + use" fikrinin ilk gerçek örneği.)
 
