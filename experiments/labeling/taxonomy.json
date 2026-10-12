@@ -1,0 +1,46 @@
+{
+  "version": "2026-10-12.1",
+  "source": "docs/02 §2 (K1–K8), docs/01 D24–D25 (E5 hassasiyet ≠ egress)",
+  "questions": {
+    "category": {
+      "label": "Kategori",
+      "instructions": "Bu doküman Kütüphane'de hangi bilgi kategorisine girer?",
+      "options": {
+        "K1": {"name": "Referans eser", "desc": "Manuel, standart, vendor dokümanı, mevzuat; başvurulan uzun referans metni."},
+        "K2": {"name": "Prosedür / runbook", "desc": "Adım adım yapılacak iş: kurulum, işletim, arıza giderme, SOP."},
+        "K3": {"name": "Ajan talimatı", "desc": "Bir ajanın davranışını yönlendiren metin: skill, prompt, agent card, AGENTS.md / CLAUDE.md."},
+        "K4": {"name": "Yapısal referans", "desc": "API şeması, değer sözlüğü, katalog, terimce, konfigürasyon referansı."},
+        "K5": {"name": "Kayıt / kanıt", "desc": "Rapor, inceleme, karar kaydı, devir notu, test/denetim kanıtı, transkript."},
+        "K6": {"name": "Öğrenilmiş bilgi", "desc": "Çıkarılmış ders, örüntü, SSS, türetilmiş özet."},
+        "K7": {"name": "Model / karar artefaktı", "desc": "Model, değerlendirme raporu, karar modeli tanımı."},
+        "K8": {"name": "Gizli malzeme", "desc": "Anahtar, parola, sertifika, token içeren ya da onlara doğrudan işaret eden materyal."},
+        "NONE": {"name": "Uymuyor", "desc": "Hiçbir kategoriye oturmuyor (ör. plan, tasarım, beyin fırtınası). Not düşülürse ontolojiye girdi olur."}
+      }
+    },
+    "sensitivity": {
+      "label": "Hassasiyet",
+      "instructions": "İçerik kısıtlı mı?",
+      "options": {
+        "normal": {"name": "Normal", "desc": "Kurum içinde yetkili herkes görebilir."},
+        "restricted": {"name": "Kısıtlı", "desc": "Altyapı ayrıntısı, kişisel veri, güvenlik açığı ya da ticari sır içerir; dar bir kitle görmeli."}
+      }
+    },
+    "egress": {
+      "label": "Çıkış",
+      "instructions": "Bu içerik bulut modele gönderilebilir mi?",
+      "options": {
+        "local_only": {"name": "Yalnız yerel", "desc": "Yalnız yerel modellerle işlenebilir."},
+        "cloud_ok": {"name": "Bulut olabilir", "desc": "Bulut modele gönderilmesinde sakınca yok."}
+      }
+    }
+  },
+  "relevance": {
+    "label": "Pasaj soruyu cevaplıyor mu?",
+    "options": {
+      "yes": "Evet",
+      "partial": "Kısmen",
+      "no": "Hayır",
+      "bad_question": "Soru kötü"
+    }
+  }
+}
