@@ -10,7 +10,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import audit, authz, catalog, db, gate, identity, profiles, search
+from . import answers, audit, authz, catalog, db, gate, identity, llmdap, profiles, search
 from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, make_policy
 from .source import read_source
 
@@ -86,6 +86,22 @@ def cmd_search(conn, args) -> int:
     return 0
 
 
+def cmd_ask(conn, args) -> int:
+    actor = gate.Actor(args.principal, args.on_behalf_of)
+    _print({**answers.ask(conn, llmdap.Bridge.from_env(), actor, args.question, model=args.model),
+            "correlation_id": actor.correlation_id})
+    return 0
+
+
+def cmd_reopen(conn, args) -> int:
+    try:
+        _print(answers.reopen(conn, gate.Actor(args.principal, args.on_behalf_of), args.answer_id))
+    except (gate.Denied, gate.NotFound) as exc:
+        print(f"denied: {exc}", file=sys.stderr)
+        return 3
+    return 0
+
+
 def cmd_whoami(_conn, args) -> int:
     token = sys.stdin.readline().strip()  # never on the command line (shell history, process list)
     try:
@@ -150,6 +166,17 @@ def parser() -> argparse.ArgumentParser:
     se.add_argument("--on-behalf-of")
     se.add_argument("-k", type=int, default=search.DEFAULT_K)
     se.set_defaults(fn=cmd_search)
+    ak = sub.add_parser("ask", help="answer from the library with citations, through LLMDAP")
+    ak.add_argument("principal")
+    ak.add_argument("question")
+    ak.add_argument("--model", required=True)
+    ak.add_argument("--on-behalf-of")
+    ak.set_defaults(fn=cmd_ask)
+    ro = sub.add_parser("reopen", help="show a stored answer and its evidence again (no model call)")
+    ro.add_argument("principal")
+    ro.add_argument("answer_id")
+    ro.add_argument("--on-behalf-of")
+    ro.set_defaults(fn=cmd_reopen)
     sub.add_parser("whoami", help="verify an access token read from stdin").set_defaults(fn=cmd_whoami)
     ex = sub.add_parser("explain", help="unified audit for one correlation id")
     ex.add_argument("correlation_id")

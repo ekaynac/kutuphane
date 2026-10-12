@@ -108,3 +108,16 @@ manifest ile ona işaret eder. Değişmeyen dosya yeni sürümde tekrar saklanma
 - **LLMDAP hata kaydı:** durum ve türetilmiş korelasyon, bozuk ya da yarım gövdede de kaydedilir.
 - **M1e notu:** ağ yüzeylerinde `Actor` yalnız doğrulanmış JWT'den kurulur; CLI'nın operatöre güvenen kurulumu
   taşınmaz.
+
+# M1d (2. kısım): cevaplar
+
+- **Akış:** ön-süzülmüş arama → numaralı pasajlar LLMDAP üzerinden modele (`source_books` ile, egress politikası
+  denetlenir) → model `[n]` ile atıf yapar. Pasaj yoksa model hiç çağrılmaz. Model `KÜTÜPHANEDE_YOK` derse ya da
+  geçerli hiçbir pasaja atıf yapmazsa cevap kabul edilmez: durum `not_in_library`, gövde saklanmaz.
+- **Prompt enjeksiyonu:** sistem mesajı pasajlardaki talimatlara uyulmamasını söyler; bu bir azaltmadır, garanti
+  değil. Asıl sınır yetki ve K3 kapısıdır (talimatlar ajana etkinleştirme izni olmadan gitmez).
+- **`answer` tablosu:** soru, gövde, atıf yapılan ve modele verilen pasajlar (sürüm + profil + sıra), kaynak
+  kitaplar, model. `reopen` modeli çağırmaz; gövde ve kanıt, bütün kaynak kitaplarda **güncel** okuma hakkı
+  (ajan + K3 pasajında `activate`) tek ifadeyle doğrulanınca gösterilir; aksi hâlde hiçbiri gösterilmez. Cevabı
+  yalnız soran principal ya da adına sorulan kullanıcı açabilir (paylaşım M1 dışında).
+- **Eşik:** `MIN_SCORE = 0` geçicidir; AT-08 eşikleri M0 ölçümünden sonra yazılır.

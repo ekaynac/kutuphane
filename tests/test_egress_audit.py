@@ -19,7 +19,7 @@ class FakeBridge:
     """Mimics the LLMDAP bridge contract we rely on (paths, headers, derived correlation id, audit records)."""
 
     def __init__(self):
-        self.audit, self.hits = [], []
+        self.audit, self.hits, self.reply = [], [], "tamam"
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -43,7 +43,8 @@ class FakeBridge:
                 for seq, kind in enumerate(("llm.authz", "llm.result"), start=len(fake.audit)):
                     fake.audit.append({"seq": seq, "type": kind, "actor": subject, "resource": f"llm/{ROUTE}",
                                        "correlationId": derived, "model": body["model"], "outcome": "allow"})
-                answer = json.dumps({"choices": [{"message": {"role": "assistant", "content": "tamam"}}]}).encode()
+                fake.last_body = body
+                answer = json.dumps({"choices": [{"message": {"role": "assistant", "content": fake.reply}}]}).encode()
                 if self.path.startswith("/badjson"):
                     answer = b"{not json"
                 self.send_response(200)
