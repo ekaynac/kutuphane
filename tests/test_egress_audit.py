@@ -19,7 +19,7 @@ class FakeBridge:
     """Mimics the LLMDAP bridge contract we rely on (paths, headers, derived correlation id, audit records)."""
 
     def __init__(self):
-        self.audit, self.hits, self.reply = [], [], "tamam"
+        self.audit, self.hits, self.reply, self.on_request = [], [], "tamam", None
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -34,6 +34,12 @@ class FakeBridge:
                     self.end_headers()
                     return
                 body = json.loads(self.rfile.read(int(self.headers["content-length"])))
+                if fake.on_request:
+                    fake.on_request()  # e.g. a revocation landing while the model "thinks"
+                if self.path.startswith("/drop"):
+                    self.close_connection = True
+                    self.connection.close()  # received and (maybe) acted on, but no answer comes back
+                    return
                 if self.headers.get("x-llmdap-auth") != SECRET:
                     self.send_response(401)
                     self.end_headers()
@@ -169,4 +175,22 @@ def test_invalid_answer_keeps_status_and_correlation(conn, fake):  # Astra revie
         ask(conn, fake.bridge(prefix="/badjson"), actor)
     status, derived, error = conn.execute("SELECT http_status, derived_correlation_id, error FROM model_call "
                                           "WHERE correlation_id = %s", (actor.correlation_id,)).fetchone()
-    assert status == 200 and derived and error == "JSONDecodeError"
+    assert status == 200 and derived and error == "uncertain:JSONDecodeError"
+
+
+def test_connection_lost_after_sending_is_not_proof_of_not_sending(conn, fake):  # Astra #3
+    actor = Actor("user:ayse")
+    with pytest.raises(llmdap.EgressError):
+        ask(conn, fake.bridge(prefix="/drop"), actor)
+    (error,) = conn.execute("SELECT error FROM model_call WHERE correlation_id = %s", (actor.correlation_id,)).fetchone()
+    assert error.startswith("uncertain:")
+    report = audit.explain(conn, actor.correlation_id, fake.audit)
+    assert report["model_calls"][0]["llmdap_status"] == "missing" and not report["complete"]
+
+
+def test_refused_connection_is_not_sent(conn):
+    actor = Actor("user:ayse")
+    with pytest.raises(llmdap.EgressError):
+        ask(conn, llmdap.Bridge("http://127.0.0.1:9", ROUTE, SECRET, "local"), actor)
+    report = audit.explain(conn, actor.correlation_id, [])
+    assert report["model_calls"][0]["llmdap_status"] == "not_sent" and report["complete"]

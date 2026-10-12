@@ -25,6 +25,10 @@ class EgressError(RuntimeError):
     pass
 
 
+NOT_SENT_POLICY = "not_sent:egress_policy"      # refused by our own egress check; never left the host
+NOT_SENT_UNREACHABLE = "not_sent:unreachable"   # connection refused; nothing was transmitted
+
+
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     """Never follow redirects: they would carry the trust secret to another host."""
 
@@ -88,7 +92,7 @@ def chat(conn, bridge: Bridge, actor: Actor, *, model: str, messages: list[dict]
     try:
         _check_egress(conn, bridge, source_books)
     except EgressError as exc:
-        _record(conn, actor, bridge, call_id, model, source_books, None, None, "egress policy")
+        _record(conn, actor, bridge, call_id, model, source_books, None, None, NOT_SENT_POLICY)
         raise exc from None
     headers = {
         "content-type": "application/json",
@@ -113,7 +117,11 @@ def chat(conn, bridge: Bridge, actor: Actor, *, model: str, messages: list[dict]
         _record(conn, actor, bridge, call_id, model, source_books, exc.code, derived, f"http {exc.code}")
         raise EgressError(f"LLMDAP refused the call (HTTP {exc.code})") from None
     except (OSError, http.client.HTTPException, ValueError) as exc:  # network, truncated body, invalid JSON
-        _record(conn, actor, bridge, call_id, model, source_books, status, derived, type(exc).__name__)
+        # Only a refused connection proves nothing was sent; anything later is uncertain (LLMDAP may have acted).
+        reason = getattr(exc, "reason", exc)
+        error = NOT_SENT_UNREACHABLE if isinstance(reason, ConnectionRefusedError) and status is None \
+            else f"uncertain:{type(exc).__name__}"
+        _record(conn, actor, bridge, call_id, model, source_books, status, derived, error)
         raise EgressError(f"LLMDAP unreachable or invalid answer: {type(exc).__name__}") from None
     _record(conn, actor, bridge, call_id, model, source_books, status, derived, None)
     return payload

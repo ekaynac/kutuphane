@@ -219,3 +219,11 @@ def test_search_input_is_bounded(conn):
             search.search(conn, Actor(U), bad)
     with pytest.raises(ValueError):
         search.search(conn, Actor(U), "kayıt", k=search.MAX_K + 1)
+
+
+def test_chunker_v2_is_a_different_profile_than_v1():  # Astra #3: behavior change => new id
+    v2 = profiles.spec("chunked")
+    v1 = {**v2, "components": {**v2["components"], "chunker": "paragraph@1"}}
+    assert v2["components"]["chunker"] == "paragraph@2" and ids.profile_id(v1) != ids.profile_id(v2)
+    one_block = read_file("blok.md", ("kelime " * 3000).encode())
+    assert len(profiles.split(v2, one_block)) > 1                       # v1 kept this as one chunk

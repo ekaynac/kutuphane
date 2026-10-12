@@ -12,7 +12,7 @@ import uuid
 
 from psycopg.types.json import Jsonb
 
-from . import authz, gate, llmdap, search
+from . import gate, llmdap, search
 from .gate import Actor, Denied, NotFound
 
 NOT_IN_LIBRARY = "KÜTÜPHANEDE_YOK"
@@ -51,6 +51,20 @@ def _store(conn, actor: Actor, question: str, status: str, body, cited, sources,
     return {"id": answer_id, "status": status, "body": body, "citations": cited}
 
 
+def _handle(ref: dict) -> str:
+    return search.Citation(ref["book"], ref["content_id"], ref["profile_id"], ref["path"], ref["ordinal"]).handle
+
+
+def _needs(actor: Actor, sources: list[dict], instruction_of) -> dict:
+    """Every source book needs `read`; books whose passages the model saw include instructions also need
+    `activate` for agents — cited or not, every passage shaped the body."""
+    needs = {f"book:{ref['book']}": {"read"} for ref in sources}
+    for ref in sources:
+        if instruction_of(ref):
+            needs[f"book:{ref['book']}"].update(gate.modes_for(actor, True))
+    return needs
+
+
 def ask(conn, bridge: llmdap.Bridge, actor: Actor, question: str, *, model: str, k: int = search.DEFAULT_K) -> dict:
     hits = [h for h in search.search(conn, actor, question, k) if h.score > MIN_SCORE]
     if not hits:
@@ -61,11 +75,28 @@ def ask(conn, bridge: llmdap.Bridge, actor: Actor, question: str, *, model: str,
                 {"role": "user", "content": f"Soru: {question}\n\nPasajlar:\n{passages}"}]
     body = _content(llmdap.chat(conn, bridge, actor, model=model, messages=messages,
                                 source_books=sorted({h.citation.book for h in hits}), purpose="answer"))
-    cited_numbers = sorted({int(n) for n in CITE.findall(body) if 1 <= int(n) <= len(hits)})
-    if NOT_IN_LIBRARY in body or not cited_numbers:
-        return _store(conn, actor, question, "not_in_library", None, [], sources, model)
-    cited = [sources[n - 1] for n in cited_numbers]
-    return _store(conn, actor, question, "answered", body, cited, sources, model)
+    numbers = {int(n) for n in CITE.findall(body)}
+    valid = len(numbers) > 0 and all(1 <= n <= len(hits) for n in numbers)  # one bad number rejects the answer
+    status = "answered" if valid and NOT_IN_LIBRARY not in body else "not_in_library"
+    cited = [sources[n - 1] for n in sorted(numbers)] if status == "answered" else []
+
+    # The model took time; rights may have changed. Decide every source book again before handing anything out.
+    gate.check_many(conn, actor, _needs(actor, sources, lambda ref: _is_instruction_chunk(conn, ref)),
+                    action="answer", items={f"book:{r['book']}": [_handle(c) for c in cited if c["book"] == r["book"]]
+                                            for r in sources})
+    return _store(conn, actor, question, status, body if status == "answered" else None, cited, sources, model)
+
+
+def _chunk(conn, ref):
+    return conn.execute(
+        "SELECT text, instruction FROM chunk WHERE book = %s AND content_id = %s AND profile_id = %s AND path = %s "
+        "AND ordinal = %s", (ref["book"], ref["content_id"], ref["profile_id"], ref["path"], ref["ordinal"])
+    ).fetchone()
+
+
+def _is_instruction_chunk(conn, ref) -> bool:
+    row = _chunk(conn, ref)
+    return bool(row and row[1])
 
 
 def reopen(conn, actor: Actor, answer_id: str) -> dict:
@@ -73,44 +104,19 @@ def reopen(conn, actor: Actor, answer_id: str) -> dict:
                        "FROM answer WHERE id = %s", (answer_id,)).fetchone()
     if row is None:
         raise NotFound(answer_id)
-    question, status, body, cited, sources, books, asker, asked_for = row
+    question, status, body, cited, sources, _books, asker, asked_for = row
     # Same context only (the same principal acting for the same user), or the user an answer was made for.
     # A token's claim to act for someone is not enough on its own: that is what the context check enforces.
     same_context = (actor.principal, actor.on_behalf_of) == (asker, asked_for)
     owner = asked_for is not None and actor.on_behalf_of is None and actor.principal == asked_for
     if not (same_context or owner):
         raise Denied(f"answer {answer_id} belongs to another principal")  # sharing answers is not in M1
-
-    def chunk(ref):
-        return conn.execute(
-            "SELECT text, instruction FROM chunk WHERE book = %s AND content_id = %s AND profile_id = %s AND path = %s "
-            "AND ordinal = %s", (ref["book"], ref["content_id"], ref["profile_id"], ref["path"], ref["ordinal"])
-        ).fetchone()
-    texts = {ref["n"]: chunk(ref) for ref in cited}
-    needs = {f"book:{b}": {"read"} for b in books}
-    # Every passage the model saw shaped the body, cited or not: instruction passages need `activate` again.
-    for ref in sources:
-        row = texts.get(ref["n"]) or chunk(ref)
-        if row and row[1]:
-            needs[f"book:{ref['book']}"].update(gate.modes_for(actor, True))
-    modes = ["read", "activate"] if any("activate" in m for m in needs.values()) else ["read"]
-
+    texts = {ref["n"]: _chunk(conn, ref) for ref in cited}
     # One statement decides every source book (the evidence AND the body depend on all of them), right before
     # anything is shown. Nothing is regenerated.
-    final = authz.allowed(conn, actor.principal, actor.on_behalf_of, modes)
-    missing = sorted(o for o, m in needs.items() if not m <= set(final.decisions.get(o, {})))
-    if missing:
-        for obj in missing:
-            gate.log_event(conn, actor, "reopen", obj, "read", authz.Decision(False, "no current right"),
-                           final.policies.get(obj), None, None, items=None)
-        raise Denied(f"answer {answer_id}: no current right on {', '.join(missing)}")
-    for obj, ms in needs.items():
-        handles = [search.Citation(r["book"], r["content_id"], r["profile_id"], r["path"], r["ordinal"]).handle
-                   for r in cited if f"book:{r['book']}" == obj]
-        for mode in sorted(ms, key=modes.index):
-            gate.log_event(conn, actor, "reopen" if mode == "read" else mode, obj, mode, final.decisions[obj][mode],
-                           final.policies.get(obj), None, None, items=handles)
+    gate.check_many(conn, actor, _needs(actor, sources, lambda ref: _is_instruction_chunk(conn, ref)),
+                    action="reopen", items={f"book:{r['book']}": [_handle(c) for c in cited if c["book"] == r["book"]]
+                                            for r in sources})
     return {"id": answer_id, "question": question, "status": status, "body": body,
-            "evidence": [{"n": r["n"], "citation": search.Citation(r["book"], r["content_id"], r["profile_id"],
-                                                                   r["path"], r["ordinal"]).handle,
-                          "text": texts[r["n"]][0] if texts[r["n"]] else None} for r in cited]}
+            "evidence": [{"n": r["n"], "citation": _handle(r), "text": texts[r["n"]][0] if texts[r["n"]] else None}
+                         for r in cited]}
