@@ -162,3 +162,16 @@ def test_server_refuses_a_schema_it_does_not_match(conn, monkeypatch, verifier, 
     monkeypatch.setenv("KUTUPHANE_OIDC_JWKS", str(tmp_path / "unused.json"))
     with pytest.raises(RuntimeError, match="kutuphane migrate"):
         server.app_from_env()
+
+
+def test_feedback_over_http(app_env, keys):  # AT-15 through the API
+    app, published, _ = app_env
+    with TestClient(app) as client:
+        h = bearer(keys)
+        body = {"book": "kitap", "content_id": published.content_id, "path": "runbook/yedek-geri-yukleme.md",
+                "outcome": "worked", "tested_on": "postgres-17"}
+        assert client.post("/v1/feedback", json=body, headers=h).status_code == 201
+        listed = client.get("/v1/feedback", params={k: body[k] for k in ("book", "content_id", "path")}, headers=h)
+        assert [f["outcome"] for f in listed.json()] == ["worked"]
+        assert client.post("/v1/feedback", json={**body, "outcome": 3}, headers=h).status_code == 400
+        assert client.post("/v1/feedback", json=body, headers=bearer(keys, sub="mehmet")).status_code == 403

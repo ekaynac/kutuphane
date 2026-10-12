@@ -22,7 +22,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import answers, db, gate, identity, llmdap, search
+from . import answers, db, feedback, gate, identity, llmdap, search
 from .gate import Actor
 from .ids import normalize_path
 
@@ -80,6 +80,24 @@ def op_file(dsn, actor: Actor, book: str, content_id: str, path: str) -> tuple[b
                              "AND m.entry->>'path' = %s", (book, content_id, path)).fetchone()
         return data, entry[0] if entry else "application/octet-stream"
     return _run(dsn, go)
+
+
+def op_feedback(dsn, actor: Actor, body) -> dict:
+    if not isinstance(body, dict):
+        raise BadRequest("JSON object required")
+    fields = {k: body.get(k) for k in ("book", "content_id", "path", "outcome", "tested_on", "note")}
+    if not all(isinstance(fields[k], str) for k in ("book", "content_id", "path", "outcome")):
+        raise BadRequest("book, content_id, path and outcome are required strings")
+    for k in ("tested_on", "note"):
+        if fields[k] is not None and not isinstance(fields[k], str):
+            raise BadRequest(f"{k} must be a string")
+    fields["path"] = normalize_path(fields["path"])
+    return {"id": _run(dsn, lambda c: feedback.record(c, actor, **fields))}
+
+
+def op_feedback_list(dsn, actor: Actor, book: str, content_id: str, path: str) -> list[dict]:
+    return _run(dsn, lambda c: feedback.for_version(c, actor, book=book, content_id=content_id,
+                                                    path=normalize_path(path)))
 
 
 # --- HTTP --------------------------------------------------------------------------------------------------
@@ -178,6 +196,17 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
         return Response(data, media_type=media_type, headers={"X-Content-Type-Options": "nosniff",
                                                               "Content-Disposition": "attachment"})
 
+    async def h_feedback(request, actor):
+        if request.method == "POST":
+            try:
+                body = await request.json()
+            except ValueError:
+                raise BadRequest("JSON body required") from None
+            return JSONResponse(await run_in_threadpool(op_feedback, dsn, actor, body), status_code=201)
+        q = request.query_params
+        return JSONResponse(await run_in_threadpool(op_feedback_list, dsn, actor, q.get("book", ""),
+                                                    q.get("content_id", ""), q.get("path", "")))
+
     async def h_health(_request):
         return JSONResponse({"ok": True})
 
@@ -200,6 +229,7 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
         Route("/v1/ask", endpoint(h_ask), methods=["POST"]),
         Route("/v1/answers/{answer_id}", endpoint(h_answer)),
         Route("/v1/files/{book}/{content_id}/{path:path}", endpoint(h_file)),
+        Route("/v1/feedback", endpoint(h_feedback), methods=["GET", "POST"]),
         Mount("/", app=mcp.streamable_http_app()),  # serves /mcp and the protected-resource metadata
     ], lifespan=lifespan)
     app.add_middleware(SecurityHeaders)
@@ -269,6 +299,14 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
         if media_type not in TEXT_TYPES:
             raise BadRequest("not a text document; use search_library and open_citation for its passages")
         return data.decode("utf-8")
+
+    @mcp.tool()
+    async def record_runbook_feedback(book: str, content_id: str, path: str, outcome: str,
+                                      tested_on: str | None = None, note: str | None = None) -> dict:
+        """Record how applying a runbook went: outcome is worked, failed or changed (for that exact version)."""
+        return await run_in_threadpool(op_feedback, dsn, _mcp_actor(),
+                                       {"book": book, "content_id": content_id, "path": path, "outcome": outcome,
+                                        "tested_on": tested_on, "note": note})
 
     return mcp
 
