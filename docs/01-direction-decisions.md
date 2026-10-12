@@ -123,8 +123,16 @@ Kaynak: `03-2026-10-12-decision-briefs.md` (Claude brifleri), Astra incelemesi
 | D39 | **D7 netleşti:** sesli özet ve çoklu stüdyo çıktıları M1 dışında; "LLM deney platformu" hedefi ayrı deney hattında yürür, teslim kapsamını büyütmez. |
 | D40 | **Recall semantiği** (B4–B6) M2 master işinden önce yazılır: teslim, uygulama zamanı, onay ve uygulanana kadarki durum. |
 
-## 6. Açık sorular
+## 6. Kararlar — 2026-10-12 (ölçüm ve deney hattı)
+
+| # | Konu | Karar | Reddedilen |
+|---|---|---|---|
+| D41 | Ölçüm korpusu | **Karma korpus, retrieval ölçümü ve deney hattı ortak kullanır:** (a) kendi dokümanlarımız — Nöbetçi/InfraMedic repolarındaki markdown (runbook, mimari not, karar kaydı, ajan talimatı; TR/EN karışık; kaynak repolar salt-okunur, yalnız ölçüm ortamına kopya); (b) kamuya açık Türkçe mevzuat (FSEK md. 31; uzun saf Türkçe + metin-katmanlı PDF). Müşteri dokümanı kullanılmaz. Repoya yalnız manifest (yol + içerik özeti + kaynak commit) girer, içerik girmez. | Yalnız kamuya açık set (kurum gerçekliğini ölçmez); müşteri dokümanı (gizlilik riski). |
+| D42 | Hedef donanım | **GPU'lu kurum varsayılır** (ürün yerel ajan çalıştıran işletmeler için). Ölçüm DGX Spark'ta iki kipte: GPU ve **GPU'suz (CPU)** — paylaşımlı unified memory'yi işgal etmemek ve hafif kurulum profilini görmek için. Ağır/uzun GPU işi öncesi operatöre sorulur. | Ayrı GPU'suz sunucu profili (hedef müşteride gereksiz). |
+| D43 | İnsan etiketli küme | **Model taslak çıkarır, insan karar verir:** Claude kategori (K1–K8), hassasiyet ve egress etiketi ile soru→pasaj eşleşmesi taslaklar; **operatör** telefon dostu etiketleme sayfasında onaylar/düzeltir. Örneklerin **~%30'u kör** (taslak gösterilmeden) etiketlenir; model–insan uyumu ve taslağın çapalama etkisi bu dilimde ölçülür. Gerçeklik referansı insan etiketidir (D30). | Model etiketini gerçeklik saymak; tamamen elle etiketleme (emek). |
+| D44 | Laya shadow (etiketleme) | Etiketleme katmanında **`laya-multilingual` zero-shot shadow** olarak çalışır: tahminleri etiketleyene **gösterilmez**, yalnız insan etiketine karşı ölçülür (doğruluk, kalibrasyon, çekimserlik; kör dilim ana ölçü). Çevrimdışı batch, yerel ağırlık (sürüm/özet kayıtlı), ağ çıkışı yok, D41 korpusu; bu bir **ölçümdür, ürün yolu değil** — Laya'nın ürün/shadow entegrasyonu D30 gereği LLMDAP #225 üzerinden. Model kartına göre taban modelde zero-shot zayıf beklenir (Türkçe MASSIVE 0.437); amaç etiketleme katmanında işe yarayıp yaramadığını ve ince ayar ihtiyacını görmek. | Laya tahminini etiketleyene öneri olarak göstermek (çapalama; ölçümü bozar). |
+
+## 7. Açık sorular
 
 - Ürün brifi, yol haritası ve M1 tanımı (kabul testleriyle) yazılacak — sıradaki adım.
-- M1 retrieval ölçümü için Türkçe kurum korpusu ve hedef donanım seçimi.
-- Deney hattının ilk karar noktası için insan etiketli kümeyi kim, hangi veriden hazırlayacak.
+- Mevzuat (D41 b) bu makineden erişilemiyor (mevzuat.gov.tr ve resmigazete.gov.tr zaman aşımı); kaynak yolu seçilecek.
