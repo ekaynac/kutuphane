@@ -18,6 +18,8 @@ kör dilimde ölçülür.
 
 ```sh
 python3 -I select_corpus.py <aday-listesi.txt> data
-python3 -I server.py --host <arayüz-ip> --port 8790   # erişim: http://<ip>:8790/?t=<data/token>
+python3 -I server.py --host <tailnet-ip> --port 8790   # erişim: http://<ip>:8790/?t=<data/token>
+# Düz HTTP: yalnız loopback ya da tailnet (WireGuard şifreli) kabul edilir; başka arayüz için --allow-any-interface.
+# Kopya, sonradan değişmiş ya da sır taramasına takılan kaynaklar sunulmaz (fail-closed).
 LAYA_THREADS=16 <venv>/bin/python -I laya_shadow.py
 ```
