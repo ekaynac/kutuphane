@@ -177,3 +177,19 @@ manifest ile ona işaret eder. Değişmeyen dosya yeni sürümde tekrar saklanma
   **tam içerik sürümü**. Yeni sürüm eskisinin geri bildirimini sahiplenmez; eski sürüm sorgusunda eskiler görünür.
 - Kayıt ve okuma kitap üzerinde güncel `read` ister; kapıdan geçer (`feedback`, `read_feedback` olayları).
 - Yüzeyler: `POST/GET /v1/feedback`, MCP `record_runbook_feedback`. Runbook çalıştırma yok (D4, D13).
+
+# M1f (2. kısım): imzalı paketler (AT-13, AT-14; D51)
+
+- **Biçim:** sıkıştırılmamış tar; `MANIFEST.json` (kanonik JSON: biçim, imzalayan, kitap, başlık, içerik kimliği,
+  sıra, politika *önerisi*, dosyalar + özet + boyut), `MANIFEST.sig` (Ed25519, base64), `content/<yol>`. Açılırken
+  diske hiçbir şey çıkarılmaz; bağlantı/aygıt/beklenmeyen üye reddedilir; boyutlar sınırlı.
+- **Zincir:** `receive` = karantina + doğrulama (güvenilen ve iptal edilmemiş anahtar, imza, her dosya özeti,
+  yeniden hesaplanan içerik kimliği, kabul edilenden yeni sıra) + tarama (K3 dosyaları, talimat benzeri metin —
+  karar vermez, insana gösterir) + fark. Katalog değişmez. `approve` = insan onayı + **alıcının kendi politikası**
+  (D23) + tek işlemde yayın; anahtar ve sıra satır kilidi altında yeniden denetlenir; sıra yalnız ileri gider.
+  Hata olursa katalog değişmez, sebep kaydedilir. Reddedilen paketler (gerekçeyle) saklanır.
+- **Anahtarlar:** `keygen` (Ed25519, 600), `trust <pub> --fingerprint <bant dışı doğrulanan>`, `untrust`.
+  Yenileme: yeni anahtar güvenilir yapılır, eski iptal edilir; eski anahtarlı paket reddedilir.
+- **Testler:** iki kurulum aynı test veritabanında iki şemayla (`install_b`); içerik kimliği iki kurulumda aynı;
+  kurcalama (içerik, manifest, kanonik olmayan biçim), tekrar oynatma ve eski sıra, eşzamanlı onay yarışı, yarıda
+  hata, insan reddi.

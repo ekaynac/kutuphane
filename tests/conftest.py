@@ -60,3 +60,14 @@ def conn2(conn):
     """A second, independent session on the same test database (for race tests)."""
     with db.connect(os.environ[TEST_DSN_ENV]) as c:
         yield c
+
+
+@pytest.fixture
+def conn_b(conn):
+    """A second installation: its own schema in the test database, fully migrated."""
+    conn.execute("DROP SCHEMA IF EXISTS install_b CASCADE")
+    conn.execute("CREATE SCHEMA install_b")
+    with db.connect(os.environ[TEST_DSN_ENV] + "?options=-csearch_path%3Dinstall_b") as c:
+        db.migrate(c)
+        yield c
+    conn.execute("DROP SCHEMA IF EXISTS install_b CASCADE")
