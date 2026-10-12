@@ -17,6 +17,9 @@ from . import authz, gate, profiles
 from .gate import Actor, NotFound
 
 DEFAULT_K = 8
+# ts_rank_cd normalization 4 (divide by mean harmonic distance between extents). M0 baseline on hand-checked
+# Turkish legal QA (experiments/retrieval): recall@10 0.245 -> 0.563, MRR 0.09 -> 0.29 vs. no normalization.
+RANK_NORMALIZATION = 4
 MAX_K = 50
 MAX_QUERY_CHARS = 1000
 
@@ -46,7 +49,7 @@ class Hit:
 
 _SEARCH = """
 SELECT c.book, c.content_id, c.profile_id, c.path, c.ordinal, c.page, c.start_char, c.end_char, c.text,
-       c.instruction, ts_rank_cd(c.tsv, terms.q) AS score
+       c.instruction, ts_rank_cd(c.tsv, terms.q, %(norm)s) AS score
   FROM chunk c
   JOIN book b ON b.slug = c.book AND b.current_content = c.content_id AND b.current_profile = c.profile_id
  CROSS JOIN (  -- any stemmed query word may match; ts_rank_cd rewards matching more of them, closer together
@@ -85,7 +88,8 @@ def search(conn, actor: Actor, query: str, k: int = DEFAULT_K, attempts: int = 2
             return []
         activate = pre.objects("activate") if agent else read
         rows = conn.execute(_SEARCH, {"cfg": profiles.FTS_CONFIG, "q": query, "read": sorted(read),
-                                      "activate": sorted(activate), "k": k}).fetchall()
+                                      "activate": sorted(activate), "k": k,
+                                      "norm": RANK_NORMALIZATION}).fetchall()
         needs = _needs(actor, rows)
         # One final statement for the whole result set: the request's single linearization point.
         final = authz.allowed(conn, actor.principal, actor.on_behalf_of, modes)
