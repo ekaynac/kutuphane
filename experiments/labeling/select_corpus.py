@@ -11,6 +11,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # -I drops the script dir
+from secret_scan import find_secret  # noqa: E402
+
 SEED = 20261012
 EXCERPT_CHARS = 3000
 BLIND_SHARE = 0.30
@@ -33,11 +36,6 @@ GROUPS = [
     ("dev-docs", r"^/home/mega/nobetci-dev/docs/[^/]+\.md$", 35),
 ]
 EXCLUDE = re.compile(r"/build/|/dash/ui-src/|/t/fixtures/")
-SECRET = re.compile(
-    r"(?i)(password|passwd|secret|token|api[_-]?key|bearer)\s*[:=]\s*['\"]?[A-Za-z0-9_\-/+]{12,}"
-    r"|-----BEGIN [A-Z ]*PRIVATE KEY-----"
-    r"|\b(sk|ghp|gho|github_pat|xox[bp])[-_][A-Za-z0-9_]{16,}"
-)
 
 
 def main(cand_file: str, out_dir: str) -> None:
@@ -56,7 +54,7 @@ def main(cand_file: str, out_dir: str) -> None:
             if len(raw) > MAX_BYTES:
                 continue
             text = raw.decode("utf-8", errors="replace")
-            if SECRET.search(text):
+            if find_secret(text):
                 rejected.append(path)
                 continue
             taken.add(path)

@@ -10,6 +10,7 @@ are never served.
 import argparse
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 import random
@@ -31,6 +32,10 @@ MAX_BODY = 16 * 1024
 MAX_NOTE = 500
 ORDER_SEED = 20261012
 DOC_ID = re.compile(r"^d\d{3}$")
+TAILNET = ipaddress.ip_network("100.64.0.0/10")
+
+sys.path.insert(0, str(HERE))  # -I drops the script dir
+from secret_scan import find_secret  # noqa: E402
 
 
 class Store:
@@ -42,8 +47,30 @@ class Store:
         order = sorted(self.manifest)
         random.Random(ORDER_SEED).shuffle(order)
         self.order = order
+        self.excluded = self._scan()
         self.labels_path = data_dir / "labels.jsonl"
         self.lock = Lock()
+
+    def _scan(self) -> dict:
+        """Fail closed: a source that changed since selection or trips the secret scan is not served."""
+        out, seen = {}, set()
+        for doc_id, m in sorted(self.manifest.items()):
+            if m["sha256"] in seen:
+                out[doc_id] = "duplicate"  # byte-identical copy of an earlier doc
+                continue
+            seen.add(m["sha256"])
+            try:
+                raw = Path(m["path"]).read_bytes()
+            except OSError:
+                out[doc_id] = "unreadable"
+                continue
+            if hashlib.sha256(raw).hexdigest() != m["sha256"]:
+                out[doc_id] = "changed"
+            elif find_secret(raw.decode("utf-8", errors="replace")):
+                out[doc_id] = "secret"
+        reasons = sorted(set(out.values()))
+        print(f"excluded {len(out)} docs: " + ", ".join(f"{r}={list(out.values()).count(r)}" for r in reasons), file=sys.stderr)
+        return out
 
     def drafts(self) -> dict:
         out = {}
@@ -59,6 +86,8 @@ class Store:
         drafts = self.drafts()
         docs, qa = [], []
         for doc_id in self.order:
+            if doc_id in self.excluded:
+                continue
             d, m = self.docs[doc_id], self.manifest[doc_id]
             draft = drafts.get(doc_id)
             shown = None
@@ -73,11 +102,12 @@ class Store:
 
     def full_text(self, doc_id: str):
         m = self.manifest.get(doc_id)
-        if not m:
+        if not m or doc_id in self.excluded:
             return None
         raw = Path(m["path"]).read_bytes()
-        changed = hashlib.sha256(raw).hexdigest() != m["sha256"]
-        return {"id": doc_id, "text": raw.decode("utf-8", errors="replace"), "changed_since_manifest": changed}
+        if hashlib.sha256(raw).hexdigest() != m["sha256"]:
+            return None  # changed after the secret scan: never serve unscanned content
+        return {"id": doc_id, "text": raw.decode("utf-8", errors="replace")}
 
     def latest(self) -> dict:
         out = {}
@@ -98,7 +128,8 @@ class Store:
         ms = body.get("ms")
         ms = int(ms) if isinstance(ms, (int, float)) and 0 <= ms < 86_400_000 else None
         if task == "doc":
-            if not (isinstance(item_id, str) and DOC_ID.match(item_id) and item_id in self.manifest):
+            if not (isinstance(item_id, str) and DOC_ID.match(item_id) and item_id in self.manifest
+                    and item_id not in self.excluded):
                 raise ValueError("unknown doc id")
             clean = {}
             for q, spec in self.taxonomy["questions"].items():
@@ -131,9 +162,22 @@ class Store:
 def load_token(data_dir: Path) -> str:
     path = data_dir / "token"
     if not path.exists():
-        path.write_text(secrets.token_urlsafe(18))
-        path.chmod(0o600)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(secrets.token_urlsafe(18))
+    if path.stat().st_mode & 0o077:
+        raise SystemExit(f"{path} must be private (chmod 600)")
     return path.read_text().strip()
+
+
+def check_host(host: str, allow_any: bool) -> None:
+    """Plain HTTP: only loopback or the WireGuard-encrypted tailnet unless explicitly allowed."""
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        raise SystemExit("--host must be an IP address")
+    if not (ip.is_loopback or ip in TAILNET or allow_any):
+        raise SystemExit(f"refusing {host}: plain HTTP outside loopback/tailnet; pass --allow-any-interface to override")
 
 
 def make_handler(store: Store, token: str, page: bytes):
@@ -204,17 +248,19 @@ def make_handler(store: Store, token: str, page: bytes):
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--host", default="0.0.0.0")
+    ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--allow-any-interface", action="store_true")
     ap.add_argument("--port", type=int, default=8790)
     ap.add_argument("--data", default=str(HERE / "data"))
     args = ap.parse_args()
+    check_host(args.host, args.allow_any_interface)
+    os.umask(0o077)
     data_dir = Path(args.data)
     store = Store(data_dir)
     token = load_token(data_dir)
     page = (HERE / "page.html").read_bytes()
     httpd = ThreadingHTTPServer((args.host, args.port), make_handler(store, token, page))
     print(f"listening on {args.host}:{args.port} (token in {data_dir / 'token'})", file=sys.stderr)
-    os.umask(0o077)
     httpd.serve_forever()
 
 
