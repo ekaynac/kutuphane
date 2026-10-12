@@ -69,7 +69,9 @@ class Verifier:
 
 
 def _principal(kind: str, name) -> str:
-    principal = f"{kind}:{str(name).casefold()}" if isinstance(name, str) else ""
+    """No normalization: two distinct IdP subjects must never map to one principal. The IdP mapper emits
+    lowercase names in the principal alphabet; anything else is refused."""
+    principal = f"{kind}:{name}" if isinstance(name, str) else ""
     if not PRINCIPAL.match(principal):
         raise AuthenticationError(f"subject cannot be mapped to a principal: {name!r}")
     return principal

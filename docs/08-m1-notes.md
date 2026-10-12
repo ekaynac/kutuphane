@@ -71,3 +71,21 @@ manifest ile ona işaret eder. Değişmeyen dosya yeni sürümde tekrar saklanma
   `llmdap_missing` olarak işaretlenir, rapor `complete: false` olur.
 - **Henüz değil:** gerçek LLMDAP compose servisi ve ağ ayrımı (AT-10) Core bir servis olarak çalışmaya
   başlayınca (M1e) eklenir; AT-10/AT-11 #222/#223 gelmeden yeşile dönmez (D49). Embedding çağrıları #222 bekliyor.
+
+# M1d (1. kısım): profiller, arama, atıf
+
+- **Profiller:** `whole` (dosya başına tek parça, tam metin) ve `chunked` (başlıkta yeni parça; boş satırlarda
+  bölünen bloklar ~1200 karaktere kadar birleşir; frontmatter parça metnine girmez). Parçalar yayınla aynı
+  işlemde `chunk` tablosuna yazılır ve değişmez. Profil kimliği okuyucu, PDF, parçalayıcı sürümü ve FTS
+  yapılandırmasını kapsar. CLI varsayılanı `chunked`.
+- **Arama:** Postgres tam metin, `turkish` yapılandırması; sorgu kelimelerinin kökleri VEYA ile birleşir,
+  `ts_rank_cd` sıralar. Önce yetkili kitaplarla süzülür (`authz.allowed_objects`); ajanlar için K3 parçaları
+  yalnız `activate` varsa görünür. Sonuçtaki her kitap teslimden önce `gate.guard` ile yeniden karara bağlanır
+  ve `search` olayı olarak kaydedilir.
+- **Atıf:** `kitap@içerik/profil/yol#sıra`. `open_citation` o sürümün saklı parçasını güncel yetkiyle verir
+  (`cite` olayı).
+- **Kimlik düzeltmesi (güvenlik incelemesi):** `sub` artık normalleştirilmiyor; büyük harf ya da alfabe dışı
+  karakter içeren özneler reddedilir, böylece iki farklı IdP öznesi tek bir principal üzerine düşmez. IdP
+  eşleyicisi küçük harfli ad üretir.
+- **Henüz değil:** vektör arama ve reranker (#222 + M0 ölçümü); cevap üretimi ve "kütüphanede yok" eşiği (M1d
+  2. kısım; eşik M0'dan).

@@ -1,21 +1,16 @@
 """Catalog writes and reads. One ingest is one transaction: either the new version is published or
 nothing changes."""
 from dataclasses import dataclass
-from importlib.metadata import version
 
 from psycopg.types.json import Jsonb
 
-from . import ids
+from . import ids, profiles
 from .policy import check_policy
 from .source import SourceFile
 
-READER_VERSION = 2  # 2: CRLF/BOM-tolerant frontmatter. Bump when source.py's validation/recording semantics change
-
 
 def whole_profile() -> dict:
-    """The M1a default profile: documents served whole. Chunked profiles arrive with search (M1d)."""
-    return {"name": "whole", "components": {"reader": f"kutuphane.source@{READER_VERSION}",
-                                            "pdf": f"pypdf@{version('pypdf')}"}}
+    return profiles.spec("whole")
 
 
 @dataclass(frozen=True)
@@ -40,6 +35,8 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
     content_id = ids.content_id({f.path: f.sha256 for f in files})
     policy_id = ids.policy_id(policy)
     profile_id = ids.profile_id(profile)
+    chunks = [c for f in files for c in profiles.split(profile, f)]
+    fts = profile.get("settings", {}).get("fts", profiles.FTS_CONFIG)
     with conn.transaction():
         conn.execute("INSERT INTO book (slug, title) VALUES (%s, %s) ON CONFLICT (slug) DO NOTHING", (book, title))
         current = conn.execute("SELECT current_content, current_policy FROM book WHERE slug = %s FOR UPDATE",
@@ -52,6 +49,15 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
                      (policy_id, Jsonb(policy)))
         conn.execute("INSERT INTO profile_version (id, spec) VALUES (%s, %s) ON CONFLICT DO NOTHING",
                      (profile_id, Jsonb(profile)))
+        indexed = conn.execute("SELECT 1 FROM chunk WHERE book = %s AND content_id = %s AND profile_id = %s LIMIT 1",
+                               (book, content_id, profile_id)).fetchone()
+        if not indexed:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    "INSERT INTO chunk (book, content_id, profile_id, path, ordinal, page, start_char, end_char, text, "
+                    "instruction, tsv) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, to_tsvector(%s::regconfig, left(%s, %s)))",
+                    [(book, content_id, profile_id, c.path, c.ordinal, c.page, c.start, c.end, c.text, c.instruction,
+                      fts, c.text, profiles.TSV_MAX_CHARS) for c in chunks])
         conn.execute("UPDATE book SET title = %s, current_content = %s, current_profile = %s, current_policy = %s, "
                      "updated_at = now() WHERE slug = %s", (title, content_id, profile_id, policy_id, book))
         conn.execute("INSERT INTO publication (book, content_id, profile_id, policy_id) VALUES (%s, %s, %s, %s)",
