@@ -141,6 +141,19 @@ def test_agent_instruction_needs_activation(conn, book):  # AT-12
     assert [(e[0], e[1]) for e in events(conn, agent.correlation_id)] == [("read", True), ("activate", True)]
 
 
+@pytest.mark.parametrize("entry", [
+    {"path": "a.md", "okf_type": "Skill"}, {"path": "a.md", "okf_type": " agent_card "},
+    {"path": "a.md", "okf_type": "SYSTEM-PROMPT"}, {"path": "x/agents.md", "okf_type": None},
+    {"path": "Claude.MD", "okf_type": "reference"},
+])
+def test_instruction_spelling_variants_are_caught(entry):
+    assert gate.is_instruction(entry)
+
+
+def test_reference_is_not_an_instruction():
+    assert not gate.is_instruction({"path": "politika/veri.md", "okf_type": "policy"})
+
+
 def test_unknown_path_is_denied_before_existence_is_revealed(conn, book):
     with pytest.raises(Denied):
         gate.deliver_file(conn, Actor(U), BOOK, book, "yok.md")
