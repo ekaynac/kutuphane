@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Kütüphane Etiketleme</title>
+<style>
+/* Layout: one card at a time, thumb-reach action bar pinned to the bottom. */
+:root {
+  --bg: #f3f4f1; --surface: #ffffff; --ink: #1d2320; --muted: #5d6762; --line: #d6dbd6;
+  --accent: #1f6f5c; --accent-ink: #ffffff; --accent-soft: #dcefe8; --blind: #7a4b9c; --blind-soft: #efe5f6;
+  --warn: #9a5b12;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121614; --surface: #1b201e; --ink: #e6ebe8; --muted: #9aa59f; --line: #2e3532;
+    --accent: #5cc3a5; --accent-ink: #0d1412; --accent-soft: #1f3a32; --blind: #c49be0; --blind-soft: #33263d;
+    --warn: #e0a85a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121614; --surface: #1b201e; --ink: #e6ebe8; --muted: #9aa59f; --line: #2e3532;
+  --accent: #5cc3a5; --accent-ink: #0d1412; --accent-soft: #1f3a32; --blind: #c49be0; --blind-soft: #33263d;
+  --warn: #e0a85a; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.45 var(--sans); padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+header { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line); padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 8px; }
+.head-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+h1 { font-size: 15px; margin: 0; letter-spacing: .02em; }
+.tabs { display: flex; gap: 6px; margin-top: 8px; }
+.tab { flex: 1; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 8px; padding: 8px; font: inherit; font-size: 13px; }
+.tab[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+main { padding: 12px 16px; max-width: 720px; margin: 0 auto; display: grid; gap: 14px; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+.chip { border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; font-variant-numeric: tabular-nums; }
+.chip.blind { color: var(--blind); background: var(--blind-soft); border-color: transparent; }
+.chip.draft { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+.chip.done { color: var(--accent-ink); background: var(--accent); border-color: transparent; }
+.path { font: 12px/1.35 var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+.doc { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.doc pre { margin: 0; padding: 12px; max-height: 42vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 12.5px/1.5 var(--mono); }
+.doc .more { display: flex; justify-content: space-between; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding: 6px 12px; font-size: 12px; color: var(--muted); }
+.linkbtn { background: none; border: 0; color: var(--accent); font: inherit; font-size: 13px; padding: 6px 0; cursor: pointer; }
+fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 6px; }
+legend { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 4px; padding: 0; }
+.opts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.opts.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.opt { position: relative; min-height: 48px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 8px; padding: 6px 6px; font: inherit; font-size: 13px; line-height: 1.2; text-align: left; cursor: pointer; }
+.opt b { display: block; font-size: 12px; color: var(--muted); font-weight: 600; }
+.opt[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.opt[aria-pressed="true"] b { color: var(--accent-ink); }
+.opt.suggested::after { content: "taslak"; position: absolute; top: 3px; right: 5px; font-size: 9px; letter-spacing: .05em; text-transform: uppercase; opacity: .75; }
+.opt:focus-visible, .tab:focus-visible, .act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.desc { font-size: 12.5px; color: var(--muted); min-height: 1.4em; }
+.why { font-size: 13px; color: var(--muted); border-left: 2px solid var(--line); padding-left: 10px; }
+input[type=text] { width: 100%; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 8px; padding: 10px; font: inherit; }
+.q { font-size: 18px; line-height: 1.35; font-weight: 600; text-wrap: balance; margin: 0; }
+blockquote { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
+.actions { position: fixed; left: 0; right: 0; bottom: 0; z-index: 2; background: var(--bg); border-top: 1px solid var(--line); padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 8px; justify-content: center; }
+.act { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 10px; min-height: 48px; padding: 0 14px; font: inherit; font-weight: 600; cursor: pointer; }
+.act.primary { flex: 1; max-width: 420px; background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.act:disabled { opacity: .45; cursor: default; }
+.msg { font-size: 13px; color: var(--warn); min-height: 1.2em; }
+.empty { color: var(--muted); padding: 24px 0; text-align: center; }
+@media (prefers-reduced-motion: reduce) { .bar > i { transition: none; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="head-row"><h1>Kütüphane · etiketleme</h1><span class="meta" id="count"></span></div>
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" id="tab-doc" aria-selected="true">Dokümanlar</button>
+    <button class="tab" role="tab" id="tab-qa" aria-selected="false">Soru–pasaj</button>
+  </div>
+  <div class="bar"><i id="progress"></i></div>
+</header>
+<main id="main"><p class="empty">Yükleniyor…</p></main>
+<div class="actions">
+  <button class="act" id="btn-prev" aria-label="Önceki">‹</button>
+  <button class="act" id="btn-skip">Atla</button>
+  <button class="act primary" id="btn-save">Kaydet</button>
+  <button class="act" id="btn-next" aria-label="Sonraki">›</button>
+</div>
+<script>
+"use strict";
+const S = { tax: null, docs: [], qa: [], labels: {}, tab: "doc", idx: { doc: 0, qa: 0 }, sel: {}, shownAt: 0 };
+const $ = (id) => document.getElementById(id);
+const el = (tag, props = {}, ...kids) => { const n = Object.assign(document.createElement(tag), props); kids.flat().forEach(k => n.append(k)); return n; };
+
+async function api(path, opts) {
+  const res = await fetch(path, { credentials: "same-origin", ...opts });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+  return body;
+}
+
+function list() { return S.tab === "doc" ? S.docs : S.qa; }
+function current() { return list()[S.idx[S.tab]]; }
+function isDone(item) { const l = S.labels[item.id]; return !!l; }
+function firstOpen(items) { const i = items.findIndex(x => !isDone(x)); return i < 0 ? 0 : i; }
+
+function header() {
+  const items = list(); const done = items.filter(isDone).length;
+  $("count").textContent = `${done}/${items.length}`;
+  $("progress").style.width = items.length ? `${(100 * done / items.length).toFixed(1)}%` : "0";
+  $("tab-doc").setAttribute("aria-selected", String(S.tab === "doc"));
+  $("tab-qa").setAttribute("aria-selected", String(S.tab === "qa"));
+  $("tab-doc").textContent = `Dokümanlar ${S.docs.filter(isDone).length}/${S.docs.length}`;
+  $("tab-qa").textContent = `Soru–pasaj ${S.qa.filter(isDone).length}/${S.qa.length}`;
+}
+
+function optButtons(qkey, spec, draftVal, two) {
+  const wrap = el("div", { className: "opts" + (two ? " two" : "") });
+  const desc = el("div", { className: "desc" });
+  const paint = () => {
+    for (const b of wrap.children) b.setAttribute("aria-pressed", String(b.dataset.v === S.sel[qkey]));
+    const o = spec.options[S.sel[qkey]]; desc.textContent = o ? o.desc : "";
+  };
+  for (const [v, o] of Object.entries(spec.options)) {
+    const b = el("button", { className: "opt" + (v === draftVal ? " suggested" : ""), type: "button" });
+    b.dataset.v = v;
+    if (/^K\d$/.test(v)) b.append(el("b", { textContent: v }), o.name); else b.append(o.name);
+    b.addEventListener("click", () => { S.sel[qkey] = v; paint(); });
+    wrap.append(b);
+  }
+  paint();
+  return el("fieldset", {}, el("legend", { textContent: spec.label }), wrap, desc);
+}
+
+function renderDoc(item) {
+  const prev = S.labels[item.id];
+  const d = item.draft;
+  S.sel = prev && !prev.skip ? { ...prev.values } : d ? { category: d.category, sensitivity: d.sensitivity, egress: d.egress } : {};
+  S.note = prev ? prev.note || "" : "";
+  const meta = el("div", { className: "meta" },
+    el("span", { className: "chip", textContent: item.id }),
+    el("span", { className: "chip", textContent: item.group }),
+    item.blind ? el("span", { className: "chip blind", textContent: "kör" }) : d ? el("span", { className: "chip draft", textContent: "taslak var" }) : el("span", { className: "chip", textContent: "taslak bekleniyor" }),
+    prev ? el("span", { className: "chip done", textContent: prev.skip ? "atlandı" : "etiketli" }) : "");
+  const pre = el("pre", { textContent: item.excerpt });
+  const more = el("div", { className: "more" }, el("span", { textContent: `${item.chars.toLocaleString("tr-TR")} karakter` }));
+  if (item.chars > item.excerpt.length) {
+    const b = el("button", { className: "linkbtn", type: "button", textContent: "Tamamını aç" });
+    b.addEventListener("click", async () => {
+      b.disabled = true; b.textContent = "Açılıyor…";
+      try { const full = await api(`/api/doc/${item.id}`); pre.textContent = full.text; pre.style.maxHeight = "70vh"; b.remove(); }
+      catch (e) { b.disabled = false; b.textContent = "Açılamadı, tekrar dene"; }
+    });
+    more.append(b);
+  }
+  const t = S.tax.questions;
+  const note = el("input", { type: "text", id: "note", placeholder: "Not (isteğe bağlı; 'Uymuyor' seçtiysen ne olduğunu yaz)", value: S.note, maxLength: 500 });
+  note.addEventListener("input", () => { S.note = note.value; });
+  return [meta, el("div", { className: "path", textContent: item.path }), el("div", { className: "doc" }, pre, more),
+    d ? el("div", { className: "why", textContent: `Taslak gerekçesi: ${d.rationale || "—"}` }) : "",
+    optButtons("category", t.category, d && d.category), optButtons("sensitivity", t.sensitivity, d && d.sensitivity, true),
+    optButtons("egress", t.egress, d && d.egress, true), note, el("div", { className: "msg", id: "msg" })];
+}
+
+function renderQa(item) {
+  const prev = S.labels[item.id];
+  S.sel = prev ? { ...prev.values } : {};
+  const rel = S.tax.relevance;
+  const wrap = el("div", { className: "opts two" });
+  for (const [v, name] of Object.entries(rel.options)) {
+    const b = el("button", { className: "opt", type: "button", textContent: name });
+    b.setAttribute("aria-pressed", String(S.sel.relevance === v));
+    b.addEventListener("click", () => { S.sel.relevance = v; save(); });
+    wrap.append(b);
+  }
+  return [el("div", { className: "meta" }, el("span", { className: "chip", textContent: item.doc }), prev ? el("span", { className: "chip done", textContent: "etiketli" }) : ""),
+    el("p", { className: "q", textContent: item.question }), el("blockquote", { textContent: item.passage }),
+    el("div", { className: "path", textContent: item.path }),
+    el("fieldset", {}, el("legend", { textContent: rel.label }), wrap), el("div", { className: "msg", id: "msg" })];
+}
+
+function render() {
+  header();
+  const items = list(); const main = $("main"); main.replaceChildren();
+  $("btn-save").hidden = S.tab === "qa";
+  if (!items.length) {
+    main.append(el("p", { className: "empty", textContent: S.tab === "qa" ? "Soru–pasaj taslakları henüz hazır değil. Biraz sonra sayfayı yenile." : "Doküman yok." }));
+    return;
+  }
+  const item = current();
+  main.append(...(S.tab === "doc" ? renderDoc(item) : renderQa(item)));
+  $("btn-prev").disabled = S.idx[S.tab] === 0;
+  $("btn-next").disabled = S.idx[S.tab] >= items.length - 1;
+  S.shownAt = performance.now();
+  window.scrollTo({ top: 0 });
+}
+
+function go(delta) { const n = list().length; S.idx[S.tab] = Math.max(0, Math.min(n - 1, S.idx[S.tab] + delta)); render(); }
+function advance() { const items = list(); const i = items.findIndex((x, k) => k > S.idx[S.tab] && !isDone(x)); S.idx[S.tab] = i < 0 ? firstOpen(items) : i; render(); }
+
+async function save(skip = false) {
+  const item = current(); if (!item) return;
+  const body = { task: S.tab, id: item.id, values: S.sel, note: S.note || "", ms: Math.round(performance.now() - S.shownAt), draft_shown: !!item.draft };
+  if (skip) { body.skip = true; body.values = { category: null, sensitivity: null, egress: null }; }
+  if (S.tab === "doc" && !skip && (!S.sel.category || !S.sel.sensitivity || !S.sel.egress)) { $("msg").textContent = "Üç soruyu da cevapla ya da Atla'ya bas."; return; }
+  if (S.tab === "qa" && skip) { advance(); return; }
+  try {
+    await api("/api/label", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    S.labels[item.id] = { ...body, skip };
+    advance();
+  } catch (e) { const m = $("msg"); if (m) m.textContent = `Kaydedilemedi: ${e.message}. Bağlantıyı kontrol edip tekrar dene.`; }
+}
+
+$("btn-prev").addEventListener("click", () => go(-1));
+$("btn-next").addEventListener("click", () => go(1));
+$("btn-save").addEventListener("click", () => save(false));
+$("btn-skip").addEventListener("click", () => save(true));
+$("tab-doc").addEventListener("click", () => { S.tab = "doc"; render(); });
+$("tab-qa").addEventListener("click", () => { S.tab = "qa"; render(); });
+
+(async () => {
+  try {
+    const [items, labels] = await Promise.all([api("/api/items"), api("/api/state")]);
+    Object.assign(S, { tax: items.taxonomy, docs: items.docs, qa: items.qa, labels });
+    S.idx.doc = firstOpen(S.docs); S.idx.qa = firstOpen(S.qa);
+    render();
+  } catch (e) {
+    $("main").replaceChildren(el("p", { className: "empty", textContent: `Yüklenemedi: ${e.message}. Erişim bağlantısını yeniden aç.` }));
+  }
+})();
+</script>
+</body>
+</html>
