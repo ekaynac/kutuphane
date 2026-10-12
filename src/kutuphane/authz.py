@@ -172,24 +172,51 @@ def direct(conn, principal: str, obj: str, mode: str) -> Decision:
 
 
 _ALLOWED = """
-SELECT DISTINCT g.object FROM grant_tuple g
-  LEFT JOIN grant_tuple mem ON mem.relation = 'member' AND mem.subject = %(holder)s AND mem.revoked_at IS NULL
-       AND g.subject = mem.object || '#member'
- WHERE g.relation = %(mode)s AND g.revoked_at IS NULL AND g.object LIKE 'book:%%'
-   AND (g.subject = %(holder)s OR mem.id IS NOT NULL)
-   AND (%(behalf)s::text IS NULL OR EXISTS (
-        SELECT 1 FROM delegation d
-         WHERE d.delegate = %(p)s AND d.delegator = %(behalf)s AND d.object = g.object AND d.mode = %(mode)s
-           AND d.revoked_at IS NULL AND clock_timestamp() < d.expires_at))
+WITH held AS (
+    SELECT g.object, g.relation AS mode, array_agg(DISTINCT x ORDER BY x) AS grant_ids
+      FROM grant_tuple g
+      LEFT JOIN grant_tuple mem ON mem.relation = 'member' AND mem.subject = %(holder)s AND mem.revoked_at IS NULL
+           AND g.subject = mem.object || '#member'
+     CROSS JOIN LATERAL unnest(ARRAY[g.id, mem.id]) AS x
+     WHERE g.relation = ANY(%(modes)s) AND g.revoked_at IS NULL AND g.object LIKE 'book:%%'
+       AND (g.subject = %(holder)s OR mem.id IS NOT NULL) AND x IS NOT NULL
+     GROUP BY g.object, g.relation),
+dels AS (
+    SELECT DISTINCT ON (d.object, d.mode) d.object, d.mode, d.id
+      FROM delegation d
+     WHERE %(behalf)s::text IS NOT NULL AND d.delegate = %(p)s AND d.delegator = %(behalf)s
+       AND d.mode = ANY(%(modes)s) AND d.revoked_at IS NULL AND clock_timestamp() < d.expires_at
+     ORDER BY d.object, d.mode, d.id DESC)
+SELECT h.object, h.mode, h.grant_ids, dels.id, b.current_policy
+  FROM held h
+  LEFT JOIN dels ON dels.object = h.object AND dels.mode = h.mode
+  JOIN book b ON 'book:' || b.slug = h.object
+ WHERE %(behalf)s::text IS NULL OR dels.id IS NOT NULL
 """
 
 
-def allowed_objects(conn, principal: str, on_behalf_of: str | None, mode: str) -> set[str]:
-    """Every book the caller may use in `mode` right now: the search pre-filter (same rules as `decide`)."""
+@dataclass(frozen=True)
+class Allowed:
+    """What the caller may do on every book, read in ONE statement (one snapshot): {object: {mode: Decision}}
+    and the policy in force per object. Used as the search pre-filter and as its single final check."""
+    decisions: dict
+    policies: dict
+
+    def objects(self, mode: str) -> set[str]:
+        return {o for o, modes in self.decisions.items() if mode in modes}
+
+
+def allowed(conn, principal: str, on_behalf_of: str | None, modes: list[str]) -> Allowed:
     _check(PRINCIPAL, principal, "principal")
-    _mode(mode)
+    for m in modes:
+        _mode(m)
     if on_behalf_of is not None:
         _check(PRINCIPAL, on_behalf_of, "on_behalf_of")
     rows = conn.execute(_ALLOWED, {"p": principal, "behalf": on_behalf_of, "holder": on_behalf_of or principal,
-                                   "mode": mode}).fetchall()
-    return {r[0] for r in rows}
+                                   "modes": list(modes)}).fetchall()
+    decisions, policies = {}, {}
+    for obj, mode, grant_ids, delegation_id, policy_id in rows:
+        reason = "delegation" if on_behalf_of else "grant"
+        decisions.setdefault(obj, {})[mode] = Decision(True, reason, tuple(grant_ids), delegation_id)
+        policies[obj] = policy_id
+    return Allowed(decisions, policies)

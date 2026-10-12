@@ -2,8 +2,9 @@
 
 - Pre-filter: the query only ever sees books the caller may `read` now (and, for agents, instruction chunks only
   where `activate` is held), so ranks, counts and snippets cannot leak other books (AT-04).
-- Before results are handed out, every book in them is decided again in one statement and logged (`search`);
-  a book revoked in between is dropped.
+- Before results are handed out, the whole result set is decided again in ONE statement (the request's
+  linearization point). If rights changed in between, the search runs again with current rights (so revoked books
+  never consume `k`); a second change refuses the request. Delivered chunks are logged by citation handle.
 - A citation names book, content id, profile id, path and ordinal. Opening it serves the stored chunk of that exact
   version through the gate with the caller's *current* rights (AT-07, D36).
 
@@ -58,31 +59,52 @@ SELECT c.book, c.content_id, c.profile_id, c.path, c.ordinal, c.page, c.start_ch
 """
 
 
-def search(conn, actor: Actor, query: str, k: int = DEFAULT_K) -> list[Hit]:
+class SearchChanged(gate.Denied):
+    """Rights changed while the search ran, twice in a row; the caller should retry."""
+
+
+def _needs(actor: Actor, rows) -> dict:
+    """Modes each book in the result needs: read, plus activate for agents receiving instruction chunks."""
+    needs = {}
+    for r in rows:
+        needs.setdefault(f"book:{r[0]}", set()).update(gate.modes_for(actor, r[9]))
+    return needs
+
+
+def search(conn, actor: Actor, query: str, k: int = DEFAULT_K, attempts: int = 2) -> list[Hit]:
     if not isinstance(query, str) or not query.strip() or len(query) > MAX_QUERY_CHARS:
         raise ValueError(f"query must be 1..{MAX_QUERY_CHARS} characters")
     if not 1 <= k <= MAX_K:
         raise ValueError(f"k must be 1..{MAX_K}")
-    read = authz.allowed_objects(conn, actor.principal, actor.on_behalf_of, "read")
-    if not read:
-        return []
     agent = actor.principal.startswith("agent:")
-    activate = authz.allowed_objects(conn, actor.principal, actor.on_behalf_of, "activate") if agent else read
-    rows = conn.execute(_SEARCH, {"cfg": profiles.FTS_CONFIG, "q": query, "read": sorted(read),
-                                  "activate": sorted(activate), "k": k}).fetchall()
-
-    by_book: dict[str, list] = {}
-    for row in rows:
-        by_book.setdefault(row[0], []).append(row)
-    kept = set()
-    for book, book_rows in by_book.items():
-        modes = gate.modes_for(actor, any(r[9] for r in book_rows))
-        try:
-            gate.guard(conn, actor, f"book:{book}", modes, lambda: None, action="search", content_id=book_rows[0][1])
-            kept.add(book)
-        except gate.Denied:
-            pass  # revoked between pre-filter and delivery; guard logged it
-    return [Hit(Citation(*r[:5]), r[5], r[6], r[7], r[8], float(r[10])) for r in rows if r[0] in kept]
+    modes = ["read", "activate"] if agent else ["read"]
+    for _ in range(attempts):
+        pre = authz.allowed(conn, actor.principal, actor.on_behalf_of, modes)
+        read = pre.objects("read")
+        if not read:
+            return []
+        activate = pre.objects("activate") if agent else read
+        rows = conn.execute(_SEARCH, {"cfg": profiles.FTS_CONFIG, "q": query, "read": sorted(read),
+                                      "activate": sorted(activate), "k": k}).fetchall()
+        needs = _needs(actor, rows)
+        # One final statement for the whole result set: the request's single linearization point.
+        final = authz.allowed(conn, actor.principal, actor.on_behalf_of, modes)
+        lost = {o for o, ms in needs.items() if not ms <= set(final.decisions.get(o, {}))}
+        if lost:
+            for obj in sorted(lost):
+                gate.log_event(conn, actor, "search", obj, "read", authz.Decision(False, "changed during search"),
+                               final.policies.get(obj), None, None)
+            continue  # search again with the rights as they are now, so revoked books never consume `k`
+        hits = [Hit(Citation(*r[:5]), r[5], r[6], r[7], r[8], float(r[10])) for r in rows]
+        for obj, ms in needs.items():
+            book = obj.removeprefix("book:")
+            mine = [h for h in hits if h.citation.book == book]
+            for mode in sorted(ms, key=modes.index):
+                gate.log_event(conn, actor, "search" if mode == "read" else mode, obj, mode, final.decisions[obj][mode],
+                               final.policies.get(obj), mine[0].citation.content_id, None,
+                               profile_id=mine[0].citation.profile_id, items=[h.citation.handle for h in mine])
+        return hits
+    raise SearchChanged("authorization changed during search; retry")
 
 
 def open_citation(conn, actor: Actor, citation: Citation) -> Hit:
@@ -98,4 +120,5 @@ def open_citation(conn, actor: Actor, citation: Citation) -> Hit:
             raise NotFound(citation.handle)
         return Hit(citation, row[0], row[1], row[2], row[3], 0.0)
     return gate.guard(conn, actor, f"book:{citation.book}", modes, fetch, action="cite",
-                      content_id=citation.content_id, path=citation.path)
+                      content_id=citation.content_id, path=citation.path, profile_id=citation.profile_id,
+                      items=[citation.handle])

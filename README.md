@@ -26,6 +26,6 @@ Disk encryption is a deployment requirement at the volume level (D48); the appli
 
 Identity and egress (M1c) are configured by environment:
 `KUTUPHANE_OIDC_ISSUER`, `KUTUPHANE_OIDC_AUDIENCE`, `KUTUPHANE_OIDC_JWKS` (path to a JWKS file);
-`KUTUPHANE_LLMDAP_URL`, `KUTUPHANE_LLMDAP_ROUTE`, `KUTUPHANE_LLMDAP_TRUST_SECRET`.
+`KUTUPHANE_LLMDAP_URL`, `KUTUPHANE_LLMDAP_ROUTE`, `KUTUPHANE_LLMDAP_TRUST_SECRET`, `KUTUPHANE_LLMDAP_ROUTE_CLASS` (`local` or `cloud`; local_only books never go to a cloud route).
 `echo "$TOKEN" | kutuphane whoami` verifies a token; `kutuphane explain <correlation-id> --llmdap-export audit.jsonl`
 prints the unified audit.

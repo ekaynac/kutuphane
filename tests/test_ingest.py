@@ -168,7 +168,8 @@ def test_publish_validates_policy_itself(conn, okf_dir, bad):  # AT-16 at the sh
 
 def test_publication_binds_three_ids(conn, okf_dir):  # D26
     first = publish(conn, okf_dir)
-    other = {"name": "chunked", "components": {"reader": "kutuphane.source@2"}}
+    from kutuphane import profiles
+    other = profiles.spec("chunked")
     second = catalog.publish(conn, book="kitap", title="kitap", files=read_source(okf_dir), policy=POLICY,
                              profile=other)
     state = catalog.book_state(conn, "kitap")
@@ -176,3 +177,10 @@ def test_publication_binds_three_ids(conn, okf_dir):  # D26
     assert [(p["content_id"], p["profile_id"], p["policy_id"]) for p in state["publications"]] == [
         (first.content_id, first.profile_id, first.policy_id),
         (second.content_id, second.profile_id, second.policy_id)]
+
+
+@pytest.mark.parametrize("profile", [{"name": "chunked", "components": {}},
+                                     {"name": "custom"}, None])
+def test_only_canonical_profiles_are_accepted(conn, okf_dir, profile):  # Astra #2: id describes behavior
+    with pytest.raises(ValueError, match="unsupported profile"):
+        catalog.publish(conn, book="kitap", title="kitap", files=read_source(okf_dir), policy=POLICY, profile=profile)
