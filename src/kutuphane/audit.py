@@ -8,8 +8,11 @@ import json
 from pathlib import Path
 
 ACCESS_FIELDS = ("at", "principal", "on_behalf_of", "action", "object", "mode", "allowed", "reason", "policy_id",
-                 "grant_ids", "delegation_id", "content_id", "path")
-CALL_FIELDS = ("at", "principal", "on_behalf_of", "route", "model", "http_status", "error", "derived_correlation_id")
+                 "grant_ids", "delegation_id", "content_id", "path", "profile_id", "items")
+CALL_FIELDS = ("at", "call_id", "principal", "on_behalf_of", "route", "model", "source_books", "http_status", "error",
+               "derived_correlation_id")
+EXPECTED_OK = {"llm.authz", "llm.result"}  # a completed call leaves both on LLMDAP's side
+EXPECTED_REFUSED = {"llm.authz"}           # a call LLMDAP refused still leaves its authorization record
 
 
 def read_llmdap_export(path: Path) -> list[dict]:
@@ -41,8 +44,18 @@ def explain(conn, correlation_id: str, llmdap_records: list[dict]) -> dict:
     for rec in llmdap_records:
         by_id.setdefault(rec.get("correlationId"), []).append(rec)
     for call in calls:
-        egress = by_id.get(call["derived_correlation_id"]) if call["derived_correlation_id"] else None
-        call["llmdap"] = sorted(egress, key=lambda r: r.get("seq", 0)) if egress else []
-        call["llmdap_missing"] = not egress
+        call["llmdap"] = sorted(by_id.get(call["derived_correlation_id"], []) if call["derived_correlation_id"] else [],
+                                key=lambda r: r.get("seq", 0))
+        call["llmdap_status"] = _status(call)
     return {"correlation_id": correlation_id, "found": bool(access or calls), "access": access,
-            "model_calls": calls, "complete": all(not c["llmdap_missing"] for c in calls)}
+            "model_calls": calls, "complete": all(c["llmdap_status"] != "missing" for c in calls)}
+
+
+def _status(call: dict) -> str:
+    """complete: LLMDAP holds every record this call must have left; missing: it does not (or we cannot tell);
+    not_sent: the call never reached LLMDAP (refused by our egress check, or unreachable)."""
+    if call["http_status"] is None and call["derived_correlation_id"] is None:
+        return "not_sent"
+    expected = EXPECTED_OK if call["http_status"] and 200 <= call["http_status"] < 300 else EXPECTED_REFUSED
+    seen = {r.get("type") for r in call["llmdap"]}
+    return "complete" if call["derived_correlation_id"] and expected <= seen else "missing"

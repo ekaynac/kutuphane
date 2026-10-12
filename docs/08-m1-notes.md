@@ -89,3 +89,22 @@ manifest ile ona işaret eder. Değişmeyen dosya yeni sürümde tekrar saklanma
   eşleyicisi küçük harfli ad üretir.
 - **Henüz değil:** vektör arama ve reranker (#222 + M0 ölçümü); cevap üretimi ve "kütüphanede yok" eşiği (M1d
   2. kısım; eşik M0'dan).
+
+# Astra kod incelemesi #2 (PR #8–#10) sonrası
+
+- **Arama tek doğrusallaştırma noktası:** ön-süzgeç ve son denetim, bütün kitaplar ve kipler için tek ifadeyle
+  (`authz.allowed`). Sonuç kümesinden bir kitap arada yetkisini kaybettiyse arama güncel yetkiyle bir kez daha
+  çalışır (iptal edilen kitap `k` kotasını tüketmez); ikinci değişiklikte istek `SearchChanged` ile reddedilir.
+- **Denetim ayrıntısı:** `access_event.profile_id` ve `items` (teslim edilen atıf tutamaçları). Her model çağrısı
+  kendi `call_id`'si ile gider (`<korelasyon>.<rastgele>`); tamamlanmış çağrı için LLMDAP'ta `llm.authz` +
+  `llm.result`, reddedilen için `llm.authz` aranır. Durumlar: `complete`, `missing`, `not_sent`.
+- **Egress politikası model çağrısında:** `llmdap.chat` artık `source_books` ister; rota sınıfı (`local`/`cloud`,
+  operatör beyanı) `cloud` ise içeriği kullanılan her kitabın güncel politikası `cloud_ok` olmalı; bilinmeyen
+  kitap da engellenir. Engellenen çağrı ağa çıkmadan `not_sent` olarak kaydedilir.
+- **Sessiz kesme yok:** tek blok `MAX_CHUNK_CHARS` (4800) üstündeyse boşlukta bölünür; `whole` profili 500 bin
+  karakteri aşan dosyayı açıkça reddeder.
+- **Yalnız kanonik profiller:** `catalog.publish` `profiles.spec(name)` ile birebir eşleşmeyen profili reddeder;
+  kimlik fiilî davranışı tanımlar.
+- **LLMDAP hata kaydı:** durum ve türetilmiş korelasyon, bozuk ya da yarım gövdede de kaydedilir.
+- **M1e notu:** ağ yüzeylerinde `Actor` yalnız doğrulanmış JWT'den kurulur; CLI'nın operatöre güvenen kurulumu
+  taşınmaz.

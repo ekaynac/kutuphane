@@ -99,3 +99,28 @@ def test_alg_none_and_hmac_confusion_rejected(verifier, keys):
 def test_principal_pattern_rejects_trailing_newline():
     assert not authz.PRINCIPAL.match("user:ayse\n")
     assert not authz.OBJECT.match("book:kitap\n")
+
+
+def test_hmac_with_public_key_is_rejected(verifier, keys):  # algorithm confusion
+    from cryptography.hazmat.primitives import serialization
+    pem = keys[0].public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+    now = int(time.time())
+    claims = {"iss": ISS, "aud": AUD, "sub": "ayse", "iat": now, "exp": now + 300}
+    import hmac, hashlib, base64
+    def b64(b):
+        return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+    head = b64(json.dumps({"alg": "HS256", "typ": "JWT", "kid": "k1"}).encode())
+    body = b64(json.dumps(claims).encode())
+    sig = b64(hmac.new(pem, f"{head}.{body}".encode(), hashlib.sha256).digest())
+    with pytest.raises(AuthenticationError):
+        verifier.verify(f"{head}.{body}.{sig}")
+
+
+@pytest.mark.parametrize("bad", [
+    dict(exp=None), dict(iat=None),                                   # required claims missing
+    dict(nbf=int(time.time()) + 3600),                                # not valid yet
+    dict(iat=int(time.time()) + 3600),                                # issued in the future
+])
+def test_missing_or_future_time_claims(verifier, keys, bad):
+    with pytest.raises(AuthenticationError):
+        verifier.verify(token(keys, **bad))

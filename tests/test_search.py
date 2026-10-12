@@ -47,10 +47,50 @@ def test_whole_profile_is_the_full_text():  # AT-02
     assert only.text == LONG and (only.start, only.end) == (0, len(LONG))
 
 
-def test_chunker_version_changes_profile_id_not_content_id(monkeypatch):  # AT-02
-    before = ids.profile_id(profiles.spec("chunked"))
+def test_component_versions_change_profile_id_not_content_id(conn, okf_dir, monkeypatch):  # AT-02
+    first = publish(conn, okf_dir)
     monkeypatch.setattr(profiles, "CHUNKER_VERSION", profiles.CHUNKER_VERSION + 1)
-    assert ids.profile_id(profiles.spec("chunked")) != before
+    second = publish(conn, okf_dir)
+    monkeypatch.setattr(profiles, "READER_VERSION", profiles.READER_VERSION + 1)
+    third = publish(conn, okf_dir)
+    assert len({first.profile_id, second.profile_id, third.profile_id}) == 3
+    assert first.content_id == second.content_id == third.content_id
+
+
+def test_fixture_chunk_boundaries_are_exact(okf_dir):  # AT-02: the expected cut, not just "some" cut
+    f = read_source(okf_dir)
+    doc = next(x for x in f if x.path == "politika/veri-saklama.md")
+    (chunk,) = profiles.split(profiles.spec("chunked"), doc)
+    text = doc.data.decode()
+    assert chunk.start == text.index("# Veri saklama")
+    assert chunk.end == len(text) and chunk.text.endswith("silinir.\n")
+
+
+def test_pdf_chunks_carry_pages_and_offsets(tmp_path):  # AT-02 for PDF
+    from conftest import make_pdf
+    from pypdf import PdfWriter, PdfReader
+    import io
+    writer = PdfWriter()
+    for text in ("Birinci sayfa metni", "Ikinci sayfa metni"):
+        writer.add_page(PdfReader(io.BytesIO(make_pdf(text))).pages[0])
+    buf = io.BytesIO()
+    writer.write(buf)
+    f = read_file("iki.pdf", buf.getvalue())
+    chunks = profiles.split(profiles.spec("chunked"), f)
+    assert [c.page for c in chunks] == [1, 2]
+    full = "".join(page.extract_text() for page in PdfReader(io.BytesIO(buf.getvalue())).pages)
+    assert all(full[c.start:c.end] == c.text for c in chunks)
+
+
+def test_huge_block_is_cut_and_whole_profile_refuses_oversize():  # Astra #2: nothing silently unindexed
+    blob = ("kelime " * 3000).strip() + " sonkelime"
+    f = read_file("uzun.md", blob.encode())
+    chunks = profiles.split(profiles.spec("chunked"), f)
+    assert all(len(c.text) <= profiles.MAX_CHUNK_CHARS for c in chunks)
+    assert "sonkelime" in chunks[-1].text and "".join(c.text for c in chunks) == blob
+    big = read_file("buyuk.md", ("a " * (profiles.WHOLE_MAX_CHARS // 2 + 1)).encode())
+    with pytest.raises(ValueError, match="too long for the whole profile"):
+        profiles.split(profiles.spec("whole"), big)
 
 
 def test_search_finds_stemmed_turkish_and_cites(conn, okf_dir):
@@ -86,21 +126,76 @@ def test_agent_search_needs_delegation_and_activate_for_instructions(conn, okf_d
     assert search.search(conn, agent, "kayıt") == []
 
 
-def test_revocation_between_prefilter_and_delivery_drops_hits(conn, conn2, okf_dir, monkeypatch):  # AT-04
+def _revoke_after_first_prefilter(monkeypatch, action):
+    real, calls = authz.allowed, []
+
+    def wrapped(*args):
+        out = real(*args)
+        calls.append(1)
+        if len(calls) == 1:
+            action()  # lands between the pre-filter and the single final check
+        return out
+    monkeypatch.setattr(authz, "allowed", wrapped)
+    return calls
+
+
+def test_revocation_between_prefilter_and_delivery(conn, conn2, okf_dir, monkeypatch):  # AT-04
     publish(conn, okf_dir)
     authz.grant(conn, "book:kitap", "read", U)
-    real = authz.allowed_objects
-
-    def prefilter_then_revoke(*args):
-        out = real(*args)
-        authz.revoke(conn2, "book:kitap", "read", U)
-        return out
-    monkeypatch.setattr(authz, "allowed_objects", prefilter_then_revoke)
+    _revoke_after_first_prefilter(monkeypatch, lambda: authz.revoke(conn2, "book:kitap", "read", U))
     actor = Actor(U)
     assert search.search(conn, actor, "kayıtlar") == []
-    (allowed,) = conn.execute("SELECT allowed FROM access_event WHERE correlation_id = %s AND action = 'search'",
-                              (actor.correlation_id,)).fetchone()
-    assert allowed is False
+    (allowed, reason), = conn.execute("SELECT allowed, reason FROM access_event WHERE correlation_id = %s",
+                                      (actor.correlation_id,)).fetchall()
+    assert allowed is False and reason == "changed during search"
+
+
+def test_multi_book_result_is_checked_as_a_whole(conn, conn2, okf_dir, monkeypatch):  # AT-04, Astra #2
+    publish(conn, okf_dir, book="aaa")
+    publish(conn, okf_dir, book="bbb")
+    for book in ("aaa", "bbb"):
+        authz.grant(conn, f"book:{book}", "read", U)
+    _revoke_after_first_prefilter(monkeypatch, lambda: authz.revoke(conn2, "book:aaa", "read", U))
+    hits = search.search(conn, Actor(U), "kayıtlar saklanır", k=50)
+    assert hits and {h.citation.book for h in hits} == {"bbb"}       # aaa gone, not partially served
+
+
+def test_revoked_books_do_not_consume_k(conn, conn2, okf_dir, monkeypatch):  # Astra #2: counts unaffected
+    publish(conn, okf_dir, book="aaa")
+    publish(conn, okf_dir, book="bbb")
+    for book in ("aaa", "bbb"):
+        authz.grant(conn, f"book:{book}", "read", U)
+    _revoke_after_first_prefilter(monkeypatch, lambda: authz.revoke(conn2, "book:aaa", "read", U))
+    (hit,) = search.search(conn, Actor(U), "kayıtlar saklanır", k=1)  # aaa ranks first by name tie-break
+    assert hit.citation.book == "bbb"
+
+
+def test_rights_changing_twice_refuses(conn, conn2, okf_dir, monkeypatch):
+    publish(conn, okf_dir)
+    authz.grant(conn, "book:kitap", "read", U)
+    real = authz.allowed
+    flips = iter([lambda: authz.revoke(conn2, "book:kitap", "read", U),
+                  lambda: authz.grant(conn2, "book:kitap", "read", U),
+                  lambda: authz.revoke(conn2, "book:kitap", "read", U),
+                  lambda: None])
+
+    def wrapped(*args):
+        out = real(*args)
+        next(flips)()
+        return out
+    monkeypatch.setattr(authz, "allowed", wrapped)
+    with pytest.raises(search.SearchChanged):
+        search.search(conn, Actor(U), "kayıtlar")
+
+
+def test_search_log_names_delivered_chunks(conn, okf_dir):  # AT-09 Core side
+    publish(conn, okf_dir)
+    authz.grant(conn, "book:kitap", "read", U)
+    actor = Actor(U)
+    hits = search.search(conn, actor, "kayıtlar saklanır")
+    profile_id, items = conn.execute("SELECT profile_id, items FROM access_event WHERE correlation_id = %s",
+                                     (actor.correlation_id,)).fetchone()
+    assert profile_id == hits[0].citation.profile_id and items == [h.citation.handle for h in hits]
 
 
 def test_old_citation_opens_old_passage_with_current_rights(conn, okf_dir):  # AT-07

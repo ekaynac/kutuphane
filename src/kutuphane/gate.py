@@ -9,6 +9,8 @@
 import uuid
 from dataclasses import dataclass, field
 
+from psycopg.types.json import Jsonb
+
 from . import authz, catalog
 from .profiles import is_instruction  # noqa: F401  (re-exported: the gate owns the K3 rule's use)
 
@@ -28,32 +30,37 @@ class Actor:
     correlation_id: str = field(default_factory=lambda: uuid.uuid4().hex)
 
 
-def _log(conn, actor: Actor, action: str, obj: str, mode: str, d: authz.Decision, policy_id, content_id, path,
-         reason: str | None = None) -> None:
+def log_event(conn, actor: Actor, action: str, obj: str, mode: str, d: authz.Decision, policy_id, content_id, path,
+         reason: str | None = None, profile_id=None, items=None) -> None:
     conn.execute("INSERT INTO access_event (correlation_id, principal, on_behalf_of, action, object, mode, allowed, "
-                 "reason, policy_id, grant_ids, delegation_id, content_id, path) "
-                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                 "reason, policy_id, grant_ids, delegation_id, content_id, path, profile_id, items) "
+                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                  (actor.correlation_id, actor.principal, actor.on_behalf_of, action, obj, mode, d.allowed,
-                  reason or d.reason, policy_id, list(d.grant_ids), d.delegation_id, content_id, path))
+                  reason or d.reason, policy_id, list(d.grant_ids), d.delegation_id, content_id, path, profile_id,
+                  Jsonb(items) if items is not None else None))
 
 
-def guard(conn, actor: Actor, obj: str, modes: list[str], fetch, *, action: str, content_id=None, path=None):
-    """Decide, fetch, decide again, then log and hand out. Every content path goes through here."""
+def guard(conn, actor: Actor, obj: str, modes: list[str], fetch, *, action: str, content_id=None, path=None,
+          profile_id=None, items=None):
+    """Decide, fetch, decide again, then log and hand out. Every single-object content path goes through here."""
+    def log(mode, d, policy_id, reason=None):
+        log_event(conn, actor, action if mode == "read" else mode, obj, mode, d, policy_id, content_id, path, reason,
+             profile_id, items if d.allowed else None)
+
     first = authz.decide(conn, actor.principal, actor.on_behalf_of, obj, modes)
     for mode, d in first.decisions.items():
         if not d.allowed:
-            _log(conn, actor, action if mode == "read" else mode, obj, mode, d, first.policy_id, content_id, path)
+            log(mode, d, first.policy_id)
             raise Denied(f"{mode} on {obj}: {d.reason}")
     data = fetch()
     # Again, right before handing anything out: one statement for every mode and the policy in force.
     final = authz.decide(conn, actor.principal, actor.on_behalf_of, obj, modes)
     for mode, d in final.decisions.items():
         if not d.allowed:
-            _log(conn, actor, action if mode == "read" else mode, obj, mode, d, final.policy_id, content_id, path,
-                 f"revoked before delivery: {d.reason}")
+            log(mode, d, final.policy_id, f"revoked before delivery: {d.reason}")
             raise Denied(f"{mode} on {obj}: revoked before delivery")
     for mode, d in final.decisions.items():
-        _log(conn, actor, action if mode == "read" else mode, obj, mode, d, final.policy_id, content_id, path)
+        log(mode, d, final.policy_id)
     return data
 
 

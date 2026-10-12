@@ -17,7 +17,8 @@ READER_VERSION = 2  # 2: CRLF/BOM-tolerant frontmatter. Bump when source.py's cl
 CHUNKER_VERSION = 1
 TARGET_CHARS = 1200
 FTS_CONFIG = "turkish"  # Postgres text search configuration; part of the profile id
-TSV_MAX_CHARS = 500_000  # tsvector is limited to 1 MB per value
+MAX_CHUNK_CHARS = 4 * TARGET_CHARS  # a single huge block is cut at whitespace, so nothing escapes the index
+WHOLE_MAX_CHARS = 500_000  # tsvector holds at most 1 MB; larger files must use the chunked profile
 
 # Frontmatter `type`s and file names that mark an agent instruction (K3), compared case- and separator-
 # insensitively so `Skill`, `agent_card` or `agents.md` cannot slip past the activation gate. K3 status is
@@ -40,6 +41,9 @@ def is_instruction(entry: dict) -> bool:
 def _components(chunker: str) -> dict:
     return {"reader": f"kutuphane.source@{READER_VERSION}", "pdf": f"pypdf@{version('pypdf')}",
             "chunker": f"{chunker}@{CHUNKER_VERSION}"}
+
+
+CANONICAL = ("whole", "chunked")
 
 
 def spec(name: str) -> dict:
@@ -96,6 +100,19 @@ def _paragraph_spans(text: str, base: int) -> list[tuple[int, int]]:
     return [(base + s, base + e) for s, e in spans]
 
 
+def _cap(spans: list[tuple[int, int]], text: str) -> list[tuple[int, int]]:
+    """Cut blocks longer than MAX_CHUNK_CHARS at the last whitespace before the limit (hard cut if none)."""
+    out = []
+    for s, e in spans:
+        while e - s > MAX_CHUNK_CHARS:
+            cut = text.rfind(" ", s + 1, s + MAX_CHUNK_CHARS)
+            cut = cut + 1 if cut > s else s + MAX_CHUNK_CHARS
+            out.append((s, cut))
+            s = cut
+        out.append((s, e))
+    return out
+
+
 def _merge(spans: list[tuple[int, int]], text: str) -> list[tuple[int, int]]:
     """Greedy: join consecutive blocks up to TARGET_CHARS; a heading block starts a new chunk."""
     out = []
@@ -115,11 +132,21 @@ def split(profile: dict, f: SourceFile) -> list[Chunk]:
         return []
     full = "".join(t for _, t in pages)
     if profile["name"] == "whole":
+        if len(full) > WHOLE_MAX_CHARS:
+            raise ValueError(f"{f.path}: {len(full)} characters is too long for the whole profile; use chunked")
         return [Chunk(f.path, 0, pages[0][0], 0, len(full), full, instruction)] if full.strip() else []
     chunks, offset = [], 0
     for page, text in pages:
         skip = _frontmatter_end(text) if f.media_type == MARKDOWN else 0  # metadata, not passage text
-        for s, e in _merge(_paragraph_spans(text[skip:], offset + skip), full):
+        for s, e in _merge(_cap(_paragraph_spans(text[skip:], offset + skip), full), full):
             chunks.append(Chunk(f.path, len(chunks), page, s, e, full[s:e], instruction))
         offset += len(text)
     return chunks
+
+
+def check_profile(profile) -> dict:
+    """M1 accepts only the canonical profiles, so a profile id always describes what the code actually does."""
+    name = profile.get("name") if isinstance(profile, dict) else None
+    if name not in CANONICAL or profile != spec(name):
+        raise ValueError(f"unsupported profile; use one of {', '.join(CANONICAL)} as defined by profiles.spec")
+    return profile
