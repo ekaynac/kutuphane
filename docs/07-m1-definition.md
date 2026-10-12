@@ -89,3 +89,30 @@ Bunlar M1'i bloklamaz; ilgili dilimde, kayda geçirilerek verilir.
 - Retrieval bileşenleri ve AT-08 eşikleri (M0 → M1d).
 - Arayüzün M1 kapsamı: okuyucu, soru-cevap, atıf, denetim görünümü; ötesi M2 (M1e).
 - Anahtar yenileme akışının ayrıntısı (M1f).
+
+## 6. Durum — 2026-10-12
+
+Kod `main`'de (PR #5–#19), 162 otomatik test yeşil. "Core tarafı" = Kütüphane'nin kendi payı tamam; kalan kısım
+dış bağımlılığa bağlı.
+
+| # | Durum | Kanıt / kalan |
+|---|---|---|
+| AT-01 | yeşil | `test_ingest.py` (kimlikler, tek bayt, zaman damgası, politika, PDF) |
+| AT-02 | yeşil | `test_search.py` (tam parça sınırları, PDF sayfa/ofset, bileşen sürümü → yeni profil) |
+| AT-03 | yeşil | `test_server.py` (HTTP kullanıcı ve MCP ajan aynı kanıt kümesi) |
+| AT-04 | yeşil | dosya, arama, atıf, cevap, yeniden açma yolları; iki oturumlu iptal yarışları. Paket export'u yönetici işlemidir (ajan yolu değil). |
+| AT-05 | yeşil | `test_authz.py`, `test_search.py`, `test_answers.py` |
+| AT-06 | yeşil | kapsam/kip, sahte devreden, derinlik, bitiş anı, `read`≠`use` |
+| AT-07 | yeşil | eski cevap + kanıt modeli çağırmadan, güncel yetkiyle; delegasyon iptali |
+| AT-08 | **mekanizma yeşil, eşik açık** | "kütüphanede yok", geçersiz atıf reddi; sayısal eşik M0 ölçümünü bekliyor |
+| AT-09 | **Core yeşil** | erişim + `model_call` + LLMDAP export birleşimi, cevap kimliğinden; gerçek LLMDAP kaydı #222/#223 sonrası |
+| AT-10 | **ağ yarısı yeşil** | `deploy/egress_probe.py` (Core yalnız Postgres'e ulaşır); embedding egress LLMDAP #222 bekliyor |
+| AT-11 | **Core yeşil** | JWT doğrulama, başlıkla kimlik değiştirilemez; LLMDAP tarafı #223 bekliyor |
+| AT-12 | yeşil | K3 `activate` kapısı, harf/CRLF varyantları, atıf yapılmamış K3 kaynakları |
+| AT-13 | yeşil | `test_packages.py` (iki kurulum, güven kökü, anahtar yenileme/iptal) |
+| AT-14 | yeşil | kurcalama, tekrar oynatma, eşzamanlı onay yarışı, yarıda hata, ret kaydı |
+| AT-15 | yeşil | `test_feedback.py` (sürüme bağlı geri bildirim) |
+| AT-16 | yeşil | zorunlu E5/E8/E9, `purpose` kaydı, `publish` sınırında doğrulama |
+
+**M1'i kapatmak için kalan:** LLMDAP #222 (embedding egress) ve #223 (OIDC) + gerçek LLMDAP'ın compose'a
+eklenmesi (D49); M0 ölçümü (etiketler + GPU izni) → retrieval bileşenleri (vektör + reranker) ve AT-08 eşikleri.
