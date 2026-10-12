@@ -12,9 +12,12 @@ from pathlib import PurePosixPath
 
 from . import authz, catalog
 
-# Frontmatter `type`s and file names that mark an agent instruction (K3). Open vocabulary: extend as needed.
-INSTRUCTION_TYPES = frozenset({"skill", "prompt", "agent-card", "agent-instructions"})
-INSTRUCTION_FILES = frozenset({"AGENTS.md", "CLAUDE.md", "SKILL.md"})
+# Frontmatter `type`s and file names that mark an agent instruction (K3), compared case- and separator-
+# insensitively so `Skill`, `agent_card` or `agents.md` cannot slip past the activation gate. K3 status is
+# curator-declared metadata; content that hides instructions under another type is caught (if at all) by the
+# import scan (D29, M1f), not here.
+INSTRUCTION_TYPES = frozenset({"skill", "prompt", "agentcard", "agentinstructions", "systemprompt"})
+INSTRUCTION_FILES = frozenset({"agents.md", "claude.md", "skill.md", "gemini.md"})
 
 
 class Denied(PermissionError):
@@ -32,8 +35,14 @@ class Actor:
     correlation_id: str = field(default_factory=lambda: uuid.uuid4().hex)
 
 
+def _fold(value: str) -> str:
+    return "".join(ch for ch in value.casefold() if ch.isalnum())
+
+
 def is_instruction(entry: dict) -> bool:
-    return entry.get("okf_type") in INSTRUCTION_TYPES or PurePosixPath(entry["path"]).name in INSTRUCTION_FILES
+    okf_type = entry.get("okf_type") or ""
+    name = PurePosixPath(entry["path"]).name.casefold()
+    return _fold(okf_type) in INSTRUCTION_TYPES or name in INSTRUCTION_FILES
 
 
 def _log(conn, actor: Actor, action: str, obj: str, mode: str, d: authz.Decision, policy_id, content_id, path,
