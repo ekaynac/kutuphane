@@ -1,7 +1,8 @@
 # Kütüphane — karar brifleri (üçüncü beyin fırtınası)
 
-Tarih: 2026-10-12. Durum: **taslak, operatör kararı bekliyor.** Kararlar verilince `01-direction-decisions.md`'ye
-D21+ olarak işlenir. Kural: örnekler niyeti aktarır, overfit/overcommit yok (`02-…` §0).
+Tarih: 2026-10-12. Durum: **kapandı.** Bu briflerin ★ önerileri Astra incelemesiyle revize edildi
+(`04-2026-10-12-joint-proposals.md`); onaylanan kararlar `01-direction-decisions.md` D21–D40. Çelişki hâlinde
+04 ve 01 geçerlidir. Kural: örnekler niyeti aktarır, overfit/overcommit yok (`02-…` §0).
 
 ## 0. Operatör girdileri — 2026-10-12
 

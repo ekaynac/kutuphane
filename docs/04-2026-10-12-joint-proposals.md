@@ -1,6 +1,6 @@
 # Kütüphane — Claude + Astra ortak önerileri (B1–B11)
 
-Tarih: 2026-10-12. Durum: **operatör kararı bekliyor.**
+Tarih: 2026-10-12. Durum: **operatör tarafından bütünüyle onaylandı (2026-10-12) → `01-direction-decisions.md` D21–D40.**
 Girdi: `03-2026-10-12-decision-briefs.md` (Claude önerileri ★) + Astra'nın bağımsız incelemesi
 (`gpt-6-astra`, Codex CLI, medium reasoning, repo salt-okuma; ham metin `research/2026-10-12-astra-review-raw.md`).
 Bu doküman iki görüşü birleştirir; ayrışma kalan yerde iki tarafın gerekçesi yazılıdır.

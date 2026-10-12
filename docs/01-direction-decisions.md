@@ -82,6 +82,49 @@ Upstream issue'lar (2026-10-07): `ekaynac/LLMDAP#222` (governed embeddings route
 | D19 | InfraMedic'in tüketimi | **HTTP + MCP servisi**; sürümlü sözleşme şeması bu repoda yaşar. Şimdilik yalnız sözleşme tasarlanır, InfraMedic'e dokunulmaz. | Python kütüphanesi olarak tüketim: süreç sınırı ve yetki sınırı bulanıklaşır. |
 | D20 | Ad | **Ürünün adı Kütüphane.** Kobra, Kütüphane'nin içindeki ajan/sohbet yüzü olarak kalır. GitHub repo `ekaynac/kobra` → `ekaynac/kutuphane` olarak yeniden adlandırıldı (eski URL yönlendirir). | Kobra adının tamamen kalkması; Kütüphane'nin yalnız bir alt sistem adı olması. |
 
-## 5. Açık sorular
+## 5. Kararlar — 2026-10-12 (ortak öneriler onaylandı)
 
-- (yok — yön kapandı; sıradaki adım ürün brifi, yol haritası ve M1 tanımı)
+Kaynak: `03-2026-10-12-decision-briefs.md` (Claude brifleri), Astra incelemesi
+(`research/2026-10-12-astra-review-raw.md`), birleşik metin `04-2026-10-12-joint-proposals.md`. Operatör
+2026-10-12'de ortak önerileri bütünüyle onayladı. Ayrıntı ve kabul testleri 04'tedir; burada karar özeti.
+
+### 5.1 Yön ilkeleri
+
+| # | Karar |
+|---|---|
+| D21 | **OKF-yerli, minimally opinionated çekirdek.** Taşınabilir birim OKF concept'i (tek zorunlu alan `type`); Kütüphane OKF'ye kural eklemez, yönetişim katalogda yaşar; taşınabilir ekler isim alanlı `kutuphane:` frontmatter bloğunda. |
+| D22 | **Önce açık kaynağı benimse, sonra inşa et**; yalnız kama (sürüm atfı, delegasyon, açıklanabilir erişim, koruma) yazılır. Tescilli dağıtım nedeniyle **AGPL bileşen çekirdekte yok**; tüm lisanslar seçimden önce doğrulanır. |
+| D23 | **Hiçbir şey kuruluma içeri erişmez; her bilgi akışı imzalı, sürüm zarflı paket**tir; ağ ve fiziksel medya (USB, veri diyotu) aynı paketi taşır; alan kurulum kendi kapısından geçirir. |
+
+### 5.2 B1–B11
+
+| # | Konu | Karar | Reddedilen |
+|---|---|---|---|
+| D24 | Ontoloji (B1) | 9 boyut (E1–E9; E8 koruma `standard/envelope/sealed`, E9 erişim kipi `discover/read/use`). Yalnız **E5, E8, E9 zorunlu** ve zorlanır; diğerleri isteğe bağlı, açık sözlük. E3 köken ≠ güven, E5 hassasiyet ≠ egress. E9 doğrusal değil: `read` `use`'u kapsamaz. | 9 kapalı katalog alanı (OKF ruhuna aykırı, şişer). |
+| D25 | Kategoriler (B2) | **M1 ürünü K1 referans + K2 runbook + K3 ajan talimatı.** K4 mevcut okuma altyapısı ölçüsünde. K7 karar modelleri **ayrı deney hattı**. K5/K6 ertelenir (kayıtlar çekirdekte zaten var). K8 gizli malzeme D33'e göre. Kategoriler ortak çekirdeğin profilleri; "şemada var" ürün vaadi değildir. | K4+K7'yi v1 ürün kapsamına almak. |
+| D26 | Kitap (B3) | Kitap = OKF bundle + yönetişim zarfı + sunum profil(ler)i; **üç ayrı sürüm kimliği: içerik, profil, politika.** Atıf `içerik@sürüm + profil + parça`; erişim kaydı politika ve grant sürümünü taşır. Gömme profil seçimidir. Non-markdown varlık = representation, concept `resource` ile işaret eder. | Tek sürüm kimliği; OKF'den bağımsız iç model. |
+| D27 | Master (B4) | Aynı kod tabanında **"master" rolü**; soyut master bilgi yönetimi/merkeziyet framework'ü, InfraMedic master'ın yerine de geçebilir. M1'de yalnız paket sözleşmesi. Kayıt defteri "son bildirilen durum" sunar. InfraMedic master değişmezleri (içeri erişim yok, yalnız imzalı artefakt, yetki genişletmez, offline recall) bağlayıcı. | Ayrı ürün ilk günden; v1'de master yok. |
+| D28 | Delegasyon (B5) | M1: **tek seviyeli, süreli, iptal edilebilir** kullanıcı→ajan delegasyonu; her kullanımda devredenin **güncel** yetkisiyle kesişir; `purpose` kayıt amaçlı. Yetki sınırı arama, doğrudan okuma, önbellek, export ve sonuç tesliminde aynı. ReBAC arayüzü OpenFGA biçiminde; **M1 Postgres içi ilişki tabloları**, OpenFGA ölçüm sonrası. | Çok seviyeli delegasyon M1'de; yalnız rol ACL; M1'de OpenFGA servisi zorunlu. |
+| D29 | Paket (B6) | OKF bundle + imzalı zarf (cosign offline / minisign — lisans doğrulanır). Zorunlu: **güven kökü** tanımı, anahtar yenileme/iptal, **replay koruması** (monoton sıra), **atomik import**; import akışı karantina → doğrulama → tarama → fark → insan onayı → yeni sürüm. İmza doğruluk/güvenlik kanıtı değildir. | Kendi format; yalnız import. |
+| D30 | Karar modelleri (B7) | Ayrı **deney hattı**, M1 koşulu değil. Tek karar noktası (öneri: ingest sınıflandırma) + **insan etiketli** değerlendirme kümesi. Laya öncelikli, Jev karşılaştırma sağlayıcısı; ikisi aynı `systemone` sözleşmesi, LLMDAP üzerinden (#225). Laya Jev etiketleriyle eğitilip Jev etiketleriyle ölçülmez. Kalibrasyon, çekimserlik görev bazında ölçülür. | Paralel Jev+Laya shadow M1 şartı; model etiketini gerçeklik saymak. |
+| D31 | Retrieval (B8) | Mimari: Postgres hibrit (vektör + BM25) + tek reranker. **Bileşenler küçük bir ölçümden sonra sabitlenir** (Türkçe kurum korpusu, dar yetki filtresi, hedef donanım). Adaylar: pgvector, pg_textsearch, Docling, bge-m3 / Qwen3-Embedding, bge-reranker / Qwen3-Reranker. | Bileşenleri ölçmeden sabitlemek; AGPL BM25 (ParadeDB, vchord_bm25). |
+| D32 | Onyx (B10) | **Temel alınmaz** — mimari tercih (birincil nesne ve erişim sözleşmesi etrafında çekirdek). Onyx ve OKF ekosistem araçları "aday"; uygunluk doğrulanır. | Onyx CE fork'u; Onyx'i yan ürün olarak bağlamak. |
+| D33 | Sırlar (B11) | **M1: model/Jev anahtarları yalnız LLMDAP'ta**; Kütüphane referans, grant ve korelasyon kaydı tutar. OpenBao, genel `sealed/use` ve `envelope/read` **M2**. Ön koşul: envelope içerikten türeyen metin, **vektör** ve önbelleklerin çözülebilirlik politikası. Ürün dili: "ajana sır verilmez" ("asla öğrenemez" değil). | Kütüphane'nin kendi enjeksiyon proxy'si; K8'in v1'de tam hâli. |
+| D34 | Jev geçişi | Gerçek Jev çağrıları **#225 + güvenlik incelemesi** sonrası; o zamana kadar sözleşme, fixture, insan etiketli küme. LLMDAP dışı "experiment" yolu yok. | Etiketli LLMDAP dışı deney (D3/D18 ile çelişir). |
+
+### 5.3 M1 (B9) ve önceki kararlarda düzeltmeler
+
+| # | Karar |
+|---|---|
+| D35 | **M1 = tek uçtan uca kanıt senaryosu** (`04-…` §3): OKF/MD kitabı + metin PDF'i; bütün ve parçalı profil; insan (arayüz) + ajan (Kütüphane MCP); tek seviyeli delegasyon; sürümlü tıklanabilir atıf + "kütüphanede yok"; **birleşik audit** (erişim + LLMDAP egress, tek korelasyon); asgari imzalı import/export; basit runbook geri bildirimi; D18 kapıları (#222, #223). Kabul testleri 04 §3'te. **D9 bunun ile yer değiştirir.** Ertelenen: karar modeli shadow'u, DOCX/OCR çeşitliliği, gelişmiş profil yönetimi, çok seviyeli delegasyon, OpenBao/sealed/envelope, master federasyonu, stüdyo çıktıları. |
+| D36 | **D9 dili düzeltildi:** "eski cevap yeniden üretilebilir" → "**eski cevap ve kanıtları (sabit sürümdeki atıflı pasajlar) yeniden gösterilebilir**". İçerik sürümü sabitlenir, **erişim hakkı sabitlenmez**: eski cevap açılırken güncel yetki denetlenir. |
+| D37 | **D4/D13 netleşti — üç ayrı sınır:** doküman sunmak · talimatı etkinleştirmek · sırrı kullanarak işlem yapmak. K3 (skill, prompt, agent card) bir ajana sunulması talimat etkinleştirmedir → referans sunmaktan ayrı bir politika/onay kapısı. |
+| D38 | **D14/D15 netleşti — kimlik rolleri:** IdP (kurum AD/LDAP ya da Keycloak — lisans doğrulanır) kimliği doğrular; LLMDAP egress'te bu kimliğin doğrulayıcısıdır; Kütüphane yetkilendirir. M1'de ek servis sayısı en aza indirilir (offline kurulum, yedekleme, anahtar kurtarma yükü). |
+| D39 | **D7 netleşti:** sesli özet ve çoklu stüdyo çıktıları M1 dışında; "LLM deney platformu" hedefi ayrı deney hattında yürür, teslim kapsamını büyütmez. |
+| D40 | **Recall semantiği** (B4–B6) M2 master işinden önce yazılır: teslim, uygulama zamanı, onay ve uygulanana kadarki durum. |
+
+## 6. Açık sorular
+
+- Ürün brifi, yol haritası ve M1 tanımı (kabul testleriyle) yazılacak — sıradaki adım.
+- M1 retrieval ölçümü için Türkçe kurum korpusu ve hedef donanım seçimi.
+- Deney hattının ilk karar noktası için insan etiketli kümeyi kim, hangi veriden hazırlayacak.
