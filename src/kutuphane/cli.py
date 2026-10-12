@@ -9,9 +9,9 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import authz, catalog, db, gate
-from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, PolicyError, make_policy
-from .source import SourceError, read_source
+from . import audit, authz, catalog, db, gate, identity
+from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, make_policy
+from .source import read_source
 
 
 def _print(obj) -> None:
@@ -78,6 +78,23 @@ def cmd_read(conn, args) -> int:
     return 0
 
 
+def cmd_whoami(_conn, args) -> int:
+    token = sys.stdin.readline().strip()  # never on the command line (shell history, process list)
+    try:
+        actor = identity.Verifier.from_env().verify(token)
+    except identity.AuthenticationError as exc:
+        print(f"unauthenticated: {exc}", file=sys.stderr)
+        return 4
+    _print({"principal": actor.principal, "on_behalf_of": actor.on_behalf_of})
+    return 0
+
+
+def cmd_explain(conn, args) -> int:
+    records = audit.read_llmdap_export(Path(args.llmdap_export)) if args.llmdap_export else []
+    _print(audit.explain(conn, args.correlation_id, records))
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="kutuphane")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -118,6 +135,11 @@ def parser() -> argparse.ArgumentParser:
     rd.add_argument("path")
     rd.add_argument("--on-behalf-of")
     rd.set_defaults(fn=cmd_read)
+    sub.add_parser("whoami", help="verify an access token read from stdin").set_defaults(fn=cmd_whoami)
+    ex = sub.add_parser("explain", help="unified audit for one correlation id")
+    ex.add_argument("correlation_id")
+    ex.add_argument("--llmdap-export", help="JSONL from llmdap-audit-export")
+    ex.set_defaults(fn=cmd_explain)
     return ap
 
 
@@ -126,7 +148,7 @@ def main(argv=None) -> int:
     try:
         with db.connect() as conn:
             return args.fn(conn, args)
-    except (SourceError, PolicyError, authz.AuthzError, RuntimeError) as exc:
+    except (ValueError, OSError, RuntimeError) as exc:  # SourceError, PolicyError, AuthzError are ValueErrors
         print(f"error: {exc}", file=sys.stderr)
         return 2
 

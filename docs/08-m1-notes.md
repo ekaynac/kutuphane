@@ -54,3 +54,20 @@ manifest ile ona işaret eder. Değişmeyen dosya yeni sürümde tekrar saklanma
 - **`publication` tablosu:** her yayın (içerik, profil, politika) üçlüsünü birlikte kaydeder; `book.current_profile`
   eklendi. Politika `catalog.publish` girişinde de doğrulanır (yalnız CLI'da değil).
 - **`cat` komutu kaldırıldı:** her okuma tek kapıdan geçer; operatör istisnası yok.
+
+# M1c: kimlik, egress, denetim kesiti
+
+- **Kimlik (D50):** `identity.Verifier` JWKS dosyasıyla imza, `iss`, `aud`, `exp`, `iat`, `sub` doğrular;
+  algoritma listesi RS256/ES256/EdDSA (`none` ve HMAC yok). Principal türü `kutuphane/principal_type` claim'inden
+  (varsayılan `user`). **Delegasyon RFC 8693 `act` claim'i ile:** `sub` kullanıcı, `act.sub` ajan; iç içe `act`
+  reddedilir. Token yetki vermez; ajan yine canlı delegasyon ister. Principal/nesne desenleri `\Z` ile biter
+  (sondaki satır sonu kabul edilmez); e-posta biçimli adlar için `@` serbest.
+- **Egress:** `llmdap.chat` → `POST /bridge/<route>/v1/chat/completions`; başlıklar `x-llmdap-auth` (paylaşılan
+  sır; #223 ile OIDC'ye geçecek), `x-llmdap-user`, `x-llmdap-for-subject`, `x-llmdap-purpose`,
+  `x-llmdap-correlation-id`. LLMDAP'ın döndürdüğü `x-llmdap-correlation-id-derived` `model_call` tablosuna yazılır;
+  başarısız denemeler de kaydedilir. Yönlendirme izlenmez (sır başka adrese gitmesin); yalnız http(s).
+- **Denetim:** LLMDAP'ta HTTP denetim sorgusu yok; `audit.explain` erişim kaydı + `model_call` + LLMDAP
+  `llmdap-audit-export` JSONL'ını türetilmiş korelasyon kimliğiyle birleştirir. LLMDAP kaydı olmayan çağrı
+  `llmdap_missing` olarak işaretlenir, rapor `complete: false` olur.
+- **Henüz değil:** gerçek LLMDAP compose servisi ve ağ ayrımı (AT-10) Core bir servis olarak çalışmaya
+  başlayınca (M1e) eklenir; AT-10/AT-11 #222/#223 gelmeden yeşile dönmez (D49). Embedding çağrıları #222 bekliyor.
