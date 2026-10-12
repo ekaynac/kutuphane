@@ -1,0 +1,248 @@
+"""HTTP API and Kütüphane MCP (M1e): one ASGI app, the same functions as the CLI.
+
+- The caller is ONLY what a verified access token says (D50, AT-11): `Authorization: Bearer <jwt>`; no header can
+  set or change the principal or the user acted for. Each request gets a fresh correlation id.
+- Every content path is the authorization gate the library already uses (search, citations, files, answers).
+- Errors are short and uniform (401/403/404/400/409/502); no stack traces or internals in responses.
+"""
+import contextlib
+import os
+import urllib.parse
+import uuid
+
+from mcp.server.auth.middleware.auth_context import get_access_token
+from mcp.server.auth.provider import AccessToken
+from mcp.server.auth.settings import AuthSettings
+from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
+from starlette.applications import Starlette
+from starlette.concurrency import run_in_threadpool
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+from starlette.routing import Mount, Route
+
+from . import answers, db, gate, identity, llmdap, search
+from .gate import Actor
+from .ids import normalize_path
+
+ENV = {"model": "KUTUPHANE_ANSWER_MODEL", "public_url": "KUTUPHANE_PUBLIC_URL"}
+TEXT_TYPES = ("text/markdown", "text/plain")
+
+
+class BadRequest(ValueError):
+    pass
+
+
+def parse_citation(handle: str) -> search.Citation:
+    """`book@ct_…/pf_…/path#ordinal`; the path may contain '/' but is validated like any stored path."""
+    try:
+        head, ordinal = handle.rsplit("#", 1)
+        book, rest = head.split("@", 1)
+        content_id, profile_id, path = rest.split("/", 2)
+        return search.Citation(book, content_id, profile_id, normalize_path(path), int(ordinal))
+    except ValueError:
+        raise BadRequest("malformed citation handle") from None
+
+
+# --- shared operations (HTTP and MCP call the same code) ---------------------------------------------------
+
+def _run(dsn, fn):
+    with db.connect(dsn) as conn:
+        return fn(conn)
+
+
+def op_search(dsn, actor: Actor, query: str, k: int) -> list[dict]:
+    hits = _run(dsn, lambda c: search.search(c, actor, query, k))
+    return [{"citation": h.citation.handle, "page": h.page, "score": round(h.score, 4), "text": h.text} for h in hits]
+
+
+def op_citation(dsn, actor: Actor, handle: str) -> dict:
+    hit = _run(dsn, lambda c: search.open_citation(c, actor, parse_citation(handle)))
+    return {"citation": hit.citation.handle, "page": hit.page, "text": hit.text}
+
+
+def op_ask(dsn, bridge, model: str, actor: Actor, question: str) -> dict:
+    if not isinstance(question, str) or not question.strip():
+        raise BadRequest("question is required")
+    return _run(dsn, lambda c: answers.ask(c, bridge, actor, question, model=model))
+
+
+def op_reopen(dsn, actor: Actor, answer_id: str) -> dict:
+    return _run(dsn, lambda c: answers.reopen(c, actor, answer_id))
+
+
+def op_file(dsn, actor: Actor, book: str, content_id: str, path: str) -> tuple[bytes, str]:
+    def go(conn):
+        data = gate.deliver_file(conn, actor, book, content_id, normalize_path(path))
+        entry = conn.execute("SELECT m.entry->>'media_type' FROM content_version c CROSS JOIN LATERAL "
+                             "jsonb_array_elements(c.manifest) AS m(entry) WHERE c.book = %s AND c.id = %s "
+                             "AND m.entry->>'path' = %s", (book, content_id, path)).fetchone()
+        return data, entry[0] if entry else "application/octet-stream"
+    return _run(dsn, go)
+
+
+# --- HTTP --------------------------------------------------------------------------------------------------
+
+ERRORS = [  # order matters: subclasses first
+    (identity.AuthenticationError, 401, "unauthenticated"),
+    (search.SearchChanged, 409, "authorization changed during the request; retry"),
+    (gate.Denied, 403, "forbidden"),
+    (gate.NotFound, 404, "not found"),
+    (llmdap.EgressError, 502, "model service unavailable or refused"),
+    (ValueError, 400, None),  # BadRequest, query/k validation, path validation: message is safe and useful
+]
+
+
+def _error(exc: Exception) -> Response:
+    for kind, status, message in ERRORS:
+        if isinstance(exc, kind):
+            headers = {"WWW-Authenticate": "Bearer"} if status == 401 else None
+            return JSONResponse({"error": message or str(exc)}, status_code=status, headers=headers)
+    raise exc
+
+
+def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge | None, model: str | None,
+               public_url: str) -> Starlette:
+    def actor_of(request: Request) -> Actor:
+        scheme, _, token = request.headers.get("authorization", "").partition(" ")
+        if scheme.lower() != "bearer":
+            raise identity.AuthenticationError("bearer token required")
+        return verifier.verify(token.strip())
+
+    def endpoint(work):
+        async def handler(request: Request) -> Response:
+            try:
+                actor = actor_of(request)
+                return await work(request, actor)
+            except Exception as exc:  # mapped to a uniform status; unknown errors propagate (500, logged)
+                return _error(exc)
+        return handler
+
+    async def h_search(request, actor):
+        q = request.query_params.get("q", "")
+        try:
+            k = int(request.query_params.get("k", search.DEFAULT_K))
+        except ValueError:
+            raise BadRequest("k must be an integer") from None
+        return JSONResponse({"correlation_id": actor.correlation_id,
+                             "results": await run_in_threadpool(op_search, dsn, actor, q, k)})
+
+    async def h_citation(request, actor):
+        return JSONResponse(await run_in_threadpool(op_citation, dsn, actor, request.query_params.get("handle", "")))
+
+    async def h_ask(request, actor):
+        if bridge is None or not model:
+            raise llmdap.EgressError("no model route configured")
+        try:
+            body = await request.json()
+        except ValueError:
+            raise BadRequest("JSON body required") from None
+        question = body.get("question") if isinstance(body, dict) else None
+        result = await run_in_threadpool(op_ask, dsn, bridge, model, actor, question)
+        return JSONResponse({**result, "correlation_id": actor.correlation_id})
+
+    async def h_answer(request, actor):
+        return JSONResponse(await run_in_threadpool(op_reopen, dsn, actor, request.path_params["answer_id"]))
+
+    async def h_file(request, actor):
+        p = request.path_params
+        data, media_type = await run_in_threadpool(op_file, dsn, actor, p["book"], p["content_id"], p["path"])
+        return Response(data, media_type=media_type, headers={"X-Content-Type-Options": "nosniff",
+                                                              "Content-Disposition": "attachment"})
+
+    async def h_health(_request):
+        return JSONResponse({"ok": True})
+
+    mcp = build_mcp(dsn=dsn, verifier=verifier, bridge=bridge, model=model, public_url=public_url)
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_app):
+        async with mcp.session_manager.run():
+            yield
+
+    return Starlette(routes=[
+        Route("/healthz", h_health),
+        Route("/v1/search", endpoint(h_search)),
+        Route("/v1/citation", endpoint(h_citation)),
+        Route("/v1/ask", endpoint(h_ask), methods=["POST"]),
+        Route("/v1/answers/{answer_id}", endpoint(h_answer)),
+        Route("/v1/files/{book}/{content_id}/{path:path}", endpoint(h_file)),
+        Mount("/", app=mcp.streamable_http_app()),  # serves /mcp and the protected-resource metadata
+    ], lifespan=lifespan)
+
+
+# --- MCP ---------------------------------------------------------------------------------------------------
+
+class _Verifier:
+    """MCP adapter: the same JWT verification; the verified principal travels in the token's claims."""
+
+    def __init__(self, verifier: identity.Verifier):
+        self.verifier = verifier
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        try:
+            actor = self.verifier.verify(token)
+        except identity.AuthenticationError:
+            return None
+        return AccessToken(token=token, client_id="kutuphane-mcp", scopes=[], subject=actor.principal,
+                           claims={"kutuphane_principal": actor.principal,
+                                   "kutuphane_on_behalf_of": actor.on_behalf_of})
+
+
+def _mcp_actor() -> Actor:
+    token = get_access_token()
+    if token is None or not token.claims:
+        raise identity.AuthenticationError("no verified token")
+    return Actor(token.claims["kutuphane_principal"], token.claims["kutuphane_on_behalf_of"],
+                 correlation_id=uuid.uuid4().hex)
+
+
+def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_url: str) -> FastMCP:
+    public = urllib.parse.urlsplit(public_url)
+    security = TransportSecuritySettings(enable_dns_rebinding_protection=True, allowed_hosts=[public.netloc],
+                                         allowed_origins=[f"{public.scheme}://{public.netloc}"])
+    mcp = FastMCP("kutuphane", token_verifier=_Verifier(verifier), stateless_http=True, transport_security=security,
+                  auth=AuthSettings(issuer_url=verifier.issuer, resource_server_url=public_url,
+                                    validate_token_resource=False))  # our verifier checks `aud` itself
+
+    @mcp.tool()
+    async def search_library(query: str, k: int = search.DEFAULT_K) -> list[dict]:
+        """Search the books you may read now. Results carry citation handles for open_citation."""
+        return await run_in_threadpool(op_search, dsn, _mcp_actor(), query, k)
+
+    @mcp.tool()
+    async def open_citation(handle: str) -> dict:
+        """Open a citation handle: the exact passage of that version, if you may read it now."""
+        return await run_in_threadpool(op_citation, dsn, _mcp_actor(), handle)
+
+    @mcp.tool()
+    async def ask_library(question: str) -> dict:
+        """Answer from the library with [n] citations, or status not_in_library."""
+        if bridge is None or not model:
+            raise llmdap.EgressError("no model route configured")
+        return await run_in_threadpool(op_ask, dsn, bridge, model, _mcp_actor(), question)
+
+    @mcp.tool()
+    async def reopen_answer(answer_id: str) -> dict:
+        """Show a stored answer and its evidence again (no model call; current rights apply)."""
+        return await run_in_threadpool(op_reopen, dsn, _mcp_actor(), answer_id)
+
+    @mcp.tool()
+    async def read_document(book: str, content_id: str, path: str) -> str:
+        """Read a text document of a specific version (agent instructions need an activate grant)."""
+        data, media_type = await run_in_threadpool(op_file, dsn, _mcp_actor(), book, content_id, path)
+        if media_type not in TEXT_TYPES:
+            raise BadRequest("not a text document; use search_library and open_citation for its passages")
+        return data.decode("utf-8")
+
+    return mcp
+
+
+def app_from_env() -> Starlette:
+    """uvicorn --factory kutuphane.server:app_from_env"""
+    missing = [v for v in ENV.values() if not os.environ.get(v)]
+    if missing:
+        raise RuntimeError(f"server not configured: set {', '.join(missing)}")
+    bridge = llmdap.Bridge.from_env() if os.environ.get(llmdap.ENV["url"]) else None
+    return create_app(dsn=os.environ[db.DSN_ENV], verifier=identity.Verifier.from_env(), bridge=bridge,
+                      model=os.environ[ENV["model"]], public_url=os.environ[ENV["public_url"]])
