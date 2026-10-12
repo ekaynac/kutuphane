@@ -1,6 +1,6 @@
 # Kütüphane — M1 tanımı: uçtan uca kanıt senaryosu
 
-Tarih: 2026-10-12. Durum: **taslak, operatör onayı bekliyor.** Dayanak: D35 ve `04-…` §3. M1'in amacı ürünün
+Tarih: 2026-10-12. Durum: **onaylandı (D45).** Dayanak: D35 ve `04-…` §3. M1'in amacı ürünün
 kamasını (§4, `05-product-brief.md`) **tek bir senaryoda, makinece doğrulanabilir** biçimde kanıtlamak;
 özellik genişliği değil.
 
@@ -17,7 +17,7 @@ kamasını (§4, `05-product-brief.md`) **tek bir senaryoda, makinece doğrulana
 4. U, **ajan A**'ya bir kitabı 8 saatliğine `read` kipinde devreder. A, Kütüphane MCP üzerinden aynı kitaba
    erişir ve aynı sürüme atıf verir.
 5. Küratör PDF'in yeni sürümünü yükler. U'nun dünkü cevabındaki atıf hâlâ **eski sürümdeki doğru pasajı** açar.
-6. Yönetici U'nun kitap üzerindeki hakkını kaldırır. A'nın bir sonraki isteği; arama, doğrudan okuma, önbellek
+6. Yönetici U'nun kitap üzerindeki hakkını kaldırır. A'nın bir sonraki isteği; arama, doğrudan okuma, atıf açma
    ve export yollarının hepsinde reddedilir.
 7. **Denetçi**, dünkü cevap için tek sorguyla şunu görür: kim, kimin adına, hangi sürüm ve parça, hangi politika
    kararı, hangi LLMDAP model çağrısı.
@@ -30,7 +30,7 @@ kamasını (§4, `05-product-brief.md`) **tek bir senaryoda, makinece doğrulana
 **İçinde:** OKF/MD ve metin-katmanlı PDF ingest; üç sürüm kimliği (D26); bütün + parçalı profil; hibrit arama
 + tek reranker (bileşenler M0'dan); sürümlü atıf; insan arayüzü (okuyucu + soru-cevap + atıf görünümü); HTTP API;
 Kütüphane MCP; tek seviyeli, süreli, iptal edilebilir kullanıcı→ajan delegasyonu (D28); K3 etkinleştirme kapısı
-(D37); birleşik denetim (D35); imzalı paket import/export (D29); basit runbook geri bildirimi (D13); LLMDAP
+(D37); zorunlu ontoloji alanları (D24); birleşik denetim (D35); imzalı paket import/export (D29); basit runbook geri bildirimi (D13); LLMDAP
 üzerinden model ve embedding egress'i, IdP kimliği (D18, D38).
 
 **Dışında (M2+):** `envelope`/`sealed` koruma, OpenBao (D33); çok seviyeli delegasyon, OpenFGA servisi (D28);
@@ -39,50 +39,53 @@ yönetimi; stüdyo çıktıları ve sesli özet (D39).
 
 ## 3. Mimari çerçeve (M1)
 
-- **Yığın:** Core Python (D6), arayüz React + TS (D15), Postgres + pgvector + tam metin (D11, D16), tek kutu
-  docker compose: Core + LLMDAP + Postgres + IdP (D15, D38). InfraMedic'in katalog/nesil/yetki/audit kodu
-  kopyalanıp ameliyat edilir (D6); InfraMedic'e dokunulmaz.
-- **Tek yetki kapısı.** Her okuma yolu (arama, doğrudan okuma, atıf açma, önbellek, export, MCP) aynı
-  `authorize(principal, on_behalf_of, nesne, kip)` çağrısından geçer; karar, politika ve grant sürümüyle
-  erişim kaydına yazılır. Arama yetkili küme ile **önceden süzülür** (post-filter yok).
-- **Önbellek:** yetki kararı önbellekten sunmadan önce yeniden alınır; önbellek anahtarı içerik + profil
-  sürümünü taşır, yetkiyi değil.
-- **Egress:** Core'un ağdan yalnız LLMDAP'a ve veritabanına çıkışı vardır; compose ağ politikası bunu zorlar.
+- **Yığın:** tek Python uygulaması (D46); CLI, HTTP API ve MCP aynı fonksiyonları çağırır. Arayüz React + TS
+  (D15). Postgres + pgvector + tam metin (D11, D16). Tek kutu docker compose: Core + LLMDAP + Postgres + IdP
+  (D15, D38). InfraMedic'ten kod değil fikir taşınır (D46). Mikroservis, Redis, kuyruk, plugin altyapısı yok.
+- **Tek yetki kapısı.** Her okuma yolu (arama, doğrudan okuma, atıf açma, export, MCP) aynı
+  `authorize(principal, on_behalf_of, nesne, kip)` çağrısından geçer; **teslimden hemen önce yeniden denetlenir**.
+  Karar, politika ve grant sürümüyle erişim kaydına yazılır. Arama yetkili küme ile **önceden süzülür**.
+- **Önbellek yok** (D46). Hız gerekirse M2'de, yetki denetimiyle birlikte eklenir.
+- **Ağ düzeni:** Core yalnız `core` ağında (Postgres + LLMDAP); model/embedding/reranker servisleri yalnız
+  `models` ağında; LLMDAP iki ağda. Core'un dış ağa ve model servislerine doğrudan yolu yoktur.
+- **Diskte şifreleme:** volume seviyesinde (E8 `standard`, D48); kurulum gereği olarak belgelenir ve kurulum
+  denetim betiği doğrular.
 
-**Temel nesneler (taslak):** `kitap` · `içerik_sürümü` (bundle özeti) · `profil_sürümü` · `politika_sürümü` ·
-`parça` · `principal` (kullanıcı / ajan / rol) · `ilişki` (ReBAC demeti) · `delegasyon` (kimden, kime, kapsam,
-kip, bitiş, iptal) · `erişim_kaydı` · `cevap_kaydı` (atıflar + korelasyon kimliği) · `paket` (manifest, imza,
-sıra numarası) · `geri_bildirim`.
+**Temel nesneler:** M1a'da dört tablo — `book`, `content_version`, `profile_version`, `policy_version` (sürümler
+değişmez). Sonraki dilimler: parça (M1d), ilişki + delegasyon + erişim kaydı (M1b), cevap kaydı (M1c/M1d),
+paket (M1f), geri bildirim (M1f).
 
 ## 4. Kabul testleri
 
 Hepsi otomatik (uçtan uca, compose üzerinde); fixture'lar deterministik ve repoda (PDF fixture'ı OKF metninden
-üretilir). Bir test ancak tüm alt koşulları geçerse yeşildir.
+üretilir). Bir test ancak tüm alt koşulları geçerse yeşildir. Sıkılaştırmalar Astra incelemesinden (D45).
 
 | # | Test | Geçme koşulu |
 |---|---|---|
-| AT-01 | **Ingest ve sürüm kimlikleri** | OKF kitabı ve PDF içe aktarılır; her biri içerik, profil, politika kimliği alır. Aynı içerik tekrar yüklenince içerik kimliği değişmez; tek bayt değişince değişir. Politika değişikliği içerik kimliğini değiştirmez. |
-| AT-02 | **İki profil** | Aynı içerik iki profille servis edilir; profil kimlikleri farklıdır; atıflar profil kimliğini taşır. |
-| AT-03 | **İnsan ve ajan aynı kitapta** | Aynı soru arayüzden (U) ve MCP'den (A, U adına) sorulunca atıflar aynı içerik sürümüne ve parçalara işaret eder. |
-| AT-04 | **İptal, bütün yollarda** | A'nın delegasyonu iptal edilince iptalden sonraki ilk istek; arama, doğrudan okuma, atıf açma, önbellek ve export yollarının hepsinde reddedilir. Arama sonuçları, sayıları ve özetleri yetkisiz öğeyi sızdırmaz. |
-| AT-05 | **Devredenin yetkisi düşer** | U'nun kitap hakkı kaldırılınca A'nın U'dan aldığı delegasyon, delegasyon nesnesi silinmeden etkisiz kalır. |
-| AT-06 | **Delegasyon sınırları** | A, U'nun sahip olmadığı kitaba ya da kipe (ör. U'da yalnız `discover` varken `read`) delegasyon alamaz; süresi dolan delegasyon reddedilir; delegasyon zinciri derinliği 1'i aşamaz. |
-| AT-07 | **Eski atıf** | Yeni sürüm sonrası eski cevaptaki atıf eski sürümdeki doğru pasajı birebir açar; açılırken güncel yetki denetlenir (yetkisi düşen U açamaz). |
-| AT-08 | **"Kütüphanede yok"** | Dayanağı olmayan sorulardan oluşan sabit kümede cevap "kütüphanede yok" döner ve uydurma atıf içermez; dayanağı olan kümede atıflı cevap döner. Eşikler M0 sonrası sayıyla yazılır. |
-| AT-09 | **Birleşik denetim** | Bir cevap kimliği için tek sorgu; principal, adına çalışılan kullanıcı, içerik/profil sürümü ve parçalar, politika ve grant sürümü, yetki kararı ve LLMDAP egress kaydını (korelasyon kimliğiyle) döner. |
-| AT-10 | **Tek egress** | Cevap üretimi ve embedding çağrılarının tamamı LLMDAP kaydında görünür; Core konteynerinden LLMDAP dışı bir model uç noktasına bağlantı denemesi ağ seviyesinde başarısız olur. *(LLMDAP #222 kapısı)* |
-| AT-11 | **Kimlik** | Kimliği doğrulanmamış istek API'de ve MCP'de reddedilir; kimlik IdP'den gelir, LLMDAP doğrular, Kütüphane yetkilendirir. *(LLMDAP #223 kapısı)* |
-| AT-12 | **K3 etkinleştirme kapısı** | Yalnız `read` hakkı olan ajana bir ajan talimatı (K3) **etkin talimat olarak** sunulmaz; etkinleştirme ayrı bir grant ister ve erişim kaydında ayrı olay olarak görünür. |
-| AT-13 | **Paket taşıma** | Export edilen imzalı paket ikinci kuruluma import edilir; içerik kimlikleri iki kurulumda aynıdır. Güven kökü: ilk anahtar, yöneticinin bant dışı doğruladığı parmak iziyle sabitlenir. |
-| AT-14 | **Kurcalama, replay, atomiklik** | Tek baytı değişmiş paket reddedilir; sıra numarası eski paket reddedilir; import yarıda hata verirse kurulumda hiçbir değişiklik kalmaz. |
-| AT-15 | **Runbook geri bildirimi** | Geri bildirim runbook'un içerik sürümüne bağlı kaydedilir; yeni sürümde eski geri bildirim eski sürüme ait olarak görünür. |
+| AT-01 | **Ingest ve sürüm kimlikleri** | OKF kitabı ve PDF içe aktarılır; her biri içerik, profil, politika kimliği alır. Dosya sırası ve zaman damgası kimliği değiştirmez; bir içerik dosyasının tek baytı değişince içerik kimliği değişir. Yalnız katalog politikası değişince yalnız politika kimliği değişir. |
+| AT-02 | **İki profil** | Bütün profil tam metni, parçalı profil beklenen parça sınırlarını verir. Ayrıştırıcı ya da parçalayıcı sürümü değişince profil kimliği değişir, içerik kimliği sabit kalır. Atıflar profil kimliğini taşır. |
+| AT-03 | **İnsan ve ajan aynı kitapta** | Sabit içerik/profil ve aynı yetki bağlamında HTTP (U) ve MCP (A, U adına) **aynı kanıt kümesini** döndürür; iki yüzeyin atıfları geçerli pasajlara çözülür. (Model cevabının birebir aynılığı ölçülmez.) |
+| AT-04 | **İptal, bütün yollarda** | Delegasyon iptal edilince sonraki ilk istek arama, doğrudan okuma, atıf açma ve export yollarının hepsinde reddedilir. İptalden önce başlayıp teslim öncesinde bekletilen istek de içerik teslim etmez. Arama sonuçları, sayıları ve özetleri yetkisiz öğeyi sızdırmaz. |
+| AT-05 | **Devredenin yetkisi düşer** | U'nun kitap hakkı kaldırılınca A'nın U'dan aldığı delegasyon, delegasyon nesnesi silinmeden etkisiz kalır; AT-04'teki yarış koşulu burada da geçerlidir. |
+| AT-06 | **Delegasyon sınırları** | Sahip olunmayan kapsam ya da kip, sahte devreden, ikinci devir (derinlik > 1) ve bitiş anı dahil süresi dolmuş grant reddedilir. `read` otomatik `use` sağlamaz (kipler bağımsız, D24). |
+| AT-07 | **Eski atıf** | Yeni sürüm sonrası eski cevap ve pasajları model yeniden çağrılmadan, eski sürümden birebir gösterilir. Güncel yetki yoksa ne cevap gövdesi ne kanıtları gösterilir. |
+| AT-08 | **"Kütüphanede yok"** | Sürümlü soru–pasaj kümesinde çekimserlik ve kanıt isabeti, M0'da onaylanan sayısal eşikleri karşılar; bütün atıflar çözülür. (Eşikler M0 sonrası bu satıra yazılır.) |
+| AT-09 | **Birleşik denetim** | Bir cevap kimliği için tek sorgu; principal, adına çalışılan kullanıcı, içerik/profil sürümü ve parçalar, politika ve grant sürümü, yetki kararları ve **bütün** retrieval/üretim çağrılarının LLMDAP kayıtlarını döner. Eksik LLMDAP kaydı açıkça "eksik" olarak işaretlenir. |
+| AT-10 | **Tek egress** | Core'dan izinli hedefler (Postgres, LLMDAP) dışına doğrudan IP, DNS ve yerel model servisi denemeleri ağ seviyesinde başarısız olur. Üretim, embedding ve reranker çağrılarının tamamı LLMDAP kayıtlarıyla eşleşir. *(LLMDAP #222 kapısı)* |
+| AT-11 | **Kimlik** | API ve MCP; kimliksiz, süresi geçmiş, yanlış issuer/audience taşıyan ve değiştirilmiş token'ları reddeder. Principal ya da adına çalışılan kullanıcı istek başlığıyla değiştirilemez. *(LLMDAP #223 kapısı)* |
+| AT-12 | **K3 etkinleştirme kapısı** | Ayrı etkinleştirme grant'i olmadan bir ajan talimatının (K3) **gövdesi hiçbir ajan yolundan verilmez** (`read` dahil). İzinli teslim erişim kaydında ayrı olay olarak görünür. |
+| AT-13 | **Paket taşıma ve anahtarlar** | Export edilen imzalı paket ikinci kuruluma import edilir; içerik kimlikleri iki kurulumda aynıdır. Güven kökü: ilk anahtar, yöneticinin bant dışı doğruladığı parmak iziyle sabitlenir. Anahtar yenileme çalışır; bilinmeyen ya da iptal edilmiş anahtarla imzalı paket reddedilir. |
+| AT-14 | **İçe aktarma zinciri, kurcalama, replay, atomiklik** | Karantina → imza/özet doğrulama → tarama → fark → insan onayı zinciri atlanamaz; onaysız paket yayımlanmaz. Bozuk imza, tek baytı değişmiş paket ve eşit ya da eski sıra numaralı paket reddedilir. Hata ya da eşzamanlı replay görünür kataloğu değiştirmez; ret kaydı korunur. |
+| AT-15 | **Runbook geri bildirimi** | Üç sonuç değeri (işe yaradı / yaramadı / değişti), uygulayan, zaman, `tested_on` ve içerik sürümü saklanır; yeni sürüm eski geri bildirimi sahiplenmez. |
+| AT-16 | **Zorunlu alanlar** | E5 (hassasiyet, egress), E8 ve E9 olmadan kayıt ya da grant oluşturulamaz; M1'de E8 yalnız `standard` kabul edilir; delegasyonun `purpose` alanı kaydedilir (zorlayıcı değil, D28). |
 
 ## 5. M1 içinde verilecek kararlar
 
 Bunlar M1'i bloklamaz; ilgili dilimde, kayda geçirilerek verilir.
 
-- Üç sürüm kimliğinin kanonik özet şeması (M1a).
-- Retrieval bileşenleri ve AT-08 eşikleri (M0 → M1b).
-- ReBAC tablo şeması; OpenFGA arayüzüyle uyumlu adlandırma (M1c).
-- Arayüzün M1 kapsamı: okuyucu, soru-cevap, atıf, denetim görünümü; ötesi M2 (M1d).
-- Paket sıra numarasının kapsamı (kurulum başına mı, kitap başına mı) ve anahtar yenileme akışı (M1e).
+- Üç sürüm kimliğinin kanonik özet şeması; paket manifesti ve sıra numarası kapsamı (M1a).
+- ReBAC tablo şeması; OpenFGA arayüzüyle uyumlu adlandırma (M1b).
+- LLMDAP istemci sözleşmesi ve fixture'ları (M1c).
+- Retrieval bileşenleri ve AT-08 eşikleri (M0 → M1d).
+- Arayüzün M1 kapsamı: okuyucu, soru-cevap, atıf, denetim görünümü; ötesi M2 (M1e).
+- Anahtar yenileme akışının ayrıntısı (M1f).

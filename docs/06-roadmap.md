@@ -1,6 +1,6 @@
 # Kütüphane — yol haritası
 
-Tarih: 2026-10-12. Durum: **taslak, operatör onayı bekliyor.** Takvim yok; takvim M0 ölçümünden ve ilk M1
+Tarih: 2026-10-12. Durum: **onaylandı (D45).** Takvim yok; takvim M0 ölçümünden ve ilk M1
 diliminden sonra konur. Her aşamanın çıkışı **makinece doğrulanabilir** bir ölçüttür.
 
 ## Genel görünüm
@@ -8,7 +8,7 @@ diliminden sonra konur. Her aşamanın çıkışı **makinece doğrulanabilir** 
 ```
 M0 Ölçüm ─────────────┐ (sürüyor, M1'e paralel)
                       ▼ bileşen kararı, ontoloji gözden geçirmesi
-M1 Uçtan uca kanıt ── M1a → M1b → M1c → M1d → M1e ──▶ kabul testleri AT-01…AT-15
+M1 Uçtan uca kanıt ── M1a → M1b → M1c → M1d → M1e → M1f ──▶ kabul testleri AT-01…AT-16
                       ▲ kapı: LLMDAP #222, #223
 M2 Koruma + federasyon başlangıcı (envelope/sealed, recall, master rolü, karar modeli ürünleşmesi)
 M3 Federasyon + tüketiciler (çok kurulumlu master, InfraMedic tüketimi, stüdyo çıktıları)
@@ -28,15 +28,16 @@ M3 Federasyon + tüketiciler (çok kurulumlu master, InfraMedic tüketimi, stüd
 
 ## M1 — Uçtan uca kanıt senaryosu (D35)
 
-Ayrıntı ve kabul testleri: `07-m1-definition.md`. Dilimler sırayla; her dilim kendi testlerini yeşile çevirir.
+Ayrıntı ve kabul testleri: `07-m1-definition.md`. Dilimler sırayla (D47: yetki ve upstream kesiti aramadan önce); her dilim kendi testlerini yeşile çevirir.
 
 | Dilim | İçerik | Yeşile dönen testler |
 |---|---|---|
-| **M1a İskelet ve katalog** | repo düzeni, Postgres şeması, OKF/MD + metin PDF ingest, üç sürüm kimliği, CLI | AT-01 |
-| **M1b Profiller ve arama** | bütün + parçalı profil, hibrit arama + rerank (M0 seçimi), atıf, "kütüphanede yok" | AT-02, AT-07, AT-08 |
-| **M1c Yetki ve delegasyon** | ReBAC tabloları (Postgres), tek yetki kapısı, delegasyon, K3 etkinleştirme kapısı, erişim kaydı | AT-04, AT-05, AT-06, AT-12 |
-| **M1d Yüzeyler ve egress** | HTTP API, Kütüphane MCP, okuyucu arayüzü, LLMDAP üzerinden cevap ve embedding, birleşik denetim sorgusu | AT-03, AT-09, AT-10, AT-11 |
-| **M1e Paket ve geri bildirim** | imzalı export/import, güven kökü, replay koruması, atomik import; runbook geri bildirimi | AT-13, AT-14, AT-15 |
+| **M1a Katalog** | repo düzeni, dört tablo, OKF/MD + metin PDF ingest, üç sürüm kimliği, paket manifesti ve sıra kapsamının tanımı, CLI | AT-01 |
+| **M1b Yetki çekirdeği** | ReBAC ve delegasyon tabloları, tek yetki kapısı (teslim öncesi yeniden denetim), K3 etkinleştirme kapısı, zorunlu ontoloji alanları, erişim kaydı | AT-04, AT-05, AT-06, AT-12, AT-16 |
+| **M1c Kimlik, egress, denetim kesiti** | IdP token doğrulama, LLMDAP istemcisi, compose ağ düzeni, birleşik denetim sorgusu (#222/#223 gelene kadar fixture) | AT-09, AT-10, AT-11 |
+| **M1d Arama ve atıf** | bütün + parçalı profil, hibrit arama + rerank (M0 seçimi), sürümlü atıf, "kütüphanede yok" | AT-02, AT-07, AT-08 |
+| **M1e Yüzeyler** | HTTP API, Kütüphane MCP, okuyucu arayüzü | AT-03 |
+| **M1f Paket ve geri bildirim** | imzalı export/import, güven kökü, anahtar yenileme/iptal, replay koruması, karantina→onay zinciri, atomik import; runbook geri bildirimi | AT-13, AT-14, AT-15 |
 
 **Kapı (D18):** AT-10 (tek egress) ve AT-11 (kimlik) LLMDAP #222 ve #223 gelmeden yeşile dönemez; M1 bu iki
 test geçmeden tamamlanmış sayılmaz. Diğer dilimler beklemeden ilerler.

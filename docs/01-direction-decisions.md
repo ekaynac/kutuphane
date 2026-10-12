@@ -132,8 +132,19 @@ Kaynak: `03-2026-10-12-decision-briefs.md` (Claude brifleri), Astra incelemesi
 | D43 | İnsan etiketli küme | **Model taslak çıkarır, insan karar verir:** Claude kategori (K1–K8), hassasiyet ve egress etiketi ile soru→pasaj eşleşmesi taslaklar; **operatör** telefon dostu etiketleme sayfasında onaylar/düzeltir. Örneklerin **~%30'u kör** (taslak gösterilmeden) etiketlenir; model–insan uyumu ve taslağın çapalama etkisi bu dilimde ölçülür. Gerçeklik referansı insan etiketidir (D30). | Model etiketini gerçeklik saymak; tamamen elle etiketleme (emek). |
 | D44 | Laya shadow (etiketleme) | Etiketleme katmanında **`laya-multilingual` zero-shot shadow** olarak çalışır: tahminleri etiketleyene **gösterilmez**, yalnız insan etiketine karşı ölçülür (doğruluk, kalibrasyon, çekimserlik; kör dilim ana ölçü). Çevrimdışı batch, yerel ağırlık (sürüm/özet kayıtlı), ağ çıkışı yok, D41 korpusu; bu bir **ölçümdür, ürün yolu değil** — Laya'nın ürün/shadow entegrasyonu D30 gereği LLMDAP #225 üzerinden. Model kartına göre taban modelde zero-shot zayıf beklenir (Türkçe MASSIVE 0.437); amaç etiketleme katmanında işe yarayıp yaramadığını ve ince ayar ihtiyacını görmek. | Laya tahminini etiketleyene öneri olarak göstermek (çapalama; ölçümü bozar). |
 
-## 7. Açık sorular
+## 7. Kararlar — 2026-10-12 (ürün brifi, M1 ve sadelik)
 
-- Ürün brifi, yol haritası ve M1 tanımı taslak olarak yazıldı (`05`, `06`, `07`); operatör onayı bekliyor.
+Kaynak: `05`–`07` taslakları, Astra incelemesi (`research/2026-10-12-astra-review-m1-raw.md`), Claude + Astra
+ortak önerileri. Operatör onayladı ve ek ilke koydu: **"kodun aşırı karmaşıklaştırılmaması çok önemli."**
+
+| # | Konu | Karar | Reddedilen |
+|---|---|---|---|
+| D45 | Ürün brifi, yol haritası, M1 | `05`, `06`, `07` **onaylandı**; Astra incelemesiyle sıkılaştırılmış kabul testleri (AT-01…AT-16) geçerli. | — |
+| D46 | **Sadelik ilkesi; D6 değişir** | Sadeleştirme **servis ve soyutlama sayısını azaltarak** yapılır, yönetişim kapılarını azaltarak değil. M1 **tek Python uygulaması**: CLI, API ve MCP aynı fonksiyonları çağırır; mikroservis, Redis, görev kuyruğu, ayrı audit servisi, dinamik plugin keşfi yok — bileşenler küçük, sürümlü fonksiyon arayüzleri. **M1'de önbellek yok.** InfraMedic'ten **kod taşınmaz, fikir taşınır** (içerik özetiyle kimlik, atıf tutamacı, kısıtlı → bulut yok); Core Postgres üstünde yeni ve küçük yazılır. | D6'daki "InfraMedic bilgi katmanını kopyala-ameliyat et" (~17 bin satır, SQLite, filo kavramları); BM25/reranker'ı sadelik için M1'den çıkarmak (D31'i bozar). |
+| D47 | M1 dilim sırası | **M1a katalog → M1b yetki çekirdeği → M1c kimlik/egress/denetim kesiti → M1d arama ve atıf → M1e yüzeyler (API, MCP, arayüz) → M1f paket ve geri bildirim.** Paket manifesti ve sıra kapsamı M1a'da tanımlanır. Kimlik/egress #222/#223 gelene kadar fixture ile yürür; ilgili testler gerçek upstream olmadan yeşile dönmez. | Önce arama, sonra yetki (aramaya yetkiyi sonradan eklemek en pahalı yeniden çalışma). |
+| D48 | M1a teknik çerçeve | Başlangıçta **dört tablo** (kitap, içerik/profil/politika sürümü; sürümler değişmez); diğer tablolar ihtiyaç duyan dilimde. Kimlikler: sürümlü kanonik kodlama + SHA-256. Bağımlılıklar hafif: markdown-it-py (MIT), pypdf (BSD-3), psycopg (LGPL-3, dinamik bağlama), PyYAML (MIT); Docling sonradan profil bileşeni. **Diskte şifreleme volume seviyesinde** (E8 `standard` tanımı), uygulama içi şifreleme kodu yok; kurulum gereği olarak belgelenir. | Uygulama içi sütun şifreleme (M1'de karmaşıklık); her şeyi tek JSONB torbasına koymak. |
+
+## 8. Açık sorular
+
 - Mevzuat (D41 b): mevzuat.gov.tr bu makineden erişilemiyor; aday kaynak HF `CtnkyaABC/turkish-law-corpus`
   (CC BY 4.0) + elle kontrollü `mtntasci/turkish-legal-rag` soruları. Metin-katmanlı PDF fixture'ı ayrıca gerekli.
