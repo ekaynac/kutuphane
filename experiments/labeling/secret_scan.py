@@ -9,10 +9,10 @@ _KEYWORD = r"(?:pass(?:word|wd|phrase)?|pwd|secret|token|api[_-]?key|access[_-]?
 
 PATTERNS = [
     # key = value / key: value whose value looks generated (letters + digits, 8+ chars)
-    re.compile(rf"(?i)\b{_KEYWORD}\w*\s*[:=]\s*['\"]?(?!<|\$\{{|\{{\{{|xxx|\*\*\*|changeme|example|placeholder|redacted)"
+    re.compile(rf"(?i){_KEYWORD}\w*\s*[:=]\s*['\"]?(?!<|\$\{{|\{{\{{|xxx|\*\*\*|changeme|example|placeholder|redacted)"
                r"(?=[^\s'\"<>]*\d)(?=[^\s'\"<>]*[A-Za-z])[^\s'\"<>]{8,}"),
     # ...or any long value (all-letter passphrases too); kept from the first scanner, never narrower
-    re.compile(rf"(?i)\b{_KEYWORD}\w*\s*[:=]\s*['\"]?[A-Za-z0-9_\-/+=.]{{12,}}"),
+    re.compile(rf"(?i){_KEYWORD}\w*\s*[:=]\s*['\"]?[A-Za-z0-9_\-/+=.]{{12,}}"),
     re.compile(r"(?i)\bauthorization:\s*(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}"),
     re.compile(r"-----BEGIN [A-Z ]*(?:PRIVATE KEY|CERTIFICATE)-----"),
     re.compile(r"\b(?:sk|pk|rk)[-_](?:live|test|proj|ant)?[-_]?[A-Za-z0-9_-]{16,}"),
