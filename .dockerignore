@@ -7,3 +7,5 @@ experiments
 tests
 docs
 deploy/jwks.json
+web/node_modules
+web/dist

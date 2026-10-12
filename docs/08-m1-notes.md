@@ -156,3 +156,17 @@ manifest ile ona işaret eder. Değişmeyen dosya yeni sürümde tekrar saklanma
   geçti). LLMDAP bağlanınca izinli listeye eklenir; AT-10 #222 ile tamamlanır.
 - **Henüz değil:** React arayüz (M1e 2. kısım), Core'un açılışta migration çalıştırması (şimdilik `kutuphane
   migrate`).
+
+# M1e (2. kısım): arayüz
+
+- **React + TS (D15), Vite**, `/ui` altında Core'dan servis edilir (Docker'da çok aşamalı derleme). Tek ekran:
+  soru → atıflı cevap (`[n]` düğmeleri) → yan panelde sürümlü pasaj; "yalnız ara"; cevap kimliğiyle eski cevabı açma.
+  Sistem fontları (air-gapped), açık/koyu tema.
+- **Model çıktısı düz metin:** Markdown/HTML/görsel işlenmez; yalnız `[n]` düğmeye dönüşür. Bütün cevaplarda katı
+  CSP (`default-src 'none'`, betik/stil/görsel/bağlantı yalnız aynı köken, `frame-ancestors 'none'`), `nosniff`,
+  `no-referrer`, `X-Frame-Options: DENY`.
+- **Giriş (M1):** IdP olmadığı için token yapıştırılır; sekmeye özel `sessionStorage`. Geliştirme token'ı
+  `KUTUPHANE_DEV=1 kutuphane dev-keys deploy/dev` + `dev-token <sub> [--agent] [--act <ajan>]` (8 saat; yalnız
+  `KUTUPHANE_DEV=1` iken çalışır). Kurum IdP'siyle OIDC PKCE girişi #223 + IdP bağlantısıyla gelir.
+- **Şema koruması:** sunucu bekleyen migration varsa açılmaz (`kutuphane migrate` ister) — yerel denemede yakalanan
+  gerçek bir 500 hatasının kalıcı çözümü.

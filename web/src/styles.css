@@ -1,0 +1,94 @@
+/* Calm, legible, enterprise: paper and ink, one accent. System fonts only (air-gapped, no font downloads). */
+:root {
+  --paper: #f6f5f1;
+  --surface: #ffffff;
+  --ink: #1d2433;
+  --muted: #5b6475;
+  --line: #dcdad3;
+  --accent: #1f5f5b;
+  --accent-ink: #ffffff;
+  --accent-soft: #e3efed;
+  --danger: #9b2c2c;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+  --serif: "Iowan Old Style", "Charter", "Georgia", serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #14171d;
+    --surface: #1c2028;
+    --ink: #e7e9ee;
+    --muted: #9aa3b2;
+    --line: #2c323d;
+    --accent: #6fc2b8;
+    --accent-ink: #0d1513;
+    --accent-soft: #1f3431;
+    --danger: #f08a8a;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--paper); color: var(--ink); font: 15px/1.55 var(--sans); }
+button, input, textarea { font: inherit; color: inherit; }
+
+.top {
+  display: flex; align-items: center; gap: 16px; padding: 12px 24px;
+  border-bottom: 1px solid var(--line); background: var(--surface);
+}
+.brand { font-family: var(--serif); font-size: 20px; font-weight: 600; letter-spacing: 0.01em; }
+.top .meta { margin-left: auto; }
+
+.work { display: grid; grid-template-columns: minmax(0, 760px); justify-content: center; gap: 24px; padding: 24px; }
+.work.with-panel { grid-template-columns: minmax(0, 1fr) minmax(0, 520px); justify-content: stretch; }
+@media (max-width: 900px) { .work.with-panel { grid-template-columns: minmax(0, 1fr); } }
+main { display: grid; gap: 20px; align-content: start; min-width: 0; }
+
+.eyebrow { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.meta { font-size: 13px; color: var(--muted); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+textarea, input {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface);
+}
+textarea:focus, input:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ask, .reopen { display: grid; gap: 8px; }
+
+button {
+  padding: 8px 16px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); cursor: pointer;
+}
+button:disabled { opacity: 0.5; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+button.ghost { border-color: transparent; background: transparent; color: var(--muted); }
+
+.result { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 20px; }
+.answer-body { font-family: var(--serif); font-size: 18px; line-height: 1.6; margin: 0 0 12px; white-space: pre-wrap; }
+.cite {
+  padding: 0 6px; margin: 0 2px; border-radius: 4px; border: 1px solid var(--accent);
+  background: var(--accent-soft); color: var(--accent); font: 600 12px/1.6 var(--sans); vertical-align: 2px;
+}
+.empty { margin: 0 0 12px; color: var(--muted); }
+.error { border-left: 3px solid var(--danger); padding: 8px 12px; color: var(--danger); background: var(--surface); }
+
+.hits { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.hit {
+  display: grid; gap: 2px; width: 100%; text-align: left; padding: 12px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--paper);
+}
+.passage-title { font-weight: 600; overflow-wrap: anywhere; }
+.snippet { color: var(--muted); font-size: 14px; }
+
+.passage {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 20px;
+  align-self: start; position: sticky; top: 16px; display: grid; gap: 12px; min-width: 0;
+}
+.passage header { display: flex; justify-content: space-between; gap: 12px; }
+.passage-text {
+  margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.6 var(--mono);
+  max-height: 60vh; overflow: auto; padding: 12px; background: var(--paper); border-radius: 6px;
+}
+
+.login { max-width: 520px; margin: 12vh auto; padding: 24px; display: grid; gap: 12px; }
+.login h1 { font-family: var(--serif); margin: 0; }

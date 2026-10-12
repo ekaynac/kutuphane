@@ -20,6 +20,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
+from starlette.staticfiles import StaticFiles
 
 from . import answers, db, gate, identity, llmdap, search
 from .gate import Actor
@@ -101,8 +102,35 @@ def _error(exc: Exception) -> Response:
     raise exc
 
 
+class SecurityHeaders:
+    """Strict headers on every response. The UI renders model output as plain text and loads nothing external
+    (Astra review #3): a CSP that only allows this origin makes that a property, not a convention."""
+    HEADERS = [
+        (b"content-security-policy", b"default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; "
+                                     b"connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'; "
+                                     b"frame-ancestors 'none'"),
+        (b"x-content-type-options", b"nosniff"),
+        (b"referrer-policy", b"no-referrer"),
+        (b"x-frame-options", b"DENY"),
+    ]
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                names = {k.lower() for k, _ in message.get("headers", [])}
+                message["headers"] = list(message.get("headers", [])) + [h for h in self.HEADERS if h[0] not in names]
+            await send(message)
+        await self.app(scope, receive, send_with_headers)
+
+
 def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge | None, model: str | None,
-               public_url: str) -> Starlette:
+               public_url: str, ui_dir: str | None = None) -> Starlette:
     def actor_of(request: Request) -> Actor:
         scheme, _, token = request.headers.get("authorization", "").partition(" ")
         if scheme.lower() != "bearer":
@@ -153,6 +181,9 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
     async def h_health(_request):
         return JSONResponse({"ok": True})
 
+    async def h_whoami(_request, actor):
+        return JSONResponse({"principal": actor.principal, "on_behalf_of": actor.on_behalf_of})
+
     mcp = build_mcp(dsn=dsn, verifier=verifier, bridge=bridge, model=model, public_url=public_url)
 
     @contextlib.asynccontextmanager
@@ -160,8 +191,10 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
         async with mcp.session_manager.run():
             yield
 
-    return Starlette(routes=[
+    app = Starlette(routes=[
         Route("/healthz", h_health),
+        Route("/v1/whoami", endpoint(h_whoami)),
+        *([Mount("/ui", app=StaticFiles(directory=ui_dir, html=True))] if ui_dir else []),
         Route("/v1/search", endpoint(h_search)),
         Route("/v1/citation", endpoint(h_citation)),
         Route("/v1/ask", endpoint(h_ask), methods=["POST"]),
@@ -169,6 +202,8 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
         Route("/v1/files/{book}/{content_id}/{path:path}", endpoint(h_file)),
         Mount("/", app=mcp.streamable_http_app()),  # serves /mcp and the protected-resource metadata
     ], lifespan=lifespan)
+    app.add_middleware(SecurityHeaders)
+    return app
 
 
 # --- MCP ---------------------------------------------------------------------------------------------------
@@ -244,5 +279,10 @@ def app_from_env() -> Starlette:
     if missing:
         raise RuntimeError(f"server not configured: set {', '.join(missing)}")
     bridge = llmdap.Bridge.from_env() if os.environ.get(llmdap.ENV["url"]) else None
+    with db.connect(os.environ[db.DSN_ENV]) as conn:  # refuse to serve a schema the code does not match
+        waiting = db.pending(conn)
+    if waiting:
+        raise RuntimeError(f"database needs migrations ({', '.join(waiting)}): run `kutuphane migrate`")
+    ui_dir = os.environ.get("KUTUPHANE_UI_DIR") or None
     return create_app(dsn=os.environ[db.DSN_ENV], verifier=identity.Verifier.from_env(), bridge=bridge,
-                      model=os.environ[ENV["model"]], public_url=os.environ[ENV["public_url"]])
+                      model=os.environ[ENV["model"]], public_url=os.environ[ENV["public_url"]], ui_dir=ui_dir)

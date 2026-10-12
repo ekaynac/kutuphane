@@ -10,7 +10,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import answers, audit, authz, catalog, db, gate, identity, llmdap, profiles, search
+from . import answers, audit, authz, catalog, db, devauth, gate, identity, llmdap, profiles, search
 from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, make_policy
 from .source import read_source
 
@@ -102,6 +102,17 @@ def cmd_reopen(conn, args) -> int:
     return 0
 
 
+def cmd_dev_keys(_conn, args) -> int:
+    _print(devauth.make_keys(Path(args.directory)))
+    return 0
+
+
+def cmd_dev_token(_conn, args) -> int:
+    print(devauth.make_token(Path(args.private_key), issuer=args.issuer, audience=args.audience, sub=args.sub,
+                             agent=args.agent, act=args.act))
+    return 0
+
+
 def cmd_whoami(_conn, args) -> int:
     token = sys.stdin.readline().strip()  # never on the command line (shell history, process list)
     try:
@@ -180,6 +191,17 @@ def parser() -> argparse.ArgumentParser:
     ro.add_argument("answer_id")
     ro.add_argument("--on-behalf-of")
     ro.set_defaults(fn=cmd_reopen)
+    dk = sub.add_parser("dev-keys", help="DEVELOPMENT ONLY: signing key + JWKS (needs KUTUPHANE_DEV=1)")
+    dk.add_argument("directory")
+    dk.set_defaults(fn=cmd_dev_keys, no_db=True)
+    dt = sub.add_parser("dev-token", help="DEVELOPMENT ONLY: sign a token (needs KUTUPHANE_DEV=1)")
+    dt.add_argument("sub")
+    dt.add_argument("--private-key", required=True)
+    dt.add_argument("--issuer", required=True)
+    dt.add_argument("--audience", default="kutuphane")
+    dt.add_argument("--agent", action="store_true", help="the subject is an agent")
+    dt.add_argument("--act", help="agent acting for the user `sub` (RFC 8693)")
+    dt.set_defaults(fn=cmd_dev_token, no_db=True)
     sub.add_parser("whoami", help="verify an access token read from stdin").set_defaults(fn=cmd_whoami)
     ex = sub.add_parser("explain", help="unified audit for a correlation id (or, with --answer, an answer id)")
     ex.add_argument("id")
@@ -192,6 +214,8 @@ def parser() -> argparse.ArgumentParser:
 def main(argv=None) -> int:
     args = parser().parse_args(argv)
     try:
+        if getattr(args, "no_db", False):
+            return args.fn(None, args)
         with db.connect() as conn:
             return args.fn(conn, args)
     except (ValueError, OSError, RuntimeError) as exc:  # SourceError, PolicyError, AuthzError are ValueErrors
