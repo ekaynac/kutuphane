@@ -14,7 +14,7 @@ from pypdf import PdfReader
 from .source import MARKDOWN, PDF, SourceFile
 
 READER_VERSION = 2  # 2: CRLF/BOM-tolerant frontmatter. Bump when source.py's classification changes.
-CHUNKER_VERSION = 1
+CHUNKER_VERSION = 2  # 2: oversized blocks are cut (_cap). Any change to cutting bumps this.
 TARGET_CHARS = 1200
 FTS_CONFIG = "turkish"  # Postgres text search configuration; part of the profile id
 MAX_CHUNK_CHARS = 4 * TARGET_CHARS  # a single huge block is cut at whitespace, so nothing escapes the index

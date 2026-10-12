@@ -52,10 +52,21 @@ def explain(conn, correlation_id: str, llmdap_records: list[dict]) -> dict:
 
 
 def _status(call: dict) -> str:
-    """complete: LLMDAP holds every record this call must have left; missing: it does not (or we cannot tell);
-    not_sent: the call never reached LLMDAP (refused by our egress check, or unreachable)."""
-    if call["http_status"] is None and call["derived_correlation_id"] is None:
+    """complete: LLMDAP holds every record this call must have left; not_sent: provably never transmitted (our
+    egress check refused it, or the connection was refused); missing: anything else — including calls whose
+    outcome is uncertain because the connection broke after sending."""
+    if (call["error"] or "").startswith("not_sent:"):
         return "not_sent"
     expected = EXPECTED_OK if call["http_status"] and 200 <= call["http_status"] < 300 else EXPECTED_REFUSED
     seen = {r.get("type") for r in call["llmdap"]}
     return "complete" if call["derived_correlation_id"] and expected <= seen else "missing"
+
+
+def explain_answer(conn, answer_id: str, llmdap_records: list[dict]) -> dict:
+    """AT-09 from what a user actually holds: the answer id."""
+    row = conn.execute("SELECT correlation_id, question, status, citations FROM answer WHERE id = %s",
+                       (answer_id,)).fetchone()
+    if row is None:
+        return {"answer_id": answer_id, "found": False}
+    report = explain(conn, row[0], llmdap_records)
+    return {"answer_id": answer_id, "question": row[1], "status": row[2], "citations": row[3], **report}

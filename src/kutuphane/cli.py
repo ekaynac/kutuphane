@@ -115,7 +115,10 @@ def cmd_whoami(_conn, args) -> int:
 
 def cmd_explain(conn, args) -> int:
     records = audit.read_llmdap_export(Path(args.llmdap_export)) if args.llmdap_export else []
-    _print(audit.explain(conn, args.correlation_id, records))
+    if args.answer:
+        _print(audit.explain_answer(conn, args.id, records))
+    else:
+        _print(audit.explain(conn, args.id, records))
     return 0
 
 
@@ -178,8 +181,9 @@ def parser() -> argparse.ArgumentParser:
     ro.add_argument("--on-behalf-of")
     ro.set_defaults(fn=cmd_reopen)
     sub.add_parser("whoami", help="verify an access token read from stdin").set_defaults(fn=cmd_whoami)
-    ex = sub.add_parser("explain", help="unified audit for one correlation id")
-    ex.add_argument("correlation_id")
+    ex = sub.add_parser("explain", help="unified audit for a correlation id (or, with --answer, an answer id)")
+    ex.add_argument("id")
+    ex.add_argument("--answer", action="store_true", help="the id is an answer id")
     ex.add_argument("--llmdap-export", help="JSONL from llmdap-audit-export")
     ex.set_defaults(fn=cmd_explain)
     return ap

@@ -77,3 +77,25 @@ def deliver_file(conn, actor: Actor, book: str, content_id: str, path: str) -> b
             raise NotFound(f"{book}@{content_id}:{path}")
         return catalog.read_file(conn, book, content_id, path)
     return guard(conn, actor, f"book:{book}", modes, fetch, action="read", content_id=content_id, path=path)
+
+
+def check_many(conn, actor: Actor, needs: dict, *, action: str, items: dict | None = None,
+               policies_out: dict | None = None) -> None:
+    """Right before handing out something built from several books (an answer, a reopened answer): decide every
+    book and mode in ONE statement, log, and refuse unless all hold. `needs`: {object: {modes}}."""
+    if not needs:
+        return
+    modes = ["read", "activate"] if any("activate" in m for m in needs.values()) else ["read"]
+    final = authz.allowed(conn, actor.principal, actor.on_behalf_of, modes)
+    missing = sorted(o for o, m in needs.items() if not set(m) <= set(final.decisions.get(o, {})))
+    if missing:
+        for obj in missing:
+            log_event(conn, actor, action, obj, "read", authz.Decision(False, "no current right"),
+                      final.policies.get(obj), None, None)
+        raise Denied(f"{action}: no current right on {', '.join(missing)}")
+    for obj, ms in needs.items():
+        for mode in sorted(ms, key=modes.index):
+            log_event(conn, actor, action if mode == "read" else mode, obj, mode, final.decisions[obj][mode],
+                      final.policies.get(obj), None, None, items=(items or {}).get(obj))
+    if policies_out is not None:
+        policies_out.update(final.policies)

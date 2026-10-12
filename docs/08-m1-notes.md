@@ -121,3 +121,20 @@ manifest ile ona işaret eder. Değişmeyen dosya yeni sürümde tekrar saklanma
   (ajan + K3 pasajında `activate`) tek ifadeyle doğrulanınca gösterilir; aksi hâlde hiçbiri gösterilmez. Cevabı
   yalnız soran principal ya da adına sorulan kullanıcı açabilir (paylaşım M1 dışında).
 - **Eşik:** `MIN_SCORE = 0` geçicidir; AT-08 eşikleri M0 ölçümünden sonra yazılır.
+
+# Astra kod incelemesi #3 (PR #11–#13) ve güvenlik incelemesi sonrası
+
+- **Cevap teslimi de yeniden denetlenir:** model dönünce, modele verilen **bütün** kaynak kitaplar (ajan + K3
+  pasajında `activate`) `gate.check_many` ile tek ifadede yeniden karara bağlanır; tutmazsa cevap ne döner ne
+  saklanır. `reopen` aynı fonksiyonu kullanır.
+- **Reopen bağlamı:** yalnız aynı principal + aynı "adına" bağlamı ya da cevabın yapıldığı kullanıcı açar; token'ın
+  "X adına" iddiası tek başına yetmez.
+- **Atıf:** tek bir geçersiz `[n]` bile cevabı reddeder (`not_in_library`). Anlamsal dayanak M0 değerlendirmesinde.
+- **Parçalayıcı v2:** `_cap` davranış değişikliğiydi; profil kimliği artık farklı (eski parçalar korunur).
+- **Migration 006:** eski satırlar `<korelasyon>.legacy-<id>` alır; aynı korelasyonda çok çağrı olan veride de
+  yükseltme çalışır (testli).
+- **Gönderim belirsizliği:** yalnız yerel egress reddi ve reddedilen bağlantı `not_sent` sayılır; gönderimden
+  sonra kopan bağlantı `uncertain:*` hatasıyla kaydedilir ve denetimde `missing` (rapor `complete: false`).
+- **Cevaptan denetim:** `audit.explain_answer(cevap_id)`; CLI `explain <id> --answer`.
+- **M1e notu (arayüz):** cevap gövdesi model çıktısıdır; arayüz onu **düz metin** olarak gösterir, Markdown
+  görseli/HTML yüklemez (pasaj metni dış URL'ye sızmasın).
