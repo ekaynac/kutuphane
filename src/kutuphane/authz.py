@@ -102,35 +102,70 @@ def revoke_delegation(conn, delegation_id: int) -> bool:
 
 
 # --- decisions ----------------------------------------------------------------------------------------------
+#
+# All modes of one request, the delegation, the holder's grants and the book's current policy are read by ONE
+# statement, so they come from one snapshot. Linearization point: a revocation committed before that statement
+# starts is honored; one committed after it is not. Expiry uses clock_timestamp(), never a transaction's frozen
+# now().
 
-def direct(conn, principal: str, obj: str, mode: str) -> Decision:
-    """The principal's own right: a direct tuple, or membership in a role that holds it."""
-    rows = conn.execute(
-        "SELECT g.id, m.id FROM grant_tuple g "
-        "LEFT JOIN grant_tuple m ON m.relation = 'member' AND m.subject = %(p)s AND m.revoked_at IS NULL "
-        "     AND g.subject = m.object || '#member' "
-        "WHERE g.object = %(o)s AND g.relation = %(mode)s AND g.revoked_at IS NULL "
-        "  AND (g.subject = %(p)s OR m.id IS NOT NULL) ORDER BY g.id",
-        {"p": principal, "o": obj, "mode": mode}).fetchall()
-    if not rows:
-        return Decision(False, "no grant")
-    ids = tuple(sorted({i for row in rows for i in row if i is not None}))
-    return Decision(True, "grant", ids)
+_DECIDE = """
+SELECT m.mode,
+       (SELECT d.id FROM delegation d
+         WHERE %(behalf)s::text IS NOT NULL AND d.delegate = %(p)s AND d.delegator = %(behalf)s
+           AND d.object = %(o)s AND d.mode = m.mode AND d.revoked_at IS NULL AND clock_timestamp() < d.expires_at
+         ORDER BY d.id DESC LIMIT 1) AS delegation_id,
+       ARRAY(SELECT DISTINCT x FROM grant_tuple g
+               LEFT JOIN grant_tuple mem ON mem.relation = 'member' AND mem.subject = %(holder)s
+                    AND mem.revoked_at IS NULL AND g.subject = mem.object || '#member'
+               CROSS JOIN LATERAL unnest(ARRAY[g.id, mem.id]) AS x
+              WHERE g.object = %(o)s AND g.relation = m.mode AND g.revoked_at IS NULL
+                AND (g.subject = %(holder)s OR mem.id IS NOT NULL) AND x IS NOT NULL
+              ORDER BY x) AS grant_ids,
+       (SELECT b.current_policy FROM book b WHERE 'book:' || b.slug = %(o)s) AS policy_id
+  FROM unnest(%(modes)s::text[]) WITH ORDINALITY AS m(mode, n)
+ ORDER BY m.n
+"""
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """Decisions for every requested mode, taken together, plus the policy in force at that instant."""
+    decisions: dict
+    policy_id: str | None
+
+    @property
+    def allowed(self) -> bool:
+        return all(d.allowed for d in self.decisions.values())
+
+
+def decide(conn, principal: str, on_behalf_of: str | None, obj: str, modes: list[str]) -> Verdict:
+    _check(PRINCIPAL, principal, "principal")
+    _check(OBJECT, obj, "object")
+    for m in modes:
+        _mode(m)
+    if on_behalf_of is not None:
+        _check(PRINCIPAL, on_behalf_of, "on_behalf_of")
+    rows = conn.execute(_DECIDE, {"p": principal, "behalf": on_behalf_of, "holder": on_behalf_of or principal,
+                                  "o": obj, "modes": list(modes)}).fetchall()
+    decisions, policy_id = {}, None
+    for mode, delegation_id, grant_ids, policy_id in rows:
+        ids = tuple(grant_ids)
+        if on_behalf_of is None:
+            d = Decision(True, "grant", ids) if ids else Decision(False, "no grant")
+        elif delegation_id is None:
+            d = Decision(False, "no live delegation")
+        elif not ids:
+            d = Decision(False, "delegator no longer holds the right", delegation_id=delegation_id)
+        else:
+            d = Decision(True, "delegation", ids, delegation_id)
+        decisions[mode] = d
+    return Verdict(decisions, policy_id)
 
 
 def authorize(conn, principal: str, on_behalf_of: str | None, obj: str, mode: str) -> Decision:
-    _check(PRINCIPAL, principal, "principal")
-    _check(OBJECT, obj, "object")
-    _mode(mode)
-    if on_behalf_of is None:
-        return direct(conn, principal, obj, mode)
-    _check(PRINCIPAL, on_behalf_of, "on_behalf_of")
-    row = conn.execute("SELECT id FROM delegation WHERE delegate = %s AND delegator = %s AND object = %s "
-                       "AND mode = %s AND revoked_at IS NULL AND now() < expires_at ORDER BY id DESC LIMIT 1",
-                       (principal, on_behalf_of, obj, mode)).fetchone()
-    if not row:
-        return Decision(False, "no live delegation")
-    held = direct(conn, on_behalf_of, obj, mode)
-    if not held.allowed:
-        return Decision(False, "delegator no longer holds the right", delegation_id=row[0])
-    return Decision(True, "delegation", held.grant_ids, row[0])
+    return decide(conn, principal, on_behalf_of, obj, [mode]).decisions[mode]
+
+
+def direct(conn, principal: str, obj: str, mode: str) -> Decision:
+    """The principal's own right: a direct tuple, or membership in a role that holds it."""
+    return authorize(conn, principal, None, obj, mode)

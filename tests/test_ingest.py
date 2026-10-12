@@ -39,7 +39,9 @@ def test_one_byte_changes_content_id_and_old_version_stays_readable(conn, okf_di
     first = publish(conn, okf_dir)
     target = okf_dir / "politika" / "veri-saklama.md"
     original = target.read_bytes()
-    target.write_bytes(original.replace("iki y".encode(), "üç y".encode()))
+    changed = bytearray(original)
+    changed[changed.index(b"silinir")] = ord("S")  # exactly one byte
+    target.write_bytes(bytes(changed))
     second = publish(conn, okf_dir)
     assert second.content_id != first.content_id and second.new_content
     assert (second.profile_id, second.policy_id) == (first.profile_id, first.policy_id)
@@ -142,3 +144,35 @@ def test_failed_publish_leaves_nothing(conn, okf_dir, monkeypatch):
 
 def test_migrate_is_idempotent(conn):
     assert db.migrate(conn) == []
+
+
+def test_pdf_three_ids_and_one_byte(conn, tmp_path):  # AT-01 for PDF
+    pdf = tmp_path / "mevzuat.pdf"
+    pdf.write_bytes(make_pdf("Madde 1 - Amac"))
+    first = publish(conn, pdf, book="mevzuat")
+    assert (first.profile_id[:3], first.policy_id[:3]) == ("pf_", "pl_")
+    pdf.write_bytes(make_pdf("Madde 1 - Amac."))
+    second = publish(conn, pdf, book="mevzuat")
+    assert second.content_id != first.content_id
+    assert (second.profile_id, second.policy_id) == (first.profile_id, first.policy_id)
+
+
+@pytest.mark.parametrize("bad", [{}, {"v": 1, "sensitivity": "normal", "egress": "local_only", "protection": "sealed"},
+                                 {**POLICY, "extra": 1}, None])
+def test_publish_validates_policy_itself(conn, okf_dir, bad):  # AT-16 at the shared boundary
+    with pytest.raises(PolicyError):
+        catalog.publish(conn, book="kitap", title="kitap", files=read_source(okf_dir), policy=bad,
+                        profile=catalog.whole_profile())
+    assert conn.execute("SELECT count(*) FROM book").fetchone()[0] == 0
+
+
+def test_publication_binds_three_ids(conn, okf_dir):  # D26
+    first = publish(conn, okf_dir)
+    other = {"name": "chunked", "components": {"reader": "kutuphane.source@2"}}
+    second = catalog.publish(conn, book="kitap", title="kitap", files=read_source(okf_dir), policy=POLICY,
+                             profile=other)
+    state = catalog.book_state(conn, "kitap")
+    assert state["profile_id"] == second.profile_id != first.profile_id
+    assert [(p["content_id"], p["profile_id"], p["policy_id"]) for p in state["publications"]] == [
+        (first.content_id, first.profile_id, first.policy_id),
+        (second.content_id, second.profile_id, second.policy_id)]

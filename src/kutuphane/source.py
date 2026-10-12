@@ -55,6 +55,8 @@ class _NoAliasLoader(yaml.SafeLoader):
 
 
 def frontmatter(text: str) -> dict | None:
+    """Classification only: line endings and a BOM are normalized here; stored bytes stay untouched."""
+    text = text.removeprefix("﻿").replace("\r\n", "\n").replace("\r", "\n")
     if not text.startswith("---\n"):
         return None
     end = text.find("\n---", 4)

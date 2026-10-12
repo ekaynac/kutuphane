@@ -157,3 +157,96 @@ def test_reference_is_not_an_instruction():
 def test_unknown_path_is_denied_before_existence_is_revealed(conn, book):
     with pytest.raises(Denied):
         gate.deliver_file(conn, Actor(U), BOOK, book, "yok.md")
+
+
+# --- Astra review #1: races across sessions, expiry inside a transaction, impersonation, CRLF, policy log ----
+
+def _revoke_during_fetch(monkeypatch, action):
+    real_read = catalog.read_file
+
+    def read_then_act(*args):
+        data = real_read(*args)
+        action()  # committed by another session after the first decision, before delivery
+        return data
+    monkeypatch.setattr(catalog, "read_file", read_then_act)
+
+
+def test_delegation_revoked_by_another_session_stops_delivery(conn, conn2, book, monkeypatch):  # AT-04
+    authz.grant(conn, OBJ, "read", U)
+    did = authz.delegate(conn, delegator=U, delegate_to=A, obj=OBJ, mode="read", expires_at=soon())
+    _revoke_during_fetch(monkeypatch, lambda: authz.revoke_delegation(conn2, did))
+    with pytest.raises(Denied, match="revoked before delivery"):
+        gate.deliver_file(conn, Actor(A, on_behalf_of=U), BOOK, book, DOC)
+
+
+def test_delegator_right_revoked_by_another_session_stops_delivery(conn, conn2, book, monkeypatch):  # AT-05
+    authz.grant(conn, OBJ, "read", f"{ROLE}#member")
+    authz.add_member(conn, ROLE, U)
+    authz.delegate(conn, delegator=U, delegate_to=A, obj=OBJ, mode="read", expires_at=soon())
+    _revoke_during_fetch(monkeypatch, lambda: authz.revoke(conn2, ROLE, "member", U))
+    with pytest.raises(Denied, match="revoked before delivery"):
+        gate.deliver_file(conn, Actor(A, on_behalf_of=U), BOOK, book, DOC)
+
+
+def test_activation_revoked_in_flight_stops_instruction(conn, conn2, book, monkeypatch):  # AT-12
+    for mode in ("read", "activate"):
+        authz.grant(conn, OBJ, mode, A)  # direct agent grants, no delegation
+    _revoke_during_fetch(monkeypatch, lambda: authz.revoke(conn2, OBJ, "activate", A))
+    with pytest.raises(Denied, match="activate on book:kitap: revoked before delivery"):
+        gate.deliver_file(conn, Actor(A), BOOK, book, SKILL)
+
+
+def test_direct_agent_grant_still_needs_activate_for_instructions(conn, book):  # AT-12
+    authz.grant(conn, OBJ, "read", A)
+    assert gate.deliver_file(conn, Actor(A), BOOK, book, DOC)
+    with pytest.raises(Denied, match="activate"):
+        gate.deliver_file(conn, Actor(A), BOOK, book, SKILL)
+
+
+def test_expiry_is_wall_clock_even_inside_a_transaction(conn, book):  # AT-06
+    import time
+    authz.grant(conn, OBJ, "read", U)
+    did = authz.delegate(conn, delegator=U, delegate_to=A, obj=OBJ, mode="read", expires_at=soon())
+    with conn.transaction():
+        conn.execute("UPDATE delegation SET expires_at = clock_timestamp() + interval '300 milliseconds' "
+                     "WHERE id = %s", (did,))
+        assert authz.authorize(conn, A, U, OBJ, "read").allowed
+        time.sleep(0.4)
+        assert not authz.authorize(conn, A, U, OBJ, "read").allowed
+
+
+def test_agent_cannot_borrow_another_users_rights(conn, book):  # AT-06 impersonation
+    other = "user:mehmet"
+    authz.grant(conn, OBJ, "read", U)
+    authz.grant(conn, OBJ, "read", other)
+    authz.delegate(conn, delegator=U, delegate_to=A, obj=OBJ, mode="read", expires_at=soon())
+    d = authz.authorize(conn, A, other, OBJ, "read")
+    assert not d.allowed and d.reason == "no live delegation"
+
+
+def test_crlf_and_bom_frontmatter_still_marks_instruction(conn, okf_dir):  # AT-12 bypass
+    (okf_dir / "crlf.md").write_bytes(b"---\r\ntype: skill\r\n---\r\nYap.\r\n")
+    (okf_dir / "bom.md").write_bytes("﻿---\ntype: prompt\n---\nYap.\n".encode())
+    r = catalog.publish(conn, book="crlf", title="crlf", files=read_source(okf_dir),
+                        policy=make_policy(sensitivity="normal", egress="local_only", protection="standard"),
+                        profile=catalog.whole_profile())
+    authz.grant(conn, "book:crlf", "read", A)
+    for path in ("crlf.md", "bom.md"):
+        with pytest.raises(Denied, match="activate"):
+            gate.deliver_file(conn, Actor(A), "crlf", r.content_id, path)
+    assert catalog.read_file(conn, "crlf", r.content_id, "crlf.md") == b"---\r\ntype: skill\r\n---\r\nYap.\r\n"
+
+
+def test_access_log_records_policy_in_force_at_delivery(conn, conn2, book, okf_dir, monkeypatch):
+    authz.grant(conn, OBJ, "read", U)
+    restricted = make_policy(sensitivity="restricted", egress="local_only", protection="standard")
+
+    def repolicy():
+        catalog.publish(conn2, book=BOOK, title=BOOK, files=read_source(okf_dir), policy=restricted,
+                        profile=catalog.whole_profile())
+    before = catalog.current_policy(conn, BOOK)
+    _revoke_during_fetch(monkeypatch, repolicy)
+    actor = Actor(U)
+    gate.deliver_file(conn, actor, BOOK, book, DOC)
+    logged = events(conn, actor.correlation_id)[0][5]
+    assert logged == catalog.current_policy(conn, BOOK) != before

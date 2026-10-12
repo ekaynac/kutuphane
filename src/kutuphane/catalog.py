@@ -1,4 +1,4 @@
-"""Catalog writes and reads (M1a). One ingest is one transaction: either the new version is published or
+"""Catalog writes and reads. One ingest is one transaction: either the new version is published or
 nothing changes."""
 from dataclasses import dataclass
 from importlib.metadata import version
@@ -6,9 +6,10 @@ from importlib.metadata import version
 from psycopg.types.json import Jsonb
 
 from . import ids
+from .policy import check_policy
 from .source import SourceFile
 
-READER_VERSION = 1  # bump when source.py's validation/recording semantics change
+READER_VERSION = 2  # 2: CRLF/BOM-tolerant frontmatter. Bump when source.py's validation/recording semantics change
 
 
 def whole_profile() -> dict:
@@ -35,6 +36,7 @@ def manifest_of(files: list[SourceFile]) -> list[dict]:
 def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dict, profile: dict) -> Published:
     if len({f.path for f in files}) != len(files):
         raise ValueError("duplicate file paths: the content id would not cover every stored file")
+    policy = check_policy(policy)
     content_id = ids.content_id({f.path: f.sha256 for f in files})
     policy_id = ids.policy_id(policy)
     profile_id = ids.profile_id(profile)
@@ -50,14 +52,16 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
                      (policy_id, Jsonb(policy)))
         conn.execute("INSERT INTO profile_version (id, spec) VALUES (%s, %s) ON CONFLICT DO NOTHING",
                      (profile_id, Jsonb(profile)))
-        conn.execute("UPDATE book SET title = %s, current_content = %s, current_policy = %s, updated_at = now() "
-                     "WHERE slug = %s", (title, content_id, policy_id, book))
+        conn.execute("UPDATE book SET title = %s, current_content = %s, current_profile = %s, current_policy = %s, "
+                     "updated_at = now() WHERE slug = %s", (title, content_id, profile_id, policy_id, book))
+        conn.execute("INSERT INTO publication (book, content_id, profile_id, policy_id) VALUES (%s, %s, %s, %s)",
+                     (book, content_id, profile_id, policy_id))
     return Published(book, content_id, profile_id, policy_id,
                      new_content=current[0] != content_id, new_policy=current[1] != policy_id)
 
 
 def book_state(conn, book: str) -> dict | None:
-    row = conn.execute("SELECT b.slug, b.title, b.current_content, b.current_policy, p.doc, c.manifest "
+    row = conn.execute("SELECT b.slug, b.title, b.current_content, b.current_policy, p.doc, c.manifest, b.current_profile "
                        "FROM book b LEFT JOIN policy_version p ON p.id = b.current_policy "
                        "LEFT JOIN content_version c ON c.book = b.slug AND c.id = b.current_content "
                        "WHERE b.slug = %s", (book,)).fetchone()
@@ -65,8 +69,11 @@ def book_state(conn, book: str) -> dict | None:
         return None
     versions = [r[0] for r in conn.execute("SELECT id FROM content_version WHERE book = %s ORDER BY created_at",
                                            (book,))]
-    return {"book": row[0], "title": row[1], "content_id": row[2], "policy_id": row[3], "policy": row[4],
-            "files": row[5], "content_versions": versions}
+    pubs = [{"content_id": c, "profile_id": pf, "policy_id": pl, "published_at": t.isoformat()}
+            for c, pf, pl, t in conn.execute("SELECT content_id, profile_id, policy_id, published_at FROM publication "
+                                             "WHERE book = %s ORDER BY id", (book,))]
+    return {"book": row[0], "title": row[1], "content_id": row[2], "profile_id": row[6], "policy_id": row[3],
+            "policy": row[4], "files": row[5], "content_versions": versions, "publications": pubs}
 
 
 def current_policy(conn, book: str) -> str | None:
