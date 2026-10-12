@@ -6,9 +6,10 @@ import argparse
 import dataclasses
 import json
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import catalog, db
+from . import authz, catalog, db, gate
 from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, PolicyError, make_policy
 from .source import SourceError, read_source
 
@@ -49,6 +50,43 @@ def cmd_cat(conn, args) -> int:
     return 0
 
 
+def cmd_grant(conn, args) -> int:
+    if args.mode == "member":
+        _print({"id": authz.add_member(conn, args.object, args.subject)})
+    else:
+        _print({"id": authz.grant(conn, args.object, args.mode, args.subject)})
+    return 0
+
+
+def cmd_revoke(conn, args) -> int:
+    _print({"revoked": authz.revoke(conn, args.object, args.mode, args.subject)})
+    return 0
+
+
+def cmd_delegate(conn, args) -> int:
+    expires = datetime.now(timezone.utc) + timedelta(hours=args.hours)
+    did = authz.delegate(conn, delegator=args.user, delegate_to=args.agent, obj=args.object, mode=args.mode,
+                         expires_at=expires, purpose=args.purpose)
+    _print({"id": did, "expires_at": expires.isoformat()})
+    return 0
+
+
+def cmd_undelegate(conn, args) -> int:
+    _print({"revoked": authz.revoke_delegation(conn, args.id)})
+    return 0
+
+
+def cmd_read(conn, args) -> int:
+    try:
+        data = gate.deliver_file(conn, gate.Actor(args.principal, args.on_behalf_of), args.book, args.content_id,
+                                 args.path)
+    except (gate.Denied, gate.NotFound) as exc:
+        print(f"denied: {exc}", file=sys.stderr)
+        return 3
+    sys.stdout.buffer.write(data)
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="kutuphane")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -64,7 +102,32 @@ def parser() -> argparse.ArgumentParser:
     show = sub.add_parser("show", help="current versions and files of a book")
     show.add_argument("book")
     show.set_defaults(fn=cmd_show)
-    cat = sub.add_parser("cat", help="print one file of a specific content version")
+    for name, fn, text in (("grant", cmd_grant, "give a mode (or role membership) to a subject"),
+                           ("revoke", cmd_revoke, "revoke a grant or membership")):
+        g = sub.add_parser(name, help=text)
+        g.add_argument("object", help="book:<slug>, or role:<name> for membership")
+        g.add_argument("mode", choices=(*authz.MODES, "member"))
+        g.add_argument("subject", help="user:/agent:/role:<name>#member")
+        g.set_defaults(fn=fn)
+    dl = sub.add_parser("delegate", help="time-boxed user→agent delegation (one level)")
+    dl.add_argument("user")
+    dl.add_argument("agent")
+    dl.add_argument("object")
+    dl.add_argument("mode", choices=authz.MODES)
+    dl.add_argument("--hours", type=float, required=True)
+    dl.add_argument("--purpose")
+    dl.set_defaults(fn=cmd_delegate)
+    ud = sub.add_parser("undelegate", help="revoke a delegation")
+    ud.add_argument("id", type=int)
+    ud.set_defaults(fn=cmd_undelegate)
+    rd = sub.add_parser("read", help="read a file through the authorization gate")
+    rd.add_argument("principal")
+    rd.add_argument("book")
+    rd.add_argument("content_id")
+    rd.add_argument("path")
+    rd.add_argument("--on-behalf-of")
+    rd.set_defaults(fn=cmd_read)
+    cat = sub.add_parser("cat", help="operator: print one file of a version, bypassing authorization")
     cat.add_argument("book")
     cat.add_argument("content_id")
     cat.add_argument("path")
@@ -77,7 +140,7 @@ def main(argv=None) -> int:
     try:
         with db.connect() as conn:
             return args.fn(conn, args)
-    except (SourceError, PolicyError, RuntimeError) as exc:
+    except (SourceError, PolicyError, authz.AuthzError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 

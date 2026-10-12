@@ -1,6 +1,8 @@
-# M1a notları: katalog ve sürüm kimlikleri
+# M1 notları: dilimlerde verilen küçük teknik kararlar
 
-Tarih: 2026-10-12. M1a'da verilen küçük teknik kararlar (07 §5). Kod: `src/kutuphane/`.
+Tarih: 2026-10-12. M1 dilimlerinde verilen küçük teknik kararlar (07 §5). Kod: `src/kutuphane/`.
+
+# M1a: katalog ve sürüm kimlikleri
 
 ## Sürüm kimlikleri
 
@@ -27,3 +29,16 @@ manifest ile ona işaret eder. Değişmeyen dosya yeni sürümde tekrar saklanma
 - **Sıra numarası kapsamı: (imzalayan anahtar, kitap) başına monoton tam sayı.** Alan kurulum her çift için
   kabul ettiği en büyük sırayı tutar; eşit ya da küçük sıra reddedilir (AT-14). Kurulum başına tek sayaç
   reddedildi: bir kitabın bekleyen paketi başka kitabın paketini kilitlerdi.
+
+# M1b: yetki çekirdeği
+
+- **Üç tablo:** `grant_tuple` (OpenFGA biçiminde `object, relation, subject`; rol üyeliği de bir demet:
+  `role:hukuk member user:ayse`; kitap hakkı `book:x read role:hukuk#member`), `delegation`, `access_event`.
+  İptal yumuşak (`revoked_at`); erişim kaydı kararın dayandığı satırları (`grant_ids`, `delegation_id`) ve o
+  anki politika kimliğini taşır.
+- **Rol derinliği 1:** roller iç içe geçmez. Delegasyon yalnız kullanıcı → ajan; ajan devredemez.
+- **Tek kapı:** `gate.deliver_file`; karar fetch öncesi ve teslimden hemen önce iki kez alınır. Arama (M1d) ve
+  export (M1f) aynı kapıyı kullanacak.
+- **K3 tanıma:** frontmatter `type` ∈ {skill, prompt, agent-card, agent-instructions} ya da dosya adı
+  AGENTS.md / CLAUDE.md / SKILL.md. Ajan için `read` + `activate` gerekir; insan `read` ile referans okur.
+- **Sınır:** kimlik doğrulama M1c'de; o zamana kadar CLI yönetim komutları ana makinedeki operatöre güvenir.
