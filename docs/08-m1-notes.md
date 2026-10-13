@@ -253,3 +253,17 @@ sızıntısı bulunmadı; düzeltilenler:
    profille süzülür.
 5. **Arayüz:** bitmiş oturumun geç gelen 401'i yeni oturumu kapatmaz.
 6. **Belgeler:** sorgu metninin embedding rotasına gidişi, batch ortalaması süreler, bge-m3'ün `.bin` ağırlığı.
+
+# Canlı LLMDAP sözleşme denetimi (AT-09, AT-11)
+
+- `deploy/llmdap_contract.py`, gerçek bir LLMDAP gateway'ine karşı uçtan uca denetim yapar:
+  - indeksleme, hibrit arama, cevap;
+  - her çağrıda LLMDAP'ın türetilmiş kimliği;
+  - birleşik denetimin LLMDAP zinciriyle `complete` olması;
+  - başka özneyi adlandıran başlık, yanlış anahtar ve yalnız paylaşılan sır → 401.
+
+  Kurulumda ve her LLMDAP yükseltmesinden sonra çalıştırılır.
+- **2026-10-13 sonucu:** 9/9.
+  - Gateway: LLMDAP `main` (0.26.0), stok `@llmdap/gateway`, yalnız bridge (`rag:false`, `memory:false`), subject-keys modu.
+  - Upstream: yerel CPU bge-m3 + sabit sohbet ucu.
+  - Bu deneme gateway'i Kütüphane oturumunun geçici alanında kaynaktan derleyerek yapıldı. Compose'a girmesi LLMDAP#237'yi (sade imaj) bekliyor.
