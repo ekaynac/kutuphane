@@ -62,8 +62,8 @@ manifest ile ona işaret eder. Değişmeyen dosya yeni sürümde tekrar saklanma
   (varsayılan `user`). **Delegasyon RFC 8693 `act` claim'i ile:** `sub` kullanıcı, `act.sub` ajan; iç içe `act`
   reddedilir. Token yetki vermez; ajan yine canlı delegasyon ister. Principal/nesne desenleri `\Z` ile biter
   (sondaki satır sonu kabul edilmez); e-posta biçimli adlar için `@` serbest.
-- **Egress:** `llmdap.chat` → `POST /bridge/<route>/v1/chat/completions`; başlıklar `x-llmdap-auth` (paylaşılan
-  sır; #223 ile OIDC'ye geçecek), `x-llmdap-user`, `x-llmdap-for-subject`, `x-llmdap-purpose`,
+- **Egress:** `llmdap.chat` → `POST /bridge/<route>/v1/chat/completions`; başlıklar (D52'den beri)
+  `Authorization: Bearer <Core'un LLMDAP özne anahtarı>`, `x-llmdap-for-subject`, `x-llmdap-purpose`,
   `x-llmdap-correlation-id`. LLMDAP'ın döndürdüğü `x-llmdap-correlation-id-derived` `model_call` tablosuna yazılır;
   başarısız denemeler de kaydedilir. Yönlendirme izlenmez (sır başka adrese gitmesin); yalnız http(s).
 - **Denetim:** LLMDAP'ta HTTP denetim sorgusu yok; `audit.explain` erişim kaydı + `model_call` + LLMDAP
@@ -214,3 +214,42 @@ Ham metin: `docs/research/2026-10-12-astra-review-m1-4-raw.md`. Altı bulgunun h
 
 Test boşlukları da kapandı: AT-03 artık gerçek `/mcp` `tools/call` ile (arama + pasaj açma, HTTP ile aynı);
 AT-11 için dokuz bozuk-token durumu hem HTTP'de hem MCP'de (`initialize` ve `tools/call`) 401.
+
+# M1d (2. kısım): hibrit arama, LLMDAP embedding ve özne anahtarı (D52)
+
+- **LLMDAP bağlantısı:** `KUTUPHANE_LLMDAP_KEY` (Core'un `llmdap_sk_` anahtarı) yalnız `Authorization` başlığında
+  gider; paylaşılan sır ve `x-llmdap-user` gönderilmez. `x-llmdap-for-subject` = adına çalışılan kullanıcı, yoksa
+  çağıran. LLMDAP politikası: `p, svc-kutuphane, llm:invoke, llm/<rota>`.
+- **Embedding:** `llmdap.embed` → `POST /bridge/<embed-rota>/v1/embeddings`; aynı `model_call` kaydı ve aynı egress
+  denetimi (yerel kitap bulut embedding rotasına gitmez). `ingest` ve `approve-import` yeni sürümü indeksler;
+  `kutuphane index <kitap>` eksikleri tamamlar. İndeksleme çağrılarının principal'ı `service:indexer`.
+- **Arama:** tek SQL ifadesi: aynı ön-süzgeçten FTS sırası ve (sorgu vektörü varsa) kosinüs sırası, her biri 50
+  aday, RRF (k=60). Vektör yoksa sıra yalnız FTS'tir (ölçümle doğrulandı: R@10 0.563 aynı). Sorgu vektörü
+  alınamazsa arama tam metinle sürer; başarısız çağrı `model_call`'da kalır.
+- **Sorgu metni:** arama sorgusu embedding rotasına kaynak kitapsız gider (kitap içeriği değil, kullanıcının
+  yazdığı metin). Embedding rotası `cloud` ise sorgu kurum dışına çıkar; sorgu gizliliği isteniyorsa embedding
+  rotası `local` olmalı (Spark profili zaten yerel).
+- **Boyut:** bir modelin bütün vektörleri aynı genişlikte; farklı genişlik dönen model indekslenmez, sorgusu
+  tam metne düşer (model değiştiyse yeni model adı).
+- **Sınır:** RRF puanı her sonuçta > 0, bu yüzden "kütüphanede yok" artık puan eşiğiyle değil modelin
+  `KÜTÜPHANEDE_YOK` cevabıyla gelir; AT-08 eşiği etiketlerle belirlenecek.
+- **Reranker yok:** LLMDAP'ta rerank yüzeyi yok (LLMDAP#236). M0'a göre reranker R@1'i 0.34 → 0.41
+  taşıyor; yüzey gelince aynı `_post` yolundan eklenir.
+- **Testler:** sahte bridge gerçek sözleşmeyi taklit eder (özne anahtarı, başkasını adlandıran `x-llmdap-user` →
+  401, embeddings yolu). Vektörle eşleşen ama okunamayan kitap görünmez; başka modelin vektörü yok sayılır; ajan
+  `activate` olmadan talimat parçasını vektör yolundan da alamaz.
+
+# Astra incelemesi #5 (PR #22–#24) ve düzeltmeler
+
+Ham metin: `docs/research/2026-10-13-astra-review-m1-5-raw.md`. Yetki atlaması, SQL enjeksiyonu ya da anahtar
+sızıntısı bulunmadı; düzeltilenler:
+
+1. **Paket:** PostgreSQL'in tutamadığı değerler (NUL karakter, `bigint` dışı sıra) artık kayıtlı ret.
+2. **LLMDAP etiketi:** principal en çok 128 karakter (LLMDAP `isChainLabel` sınırı); her principal geçerli
+   `x-llmdap-for-subject`.
+3. **Embedding cevabı:** indeksler tam `0..n-1`, vektörler sonlu, sıfır değil, tek genişlikte; bir modelin
+   bütün vektörleri aynı genişlikte. Uymayan cevap saklanmaz; uymayan sorgu tam metne düşer.
+4. **Ölçüm betiği:** önbellek girdiler, parametreler ve model revizyonu özetiyle anahtarlanır; parçalar güncel
+   profille süzülür.
+5. **Arayüz:** bitmiş oturumun geç gelen 401'i yeni oturumu kapatmaz.
+6. **Belgeler:** sorgu metninin embedding rotasına gidişi, batch ortalaması süreler, bge-m3'ün `.bin` ağırlığı.

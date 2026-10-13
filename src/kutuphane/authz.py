@@ -12,7 +12,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 MODES = ("discover", "read", "use", "activate")
-PRINCIPAL = re.compile(r"^(user|agent|role):[a-z0-9][a-z0-9._@-]{0,126}\Z")
+# At most 128 characters in all, so a principal is always a valid LLMDAP chain label (x-llmdap-for-subject).
+PRINCIPAL = re.compile(r"^(user|agent|role):[a-z0-9][a-z0-9._@-]{0,121}\Z")
 OBJECT = re.compile(r"^book:[a-z0-9][a-z0-9-]{0,62}\Z")
 
 

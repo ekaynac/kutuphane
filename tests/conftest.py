@@ -67,7 +67,7 @@ def conn_b(conn):
     """A second installation: its own schema in the test database, fully migrated."""
     conn.execute("DROP SCHEMA IF EXISTS install_b CASCADE")
     conn.execute("CREATE SCHEMA install_b")
-    with db.connect(os.environ[TEST_DSN_ENV] + "?options=-csearch_path%3Dinstall_b") as c:
+    with db.connect(os.environ[TEST_DSN_ENV] + "?options=-csearch_path%3Dinstall_b,public") as c:
         db.migrate(c)
         yield c
     conn.execute("DROP SCHEMA IF EXISTS install_b CASCADE")

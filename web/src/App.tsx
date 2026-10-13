@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Answer, ApiError, Hit, Me, Passage, Reopened, api, describe, loadToken, refHandle, saveToken } from "./api";
 
 // Model output is shown as plain text: no Markdown, no HTML, no images (Astra review #3). Only [n] becomes a button.
@@ -84,8 +84,15 @@ function Workspace({ token, onSignOut }: { token: string; onSignOut: () => void 
   const [hits, setHits] = useState<Hit[] | null>(null);
   const [passage, setPassage] = useState<Passage | null>(null);
   const [answerId, setAnswerId] = useState("");
+  // A reply that arrives after this session ended (signed out, or someone else signed in) must not act on the new one.
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true; // StrictMode mounts twice in development
+    return () => void (live.current = false);
+  }, []);
 
   const fail = (e: unknown) => {
+    if (!live.current) return;
     if (e instanceof ApiError && e.status === 401) onSignOut();
     setError(e instanceof Error ? e.message : "Beklenmeyen hata.");
   };

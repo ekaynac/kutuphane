@@ -177,7 +177,7 @@ def test_racing_approvals_of_two_sequences_never_move_backwards(conn, conn_b, ke
     trust(conn_b, info)
     two, three = packages.export(conn, "kitap", private), packages.export(conn, "kitap", private)
     ids = [packages.receive(conn_b, p)["id"] for p in (two, three)]
-    dsn = os.environ["KUTUPHANE_TEST_DSN"] + "?options=-csearch_path%3Dinstall_b"
+    dsn = os.environ["KUTUPHANE_TEST_DSN"] + "?options=-csearch_path%3Dinstall_b,public"
     errors = []
 
     def approve(i):
@@ -206,7 +206,7 @@ def test_revocation_during_approval_refuses_the_package(conn, conn_b, key, sourc
     private, info = key
     trust(conn_b, info)
     received = packages.receive(conn_b, packages.export(conn, "kitap", private))
-    dsn = os.environ["KUTUPHANE_TEST_DSN"] + "?options=-csearch_path%3Dinstall_b"
+    dsn = os.environ["KUTUPHANE_TEST_DSN"] + "?options=-csearch_path%3Dinstall_b,public"
     outcome = []
     with db.connect(dsn) as admin, db.connect(dsn) as approver:
         with admin.transaction():
@@ -252,6 +252,27 @@ def raw_package(manifest: bytes) -> bytes:
 ])
 def test_malformed_manifests_are_rejected_on_record(conn_b, manifest, reason):  # AT-14, Astra #4
     result = packages.receive(conn_b, raw_package(manifest))
+    assert result["status"] == "rejected" and reason in result["reasons"][0]
+
+
+def resigned(pkg: bytes, private, change) -> bytes:
+    """A correctly signed package whose manifest was changed by its own (trusted) signer."""
+    import base64
+    import json
+    from kutuphane import ids
+    body = ids.canonical(change(json.loads(tarfile.open(fileobj=io.BytesIO(pkg)).extractfile("MANIFEST.json").read())))
+    sig = base64.b64encode(private.sign(body))
+    return rewrite(pkg, lambda n, d: body if n == "MANIFEST.json" else sig if n == "MANIFEST.sig" else d)
+
+
+@pytest.mark.parametrize("change,reason", [
+    (lambda m: {**m, "title": "a\x00b"}, "NUL"),
+    (lambda m: {**m, "sequence": 2**63}, "invalid sequence"),
+])
+def test_values_postgres_cannot_hold_are_recorded_rejections(conn, conn_b, key, source_book, change, reason):
+    private, info = key
+    trust(conn_b, info)
+    result = packages.receive(conn_b, resigned(packages.export(conn, "kitap", private), private, change))
     assert result["status"] == "rejected" and reason in result["reasons"][0]
 
 

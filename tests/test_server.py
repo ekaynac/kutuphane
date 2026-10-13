@@ -248,3 +248,20 @@ def test_mcp_errors_are_uniform_and_hide_internals(app_env, keys, verifier, monk
     with pytest.raises(Exception) as failed:
         call_tool(mcp, claims, "search_library", {"query": "kayıt"})
     assert "internal error" in str(failed.value) and "INTERNAL_MARKER" not in str(failed.value)
+
+
+def test_http_search_embeds_the_query_through_llmdap(conn, okf_dir, verifier, fake, keys):  # D31 hybrid
+    from kutuphane import vectors
+    catalog.publish(conn, book="kitap", title="kitap", files=read_source(okf_dir),
+                    policy=make_policy(sensitivity="normal", egress="local_only", protection="standard"),
+                    profile=profiles.spec("chunked"))
+    authz.grant(conn, "book:kitap", "read", U)
+    vectors.index(conn, fake.embedder(), "kitap")
+    app = server.create_app(dsn=os.environ["KUTUPHANE_TEST_DSN"], verifier=verifier, bridge=fake.bridge(),
+                            model="qwen", public_url=PUBLIC, embedder=fake.embedder())
+    with TestClient(app) as client:
+        r = client.get("/v1/search", params={"q": "kayıtlar saklanır"}, headers=bearer(keys))
+    assert r.status_code == 200 and r.json()["results"]
+    path, headers = fake.hits[-1]
+    assert path.endswith("/v1/embeddings") and headers["x-llmdap-purpose"] == "search"
+    assert headers["x-llmdap-for-subject"] == U

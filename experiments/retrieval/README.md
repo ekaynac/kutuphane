@@ -43,6 +43,10 @@ bge-reranker-v2-m3 `953dc6f`, Qwen3-Reranker-0.6B-seq-cls `6a5829f` (ağırlıkl
 | **hibrit + bge-reranker-v2-m3** | **0.411** | **0.609** | **0.709** | **0.505** | 404 ms |
 | hibrit + Qwen3-Reranker-0.6B | 0.232 | 0.556 | 0.656 | 0.362 | 2.3 sn |
 
+Sorgu vektörü süreleri 16'lık batch ortalamasıdır, tek isteğin gecikmesi değildir; reranker süresi soru başınadır
+(30 aday tek seferde). bge-m3 yalnız `pytorch_model.bin` yayımlıyor (safetensors yok); `transformers` bunu
+`weights_only` ile açar, uzak kod çalıştırılmaz, revizyonlar sabittir.
+
 **Çapraz test (CPU ↔ GPU, bge-m3):** belge vektörlerinin kosinüsü en az 0.9997; ilk-10 vektör sonuçları %99.5 aynı.
 Reranker puan farkı en çok 0.0023 (bge) / 0.011 (Qwen3), 1140 ortak çift. **Kalite cihazdan bağımsız.**
 
