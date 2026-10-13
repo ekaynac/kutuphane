@@ -115,4 +115,5 @@ dış bağımlılığa bağlı.
 | AT-16 | yeşil | zorunlu E5/E8/E9, `purpose` kaydı, `publish` sınırında doğrulama |
 
 **M1'i kapatmak için kalan:** LLMDAP #222 (embedding egress) ve #223 (OIDC) + gerçek LLMDAP'ın compose'a
-eklenmesi (D49); M0 ölçümü (etiketler + GPU izni) → retrieval bileşenleri (vektör + reranker) ve AT-08 eşikleri.
+eklenmesi (D49); M0: kamu korpusunda model ölçümü yapıldı (öneri bge-m3 + hibrit + bge-reranker-v2-m3,
+`experiments/retrieval`); iç doküman etiketleri → kesin seçim ve AT-08 eşikleri.
