@@ -98,6 +98,14 @@ def _members(data: bytes) -> dict[str, bytes]:
     return out
 
 
+def _has_nul(value) -> bool:
+    if isinstance(value, str):
+        return "\x00" in value
+    if isinstance(value, dict):
+        return any(_has_nul(k) or _has_nul(v) for k, v in value.items())
+    return isinstance(value, list) and any(_has_nul(v) for v in value)
+
+
 def _manifest(body: bytes) -> dict:
     """Parse and type-check before anything else reads a field: a malformed manifest is a recorded rejection."""
     try:
@@ -109,6 +117,8 @@ def _manifest(body: bytes) -> dict:
         raise PackageError("unknown package format")
     if canonical != body:
         raise PackageError("manifest is not in canonical form")
+    if _has_nul(manifest):  # PostgreSQL text and jsonb cannot hold it
+        raise PackageError("manifest contains a NUL character")
     for name, kind in MANIFEST_FIELDS.items():
         if type(manifest.get(name)) is not kind:
             raise PackageError(f"manifest field {name!r} is missing or not a {kind.__name__}")
@@ -153,7 +163,7 @@ def _verify(conn, members: dict[str, bytes]) -> tuple[dict, list]:
             raise PackageError(str(exc)) from None
     if ids.content_id({sf.path: sf.sha256 for sf in files}) != manifest["content_id"]:
         raise PackageError("content id does not match the files")
-    if manifest["sequence"] < 1:
+    if not 1 <= manifest["sequence"] < 2**63:  # a bigint column
         raise PackageError("invalid sequence")
     last = _last_sequence(conn, manifest["issuer"], manifest["book"])
     if manifest["sequence"] <= last:

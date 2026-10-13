@@ -83,3 +83,35 @@ def test_failed_query_embedding_falls_back_to_full_text(conn, fake, okf_dir):
     assert conn.execute("SELECT http_status FROM model_call WHERE correlation_id = %s",
                         (actor.correlation_id,)).fetchone() == (401,)              # the failure is on record
     assert search.search(conn, actor, "kayıtlar saklanır", vector=None)          # full text still answers
+
+
+@pytest.mark.parametrize("reply", [
+    lambda texts: [{"index": 0, "embedding": fake_vector(t)} for t in texts],          # every vector claims index 0
+    lambda texts: [{"index": i, "embedding": [float("nan")] * 16} for i, _ in enumerate(texts)],
+    lambda texts: [{"index": i, "embedding": [0.0] * 16} for i, _ in enumerate(texts)],
+    lambda texts: [{"index": i, "embedding": []} for i, _ in enumerate(texts)],
+])
+def test_bad_embeddings_answers_are_refused_not_stored(conn, fake, okf_dir, reply):  # Astra review #5
+    publish(conn, okf_dir)
+    fake.embed_reply = reply
+    with pytest.raises(llmdap.EgressError):
+        vectors.index(conn, fake.embedder(), "kitap")
+    assert conn.execute("SELECT count(*) FROM chunk_vector").fetchone()[0] == 0
+
+
+def test_one_model_one_width(conn, fake, okf_dir):  # Astra review #5
+    publish(conn, okf_dir)
+    publish(conn, okf_dir, book="ikinci")
+    vectors.index(conn, fake.embedder(), "kitap")
+    authz.grant(conn, "book:kitap", "read", U)
+    fake.embed_reply = lambda texts: [{"index": i, "embedding": fake_vector(t, dims=8)} for i, t in enumerate(texts)]
+    with pytest.raises(llmdap.EgressError, match="dimensions"):
+        vectors.index(conn, fake.embedder(), "ikinci")                              # same name, new width
+    assert vectors.query_vector(conn, fake.embedder(), Actor(U), "kayıtlar") is None  # search falls back to text
+    assert search.search(conn, Actor(U), "kayıtlar saklanır")
+
+
+def test_every_principal_is_a_valid_llmdap_label():  # LLMDAP isChainLabel: at most 128 characters
+    longest = "agent:" + "a" * 122
+    assert authz.PRINCIPAL.match(longest) and len(longest) == 128
+    assert not authz.PRINCIPAL.match("agent:" + "a" * 123)

@@ -255,6 +255,27 @@ def test_malformed_manifests_are_rejected_on_record(conn_b, manifest, reason):  
     assert result["status"] == "rejected" and reason in result["reasons"][0]
 
 
+def resigned(pkg: bytes, private, change) -> bytes:
+    """A correctly signed package whose manifest was changed by its own (trusted) signer."""
+    import base64
+    import json
+    from kutuphane import ids
+    body = ids.canonical(change(json.loads(tarfile.open(fileobj=io.BytesIO(pkg)).extractfile("MANIFEST.json").read())))
+    sig = base64.b64encode(private.sign(body))
+    return rewrite(pkg, lambda n, d: body if n == "MANIFEST.json" else sig if n == "MANIFEST.sig" else d)
+
+
+@pytest.mark.parametrize("change,reason", [
+    (lambda m: {**m, "title": "a\x00b"}, "NUL"),
+    (lambda m: {**m, "sequence": 2**63}, "invalid sequence"),
+])
+def test_values_postgres_cannot_hold_are_recorded_rejections(conn, conn_b, key, source_book, change, reason):
+    private, info = key
+    trust(conn_b, info)
+    result = packages.receive(conn_b, resigned(packages.export(conn, "kitap", private), private, change))
+    assert result["status"] == "rejected" and reason in result["reasons"][0]
+
+
 def test_oversized_input_is_refused_without_storing_it(conn_b, monkeypatch):  # Astra #4
     monkeypatch.setattr(packages, "MAX_PACKAGE_BYTES", 1024)
     result = packages.receive(conn_b, b"x" * 2048)

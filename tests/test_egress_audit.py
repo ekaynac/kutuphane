@@ -29,7 +29,7 @@ class FakeBridge:
     """Mimics the LLMDAP bridge contract we rely on (paths, headers, derived correlation id, audit records)."""
 
     def __init__(self):
-        self.audit, self.hits, self.reply, self.on_request = [], [], "tamam", None
+        self.audit, self.hits, self.reply, self.on_request, self.embed_reply = [], [], "tamam", None, None
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -63,8 +63,9 @@ class FakeBridge:
                                        "forSubject": self.headers.get("x-llmdap-for-subject")})
                 fake.last_body = body
                 if self.path.endswith("/v1/embeddings"):
-                    answer = json.dumps({"data": [{"index": i, "embedding": fake_vector(t)}
-                                                  for i, t in enumerate(body["input"])]}).encode()
+                    data = fake.embed_reply(body["input"]) if fake.embed_reply else \
+                        [{"index": i, "embedding": fake_vector(t)} for i, t in enumerate(body["input"])]
+                    answer = json.dumps({"data": data}).encode()
                 else:
                     answer = json.dumps({"choices": [{"message": {"role": "assistant",
                                                                   "content": fake.reply}}]}).encode()

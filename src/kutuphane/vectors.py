@@ -26,13 +26,23 @@ SELECT c.book, c.content_id, c.profile_id, c.path, c.ordinal, c.text
 """
 
 
+def stored_dims(conn, model: str) -> int | None:
+    row = conn.execute("SELECT vector_dims(embedding) FROM chunk_vector WHERE model = %s LIMIT 1", (model,)).fetchone()
+    return row[0] if row else None
+
+
 def index(conn, embedder: llmdap.Embedder, book: str) -> int:
-    """Embed the book's current chunks that lack a vector of this model; returns how many vectors were added."""
+    """Embed the book's current chunks that lack a vector of this model; returns how many vectors were added.
+    All vectors of one model have one width: a model that changed its output needs a new model name."""
     rows = conn.execute(_MISSING, (book, embedder.model)).fetchall()
     actor = Actor(INDEXER)
+    dims = stored_dims(conn, embedder.model)
     for start in range(0, len(rows), BATCH):
         batch = rows[start:start + BATCH]
         vectors = llmdap.embed(conn, embedder, actor, [r[5] for r in batch], source_books=[book], purpose="index")
+        dims = dims or len(vectors[0])
+        if len(vectors[0]) != dims:
+            raise llmdap.EgressError(f"{embedder.model} returned {len(vectors[0])} dimensions; stored are {dims}")
         with conn.cursor() as cur:
             cur.executemany("INSERT INTO chunk_vector (book, content_id, profile_id, path, ordinal, model, embedding) "
                             "VALUES (%s, %s, %s, %s, %s, %s, %s::vector) ON CONFLICT DO NOTHING",
@@ -48,5 +58,8 @@ def query_vector(conn, embedder: llmdap.Embedder | None, actor: Actor, query: st
         (values,) = llmdap.embed(conn, embedder, actor, [query], source_books=[], purpose="search")
     except llmdap.EgressError as exc:
         log.warning("query embedding failed, searching full text only: %s", exc)
+        return None
+    if len(values) != stored_dims(conn, embedder.model):  # also when nothing is indexed for this model yet
+        log.warning("query vector does not fit the stored %s vectors, searching full text only", embedder.model)
         return None
     return search.QueryVector(embedder.model, values)

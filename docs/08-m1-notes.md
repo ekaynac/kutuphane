@@ -226,6 +226,11 @@ AT-11 için dokuz bozuk-token durumu hem HTTP'de hem MCP'de (`initialize` ve `to
 - **Arama:** tek SQL ifadesi: aynı ön-süzgeçten FTS sırası ve (sorgu vektörü varsa) kosinüs sırası, her biri 50
   aday, RRF (k=60). Vektör yoksa sıra yalnız FTS'tir (ölçümle doğrulandı: R@10 0.563 aynı). Sorgu vektörü
   alınamazsa arama tam metinle sürer; başarısız çağrı `model_call`'da kalır.
+- **Sorgu metni:** arama sorgusu embedding rotasına kaynak kitapsız gider (kitap içeriği değil, kullanıcının
+  yazdığı metin). Embedding rotası `cloud` ise sorgu kurum dışına çıkar; sorgu gizliliği isteniyorsa embedding
+  rotası `local` olmalı (Spark profili zaten yerel).
+- **Boyut:** bir modelin bütün vektörleri aynı genişlikte; farklı genişlik dönen model indekslenmez, sorgusu
+  tam metne düşer (model değiştiyse yeni model adı).
 - **Sınır:** RRF puanı her sonuçta > 0, bu yüzden "kütüphanede yok" artık puan eşiğiyle değil modelin
   `KÜTÜPHANEDE_YOK` cevabıyla gelir; AT-08 eşiği etiketlerle belirlenecek.
 - **Reranker yok:** LLMDAP'ta rerank yüzeyi yok (LLMDAP#236). M0'a göre reranker R@1'i 0.34 → 0.41
@@ -233,3 +238,18 @@ AT-11 için dokuz bozuk-token durumu hem HTTP'de hem MCP'de (`initialize` ve `to
 - **Testler:** sahte bridge gerçek sözleşmeyi taklit eder (özne anahtarı, başkasını adlandıran `x-llmdap-user` →
   401, embeddings yolu). Vektörle eşleşen ama okunamayan kitap görünmez; başka modelin vektörü yok sayılır; ajan
   `activate` olmadan talimat parçasını vektör yolundan da alamaz.
+
+# Astra incelemesi #5 (PR #22–#24) ve düzeltmeler
+
+Ham metin: `docs/research/2026-10-13-astra-review-m1-5-raw.md`. Yetki atlaması, SQL enjeksiyonu ya da anahtar
+sızıntısı bulunmadı; düzeltilenler:
+
+1. **Paket:** PostgreSQL'in tutamadığı değerler (NUL karakter, `bigint` dışı sıra) artık kayıtlı ret.
+2. **LLMDAP etiketi:** principal en çok 128 karakter (LLMDAP `isChainLabel` sınırı); her principal geçerli
+   `x-llmdap-for-subject`.
+3. **Embedding cevabı:** indeksler tam `0..n-1`, vektörler sonlu, sıfır değil, tek genişlikte; bir modelin
+   bütün vektörleri aynı genişlikte. Uymayan cevap saklanmaz; uymayan sorgu tam metne düşer.
+4. **Ölçüm betiği:** önbellek girdiler, parametreler ve model revizyonu özetiyle anahtarlanır; parçalar güncel
+   profille süzülür.
+5. **Arayüz:** bitmiş oturumun geç gelen 401'i yeni oturumu kapatmaz.
+6. **Belgeler:** sorgu metninin embedding rotasına gidişi, batch ortalaması süreler, bge-m3'ün `.bin` ağırlığı.

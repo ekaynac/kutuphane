@@ -12,6 +12,7 @@ closely two devices agree on the same inputs. Weights are local after one downlo
 """
 import argparse
 import csv
+import hashlib
 import json
 import sys
 import time
@@ -65,8 +66,8 @@ def local(model_id: str) -> tuple[str, str]:
 
 
 def load_chunks(conn) -> list[str]:
-    rows = conn.execute("SELECT c.text FROM chunk c JOIN book b ON b.slug = c.book "
-                        "AND b.current_content = c.content_id WHERE c.book = 'mevzuat' "
+    rows = conn.execute("SELECT c.text FROM chunk c JOIN book b ON b.slug = c.book AND b.current_content = "
+                        "c.content_id AND b.current_profile = c.profile_id WHERE c.book = 'mevzuat' "
                         "ORDER BY c.path, c.ordinal").fetchall()
     return [t for (t,) in rows]
 
@@ -74,7 +75,7 @@ def load_chunks(conn) -> list[str]:
 def fts_ranking(conn, questions) -> list[list[int]]:
     index = {(p, o): i for i, (p, o) in enumerate(conn.execute(
         "SELECT c.path, c.ordinal FROM chunk c JOIN book b ON b.slug = c.book AND b.current_content = c.content_id "
-        "WHERE c.book = 'mevzuat' ORDER BY c.path, c.ordinal").fetchall())}
+        "AND b.current_profile = c.profile_id WHERE c.book = 'mevzuat' ORDER BY c.path, c.ordinal").fetchall())}
     out = []
     for q in questions:
         hits = search.search(conn, Actor(READER), q["soru"][:search.MAX_QUERY_CHARS], k=CANDIDATES)
@@ -137,11 +138,18 @@ def rerank(rname, path, device, questions, candidates, texts, chosen) -> dict:
             "query_ms": 1000 * (time.time() - started) / len(chosen)}
 
 
-def cached(path: Path, compute) -> dict:
+def digest(*parts) -> str:
+    """What a cached result was computed from: inputs, parameters and model revision (Astra review #5)."""
+    return hashlib.sha256(json.dumps(parts, ensure_ascii=False).encode()).hexdigest()
+
+
+def cached(path: Path, key: str, compute) -> dict:
     if path.exists():
-        return dict(np.load(path))
+        saved = dict(np.load(path))
+        if str(saved.pop("key", "")) == key:
+            return saved
     result = compute()
-    np.savez(path, **result)
+    np.savez(path, key=np.array(key), **result)
     return result
 
 
@@ -167,6 +175,8 @@ def run(args) -> None:
     for ename in args.embedders.split(","):
         path, report["revisions"][ename] = local(EMBEDDERS[ename])
         e = cached(out / f"{ename}.{args.device}.npz",
+                   digest(report["revisions"][ename], texts, [q["soru"] for q in questions], QUERY_PROMPT.get(ename),
+                          EMBED_TOKENS),
                    lambda: embed(ename, path, args.device, texts, [q["soru"] for q in questions]))
         dense = [np.argsort(-(e["docs"] @ q), kind="stable")[:CANDIDATES] for q in e["queries"]]
         hybrid = [rrf(f, d) for f, d in zip(fts, dense)]
@@ -177,6 +187,8 @@ def run(args) -> None:
         for rname in args.rerankers.split(","):
             rpath, report["revisions"][rname] = local(RERANKERS[rname])
             r = cached(out / f"{ename}+{rname}.{args.device}.npz",
+                       digest(report["revisions"][rname], [[int(i) for i in h[:RERANK_TOP]] for h in hybrid], chosen,
+                              texts, [q["soru"] for q in questions], QWEN_RERANK, QWEN_DOC_CHARS, RERANK_TOKENS),
                        lambda: rerank(rname, rpath, args.device, questions, hybrid, texts, chosen))
             ranked = [[int(c[j]) for j in np.argsort(-s, kind="stable")] + hybrid[q][RERANK_TOP:]
                       for q, c, s in zip(r["chosen"], r["candidates"], r["scores"])]

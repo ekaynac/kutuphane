@@ -9,6 +9,7 @@ store. Every attempt is recorded in `model_call`, including failures.
 """
 import http.client
 import json
+import math
 import os
 import uuid
 import urllib.error
@@ -159,9 +160,12 @@ def embed(conn, embedder: Embedder, actor: Actor, texts: list[str], *, source_bo
                     model=embedder.model, source_books=source_books, purpose=purpose)
     try:
         rows = sorted(payload["data"], key=lambda d: d["index"])
+        indexes = [d["index"] for d in rows]
         vectors = [[float(x) for x in d["embedding"]] for d in rows]
     except (KeyError, TypeError, ValueError):
         raise EgressError("embeddings answer is not data[].embedding") from None
-    if len(vectors) != len(texts) or len({len(v) for v in vectors}) > 1:
-        raise EgressError("embeddings answer does not match the input")
+    if indexes != list(range(len(texts))) or len({len(v) for v in vectors}) != 1:
+        raise EgressError("embeddings answer does not match the input")  # a vector must never land on another chunk
+    if not all(math.isfinite(x) for v in vectors for x in v) or not all(any(v) for v in vectors):
+        raise EgressError("embeddings answer has empty, zero or non-finite vectors")
     return vectors
