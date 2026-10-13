@@ -105,9 +105,9 @@ dış bağımlılığa bağlı.
 | AT-06 | yeşil | kapsam/kip, sahte devreden, derinlik, bitiş anı, `read`≠`use` |
 | AT-07 | yeşil | eski cevap + kanıt modeli çağırmadan, güncel yetkiyle; delegasyon iptali |
 | AT-08 | **mekanizma yeşil, eşik açık** | "kütüphanede yok", geçersiz atıf reddi; sayısal eşik M0 ölçümünü bekliyor |
-| AT-09 | **Core yeşil** | erişim + `model_call` + LLMDAP export birleşimi, cevap kimliğinden; gerçek LLMDAP kaydı #222/#223 sonrası |
+| AT-09 | **yeşil (canlı)** | erişim + `model_call` + LLMDAP export birleşimi; `deploy/llmdap_contract.py` gerçek LLMDAP 0.26.0 gateway'ine karşı (yerel, 2026-10-13): her çağrının LLMDAP kaydı bulundu, rapor `complete` |
 | AT-10 | **ağ yarısı yeşil; Core yeşil** | `deploy/egress_probe.py`: varsayılan rota yok, dış ad çözülmüyor, yalnız Postgres'e bağlanır. Embedding de LLMDAP'tan (#226, D52), her çağrı `model_call`'da. Canlı eşleşme gerçek LLMDAP compose'a girince; reranker rerank yüzeyini bekliyor |
-| AT-11 | **Core yeşil; LLMDAP sözleşmesi uygulandı** | dokuz bozuk-token durumu HTTP ve MCP'de 401; başlıkla kimlik değiştirilemez. Core LLMDAP'a özne anahtarıyla bağlanır (#228, D52); canlı test gerçek LLMDAP compose'a girince |
+| AT-11 | **yeşil (canlı)** | dokuz bozuk-token durumu HTTP ve MCP'de 401; başlıkla kimlik değiştirilemez. LLMDAP tarafı canlı: başka özne adlandıran başlık, yanlış anahtar ve yalnız paylaşılan sır 401; zincirde tek doğrulanmış Core öznesi + hizmet edilen kullanıcı (`deploy/llmdap_contract.py`) |
 | AT-12 | yeşil | K3 `activate` kapısı, harf/CRLF varyantları, atıf yapılmamış K3 kaynakları |
 | AT-13 | yeşil | `test_packages.py` (iki kurulum, güven kökü, anahtar yenileme/iptal, onay sırasında iptal) |
 | AT-14 | yeşil | kurcalama, tekrar oynatma, eşzamanlı onay yarışı, yarıda hata, bozuk manifest ve büyük girdi ret kaydı |
@@ -115,5 +115,5 @@ dış bağımlılığa bağlı.
 | AT-16 | yeşil | zorunlu E5/E8/E9, `purpose` kaydı, `publish` sınırında doğrulama |
 
 **M1'i kapatmak için kalan:** gerçek LLMDAP'ın compose'a eklenmesi (yalnız bridge'li sade bir gateway imajı
-gerekiyor; LLMDAP#237) ve AT-10/AT-11'in canlı denenmesi; LLMDAP rerank yüzeyi (#236) → reranker; iç doküman etiketleri
+gerekiyor; LLMDAP#237) ve AT-10'un o ağda canlı denenmesi; LLMDAP rerank yüzeyi (#236) → reranker; iç doküman etiketleri
 → kesin model seçimi ve AT-08 eşikleri. Hibrit arama (bge-m3 önerisi, M0) Kütüphane tarafında hazır (D52).
