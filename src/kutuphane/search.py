@@ -8,8 +8,9 @@
 - A citation names book, content id, profile id, path and ordinal. Opening it serves the stored chunk of that exact
   version through the gate with the caller's *current* rights (AT-07, D36).
 
-Ranking today is Postgres full text (`ts_rank_cd`). Vector search and the reranker join after LLMDAP #222 and the
-M0 measurement (D31); they change the ranking, not this contract.
+Ranking is hybrid (D31, M0 measurement in experiments/retrieval): Postgres full text (`ts_rank_cd`) and, when the
+caller brings a query vector (embedded through LLMDAP), exact cosine distance over the same pre-filtered chunks,
+fused by reciprocal rank (RRF). Without a vector the order is full text alone. One statement either way.
 """
 from dataclasses import dataclass
 
@@ -22,6 +23,8 @@ DEFAULT_K = 8
 RANK_NORMALIZATION = 4
 MAX_K = 50
 MAX_QUERY_CHARS = 1000
+POOL = 50      # candidates per ranking before fusion
+RRF_K = 60     # reciprocal rank fusion constant (M0: hybrid R@10 0.56 -> 0.71 on the legal QA set)
 
 
 @dataclass(frozen=True)
@@ -47,19 +50,48 @@ class Hit:
     score: float
 
 
-_SEARCH = """
-SELECT c.book, c.content_id, c.profile_id, c.path, c.ordinal, c.page, c.start_char, c.end_char, c.text,
-       c.instruction, ts_rank_cd(c.tsv, terms.q, %(norm)s) AS score
-  FROM chunk c
+# The pre-filter, written once and used by both rankings: current version and profile of books readable now;
+# instruction chunks only where `activate` is held too (agents).
+_ALLOWED = """
   JOIN book b ON b.slug = c.book AND b.current_content = c.content_id AND b.current_profile = c.profile_id
- CROSS JOIN (  -- any stemmed query word may match; ts_rank_cd rewards matching more of them, closer together
-       SELECT to_tsquery('simple', string_agg(quote_literal(l), ' | ')) AS q
-         FROM unnest(tsvector_to_array(to_tsvector(%(cfg)s::regconfig, %(q)s))) AS l) AS terms
- WHERE ('book:' || c.book) = ANY(%(read)s) AND c.tsv @@ terms.q
-   AND (NOT c.instruction OR ('book:' || c.book) = ANY(%(activate)s))
- ORDER BY score DESC, c.book, c.path, c.ordinal
+ WHERE ('book:' || c.book) = ANY(%(read)s) AND (NOT c.instruction OR ('book:' || c.book) = ANY(%(activate)s))"""
+
+_SEARCH = f"""
+WITH terms AS (  -- any stemmed query word may match; ts_rank_cd rewards matching more of them, closer together
+    SELECT to_tsquery('simple', string_agg(quote_literal(l), ' | ')) AS q
+      FROM unnest(tsvector_to_array(to_tsvector(%(cfg)s::regconfig, %(q)s))) AS l),
+lexical AS (
+    SELECT c.book, c.content_id, c.profile_id, c.path, c.ordinal,
+           row_number() OVER (ORDER BY ts_rank_cd(c.tsv, terms.q, %(norm)s) DESC, c.book, c.path, c.ordinal) AS r
+      FROM chunk c CROSS JOIN terms {_ALLOWED} AND c.tsv @@ terms.q
+     ORDER BY r LIMIT %(pool)s),
+semantic AS (
+    SELECT c.book, c.content_id, c.profile_id, c.path, c.ordinal,
+           row_number() OVER (ORDER BY v.embedding <=> %(qv)s::vector, c.book, c.path, c.ordinal) AS r
+      FROM chunk c
+      JOIN chunk_vector v USING (book, content_id, profile_id, path, ordinal) {_ALLOWED}
+       AND %(qv)s::vector IS NOT NULL AND v.model = %(model)s
+     ORDER BY r LIMIT %(pool)s),
+fused AS (
+    SELECT book, content_id, profile_id, path, ordinal, sum(1.0 / (%(rrf)s + r)) AS score
+      FROM (SELECT * FROM lexical UNION ALL SELECT * FROM semantic) AS ranked
+     GROUP BY book, content_id, profile_id, path, ordinal)
+SELECT c.book, c.content_id, c.profile_id, c.path, c.ordinal, c.page, c.start_char, c.end_char, c.text,
+       c.instruction, f.score
+  FROM fused f JOIN chunk c USING (book, content_id, profile_id, path, ordinal)
+ ORDER BY f.score DESC, c.book, c.path, c.ordinal
  LIMIT %(k)s
 """
+
+
+@dataclass(frozen=True)
+class QueryVector:
+    """The query embedded through LLMDAP by `model`; compared only with chunk vectors of the same model."""
+    model: str
+    values: list[float]
+
+    def literal(self) -> str:
+        return "[" + ",".join(repr(float(x)) for x in self.values) + "]"
 
 
 class SearchChanged(gate.Denied):
@@ -74,7 +106,8 @@ def _needs(actor: Actor, rows) -> dict:
     return needs
 
 
-def search(conn, actor: Actor, query: str, k: int = DEFAULT_K, attempts: int = 2) -> list[Hit]:
+def search(conn, actor: Actor, query: str, k: int = DEFAULT_K, attempts: int = 2,
+           vector: QueryVector | None = None) -> list[Hit]:
     if not isinstance(query, str) or not query.strip() or len(query) > MAX_QUERY_CHARS:
         raise ValueError(f"query must be 1..{MAX_QUERY_CHARS} characters")
     if not 1 <= k <= MAX_K:
@@ -88,8 +121,10 @@ def search(conn, actor: Actor, query: str, k: int = DEFAULT_K, attempts: int = 2
             return []
         activate = pre.objects("activate") if agent else read
         rows = conn.execute(_SEARCH, {"cfg": profiles.FTS_CONFIG, "q": query, "read": sorted(read),
-                                      "activate": sorted(activate), "k": k,
-                                      "norm": RANK_NORMALIZATION}).fetchall()
+                                      "activate": sorted(activate), "k": k, "norm": RANK_NORMALIZATION,
+                                      "pool": max(POOL, k), "rrf": RRF_K,
+                                      "qv": vector.literal() if vector else None,
+                                      "model": vector.model if vector else None}).fetchall()
         needs = _needs(actor, rows)
         # One final statement for the whole result set: the request's single linearization point.
         final = authz.allowed(conn, actor.principal, actor.on_behalf_of, modes)

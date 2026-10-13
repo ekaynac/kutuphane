@@ -177,7 +177,7 @@ def test_racing_approvals_of_two_sequences_never_move_backwards(conn, conn_b, ke
     trust(conn_b, info)
     two, three = packages.export(conn, "kitap", private), packages.export(conn, "kitap", private)
     ids = [packages.receive(conn_b, p)["id"] for p in (two, three)]
-    dsn = os.environ["KUTUPHANE_TEST_DSN"] + "?options=-csearch_path%3Dinstall_b"
+    dsn = os.environ["KUTUPHANE_TEST_DSN"] + "?options=-csearch_path%3Dinstall_b,public"
     errors = []
 
     def approve(i):
@@ -206,7 +206,7 @@ def test_revocation_during_approval_refuses_the_package(conn, conn_b, key, sourc
     private, info = key
     trust(conn_b, info)
     received = packages.receive(conn_b, packages.export(conn, "kitap", private))
-    dsn = os.environ["KUTUPHANE_TEST_DSN"] + "?options=-csearch_path%3Dinstall_b"
+    dsn = os.environ["KUTUPHANE_TEST_DSN"] + "?options=-csearch_path%3Dinstall_b,public"
     outcome = []
     with db.connect(dsn) as admin, db.connect(dsn) as approver:
         with admin.transaction():

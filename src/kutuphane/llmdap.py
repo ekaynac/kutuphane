@@ -1,8 +1,11 @@
-"""The only way Kütüphane reaches a model (D3): the LLMDAP bridge. Stdlib HTTP, no SDKs.
+"""The only way Kütüphane reaches a model (D3): the LLMDAP bridge, for chat and for embeddings (D17, #222).
+Stdlib HTTP, no SDKs.
 
-Today the bridge trusts a shared secret plus subject headers; LLMDAP #223 replaces that with OIDC. Every call
-carries our correlation id; LLMDAP answers with its namespaced form, which we store so the unified audit can join
-both logs (AT-09). Every attempt is recorded in `model_call`, including failures.
+Core authenticates as its own LLMDAP subject with a subject key (`GATEWAY_AUTH_MODE=subject-keys`, LLMDAP #228):
+the credential names the subject, so no header can claim another one. The person served (the user, or the user an
+agent acts for) travels as the `x-llmdap-for-subject` attribution label; who exactly called — agent included — is in
+our own `model_call`, joined by the call id (AT-09). LLMDAP answers with its namespaced form of that id, which we
+store. Every attempt is recorded in `model_call`, including failures.
 """
 import http.client
 import json
@@ -15,10 +18,13 @@ from dataclasses import dataclass
 
 from .gate import Actor
 
-ENV = {"url": "KUTUPHANE_LLMDAP_URL", "route": "KUTUPHANE_LLMDAP_ROUTE", "secret": "KUTUPHANE_LLMDAP_TRUST_SECRET",
+ENV = {"url": "KUTUPHANE_LLMDAP_URL", "key": "KUTUPHANE_LLMDAP_KEY", "route": "KUTUPHANE_LLMDAP_ROUTE",
        "route_class": "KUTUPHANE_LLMDAP_ROUTE_CLASS"}
+EMBED_ENV = {"route": "KUTUPHANE_LLMDAP_EMBED_ROUTE", "route_class": "KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS",
+             "model": "KUTUPHANE_EMBED_MODEL"}
 TIMEOUT_SECONDS = 120
 CHAT_PATH = "/v1/chat/completions"  # openai schema on the bridge route
+EMBED_PATH = "/v1/embeddings"       # openai schema on an LLMDAP `surface: "embeddings"` route
 
 
 class EgressError(RuntimeError):
@@ -30,7 +36,7 @@ NOT_SENT_UNREACHABLE = "not_sent:unreachable"   # connection refused; nothing wa
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    """Never follow redirects: they would carry the trust secret to another host."""
+    """Never follow redirects: they would carry our LLMDAP credential to another host."""
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -46,16 +52,16 @@ ROUTE_CLASSES = ("local", "cloud")
 class Bridge:
     url: str
     route: str
-    secret: str
+    key: str          # Core's LLMDAP subject key; sent only as the Authorization bearer, never logged
     route_class: str  # operator-declared: does this route keep data on premises ("local") or not ("cloud")?
 
     @classmethod
-    def from_env(cls) -> "Bridge":
-        missing = [v for v in ENV.values() if not os.environ.get(v)]
+    def from_env(cls, route_env: str = ENV["route"], class_env: str = ENV["route_class"]) -> "Bridge":
+        missing = [v for v in (ENV["url"], ENV["key"], route_env, class_env) if not os.environ.get(v)]
         if missing:
             raise RuntimeError(f"LLMDAP not configured: set {', '.join(missing)}")
-        return cls(os.environ[ENV["url"]].rstrip("/"), os.environ[ENV["route"]], os.environ[ENV["secret"]],
-                   os.environ[ENV["route_class"]])
+        return cls(os.environ[ENV["url"]].rstrip("/"), os.environ[route_env], os.environ[ENV["key"]],
+                   os.environ[class_env])
 
     def __post_init__(self):
         if urllib.parse.urlsplit(self.url).scheme not in ("http", "https"):
@@ -64,6 +70,21 @@ class Bridge:
             raise RuntimeError("LLMDAP route must be a plain name")
         if self.route_class not in ROUTE_CLASSES:
             raise RuntimeError(f"LLMDAP route class must be one of {', '.join(ROUTE_CLASSES)}")
+
+
+@dataclass(frozen=True)
+class Embedder:
+    bridge: Bridge
+    model: str  # the route's pinned model, as LLMDAP serves it; stored with every vector
+
+    @classmethod
+    def from_env(cls) -> "Embedder | None":
+        """None when no embeddings route is configured: search is then full text alone."""
+        if not os.environ.get(EMBED_ENV["route"]):
+            return None
+        if not os.environ.get(EMBED_ENV["model"]):
+            raise RuntimeError(f"LLMDAP embeddings not configured: set {EMBED_ENV['model']}")
+        return cls(Bridge.from_env(EMBED_ENV["route"], EMBED_ENV["route_class"]), os.environ[EMBED_ENV["model"]])
 
 
 def _record(conn, actor: Actor, bridge: Bridge, call_id: str, model: str, books, status, derived, error) -> None:
@@ -85,9 +106,9 @@ def _check_egress(conn, bridge: Bridge, books: list[str]) -> None:
         raise EgressError(f"egress policy forbids sending {', '.join(blocked)} to cloud route {bridge.route}")
 
 
-def chat(conn, bridge: Bridge, actor: Actor, *, model: str, messages: list[dict], source_books: list[str],
-         purpose: str | None = None) -> dict:
-    """`source_books`: every book whose content is in `messages` (may be empty). Required, so no caller forgets."""
+def _post(conn, bridge: Bridge, actor: Actor, path: str, body: dict, *, model: str, source_books: list[str],
+          purpose: str | None) -> dict:
+    """One governed call: our egress check, then the bridge; every attempt lands in `model_call`."""
     call_id = f"{actor.correlation_id}.{uuid.uuid4().hex[:12]}"
     try:
         _check_egress(conn, bridge, source_books)
@@ -96,17 +117,14 @@ def chat(conn, bridge: Bridge, actor: Actor, *, model: str, messages: list[dict]
         raise exc from None
     headers = {
         "content-type": "application/json",
-        "x-llmdap-auth": bridge.secret,
-        "x-llmdap-user": actor.principal,
+        "authorization": f"Bearer {bridge.key}",
         "x-llmdap-correlation-id": call_id,
+        "x-llmdap-for-subject": actor.on_behalf_of or actor.principal,
     }
-    if actor.on_behalf_of:
-        headers["x-llmdap-for-subject"] = actor.on_behalf_of
     if purpose:
         headers["x-llmdap-purpose"] = purpose
-    body = json.dumps({"model": model, "messages": messages, "stream": False}).encode()
-    request = urllib.request.Request(f"{bridge.url}/bridge/{bridge.route}{CHAT_PATH}", data=body, headers=headers,
-                                     method="POST")
+    request = urllib.request.Request(f"{bridge.url}/bridge/{bridge.route}{path}", data=json.dumps(body).encode(),
+                                     headers=headers, method="POST")
     status = derived = None
     try:
         with _OPENER.open(request, timeout=TIMEOUT_SECONDS) as resp:
@@ -125,3 +143,25 @@ def chat(conn, bridge: Bridge, actor: Actor, *, model: str, messages: list[dict]
         raise EgressError(f"LLMDAP unreachable or invalid answer: {type(exc).__name__}") from None
     _record(conn, actor, bridge, call_id, model, source_books, status, derived, None)
     return payload
+
+
+def chat(conn, bridge: Bridge, actor: Actor, *, model: str, messages: list[dict], source_books: list[str],
+         purpose: str | None = None) -> dict:
+    """`source_books`: every book whose content is in `messages` (may be empty). Required, so no caller forgets."""
+    return _post(conn, bridge, actor, CHAT_PATH, {"model": model, "messages": messages, "stream": False},
+                 model=model, source_books=source_books, purpose=purpose)
+
+
+def embed(conn, embedder: Embedder, actor: Actor, texts: list[str], *, source_books: list[str],
+          purpose: str) -> list[list[float]]:
+    """Vectors in input order. `source_books` as for chat: book content is subject to the same egress policy."""
+    payload = _post(conn, embedder.bridge, actor, EMBED_PATH, {"model": embedder.model, "input": texts},
+                    model=embedder.model, source_books=source_books, purpose=purpose)
+    try:
+        rows = sorted(payload["data"], key=lambda d: d["index"])
+        vectors = [[float(x) for x in d["embedding"]] for d in rows]
+    except (KeyError, TypeError, ValueError):
+        raise EgressError("embeddings answer is not data[].embedding") from None
+    if len(vectors) != len(texts) or len({len(v) for v in vectors}) > 1:
+        raise EgressError("embeddings answer does not match the input")
+    return vectors

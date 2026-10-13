@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import (answers, audit, authz, catalog, db, devauth, gate, identity, llmdap, packages, profiles, search,
-               signing)
+               signing, vectors)
 from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, make_policy
 from .source import read_source
 
@@ -31,7 +31,21 @@ def cmd_ingest(conn, args) -> int:
     files = read_source(Path(args.path))
     result = catalog.publish(conn, book=args.book, title=args.title or args.book, files=files, policy=policy,
                              profile=profiles.spec(args.profile))
-    _print(dataclasses.asdict(result))
+    _print({**dataclasses.asdict(result), **_index(conn, args.book)})
+    return 0
+
+
+def _index(conn, book: str) -> dict:
+    """Vectors for the new version when an embeddings route is configured; otherwise search stays full text."""
+    embedder = llmdap.Embedder.from_env()
+    return {"vectors_added": vectors.index(conn, embedder, book)} if embedder else {}
+
+
+def cmd_index(conn, args) -> int:
+    if llmdap.Embedder.from_env() is None:
+        print(f"no embeddings route: set {llmdap.EMBED_ENV['route']}", file=sys.stderr)
+        return 1
+    _print({"book": args.book, **_index(conn, args.book)})
     return 0
 
 
@@ -82,7 +96,9 @@ def cmd_read(conn, args) -> int:
 
 
 def cmd_search(conn, args) -> int:
-    hits = search.search(conn, gate.Actor(args.principal, args.on_behalf_of), args.query, args.k)
+    actor = gate.Actor(args.principal, args.on_behalf_of)
+    vector = vectors.query_vector(conn, llmdap.Embedder.from_env(), actor, args.query)
+    hits = search.search(conn, actor, args.query, args.k, vector=vector)
     _print([{"citation": h.citation.handle, "page": h.page, "score": round(h.score, 4), "text": h.text}
             for h in hits])
     return 0
@@ -90,7 +106,8 @@ def cmd_search(conn, args) -> int:
 
 def cmd_ask(conn, args) -> int:
     actor = gate.Actor(args.principal, args.on_behalf_of)
-    _print({**answers.ask(conn, llmdap.Bridge.from_env(), actor, args.question, model=args.model),
+    _print({**answers.ask(conn, llmdap.Bridge.from_env(), actor, args.question, model=args.model,
+                          embedder=llmdap.Embedder.from_env()),
             "correlation_id": actor.correlation_id})
     return 0
 
@@ -151,7 +168,8 @@ def cmd_receive(conn, args) -> int:
 
 def cmd_approve(conn, args) -> int:
     policy = make_policy(sensitivity=args.sensitivity, egress=args.egress, protection=args.protection)
-    _print(dataclasses.asdict(packages.approve(conn, args.id, by=args.by, policy=policy, profile=args.profile)))
+    published = packages.approve(conn, args.id, by=args.by, policy=policy, profile=args.profile)
+    _print({**dataclasses.asdict(published), **_index(conn, published.book)})
     return 0
 
 
@@ -201,6 +219,9 @@ def parser() -> argparse.ArgumentParser:
     ing.add_argument("--protection", required=True, choices=PROTECTION_M1)
     ing.add_argument("--profile", choices=("chunked", "whole"), default="chunked")
     ing.set_defaults(fn=cmd_ingest)
+    ix = sub.add_parser("index", help="embed a book's current chunks that have no vector yet (through LLMDAP)")
+    ix.add_argument("book")
+    ix.set_defaults(fn=cmd_index)
     show = sub.add_parser("show", help="current versions and files of a book")
     show.add_argument("book")
     show.set_defaults(fn=cmd_show)
