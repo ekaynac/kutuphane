@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="tr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Kütüphane Etiketleme</title>
+<title>Kütüphane Labelling</title>
 <style>
 /* Layout: one card at a time, thumb-reach action bar pinned to the bottom. */
 :root {
@@ -56,7 +56,7 @@ legend { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; colo
 .opt b { display: block; font-size: 12px; color: var(--muted); font-weight: 600; }
 .opt[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .opt[aria-pressed="true"] b { color: var(--accent-ink); }
-.opt.suggested::after { content: "taslak"; position: absolute; top: 3px; right: 5px; font-size: 9px; letter-spacing: .05em; text-transform: uppercase; opacity: .75; }
+.opt.suggested::after { content: "suggested"; position: absolute; top: 3px; right: 5px; font-size: 9px; letter-spacing: .05em; text-transform: uppercase; opacity: .75; }
 .opt:focus-visible, .tab:focus-visible, .act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .desc { font-size: 12.5px; color: var(--muted); min-height: 1.4em; }
 .why { font-size: 13px; color: var(--muted); border-left: 2px solid var(--line); padding-left: 10px; }
@@ -69,28 +69,46 @@ blockquote { margin: 0; background: var(--surface); border: 1px solid var(--line
 .act:disabled { opacity: .45; cursor: default; }
 .msg { font-size: 13px; color: var(--warn); min-height: 1.2em; }
 .empty { color: var(--muted); padding: 24px 0; text-align: center; }
+.opt:disabled { opacity: .4; cursor: not-allowed; }
+.desc b { color: var(--ink); font-weight: 600; }
+.reveal { font-size: 13px; background: var(--blind-soft); color: var(--ink); border-radius: 8px; padding: 8px 10px; }
+.guide-btn { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 8px; padding: 4px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); padding: 0; width: min(720px, calc(100vw - 32px)); max-height: 85vh; }
+dialog::backdrop { background: rgb(0 0 0 / .45); }
+.guide { padding: 14px 16px 18px; overflow: auto; max-height: 85vh; }
+.guide h2 { font-size: 15px; margin: 16px 0 6px; }
+.guide h2:first-of-type { margin-top: 4px; }
+.guide dl { margin: 0; display: grid; gap: 10px; }
+.guide dt { font-weight: 700; }
+.guide dd { margin: 2px 0 0; font-size: 13.5px; color: var(--muted); }
+.guide dd span { display: block; }
+.guide .rule { font-size: 13.5px; border-left: 3px solid var(--accent); padding-left: 10px; margin: 8px 0; }
+.guide-close { position: sticky; top: 0; float: right; }
 @media (prefers-reduced-motion: reduce) { .bar > i { transition: none; } }
 </style>
 </head>
 <body>
 <header>
-  <div class="head-row"><h1>Kütüphane · etiketleme</h1><span class="meta" id="count"></span></div>
+  <div class="head-row"><h1>Kütüphane · labelling</h1><span class="meta"><span id="count"></span><button class="guide-btn" id="btn-guide" type="button">Guide</button></span></div>
   <div class="tabs" role="tablist">
-    <button class="tab" role="tab" id="tab-doc" aria-selected="true">Dokümanlar</button>
-    <button class="tab" role="tab" id="tab-qa" aria-selected="false">Soru–pasaj</button>
+    <button class="tab" role="tab" id="tab-doc" aria-selected="true">Documents</button>
+    <button class="tab" role="tab" id="tab-qa" aria-selected="false">Question–passage</button>
   </div>
   <div class="bar"><i id="progress"></i></div>
 </header>
-<main id="main"><p class="empty">Yükleniyor…</p></main>
+<main id="main"><p class="empty">Loading…</p></main>
+<dialog id="guide" aria-label="Label guide"><div class="guide" id="guide-body"></div></dialog>
 <div class="actions">
-  <button class="act" id="btn-prev" aria-label="Önceki">‹</button>
-  <button class="act" id="btn-skip">Atla</button>
-  <button class="act primary" id="btn-save">Kaydet</button>
-  <button class="act" id="btn-next" aria-label="Sonraki">›</button>
+  <button class="act" id="btn-prev" aria-label="Previous">‹</button>
+  <button class="act" id="btn-skip">Skip</button>
+  <button class="act primary" id="btn-save">Save</button>
+  <button class="act" id="btn-next" aria-label="Next">›</button>
 </div>
 <script>
 "use strict";
-const S = { tax: null, docs: [], qa: [], labels: {}, tab: "doc", idx: { doc: 0, qa: 0 }, sel: {}, shownAt: 0 };
+const S = { tax: null, docs: [], qa: [], labels: {}, tab: "doc", idx: { doc: 0, qa: 0 }, sel: {}, shownAt: 0, revealed: null };
+// A restricted document must stay local (the product refuses restricted + cloud): keep the two answers consistent.
+const RESTRICTED_LOCAL = true;
 const $ = (id) => document.getElementById(id);
 const el = (tag, props = {}, ...kids) => { const n = Object.assign(document.createElement(tag), props); kids.flat().forEach(k => n.append(k)); return n; };
 
@@ -112,22 +130,31 @@ function header() {
   $("progress").style.width = items.length ? `${(100 * done / items.length).toFixed(1)}%` : "0";
   $("tab-doc").setAttribute("aria-selected", String(S.tab === "doc"));
   $("tab-qa").setAttribute("aria-selected", String(S.tab === "qa"));
-  $("tab-doc").textContent = `Dokümanlar ${S.docs.filter(isDone).length}/${S.docs.length}`;
-  $("tab-qa").textContent = `Soru–pasaj ${S.qa.filter(isDone).length}/${S.qa.length}`;
+  $("tab-doc").textContent = `Documents ${S.docs.filter(isDone).length}/${S.docs.length}`;
+  $("tab-qa").textContent = `Question–passage ${S.qa.filter(isDone).length}/${S.qa.length}`;
 }
 
 function optButtons(qkey, spec, draftVal, two) {
   const wrap = el("div", { className: "opts" + (two ? " two" : "") });
   const desc = el("div", { className: "desc" });
   const paint = () => {
-    for (const b of wrap.children) b.setAttribute("aria-pressed", String(b.dataset.v === S.sel[qkey]));
-    const o = spec.options[S.sel[qkey]]; desc.textContent = o ? o.desc : "";
+    for (const b of wrap.children) {
+      b.setAttribute("aria-pressed", String(b.dataset.v === S.sel[qkey]));
+      b.disabled = RESTRICTED_LOCAL && qkey === "egress" && b.dataset.v === "cloud_ok" && S.sel.sensitivity === "restricted";
+    }
+    const o = spec.options[S.sel[qkey]];
+    desc.replaceChildren(...(o ? [o.desc, " ", el("b", { textContent: o.not || "" })] : ["Select one. Open the Guide for the differences."]));
   };
+  wrap.paint = paint;
   for (const [v, o] of Object.entries(spec.options)) {
     const b = el("button", { className: "opt" + (v === draftVal ? " suggested" : ""), type: "button" });
     b.dataset.v = v;
     if (/^K\d$/.test(v)) b.append(el("b", { textContent: v }), o.name); else b.append(o.name);
-    b.addEventListener("click", () => { S.sel[qkey] = v; paint(); });
+    b.addEventListener("click", () => {
+      S.sel[qkey] = v;
+      if (RESTRICTED_LOCAL && qkey === "sensitivity" && v === "restricted") S.sel.egress = "local_only";
+      document.querySelectorAll(".opts").forEach(w => w.paint && w.paint());
+    });
     wrap.append(b);
   }
   paint();
@@ -138,28 +165,32 @@ function renderDoc(item) {
   const prev = S.labels[item.id];
   const d = item.draft;
   S.sel = prev && !prev.skip ? { ...prev.values } : d ? { category: d.category, sensitivity: d.sensitivity, egress: d.egress } : {};
+  if (RESTRICTED_LOCAL && S.sel.sensitivity === "restricted") S.sel.egress = "local_only";
   S.note = prev ? prev.note || "" : "";
   const meta = el("div", { className: "meta" },
     el("span", { className: "chip", textContent: item.id }),
     el("span", { className: "chip", textContent: item.group }),
-    item.blind ? el("span", { className: "chip blind", textContent: "kör" }) : d ? el("span", { className: "chip draft", textContent: "taslak var" }) : el("span", { className: "chip", textContent: "taslak bekleniyor" }),
-    prev ? el("span", { className: "chip done", textContent: prev.skip ? "atlandı" : "etiketli" }) : "");
+    item.blind ? el("span", { className: "chip blind", textContent: "blind" }) : d ? el("span", { className: "chip draft", textContent: "suggestion" }) : el("span", { className: "chip", textContent: "no suggestion" }),
+    prev ? el("span", { className: "chip done", textContent: prev.skip ? "skipped" : "labelled" }) : "");
   const pre = el("pre", { textContent: item.excerpt });
-  const more = el("div", { className: "more" }, el("span", { textContent: `${item.chars.toLocaleString("tr-TR")} karakter` }));
+  const more = el("div", { className: "more" }, el("span", { textContent: `${item.chars.toLocaleString("en-US")} characters` }));
   if (item.chars > item.excerpt.length) {
-    const b = el("button", { className: "linkbtn", type: "button", textContent: "Tamamını aç" });
+    const b = el("button", { className: "linkbtn", type: "button", textContent: "Show all" });
     b.addEventListener("click", async () => {
-      b.disabled = true; b.textContent = "Açılıyor…";
+      b.disabled = true; b.textContent = "Loading…";
       try { const full = await api(`/api/doc/${item.id}`); pre.textContent = full.text; pre.style.maxHeight = "70vh"; b.remove(); }
-      catch (e) { b.disabled = false; b.textContent = "Açılamadı, tekrar dene"; }
+      catch (e) { b.disabled = false; b.textContent = "Failed. Try again"; }
     });
     more.append(b);
   }
   const t = S.tax.questions;
-  const note = el("input", { type: "text", id: "note", placeholder: "Not (isteğe bağlı; 'Uymuyor' seçtiysen ne olduğunu yaz)", value: S.note, maxLength: 500 });
+  const note = el("input", { type: "text", id: "note", placeholder: "Note (optional). For 'Does not fit', write what the document is.", value: S.note, maxLength: 500 });
   note.addEventListener("input", () => { S.note = note.value; });
-  return [meta, el("div", { className: "path", textContent: item.path }), el("div", { className: "doc" }, pre, more),
-    d ? el("div", { className: "why", textContent: `Taslak gerekçesi: ${d.rationale || "—"}` }) : "",
+  const revealed = S.revealed;
+  S.revealed = null;
+  return [revealed ? el("div", { className: "reveal", textContent: revealed }) : "",
+    meta, el("div", { className: "path", textContent: item.path }), el("div", { className: "doc" }, pre, more),
+    d ? el("div", { className: "why", textContent: `${item.blind ? "Suggestion (shown after your label)" : "Reason for the suggestion"}: ${d.rationale || "—"}` }) : "",
     optButtons("category", t.category, d && d.category), optButtons("sensitivity", t.sensitivity, d && d.sensitivity, true),
     optButtons("egress", t.egress, d && d.egress, true), note, el("div", { className: "msg", id: "msg" })];
 }
@@ -170,12 +201,13 @@ function renderQa(item) {
   const rel = S.tax.relevance;
   const wrap = el("div", { className: "opts two" });
   for (const [v, name] of Object.entries(rel.options)) {
-    const b = el("button", { className: "opt", type: "button", textContent: name });
+    const b = el("button", { className: "opt", type: "button", title: (rel.help || {})[v] || "" });
+    b.append(name, el("b", { textContent: (rel.help || {})[v] || "", style: "font-weight:400;margin-top:2px" }));
     b.setAttribute("aria-pressed", String(S.sel.relevance === v));
     b.addEventListener("click", () => { S.sel.relevance = v; save(); });
     wrap.append(b);
   }
-  return [el("div", { className: "meta" }, el("span", { className: "chip", textContent: item.doc }), prev ? el("span", { className: "chip done", textContent: "etiketli" }) : ""),
+  return [el("div", { className: "meta" }, el("span", { className: "chip", textContent: item.doc }), prev ? el("span", { className: "chip done", textContent: "labelled" }) : ""),
     el("p", { className: "q", textContent: item.question }), el("blockquote", { textContent: item.passage }),
     el("div", { className: "path", textContent: item.path }),
     el("fieldset", {}, el("legend", { textContent: rel.label }), wrap), el("div", { className: "msg", id: "msg" })];
@@ -186,7 +218,7 @@ function render() {
   const items = list(); const main = $("main"); main.replaceChildren();
   $("btn-save").hidden = S.tab === "qa";
   if (!items.length) {
-    main.append(el("p", { className: "empty", textContent: S.tab === "qa" ? "Soru–pasaj taslakları henüz hazır değil. Biraz sonra sayfayı yenile." : "Doküman yok." }));
+    main.append(el("p", { className: "empty", textContent: S.tab === "qa" ? "No question–passage items yet. Reload the page later." : "No documents." }));
     return;
   }
   const item = current();
@@ -204,13 +236,19 @@ async function save(skip = false) {
   const item = current(); if (!item) return;
   const body = { task: S.tab, id: item.id, values: S.sel, note: S.note || "", ms: Math.round(performance.now() - S.shownAt), draft_shown: !!item.draft };
   if (skip) { body.skip = true; body.values = { category: null, sensitivity: null, egress: null }; }
-  if (S.tab === "doc" && !skip && (!S.sel.category || !S.sel.sensitivity || !S.sel.egress)) { $("msg").textContent = "Üç soruyu da cevapla ya da Atla'ya bas."; return; }
+  if (S.tab === "doc" && !skip && (!S.sel.category || !S.sel.sensitivity || !S.sel.egress)) { $("msg").textContent = "Answer all three questions, or push Skip."; return; }
   if (S.tab === "qa" && skip) { advance(); return; }
   try {
-    await api("/api/label", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const res = await api("/api/label", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     S.labels[item.id] = { ...body, skip };
+    if (item.blind && res.draft) {  // blind item: the suggestion becomes visible only now, after the label
+      item.draft = res.draft;
+      const name = (q, v) => (S.tax.questions[q].options[v] || {}).name || v;
+      const same = ["category", "sensitivity", "egress"].every(q => res.draft[q] === S.sel[q]);
+      S.revealed = `Blind ${item.id} saved. Suggestion was: ${res.draft.category} ${name("category", res.draft.category)} · ${name("sensitivity", res.draft.sensitivity)} · ${name("egress", res.draft.egress)}${same ? " (same as your label)" : ""}.`;
+    }
     advance();
-  } catch (e) { const m = $("msg"); if (m) m.textContent = `Kaydedilemedi: ${e.message}. Bağlantıyı kontrol edip tekrar dene.`; }
+  } catch (e) { const m = $("msg"); if (m) m.textContent = `Not saved: ${e.message}. Check the connection and try again.`; }
 }
 
 $("btn-prev").addEventListener("click", () => go(-1));
@@ -219,6 +257,30 @@ $("btn-save").addEventListener("click", () => save(false));
 $("btn-skip").addEventListener("click", () => save(true));
 $("tab-doc").addEventListener("click", () => { S.tab = "doc"; render(); });
 $("tab-qa").addEventListener("click", () => { S.tab = "qa"; render(); });
+$("btn-guide").addEventListener("click", () => { renderGuide(); $("guide").showModal(); });
+$("guide").addEventListener("click", (e) => { if (e.target === $("guide")) $("guide").close(); });
+
+function renderGuide() {
+  const body = $("guide-body"); body.replaceChildren();
+  const close = el("button", { className: "guide-btn guide-close", type: "button", textContent: "Close" });
+  close.addEventListener("click", () => $("guide").close());
+  body.append(close,
+    el("div", { className: "rule", textContent: "Label each document with three answers: Category (what type of knowledge), Sensitivity (who can read it) and Egress (where a model can process it)." }),
+    el("div", { className: "rule", textContent: "Sensitivity and egress are different. A normal document can be local only. A restricted document is always local only." }),
+    el("div", { className: "rule", textContent: "Blind items show no suggestion before you save. This measures the effect of suggestions. After you save, the page shows the suggestion." }));
+  for (const spec of Object.values(S.tax.questions)) {
+    const dl = el("dl");
+    for (const [v, o] of Object.entries(spec.options)) {
+      dl.append(el("dt", { textContent: `${/^K\d$/.test(v) ? v + " · " : ""}${o.name}` }),
+        el("dd", {}, el("span", { textContent: o.desc }), el("span", { textContent: o.use || "" }),
+          el("span", { textContent: o.not || "" }), el("span", { textContent: o.example ? `Example: ${o.example}` : "" })));
+    }
+    body.append(el("h2", { textContent: `${spec.label}: ${spec.instructions}` }), dl);
+  }
+  const rel = S.tax.relevance; const dl = el("dl");
+  for (const [v, name] of Object.entries(rel.options)) dl.append(el("dt", { textContent: name }), el("dd", { textContent: (rel.help || {})[v] || "" }));
+  body.append(el("h2", { textContent: `Question–passage: ${rel.label}` }), dl);
+}
 
 (async () => {
   try {
@@ -227,7 +289,7 @@ $("tab-qa").addEventListener("click", () => { S.tab = "qa"; render(); });
     S.idx.doc = firstOpen(S.docs); S.idx.qa = firstOpen(S.qa);
     render();
   } catch (e) {
-    $("main").replaceChildren(el("p", { className: "empty", textContent: `Yüklenemedi: ${e.message}. Erişim bağlantısını yeniden aç.` }));
+    $("main").replaceChildren(el("p", { className: "empty", textContent: `Load failed: ${e.message}. Open the access link again.` }));
   }
 })();
 </script>

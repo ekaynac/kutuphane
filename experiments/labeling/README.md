@@ -7,7 +7,7 @@
 |---|---|
 | `taxonomy.json` | Etiket kümesi: kategori K1–K8 + Uymuyor, hassasiyet, çıkış; soru–pasaj ilgisi |
 | `select_corpus.py` | Salt-okunur kaynak repolardan katmanlı örnekleme + sır taraması; `data/manifest.json`, `data/docs.json`; ~%30 kör |
-| `server.py` + `page.html` | Telefon dostu etiketleme sayfası (stdlib, token → cookie). Kör öğelerde taslak gösterilmez; Laya tahmini hiç sunulmaz. Etiketler `data/labels.jsonl` (ekleme; son kayıt geçerli) |
+| `server.py` + `page.html` | Telefon dostu etiketleme sayfası (stdlib, token → cookie; metinler ASD-STE100 İngilizce, "Guide" paneli seçenekleri, farklarını ve örnekleri gösterir). Kör öğelerde taslak etiket kaydedilmeden gösterilmez, kayıttan sonra gösterilir; Laya tahmini hiç sunulmaz. "Restricted" seçilince çıkış "local only" olur (ürün kuralı). Etiketler `data/labels.jsonl` (ekleme; son kayıt geçerli) |
 | `laya_shadow.py` | `laya-multilingual` (sabit revizyon) CPU'da zero-shot; `data/laya-shadow.jsonl` |
 
 Taslaklar (`data/drafts/batch-*.json`) Claude tarafından üretilir: kategori, hassasiyet, çıkış, gerekçe,
