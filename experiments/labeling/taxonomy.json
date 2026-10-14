@@ -1,46 +1,105 @@
 {
-  "version": "2026-10-12.1",
-  "source": "docs/02 §2 (K1–K8), docs/01 D24–D25 (E5 hassasiyet ≠ egress)",
+  "version": "2026-10-14.1",
+  "language": "ASD-STE100 Simplified Technical English",
+  "source": "docs/02 §2 (K1-K8), docs/01 D24-D25 (sensitivity is not egress)",
   "questions": {
     "category": {
-      "label": "Kategori",
-      "instructions": "Bu doküman Kütüphane'de hangi bilgi kategorisine girer?",
+      "label": "Category",
+      "instructions": "Which type of knowledge is this document?",
       "options": {
-        "K1": {"name": "Referans eser", "desc": "Manuel, standart, vendor dokümanı, mevzuat; başvurulan uzun referans metni."},
-        "K2": {"name": "Prosedür / runbook", "desc": "Adım adım yapılacak iş: kurulum, işletim, arıza giderme, SOP."},
-        "K3": {"name": "Ajan talimatı", "desc": "Bir ajanın davranışını yönlendiren metin: skill, prompt, agent card, AGENTS.md / CLAUDE.md."},
-        "K4": {"name": "Yapısal referans", "desc": "API şeması, değer sözlüğü, katalog, terimce, konfigürasyon referansı."},
-        "K5": {"name": "Kayıt / kanıt", "desc": "Rapor, inceleme, karar kaydı, devir notu, test/denetim kanıtı, transkript."},
-        "K6": {"name": "Öğrenilmiş bilgi", "desc": "Çıkarılmış ders, örüntü, SSS, türetilmiş özet."},
-        "K7": {"name": "Model / karar artefaktı", "desc": "Model, değerlendirme raporu, karar modeli tanımı."},
-        "K8": {"name": "Gizli malzeme", "desc": "Anahtar, parola, sertifika, token içeren ya da onlara doğrudan işaret eden materyal."},
-        "NONE": {"name": "Uymuyor", "desc": "Hiçbir kategoriye oturmuyor (ör. plan, tasarım, beyin fırtınası). Not düşülürse ontolojiye girdi olur."}
+        "K1": {"name": "Reference work",
+               "desc": "Long text that people read to find facts: manual, standard, vendor document, law.",
+               "use": "Select when the text describes a product, a rule or a standard.",
+               "not": "Not K2: it does not give the steps for one task. Not K4: it is prose, not a table or a schema.",
+               "example": "A vendor manual. A law. A product overview README."},
+        "K2": {"name": "Procedure / runbook",
+               "desc": "The steps to do one task: install, operate, repair, standard operating procedure.",
+               "use": "Select when a person does the steps in sequence.",
+               "not": "Not K3: the reader is a person, not an AI agent. Not K5: it tells what to do, not what occurred.",
+               "example": "Restore the database from a backup."},
+        "K3": {"name": "Agent instruction",
+               "desc": "Text that controls how an AI agent operates: skill, prompt, agent card, AGENTS.md, CLAUDE.md.",
+               "use": "Select when an AI agent reads the text as its instructions.",
+               "not": "Not K2: the reader is an agent. A runbook that an agent also uses stays K2 if a person can do the steps.",
+               "example": "CLAUDE.md. A skill file. A system prompt."},
+        "K4": {"name": "Structured reference",
+               "desc": "Data with a fixed structure: API schema, list of values, catalog, glossary, configuration reference.",
+               "use": "Select when people or tools look up one item in it.",
+               "not": "Not K1: it is a table, a list or a schema, not prose.",
+               "example": "An OpenAPI schema. A list of error codes. A glossary."},
+        "K5": {"name": "Record / evidence",
+               "desc": "Text that records what occurred: report, review, decision record, handover note, test or audit evidence, transcript.",
+               "use": "Select when the text records events, results or decisions at a specified time.",
+               "not": "Not K6: it records one case; it does not give a general lesson.",
+               "example": "A code review. A test report. A decision record. A handover note."},
+        "K6": {"name": "Learned knowledge",
+               "desc": "Lessons, patterns, FAQ, or a summary made from other documents.",
+               "use": "Select when the text gives general rules or lessons from experience.",
+               "not": "Not K5: it is not the record of one event. Not K1: it comes from experience, not from a standard.",
+               "example": "Lessons learned. A list of known problems and their causes. An FAQ."},
+        "K7": {"name": "Model / decision artefact",
+               "desc": "A model, an evaluation report of a model, or the definition of a decision model.",
+               "use": "Select when the text defines, trains or measures a model.",
+               "not": "Not K5: a general test report is K5; a model evaluation is K7.",
+               "example": "A model card. A model evaluation. A decision table that a model uses."},
+        "K8": {"name": "Secret material",
+               "desc": "Text that contains or points to a key, password, certificate or token.",
+               "use": "Select when the text contains a secret or tells where to find one.",
+               "not": "The secret scan removes most of these documents. If you see one, select K8 and write a note.",
+               "example": "A file with an API key. A note that gives a password."},
+        "NONE": {"name": "Does not fit",
+                 "desc": "No category is correct (for example: plan, design, brainstorm).",
+                 "use": "Select when no category above is correct.",
+                 "not": "Write a note with a better name. These notes help to improve the categories.",
+                 "example": "A design proposal. A project plan. Brainstorm notes."}
       }
     },
     "sensitivity": {
-      "label": "Hassasiyet",
-      "instructions": "İçerik kısıtlı mı?",
+      "label": "Sensitivity",
+      "instructions": "Who can read this document?",
       "options": {
-        "normal": {"name": "Normal", "desc": "Kurum içinde yetkili herkes görebilir."},
-        "restricted": {"name": "Kısıtlı", "desc": "Altyapı ayrıntısı, kişisel veri, güvenlik açığı ya da ticari sır içerir; dar bir kitle görmeli."}
+        "normal": {"name": "Normal",
+                   "desc": "All authorized persons in the organization can read it.",
+                   "use": "Select when the text has no item from the restricted list.",
+                   "not": "Normal does not mean public.",
+                   "example": "A general how-to. A product description."},
+        "restricted": {"name": "Restricted",
+                       "desc": "Only a small group can read it.",
+                       "use": "Select when the text has infrastructure details (host names, IP addresses, network layout), personal data, a security vulnerability or a trade secret.",
+                       "not": "A restricted document must stay local: the system does not accept restricted with cloud.",
+                       "example": "A security review. A server inventory."}
       }
     },
     "egress": {
-      "label": "Çıkış",
-      "instructions": "Bu içerik bulut modele gönderilebilir mi?",
+      "label": "Egress",
+      "instructions": "Can a cloud model process this document?",
       "options": {
-        "local_only": {"name": "Yalnız yerel", "desc": "Yalnız yerel modellerle işlenebilir."},
-        "cloud_ok": {"name": "Bulut olabilir", "desc": "Bulut modele gönderilmesinde sakınca yok."}
+        "local_only": {"name": "Local only",
+                       "desc": "Only local models can process it.",
+                       "use": "Select when the text is restricted, or when you are not sure.",
+                       "not": "Egress is not sensitivity: a normal document can also be local only.",
+                       "example": "Internal designs. Customer data."},
+        "cloud_ok": {"name": "Cloud OK",
+                     "desc": "You can send it to a cloud model.",
+                     "use": "Select when the text has no risk if a cloud provider sees it.",
+                     "not": "Not possible with restricted.",
+                     "example": "Public documentation. General notes."}
       }
     }
   },
   "relevance": {
-    "label": "Pasaj soruyu cevaplıyor mu?",
+    "label": "Does the passage answer the question?",
     "options": {
-      "yes": "Evet",
-      "partial": "Kısmen",
-      "no": "Hayır",
-      "bad_question": "Soru kötü"
+      "yes": "Yes",
+      "partial": "Partly",
+      "no": "No",
+      "bad_question": "Bad question"
+    },
+    "help": {
+      "yes": "The passage gives the full answer.",
+      "partial": "The passage gives part of the answer, or the answer needs other text too.",
+      "no": "The passage does not answer the question.",
+      "bad_question": "The question is not clear, not useful, or a person would not ask it."
     }
   }
 }

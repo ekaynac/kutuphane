@@ -4,7 +4,7 @@ Usage: python3 -I server.py [--host 0.0.0.0] [--port 8790] [--data DIR]
 
 Access: open http://<host>:<port>/?t=<token> once; the token (data/token, created on first
 run, mode 600) is exchanged for a cookie. Labels are appended to data/labels.jsonl.
-Drafts (data/drafts/*.json) are shown only for non-blind items; Laya shadow predictions
+Drafts (data/drafts/*.json) are shown only for non-blind items (for a blind item: only after its label is saved); Laya shadow predictions
 are never served.
 """
 import argparse
@@ -82,19 +82,26 @@ class Store:
                 print(f"skipping unreadable drafts {f.name}: {exc}", file=sys.stderr)
         return out
 
+    def shown(self, doc_id: str, labelled: bool = False) -> dict | None:
+        """The draft fields the page may show: always for non-blind items; for a blind item only once a real
+        label exists, so the blind measurement (draft vs. human, D43) keeps its first, unanchored answer."""
+        draft = self.drafts().get(doc_id)
+        if not draft or (self.manifest[doc_id]["blind"] and not labelled):
+            return None
+        return {k: draft.get(k) for k in ("category", "category_alt", "sensitivity", "egress", "rationale")}
+
     def items(self) -> dict:
         drafts = self.drafts()
+        labelled = {i for i, r in self.latest().items() if r.get("task") == "doc" and not r.get("skip")}
         docs, qa = [], []
         for doc_id in self.order:
             if doc_id in self.excluded:
                 continue
             d, m = self.docs[doc_id], self.manifest[doc_id]
             draft = drafts.get(doc_id)
-            shown = None
-            if draft and not m["blind"]:
-                shown = {k: draft.get(k) for k in ("category", "category_alt", "sensitivity", "egress", "rationale")}
             docs.append({"id": doc_id, "path": d["path"], "group": d["group"], "chars": d["chars"],
-                         "excerpt": d["excerpt"], "blind": m["blind"], "draft": shown})
+                         "excerpt": d["excerpt"], "blind": m["blind"],
+                         "draft": self.shown(doc_id, labelled=doc_id in labelled)})
             for i, q in enumerate((draft or {}).get("questions") or []):
                 qa.append({"id": f"q-{doc_id}-{i}", "doc": doc_id, "path": d["path"],
                            "question": q.get("q", ""), "passage": q.get("passage", "")})
@@ -215,7 +222,7 @@ def make_handler(store: Store, token: str, page: bytes):
                     cookie = f"{COOKIE}={token}; Max-Age={COOKIE_MAX_AGE}; Path=/; HttpOnly; SameSite=Strict"
                     return self.send(HTTPStatus.SEE_OTHER, b"", "text/plain", {"Set-Cookie": cookie, "Location": "/"})
                 if not self.authed():
-                    return self.send(HTTPStatus.UNAUTHORIZED, "Erişim bağlantısını (…/?t=…) kullanın.".encode(), "text/plain; charset=utf-8")
+                    return self.send(HTTPStatus.UNAUTHORIZED, "Use the access link (.../?t=...).".encode(), "text/plain; charset=utf-8")
                 return self.send(HTTPStatus.OK, page, "text/html; charset=utf-8")
             if not self.authed():
                 return self.json(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
@@ -241,7 +248,8 @@ def make_handler(store: Store, token: str, page: bytes):
             except (ValueError, json.JSONDecodeError) as exc:
                 return self.json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
             store.append(rec)
-            return self.json(HTTPStatus.OK, {"ok": True})
+            revealed = store.shown(rec["id"], labelled=True) if rec["task"] == "doc" and not rec["skip"] else None
+            return self.json(HTTPStatus.OK, {"ok": True, "draft": revealed})
 
     return Handler
 
