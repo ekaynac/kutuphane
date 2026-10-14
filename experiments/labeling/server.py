@@ -82,10 +82,10 @@ class Store:
                 print(f"skipping unreadable drafts {f.name}: {exc}", file=sys.stderr)
         return out
 
-    def shown(self, doc_id: str, labelled: bool = False) -> dict | None:
+    def shown(self, doc_id: str, labelled: bool = False, drafts: dict | None = None) -> dict | None:
         """The draft fields the page may show: always for non-blind items; for a blind item only once a real
         label exists, so the blind measurement (draft vs. human, D43) keeps its first, unanchored answer."""
-        draft = self.drafts().get(doc_id)
+        draft = (drafts if drafts is not None else self.drafts()).get(doc_id)
         if not draft or (self.manifest[doc_id]["blind"] and not labelled):
             return None
         return {k: draft.get(k) for k in ("category", "category_alt", "sensitivity", "egress", "rationale")}
@@ -101,7 +101,7 @@ class Store:
             draft = drafts.get(doc_id)
             docs.append({"id": doc_id, "path": d["path"], "group": d["group"], "chars": d["chars"],
                          "excerpt": d["excerpt"], "blind": m["blind"],
-                         "draft": self.shown(doc_id, labelled=doc_id in labelled)})
+                         "draft": self.shown(doc_id, labelled=doc_id in labelled, drafts=drafts)})
             for i, q in enumerate((draft or {}).get("questions") or []):
                 qa.append({"id": f"q-{doc_id}-{i}", "doc": doc_id, "path": d["path"],
                            "question": q.get("q", ""), "passage": q.get("passage", "")})
@@ -147,7 +147,10 @@ class Store:
             if body.get("skip") is not True and None in clean.values():
                 raise ValueError("all three answers are required (or skip)")
             m = self.manifest[item_id]
-            shown_draft = (not m["blind"]) and body.get("draft_shown") is True
+            # A blind item's draft is revealed after its first real label, so every later answer has seen it.
+            earlier = self.latest().get(item_id)
+            revealed = m["blind"] and earlier is not None and not earlier.get("skip")
+            shown_draft = revealed or ((not m["blind"]) and body.get("draft_shown") is True)
             return {"task": task, "id": item_id, "values": clean, "skip": body.get("skip") is True,
                     "blind": m["blind"], "shown_draft": shown_draft, "note": note, "ms": ms}
         if task == "qa":

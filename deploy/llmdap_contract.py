@@ -27,6 +27,7 @@ from kutuphane.policy import make_policy
 from kutuphane.source import read_source
 
 BOOK, USER, AGENT = "contract-check", "user:contract-user", "agent:contract-agent"
+SHARED_SECRET_ENV = "LLMDAP_GATEWAY_TRUST_SECRET"
 QUESTION = "Erişim kayıtları ne kadar süre saklanır?"
 
 
@@ -51,7 +52,7 @@ def main() -> int:
         req = urllib.request.Request(f"{url}/bridge/{args.chat[0]}/v1/chat/completions", data=body, method="POST",
                                      headers={"content-type": "application/json", **headers})
         try:
-            with urllib.request.urlopen(req, timeout=60) as r:
+            with llmdap._OPENER.open(req, timeout=60) as r:  # never follows a redirect (it would carry the key)
                 return r.status
         except urllib.error.HTTPError as e:
             return e.code
@@ -80,8 +81,10 @@ def main() -> int:
                              "WHERE correlation_id = %s", (actor.correlation_id,)).fetchall()
         check("every call carries LLMDAP's derived id", calls and all(
             d and d.endswith(":" + c) and s == 200 for c, d, s in calls), f"{len(calls)} calls")
-        out = subprocess.run(shlex.split(args.audit_export), capture_output=True, text=True, check=False).stdout
-        entries = [json.loads(line) for line in out.splitlines() if line.strip()]
+        export = subprocess.run(shlex.split(args.audit_export), capture_output=True, text=True, check=False)
+        check("LLMDAP audit chain verifies", export.returncode == 0, f"export exit {export.returncode}")
+        entries = [json.loads(line) for line in export.stdout.splitlines() if line.strip()] \
+            if export.returncode == 0 else []
         check("unified audit is complete against LLMDAP's chain (AT-09)",
               audit.explain(conn, actor.correlation_id, entries)["complete"])
         mine = [e for e in entries if actor.correlation_id in e.get("correlationId", "")]
@@ -92,7 +95,9 @@ def main() -> int:
     good = {"authorization": f"Bearer {key}"}
     check("a header naming another subject is refused (AT-11)", status({**good, "x-llmdap-user": USER}) == 401)
     check("a wrong key is refused", status({"authorization": "Bearer llmdap_sk_" + "x" * 43}) == 401)
-    check("a shared secret alone authenticates nothing", status({"x-llmdap-auth": "s" * 40}) == 401)
+    secret = os.environ.get(SHARED_SECRET_ENV)  # the gateway's real GATEWAY_TRUST_SECRET, if it has one
+    check("the shared secret alone authenticates nothing" + ("" if secret else f" (dummy; set {SHARED_SECRET_ENV})"),
+          status({"x-llmdap-auth": secret or "s" * 40}) == 401)
     print(json.dumps({"passed": sum(results.values()), "of": len(results)}))
     return 0 if all(results.values()) else 1
 
