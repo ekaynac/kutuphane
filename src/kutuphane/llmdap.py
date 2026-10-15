@@ -23,9 +23,12 @@ ENV = {"url": "KUTUPHANE_LLMDAP_URL", "key": "KUTUPHANE_LLMDAP_KEY", "route": "K
        "route_class": "KUTUPHANE_LLMDAP_ROUTE_CLASS"}
 EMBED_ENV = {"route": "KUTUPHANE_LLMDAP_EMBED_ROUTE", "route_class": "KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS",
              "model": "KUTUPHANE_EMBED_MODEL"}
+RERANK_ENV = {"route": "KUTUPHANE_LLMDAP_RERANK_ROUTE", "route_class": "KUTUPHANE_LLMDAP_RERANK_ROUTE_CLASS",
+              "model": "KUTUPHANE_RERANK_MODEL"}
 TIMEOUT_SECONDS = 120
 CHAT_PATH = "/v1/chat/completions"  # openai schema on the bridge route
 EMBED_PATH = "/v1/embeddings"       # openai schema on an LLMDAP `surface: "embeddings"` route
+RERANK_PATH = "/v1/rerank"          # openai-compatible schema on an LLMDAP `surface: "rerank"` route (#236)
 
 
 class EgressError(RuntimeError):
@@ -74,18 +77,19 @@ class Bridge:
 
 
 @dataclass(frozen=True)
-class Embedder:
+class Routed:
+    """A model behind one LLMDAP route: the embedder (vectors are stored with its name) or the reranker."""
     bridge: Bridge
-    model: str  # the route's pinned model, as LLMDAP serves it; stored with every vector
+    model: str  # the route's pinned model, as LLMDAP serves it
 
     @classmethod
-    def from_env(cls) -> "Embedder | None":
-        """None when no embeddings route is configured: search is then full text alone."""
-        if not os.environ.get(EMBED_ENV["route"]):
+    def from_env(cls, env: dict) -> "Routed | None":
+        """None when the route is not configured: search then works without that stage."""
+        if not os.environ.get(env["route"]):
             return None
-        if not os.environ.get(EMBED_ENV["model"]):
-            raise RuntimeError(f"LLMDAP embeddings not configured: set {EMBED_ENV['model']}")
-        return cls(Bridge.from_env(EMBED_ENV["route"], EMBED_ENV["route_class"]), os.environ[EMBED_ENV["model"]])
+        if not os.environ.get(env["model"]):
+            raise RuntimeError(f"LLMDAP route not configured: set {env['model']}")
+        return cls(Bridge.from_env(env["route"], env["route_class"]), os.environ[env["model"]])
 
 
 def _record(conn, actor: Actor, bridge: Bridge, call_id: str, model: str, books, status, derived, error) -> None:
@@ -153,7 +157,7 @@ def chat(conn, bridge: Bridge, actor: Actor, *, model: str, messages: list[dict]
                  model=model, source_books=source_books, purpose=purpose)
 
 
-def embed(conn, embedder: Embedder, actor: Actor, texts: list[str], *, source_books: list[str],
+def embed(conn, embedder: Routed, actor: Actor, texts: list[str], *, source_books: list[str],
           purpose: str) -> list[list[float]]:
     """Vectors in input order. `source_books` as for chat: book content is subject to the same egress policy."""
     payload = _post(conn, embedder.bridge, actor, EMBED_PATH, {"model": embedder.model, "input": texts},
@@ -169,3 +173,20 @@ def embed(conn, embedder: Embedder, actor: Actor, texts: list[str], *, source_bo
     if not all(math.isfinite(x) for v in vectors for x in v) or not all(any(v) for v in vectors):
         raise EgressError("embeddings answer has empty, zero or non-finite vectors")
     return vectors
+
+
+def rerank(conn, reranker: Routed, actor: Actor, query: str, documents: list[str], *, source_books: list[str],
+           purpose: str) -> list[float]:
+    """Relevance scores in input order. Every document must come back exactly once with a finite score."""
+    payload = _post(conn, reranker.bridge, actor, RERANK_PATH,
+                    {"model": reranker.model, "query": query, "documents": documents, "top_n": len(documents)},
+                    model=reranker.model, source_books=source_books, purpose=purpose)
+    try:
+        pairs = [(r["index"], float(r["relevance_score"])) for r in payload["results"]]
+    except (KeyError, TypeError, ValueError):
+        raise EgressError("rerank answer is not results[].relevance_score") from None
+    if sorted(i for i, _ in pairs) != list(range(len(documents))) or not all(type(i) is int for i, _ in pairs):
+        raise EgressError("rerank answer does not match the documents")  # a score must never land on another passage
+    if not all(math.isfinite(score) for _, score in pairs):
+        raise EgressError("rerank answer has non-finite scores")
+    return [score for _, score in sorted(pairs)]

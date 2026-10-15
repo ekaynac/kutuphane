@@ -17,6 +17,12 @@ SUBJECT = "svc-kutuphane"
 ROUTE = "local"
 
 
+def fake_relevance(query: str, doc: str) -> float:
+    """Deterministic stand-in reranker: the share of query words that occur in the document."""
+    words = {w.strip(".,:;?!") for w in query.casefold().split()}
+    return len(words & {w.strip(".,:;?!") for w in doc.casefold().split()}) / max(len(words), 1)
+
+
 def fake_vector(text: str, dims: int = 16) -> list[float]:
     """Deterministic stand-in embedding: hashed word counts, so texts sharing words are close."""
     v = [0.0] * dims
@@ -29,7 +35,8 @@ class FakeBridge:
     """Mimics the LLMDAP bridge contract we rely on (paths, headers, derived correlation id, audit records)."""
 
     def __init__(self):
-        self.audit, self.hits, self.reply, self.on_request, self.embed_reply = [], [], "tamam", None, None
+        self.audit, self.hits, self.reply, self.on_request = [], [], "tamam", None
+        self.embed_reply = self.rerank_reply = None
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -62,7 +69,12 @@ class FakeBridge:
                                        "correlationId": derived, "model": body["model"], "outcome": "allow",
                                        "forSubject": self.headers.get("x-llmdap-for-subject")})
                 fake.last_body = body
-                if self.path.endswith("/v1/embeddings"):
+                if self.path.endswith("/v1/rerank"):
+                    results = fake.rerank_reply(body) if fake.rerank_reply else \
+                        [{"index": i, "relevance_score": fake_relevance(body["query"], d)}
+                         for i, d in enumerate(body["documents"])]
+                    answer = json.dumps({"results": results}).encode()
+                elif self.path.endswith("/v1/embeddings"):
                     data = fake.embed_reply(body["input"]) if fake.embed_reply else \
                         [{"index": i, "embedding": fake_vector(t)} for i, t in enumerate(body["input"])]
                     answer = json.dumps({"data": data}).encode()
@@ -86,7 +98,10 @@ class FakeBridge:
         return llmdap.Bridge(f"http://127.0.0.1:{self.port}{prefix}", ROUTE, key, route_class)
 
     def embedder(self, route_class="local"):
-        return llmdap.Embedder(self.bridge(route_class=route_class), "bge-m3")
+        return llmdap.Routed(self.bridge(route_class=route_class), "bge-m3")
+
+    def reranker(self, route_class="local"):
+        return llmdap.Routed(self.bridge(route_class=route_class), "bge-reranker-v2-m3")
 
 
 @pytest.fixture

@@ -31,7 +31,7 @@ def stored_dims(conn, model: str) -> int | None:
     return row[0] if row else None
 
 
-def index(conn, embedder: llmdap.Embedder, book: str) -> int:
+def index(conn, embedder: llmdap.Routed, book: str) -> int:
     """Embed the book's current chunks that lack a vector of this model; returns how many vectors were added.
     All vectors of one model have one width: a model that changed its output needs a new model name."""
     rows = conn.execute(_MISSING, (book, embedder.model)).fetchall()
@@ -51,7 +51,7 @@ def index(conn, embedder: llmdap.Embedder, book: str) -> int:
     return len(rows)
 
 
-def query_vector(conn, embedder: llmdap.Embedder | None, actor: Actor, query: str) -> search.QueryVector | None:
+def query_vector(conn, embedder: llmdap.Routed | None, actor: Actor, query: str) -> search.QueryVector | None:
     if embedder is None:
         return None
     try:

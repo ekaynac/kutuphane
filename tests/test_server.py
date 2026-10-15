@@ -12,7 +12,7 @@ from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from starlette.testclient import TestClient
 
-from kutuphane import authz, catalog, profiles, server
+from kutuphane import authz, catalog, profiles, retrieval, server
 from kutuphane.identity import Verifier
 from kutuphane.policy import make_policy
 from kutuphane.source import read_source
@@ -258,7 +258,7 @@ def test_http_search_embeds_the_query_through_llmdap(conn, okf_dir, verifier, fa
     authz.grant(conn, "book:kitap", "read", U)
     vectors.index(conn, fake.embedder(), "kitap")
     app = server.create_app(dsn=os.environ["KUTUPHANE_TEST_DSN"], verifier=verifier, bridge=fake.bridge(),
-                            model="qwen", public_url=PUBLIC, embedder=fake.embedder())
+                            model="qwen", public_url=PUBLIC, stages=retrieval.Stages(fake.embedder()))
     with TestClient(app) as client:
         r = client.get("/v1/search", params={"q": "kayıtlar saklanır"}, headers=bearer(keys))
     assert r.status_code == 200 and r.json()["results"]
