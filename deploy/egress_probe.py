@@ -2,7 +2,7 @@
 
     docker compose --profile app exec -T core python -I - [host:port ...] < deploy/egress_probe.py
 
-Allowed: postgres (and llmdap once it joins the core network). Three things are checked separately (Astra
+Allowed: postgres and llmdap. Three things are checked separately (Astra
 review #4), because one failed connection does not say which layer stopped it:
 - no default route: an internal compose network has none, so no address outside it is routable at all;
 - outside names do not resolve: DNS is not a way out either;
@@ -12,7 +12,7 @@ review #4), because one failed connection does not say which layer stopped it:
 import socket
 import sys
 
-ALLOWED = [("postgres", 5432)]
+ALLOWED = [("postgres", 5432), ("llmdap", 8787)]
 OUTSIDE_NAMES = ["huggingface.co", "pypi.org", "host.docker.internal"]
 FORBIDDEN = [("1.1.1.1", 443), ("8.8.8.8", 53), ("172.17.0.1", 11434)]
 

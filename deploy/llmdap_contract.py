@@ -36,11 +36,13 @@ def main() -> int:
     ap.add_argument("book_dir")
     ap.add_argument("--chat", nargs=2, required=True, metavar=("ROUTE", "MODEL"))
     ap.add_argument("--embed", nargs=2, required=True, metavar=("ROUTE", "MODEL"))
+    ap.add_argument("--rerank", nargs=2, metavar=("ROUTE", "MODEL"), help="optional rerank route (#236)")
     ap.add_argument("--audit-export", required=True)
     args = ap.parse_args()
     url, key = os.environ[llmdap.ENV["url"]].rstrip("/"), os.environ[llmdap.ENV["key"]]
     chat = llmdap.Bridge(url, args.chat[0], key, "local")
     emb = llmdap.Routed(llmdap.Bridge(url, args.embed[0], key, "local"), args.embed[1])
+    rr = llmdap.Routed(llmdap.Bridge(url, args.rerank[0], key, "local"), args.rerank[1]) if args.rerank else None
     results = {}
 
     def check(name, ok, detail=""):
@@ -74,7 +76,12 @@ def main() -> int:
         vector = vectors.query_vector(conn, emb, actor, QUESTION)
         hits = search.search(conn, actor, QUESTION, k=3, vector=vector)
         check("hybrid search with a query vector", vector is not None and hits)
-        result = answers.ask(conn, chat, actor, QUESTION, model=args.chat[1], stages=retrieval.Stages(emb, None))
+        if rr:
+            ranked = retrieval.retrieve(conn, actor, QUESTION, k=3, stages=retrieval.Stages(emb, rr))
+            rerank_ok = conn.execute("SELECT count(*) FROM model_call WHERE correlation_id = %s AND route = %s "
+                                     "AND http_status = 200", (actor.correlation_id, rr.bridge.route)).fetchone()[0]
+            check("rerank through the rerank route", ranked and rerank_ok == 1, f"{len(ranked)} hits")
+        result = answers.ask(conn, chat, actor, QUESTION, model=args.chat[1], stages=retrieval.Stages(emb, rr))
         check("answer through the chat route", result["status"] in ("answered", "not_in_library"), result["status"])
 
         calls = conn.execute("SELECT call_id, derived_correlation_id, http_status FROM model_call "

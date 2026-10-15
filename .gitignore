@@ -6,3 +6,6 @@ __pycache__/
 web/node_modules/
 web/dist/
 deploy/dev/
+deploy/llmdap/bridge.env
+deploy/llmdap/config/keys.json
+deploy/llmdap/*.key

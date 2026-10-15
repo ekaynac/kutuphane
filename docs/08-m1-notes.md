@@ -285,3 +285,26 @@ sızıntısı bulunmadı; düzeltilenler:
 - `llmdap.Routed`, embedding ve rerank rotaları için ortak tiptir (eski `Embedder`).
 - **AT-08 için not:** reranker puanı (bge-reranker için 0–1) "kütüphanede yok" eşiğine RRF puanından daha uygun bir
   adaydır. Eşik etiketlerle belirlenir.
+
+# Compose'ta gerçek LLMDAP (AT-10 canlı)
+
+- `llmdap` servisi: `llmdap-bridge:0.28.0-llmdap1.18.0` (LLMDAP #237).
+  - Salt okunur kök, bütün yetenekler kapalı, `no-new-privileges`.
+  - İmzalı zincir `llmdap-audit` volume'unda.
+  - Ayarlar `deploy/llmdap/` altında: rotalar, politika, anahtar hash'i ve env. Gizliler git'e girmez.
+- **Ağlar artık her konuşma için ayrı:**
+
+  | Ağ | Servisler |
+  |---|---|
+  | `db` | Postgres–Core |
+  | `web` | ingress–Core |
+  | `gateway` | Core–LLMDAP |
+  | `models` | LLMDAP–model sunucuları |
+
+  Hepsi `internal`. Canlı ölçüm:
+  - Core yalnız Postgres ve LLMDAP'a ulaşır;
+  - LLMDAP model sunucusuna ulaşır, ama internete ve Postgres'e ulaşamaz (adı bile çözülmez);
+  - ingress Postgres'e, LLMDAP'a ve model sunucusuna ulaşamaz.
+- `model-stub` (profil `dev-models`): yalnız standart kütüphane kullanan, belirlenimci sohbet, embedding ve rerank
+  sunucusu. Ölçüm için kullanılmaz.
+- `llmdap_contract.py` (rerank kontrolü eklendi) compose'taki gerçek LLMDAP'a karşı 11/11.
