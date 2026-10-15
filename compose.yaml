@@ -90,6 +90,27 @@ services:
     volumes:
       - ./deploy/model_stub.py:/srv/model_stub.py:ro
     networks: [models]
+  laya:
+    profiles: [decision-models]
+    # Typed-decision model (Laya 0.4.6, open weights) behind the LLMDAP `systemone` route `laya` (#225).
+    build: deploy/laya
+    image: kutuphane-laya:0.4.6
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    environment:
+      # "multilingual" must be the Hub repo convaiinnovations/laya-multilingual (pinned revision e4e9ddf),
+      # not the built-in subfolder of convaiinnovations/laya; Laya serves it as model "multilingual".
+      LAYA_EXTRA_MODELS: '{"laya-multilingual": "convaiinnovations/laya-multilingual"}'
+      LAYA_MODELS: laya-multilingual
+      LAYA_DEFAULT_MODEL: laya-multilingual
+      LAYA_REVISION: reviewed      # load only the reviewed commit SHA (laya.revisions.PINNED_REVISIONS)
+      LAYA_THREADS: "8"
+      LAYA_DEVICE: cpu
+    volumes:
+      - ${HF_CACHE:-~/.cache/huggingface}:/hf:ro   # pinned Hub revision; the container has no network out
+    networks: [models]
   # Real model servers (vLLM, Ollama, ...) join `models` only; the routes in deploy/llmdap/config/routes.json name them.
 
 volumes:

@@ -174,6 +174,9 @@ function renderDoc() {
     buttons("egress", names(t.egress), null, (v) => { S.sel.egress = v; }, (v) => v === "cloud_ok" && restrictedNow())));
   main.append(el("fieldset", {}, el("legend", { textContent: "Document preset (default for every section)" }),
     buttons("root", Object.fromEntries(Object.entries(S.presets).map(([k, v]) => [k, v.split(":")[0]])), d.root, (v) => { S.sel.root = v; })));
+  const sh = d.shadow;
+  if (sh) main.append(el("div", { className: "reveal", textContent:
+    `Laya (shadow, not selected): ${sh.doc.root.choice} (${sh.doc.root.p}) · ${sh.doc.sensitivity.choice} (${sh.doc.sensitivity.p}) · ${sh.doc.egress.choice} (${sh.doc.egress.p})` }));
   const help = S.presets[S.sel.root];
   if (help) main.append(el("div", { className: "desc", textContent: help }));
   if (S.sel.root === "record") {
@@ -198,6 +201,7 @@ function renderDoc() {
     main.append(el("div", { className: "sec" + (S.restr.has(s.i) ? " restricted" : "") },
       el("div", { className: "sec-head" }, el("span", { className: "sec-title", textContent: `${s.heading} · ${s.n_blocks} blocks` }), pick),
       s.proposal && s.proposal !== d.root ? el("div", { className: "meta", textContent: `Proposal for this section: ${s.proposal}` }) : "",
+      sh && sh.sections[s.i] ? el("div", { className: "meta", textContent: `Laya: ${sh.sections[s.i].choice} (${sh.sections[s.i].p})` }) : "",
       pre, more,
       el("label", { className: "row" }, restr, "This section is restricted"),
       effective === "agent" ? el("div", { className: "meta", textContent: "Agent instruction: delivery needs activate." }) : ""));
@@ -262,6 +266,7 @@ function renderGuide() {
     "Boilerplate: navigation, license or repeated text. It is not indexed.",
     "A restricted section makes the whole document restricted. Restricted content stays local.",
     "Blind documents show no proposals. This measures the effect of proposals (D43).",
+    "Laya (shadow): on documents that are not blind, the page shows the answer of the Laya decision model with its probability. It is never selected for you.",
   ];
   body.append(close, ...rules.map(r => el("div", { className: "rule", textContent: r })));
   const dl = el("dl");

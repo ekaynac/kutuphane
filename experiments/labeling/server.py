@@ -181,7 +181,11 @@ class Store:
         full = self.full_text(doc_id)  # the same fail-closed checks as v1
         if full is None:
             return None
-        return v2.sections(self.manifest[doc_id]["path"], full["text"], self.manifest[doc_id]["blind"])
+        blind = self.manifest[doc_id]["blind"]
+        doc = v2.sections(self.manifest[doc_id]["path"], full["text"], blind)
+        # Laya's shadow answer is shown on non-blind documents only (operator, 2026-10-15); never as a default.
+        doc["shadow"] = None if blind else self.latest(self.data / "shadow_v2" / "laya.jsonl").get(doc_id)
+        return doc
 
     def validate_v2(self, body: dict) -> dict:
         doc_id = body.get("id")
@@ -196,7 +200,8 @@ class Store:
         ms = body.get("ms")
         q = self.taxonomy["questions"]
         rec = v2.validate(body, doc, q["sensitivity"]["options"], q["egress"]["options"])
-        return {"task": "doc2", "id": doc_id, **rec, "blind": self.manifest[doc_id]["blind"], "note": note,
+        return {"task": "doc2", "id": doc_id, **rec, "blind": self.manifest[doc_id]["blind"],
+                "laya_shown": doc["shadow"] is not None, "note": note,
                 "ms": int(ms) if isinstance(ms, (int, float)) and 0 <= ms < 86_400_000 else None}
 
 
