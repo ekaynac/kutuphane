@@ -63,3 +63,12 @@ def test_local_only_passages_never_reach_a_cloud_reranker(conn, fake, book):
 def test_no_reranker_is_plain_hybrid_search(conn, fake, book):
     assert retrieval.retrieve(conn, Actor(U), QUERY, k=5) == search.search(conn, Actor(U), QUERY, k=5)
     assert fake.hits == []
+
+
+def test_negative_rerank_scores_still_reach_the_answer(conn, fake, book):  # Astra review #7
+    from kutuphane import answers
+    fake.rerank_reply = lambda b: [{"index": i, "relevance_score": -0.1 - i} for i in range(len(b["documents"]))]
+    fake.reply = "İki yıl saklanır [1]."
+    out = answers.ask(conn, fake.bridge(), Actor(U), QUERY, model="qwen",
+                      stages=retrieval.Stages(reranker=fake.reranker()))
+    assert out["status"] == "answered"

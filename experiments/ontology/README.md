@@ -27,7 +27,7 @@ v1 has no decision class, so a proposed `decision` compares as `reference`.
 | v1 drafts, blind slice | 49 | 0.75 |
 
 **Corpus counts:**
-- Blocks: 5,568 in total, median 19 per document. 734 are id-table rows; 4 code blocks are oversized.
+- Blocks: 5,485 in total, median 19 per document. 676 are id-table rows. The counts are after the block-rule fixes of Astra review #7 (see the end of this file).
 - Root signals:
   - record word: 73;
   - proposal word: 50;
@@ -35,7 +35,7 @@ v1 has no decision class, so a proposed `decision` compares as `reference`.
   - instruction: 11;
   - dated file: 9;
   - **no signal (left for the model): 7**.
-- **70 of 163 documents (43 %)** contain more than one class by their heading words. This is the mixed-document finding of the operator, now measured.
+- **73 of 163 documents (45 %)** contain more than one class by their heading words. This is the mixed-document finding of the operator, now measured.
 
 **What changed from the first run** (0.75 / 0.60 / 0.47):
 - two bugs fixed:
@@ -52,3 +52,12 @@ The rules were kept generic: none was fitted to a single document.
 - The development corpus has strong path conventions, so another corpus can score lower.
 - The real measure is the v2 blind slice, after labelling.
 - The most common remaining miss is reference ↔ record (11 documents): undated notes and descriptive documents.
+
+**Block-rule fixes after Astra review #7** (they match docs/09 §1.1):
+- a code fence takes the paragraph immediately before it;
+- an id table needs every data row to have a unique id, and it keeps its header as its own block;
+- an ordinary long table splits at row boundaries and repeats its header;
+- a document without headings has one block for each paragraph;
+- the nearest heading decides the block proposal.
+
+The root-preset agreement did not change.
