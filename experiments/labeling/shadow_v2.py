@@ -24,6 +24,9 @@ import v2  # noqa: E402
 from server import Store  # noqa: E402
 
 PURPOSE = "shadow-labelling"
+# Fail closed: only these routes keep content on this machine. Every other route is treated as hosted, so it
+# gets only documents the operator labelled normal + cloud_ok (with no restricted section), after the label.
+LOCAL_ROUTES = {"laya"}
 DOC_CHARS, SECTION_CHARS = 4000, 3000
 
 
@@ -73,9 +76,9 @@ def main() -> int:
     out_dir.mkdir(exist_ok=True)
     out_path = out_dir / f"{args.route}.jsonl"
     done = {json.loads(line)["id"] for line in out_path.read_text().splitlines()} if out_path.exists() else set()
-    hosted = args.route == "jev"
+    hosted = args.route not in LOCAL_ROUTES
     allowed = None
-    if hosted:  # operator decision 2026-10-15: Jev sees only documents labelled normal + cloud_ok, after the label
+    if hosted:  # operator decision 2026-10-15: a hosted model sees only normal + cloud_ok documents, after the label
         labels = store.latest(store.labels_v2_path)
         allowed = {i for i, r in labels.items() if r["values"]["sensitivity"] == "normal"
                    and r["values"]["egress"] == "cloud_ok" and not r["restricted"]}
