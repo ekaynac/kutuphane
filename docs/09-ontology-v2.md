@@ -1,6 +1,6 @@
 # Knowledge ontology v2 — draft
 
-**Status:** DRAFT 0.2, after brainstorm round 2.
+**Status:** APPROVED as v2.0 by the operator on 2026-10-15 (D54); all five decisions in §7 are "yes". The draft numbering 0.1/0.2 stays for history.
 **Co-authors:** Claude, Astra (GPT-6), Claude Mythos 5.1.
 - Round 1: three independent proposals, merged into 0.1.
 - Round 2: Astra and Mythos critiqued 0.1. This draft applies their findings; §9 lists the changes.
@@ -261,13 +261,13 @@ Every change is an **append-only annotation event**: `(block ref, facet, value, 
 - Agents can write text and propose labels. To confirm, a principal needs `curate`, which is human-only today. If agents ever get `curate`, that is a new decision, and the audit shows every use.
 - An agent can point to a claim with a block reference ("I acted on rule X"). Later the audit can show that the rule was retired, and which rule replaced it.
 
-## 7. Open points for the operator
+## 7. Operator decisions (2026-10-15: yes to all five)
 
-1. **Mixed sensitivity:** a document-level gate plus a block mark that tightens the document. Threshold proposal: if more than 10 % of blind documents are mixed, design section-level gates. All three co-authors say: measure first.
-2. **`curate` is human-only now.** Confirm.
-3. **Grant `expires_at`** and **automatic suspension** of grants whose source block is retired. Confirm.
-4. **Table rows as blocks** (id column). This affects `docs/01` itself. Confirm.
-5. **Order of work:**
+1. **Mixed sensitivity:** a document-level gate plus a block mark that tightens the document. Threshold: if more than 10 % of blind documents are mixed, design section-level gates. Measure first. **Approved.**
+2. **`curate` is human-only now.** **Approved.**
+3. **Grant `expires_at`** and **automatic suspension** of grants whose source block is retired. **Approved.**
+4. **Table rows as blocks** (id column). This affects `docs/01` itself. **Approved.**
+5. **Order of work** (**approved**):
    1. this document;
    2. D53 (canon) and the D24 revision;
    3. measure the rule proposer;
