@@ -2,7 +2,9 @@
 
     docker compose --profile app exec -T core python -I - [host:port ...] < deploy/egress_probe.py
 
-Allowed: postgres and llmdap. Three things are checked separately (Astra
+Allowed: postgres and llmdap. The ingress proxy shares the `web` network with core, so core can open a connection to
+it; that is a known peer, not a way out (`web` has no route out). It is reported, not failed. Three things are
+checked separately (Astra
 review #4), because one failed connection does not say which layer stopped it:
 - no default route: an internal compose network has none, so no address outside it is routable at all;
 - outside names do not resolve: DNS is not a way out either;
@@ -13,6 +15,7 @@ import socket
 import sys
 
 ALLOWED = [("postgres", 5432), ("llmdap", 8787)]
+KNOWN_PEERS = [("ingress", 8080)]  # reachable by design of compose networks; reported (Astra review #7)
 OUTSIDE_NAMES = ["huggingface.co", "pypi.org", "host.docker.internal"]
 FORBIDDEN = [("1.1.1.1", 443), ("8.8.8.8", 53), ("172.17.0.1", 11434)]
 
@@ -53,5 +56,7 @@ gateway = default_route()
 failures += [f"HAS a default route via {gateway}"] if gateway else []
 failures += [f"RESOLVED outside name {n}" for n in OUTSIDE_NAMES if resolves(n)]
 failures += [f"REACHED forbidden {h}:{p}" for h, p in forbidden if reachable(h, p)]
-print("\n".join(failures) or "egress ok: no default route, no outside names, only allowed peers reachable")
+peers = [f"{h}:{p}" for h, p in KNOWN_PEERS if reachable(h, p)]
+print("\n".join(failures) or "egress ok: no default route, no outside names, only allowed peers reachable"
+      + (f" (known peers also reachable: {', '.join(peers)})" if peers else ""))
 sys.exit(1 if failures else 0)

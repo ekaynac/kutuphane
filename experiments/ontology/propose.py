@@ -91,7 +91,11 @@ def blocks(text: str) -> list[dict]:
             heading = heading[:level - 1] + [m.group(2).strip()]
             out.append({"heading": " / ".join(heading), "kind": "heading", "text": line})
         elif line.startswith("```"):
-            prev = out.pop() if kind is None and out and out[-1]["kind"] == "paragraph" and not buf else None
+            explain = ""
+            if kind == "paragraph":  # the paragraph immediately before the fence joins it (§1.1)
+                paras = "\n".join(buf).strip().split("\n\n")
+                explain = paras.pop()
+                buf = ["\n\n".join(paras)] if paras else []
             flush()
             fence = [line]
             i += 1
@@ -99,7 +103,7 @@ def blocks(text: str) -> list[dict]:
                 fence.append(lines[i])
                 i += 1
             fence.append(lines[i] if i < len(lines) else "")
-            text_ = ((prev["text"] + "\n") if prev else "") + "\n".join(fence)
+            text_ = (explain + "\n" if explain else "") + "\n".join(fence)
             out.append({"heading": " / ".join(heading), "kind": "code", "text": text_})
         elif line.lstrip().startswith("|"):
             new = "table"
@@ -108,20 +112,16 @@ def blocks(text: str) -> list[dict]:
                 kind = new
             buf.append(line)
             if i + 1 >= len(lines) or not lines[i + 1].lstrip().startswith("|"):
-                rows = [r for r in buf if ID_ROW.match(r.strip())]
-                if len(rows) >= 2 and len({r.split("|")[1].strip() for r in rows}) == len(rows):
-                    for r in rows:  # id table: one block per row
-                        out.append({"heading": " / ".join(heading), "kind": "row", "text": r})
-                    buf, kind = [], None
-                else:
-                    flush()
+                for k, part in _table_blocks(buf):  # id table: header + one block per row; else row-bounded parts
+                    out.append({"heading": " / ".join(heading), "kind": k, "text": part})
+                buf, kind = [], None
         elif re.match(r"^\s*([-*+]|\d+[.)])\s+", line) or (kind == "list" and line.startswith("  ") and line.strip()):
             if kind != "list":
                 flush()
                 kind = "list"
             buf.append(line)
         elif not line.strip():
-            if kind == "list":
+            if kind == "list" or (kind == "paragraph" and not heading):  # no heading: each paragraph is a block
                 flush()
             elif kind == "paragraph":
                 buf.append("")
@@ -133,6 +133,21 @@ def blocks(text: str) -> list[dict]:
         i += 1
     flush()
     return out
+
+
+def _table_blocks(rows: list[str]) -> list[tuple[str, str]]:
+    sep = next((k for k, r in enumerate(rows) if re.match(r"^\s*\|[\s:|-]+\|\s*$", r)), -1)
+    head, data = rows[:sep + 1], rows[sep + 1:]
+    ids = [r.split("|")[1].strip() for r in data]
+    if len(data) >= 2 and all(ID_ROW.match(r.strip()) for r in data) and len(set(ids)) == len(ids):
+        return ([("table-head", "\n".join(head))] if head else []) + [("row", r) for r in data]
+    parts, cur = [], []
+    for r in rows:  # an ordinary table: one block, split at row boundaries when long
+        if cur and len("\n".join(cur + [r])) > MAX_BLOCK:
+            parts.append(("table", "\n".join(cur)))
+            cur = head[:] if head and r not in head else []
+        cur.append(r)
+    return parts + ([("table", "\n".join(cur))] if cur else [])
 
 
 def _split_long(body: str) -> list[str]:
@@ -169,13 +184,14 @@ def root_preset(path: str, meta: dict, title: str) -> tuple[str, str]:
 
 def block_preset(heading: str) -> str | None:
     """A heading word overrides the root default for its blocks (docs/09 §5.1); None = inherit."""
-    w = words(heading)
-    if has(w, {"decision", "decisions", "rule", "rules"}, "decision"):
-        return "decision"
-    if has(w, {"proposal", "plan", "design", "next", "todo", "options"}, "proposal"):
-        return "proposal"
-    if has(w, {"status", "findings", "results", "report", "log"}, "record"):
-        return "record"
+    for level in reversed(heading.split(" / ")):  # the nearest heading decides; parents only when it is silent
+        w = words(level)
+        if has(w, {"decision", "decisions", "rule", "rules"}, "decision"):
+            return "decision"
+        if has(w, {"proposal", "plan", "design", "next", "todo", "options"}, "proposal"):
+            return "proposal"
+        if has(w, {"status", "findings", "results", "report", "log"}, "record"):
+            return "record"
     return None
 
 
