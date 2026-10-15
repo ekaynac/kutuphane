@@ -1,0 +1,3 @@
+p, svc-kutuphane, llm:invoke, llm/chat
+p, svc-kutuphane, llm:invoke, llm/emb
+p, svc-kutuphane, llm:invoke, llm/rerank

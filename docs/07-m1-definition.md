@@ -106,7 +106,7 @@ dış bağımlılığa bağlı.
 | AT-07 | yeşil | eski cevap + kanıt modeli çağırmadan, güncel yetkiyle; delegasyon iptali |
 | AT-08 | **mekanizma yeşil, eşik açık** | "kütüphanede yok", geçersiz atıf reddi; sayısal eşik M0 ölçümünü bekliyor |
 | AT-09 | **yeşil (canlı)** | erişim + `model_call` + LLMDAP export birleşimi; `deploy/llmdap_contract.py` gerçek LLMDAP 0.26.0 gateway'ine karşı (yerel, 2026-10-13): her çağrının LLMDAP kaydı bulundu, rapor `complete` |
-| AT-10 | **ağ yarısı yeşil; Core yeşil** | `deploy/egress_probe.py`: varsayılan rota yok, dış ad çözülmüyor, yalnız Postgres'e bağlanır. Embedding de LLMDAP'tan (#226, D52), her çağrı `model_call`'da. Canlı eşleşme gerçek LLMDAP compose'a girince; reranker rerank yüzeyini bekliyor |
+| AT-10 | **yeşil (canlı, compose)** | Gerçek LLMDAP 0.28 bridge imajı compose'ta (2026-10-15). `egress_probe.py` Core içinde: varsayılan rota yok, dış ad çözülmüyor, yalnız Postgres ve LLMDAP'a bağlanır, model sunucusuna ulaşamaz. LLMDAP model sunucusuna ulaşır, internete ve Postgres'e ulaşamaz; ingress yalnız Core'a. Üretim, embedding ve rerank çağrılarının tamamı LLMDAP zincirinde (`llmdap_contract.py` 11/11) |
 | AT-11 | **yeşil (canlı)** | dokuz bozuk-token durumu HTTP ve MCP'de 401; başlıkla kimlik değiştirilemez. LLMDAP tarafı canlı: başka özne adlandıran başlık, yanlış anahtar ve yalnız paylaşılan sır 401; zincirde tek doğrulanmış Core öznesi + hizmet edilen kullanıcı (`deploy/llmdap_contract.py`) |
 | AT-12 | yeşil | K3 `activate` kapısı, harf/CRLF varyantları, atıf yapılmamış K3 kaynakları |
 | AT-13 | yeşil | `test_packages.py` (iki kurulum, güven kökü, anahtar yenileme/iptal, onay sırasında iptal) |
@@ -114,6 +114,6 @@ dış bağımlılığa bağlı.
 | AT-15 | yeşil | `test_feedback.py` (sürüme bağlı geri bildirim) |
 | AT-16 | yeşil | zorunlu E5/E8/E9, `purpose` kaydı, `publish` sınırında doğrulama |
 
-**M1'i kapatmak için kalan:** gerçek LLMDAP'ın compose'a eklenmesi (yalnız bridge'li sade bir gateway imajı
-gerekiyor; LLMDAP#237) ve AT-10'un o ağda canlı denenmesi; LLMDAP rerank yüzeyi (#236) → reranker; iç doküman etiketleri
-→ kesin model seçimi ve AT-08 eşikleri. Hibrit arama (bge-m3 önerisi, M0) Kütüphane tarafında hazır (D52).
+**M1'i kapatmak için kalan:** ontoloji v2 ile iç doküman etiketleri (D54) → kesin model seçimi ve AT-08 eşikleri
+(reranker puanı eşik adayı). Hibrit arama + reranker hazır (D52, PR 29); gerçek modellerin (bge-m3,
+bge-reranker-v2-m3) `models` ağına konması kurulum işi.

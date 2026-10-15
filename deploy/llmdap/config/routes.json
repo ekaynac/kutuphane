@@ -1,0 +1,10 @@
+{
+  "routes": [
+    {"name": "chat", "schema": "openai", "baseUrl": "http://model-stub:8000", "pinnedModel": "stub-chat",
+     "allowInsecure": true},
+    {"name": "emb", "schema": "openai", "surface": "embeddings", "baseUrl": "http://model-stub:8000",
+     "pinnedModel": "stub-embed", "allowInsecure": true, "dimensions": 64},
+    {"name": "rerank", "schema": "openai", "surface": "rerank", "baseUrl": "http://model-stub:8000",
+     "pinnedModel": "stub-rerank", "allowInsecure": true}
+  ]
+}
