@@ -12,7 +12,7 @@ import uuid
 
 from psycopg.types.json import Jsonb
 
-from . import gate, llmdap, search, vectors
+from . import gate, llmdap, retrieval, search
 from .gate import Actor, Denied, NotFound
 
 NOT_IN_LIBRARY = "KÜTÜPHANEDE_YOK"
@@ -66,9 +66,8 @@ def _needs(actor: Actor, sources: list[dict], instruction_of) -> dict:
 
 
 def ask(conn, bridge: llmdap.Bridge, actor: Actor, question: str, *, model: str, k: int = search.DEFAULT_K,
-        embedder: llmdap.Embedder | None = None) -> dict:
-    vector = vectors.query_vector(conn, embedder, actor, question)
-    hits = [h for h in search.search(conn, actor, question, k, vector=vector) if h.score > MIN_SCORE]
+        stages: retrieval.Stages = retrieval.Stages()) -> dict:
+    hits = [h for h in retrieval.retrieve(conn, actor, question, k, stages) if h.score > MIN_SCORE]
     if not hits:
         return _store(conn, actor, question, "not_in_library", None, [], [], None)
     sources = [_ref(n, h) for n, h in enumerate(hits, start=1)]

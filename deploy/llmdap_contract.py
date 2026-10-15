@@ -21,7 +21,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from kutuphane import answers, audit, authz, catalog, db, llmdap, profiles, search, vectors
+from kutuphane import answers, audit, authz, catalog, db, llmdap, profiles, retrieval, search, vectors
 from kutuphane.gate import Actor
 from kutuphane.policy import make_policy
 from kutuphane.source import read_source
@@ -40,7 +40,7 @@ def main() -> int:
     args = ap.parse_args()
     url, key = os.environ[llmdap.ENV["url"]].rstrip("/"), os.environ[llmdap.ENV["key"]]
     chat = llmdap.Bridge(url, args.chat[0], key, "local")
-    emb = llmdap.Embedder(llmdap.Bridge(url, args.embed[0], key, "local"), args.embed[1])
+    emb = llmdap.Routed(llmdap.Bridge(url, args.embed[0], key, "local"), args.embed[1])
     results = {}
 
     def check(name, ok, detail=""):
@@ -74,7 +74,7 @@ def main() -> int:
         vector = vectors.query_vector(conn, emb, actor, QUESTION)
         hits = search.search(conn, actor, QUESTION, k=3, vector=vector)
         check("hybrid search with a query vector", vector is not None and hits)
-        result = answers.ask(conn, chat, actor, QUESTION, model=args.chat[1], embedder=emb)
+        result = answers.ask(conn, chat, actor, QUESTION, model=args.chat[1], stages=retrieval.Stages(emb, None))
         check("answer through the chat route", result["status"] in ("answered", "not_in_library"), result["status"])
 
         calls = conn.execute("SELECT call_id, derived_correlation_id, http_status FROM model_call "

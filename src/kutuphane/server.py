@@ -25,7 +25,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import answers, db, feedback, gate, identity, llmdap, search, vectors
+from . import answers, db, feedback, gate, identity, llmdap, retrieval, search
 from .gate import Actor
 from .ids import normalize_path
 
@@ -56,11 +56,11 @@ def _run(dsn, fn):
         return fn(conn)
 
 
-def op_search(dsn, embedder, actor: Actor, query: str, k: int) -> list[dict]:
+def op_search(dsn, stages, actor: Actor, query: str, k: int) -> list[dict]:
     def go(conn):
         if not isinstance(query, str) or not query.strip() or len(query) > search.MAX_QUERY_CHARS:
             raise BadRequest(f"query must be 1..{search.MAX_QUERY_CHARS} characters")  # before any model call
-        return search.search(conn, actor, query, k, vector=vectors.query_vector(conn, embedder, actor, query))
+        return retrieval.retrieve(conn, actor, query, k, stages)
     hits = _run(dsn, go)
     return [{"citation": h.citation.handle, "page": h.page, "score": round(h.score, 4), "text": h.text} for h in hits]
 
@@ -70,10 +70,10 @@ def op_citation(dsn, actor: Actor, handle: str) -> dict:
     return {"citation": hit.citation.handle, "page": hit.page, "text": hit.text}
 
 
-def op_ask(dsn, bridge, model: str, embedder, actor: Actor, question: str) -> dict:
+def op_ask(dsn, bridge, model: str, stages, actor: Actor, question: str) -> dict:
     if not isinstance(question, str) or not question.strip():
         raise BadRequest("question is required")
-    return _run(dsn, lambda c: answers.ask(c, bridge, actor, question, model=model, embedder=embedder))
+    return _run(dsn, lambda c: answers.ask(c, bridge, actor, question, model=model, stages=stages))
 
 
 def op_reopen(dsn, actor: Actor, answer_id: str) -> dict:
@@ -165,7 +165,8 @@ class SecurityHeaders:
 
 
 def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge | None, model: str | None,
-               public_url: str, ui_dir: str | None = None, embedder: llmdap.Embedder | None = None) -> Starlette:
+               public_url: str, ui_dir: str | None = None,
+               stages: retrieval.Stages = retrieval.Stages()) -> Starlette:
     def actor_of(request: Request) -> Actor:
         scheme, _, token = request.headers.get("authorization", "").partition(" ")
         if scheme.lower() != "bearer":
@@ -188,7 +189,7 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
         except ValueError:
             raise BadRequest("k must be an integer") from None
         return JSONResponse({"correlation_id": actor.correlation_id,
-                             "results": await run_in_threadpool(op_search, dsn, embedder, actor, q, k)})
+                             "results": await run_in_threadpool(op_search, dsn, stages, actor, q, k)})
 
     async def h_citation(request, actor):
         return JSONResponse(await run_in_threadpool(op_citation, dsn, actor, request.query_params.get("handle", "")))
@@ -201,7 +202,7 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
         except ValueError:
             raise BadRequest("JSON body required") from None
         question = body.get("question") if isinstance(body, dict) else None
-        result = await run_in_threadpool(op_ask, dsn, bridge, model, embedder, actor, question)
+        result = await run_in_threadpool(op_ask, dsn, bridge, model, stages, actor, question)
         return JSONResponse({**result, "correlation_id": actor.correlation_id})
 
     async def h_answer(request, actor):
@@ -230,7 +231,7 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
     async def h_whoami(_request, actor):
         return JSONResponse({"principal": actor.principal, "on_behalf_of": actor.on_behalf_of})
 
-    mcp = build_mcp(dsn=dsn, verifier=verifier, bridge=bridge, model=model, public_url=public_url, embedder=embedder)
+    mcp = build_mcp(dsn=dsn, verifier=verifier, bridge=bridge, model=model, public_url=public_url, stages=stages)
 
     @contextlib.asynccontextmanager
     async def lifespan(_app):
@@ -294,7 +295,8 @@ def _mcp_actor() -> Actor:
                  correlation_id=uuid.uuid4().hex)
 
 
-def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_url: str, embedder=None) -> FastMCP:
+def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_url: str,
+              stages: retrieval.Stages = retrieval.Stages()) -> FastMCP:
     public = urllib.parse.urlsplit(public_url)
     security = TransportSecuritySettings(enable_dns_rebinding_protection=True, allowed_hosts=[public.netloc],
                                          allowed_origins=[f"{public.scheme}://{public.netloc}"])
@@ -306,7 +308,7 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
     @_mcp_errors
     async def search_library(query: str, k: int = search.DEFAULT_K) -> list[dict]:
         """Search the books you may read now. Results carry citation handles for open_citation."""
-        return await run_in_threadpool(op_search, dsn, embedder, _mcp_actor(), query, k)
+        return await run_in_threadpool(op_search, dsn, stages, _mcp_actor(), query, k)
 
     @mcp.tool()
     @_mcp_errors
@@ -320,7 +322,7 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
         """Answer from the library with [n] citations, or status not_in_library."""
         if bridge is None or not model:
             raise llmdap.EgressError("no model route configured")
-        return await run_in_threadpool(op_ask, dsn, bridge, model, embedder, _mcp_actor(), question)
+        return await run_in_threadpool(op_ask, dsn, bridge, model, stages, _mcp_actor(), question)
 
     @mcp.tool()
     @_mcp_errors
@@ -362,4 +364,4 @@ def app_from_env() -> Starlette:
     ui_dir = os.environ.get("KUTUPHANE_UI_DIR") or None
     return create_app(dsn=os.environ[db.DSN_ENV], verifier=identity.Verifier.from_env(), bridge=bridge,
                       model=os.environ[ENV["model"]], public_url=os.environ[ENV["public_url"]], ui_dir=ui_dir,
-                      embedder=llmdap.Embedder.from_env())
+                      stages=retrieval.Stages.from_env())

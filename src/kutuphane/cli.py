@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import (answers, audit, authz, catalog, db, devauth, gate, identity, llmdap, packages, profiles, search,
-               signing, vectors)
+               retrieval, signing, vectors)
 from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, make_policy
 from .source import read_source
 
@@ -37,12 +37,12 @@ def cmd_ingest(conn, args) -> int:
 
 def _index(conn, book: str) -> dict:
     """Vectors for the new version when an embeddings route is configured; otherwise search stays full text."""
-    embedder = llmdap.Embedder.from_env()
+    embedder = llmdap.Routed.from_env(llmdap.EMBED_ENV)
     return {"vectors_added": vectors.index(conn, embedder, book)} if embedder else {}
 
 
 def cmd_index(conn, args) -> int:
-    if llmdap.Embedder.from_env() is None:
+    if llmdap.Routed.from_env(llmdap.EMBED_ENV) is None:
         print(f"no embeddings route: set {llmdap.EMBED_ENV['route']}", file=sys.stderr)
         return 1
     _print({"book": args.book, **_index(conn, args.book)})
@@ -97,8 +97,7 @@ def cmd_read(conn, args) -> int:
 
 def cmd_search(conn, args) -> int:
     actor = gate.Actor(args.principal, args.on_behalf_of)
-    vector = vectors.query_vector(conn, llmdap.Embedder.from_env(), actor, args.query)
-    hits = search.search(conn, actor, args.query, args.k, vector=vector)
+    hits = retrieval.retrieve(conn, actor, args.query, args.k, retrieval.Stages.from_env())
     _print([{"citation": h.citation.handle, "page": h.page, "score": round(h.score, 4), "text": h.text}
             for h in hits])
     return 0
@@ -107,7 +106,7 @@ def cmd_search(conn, args) -> int:
 def cmd_ask(conn, args) -> int:
     actor = gate.Actor(args.principal, args.on_behalf_of)
     _print({**answers.ask(conn, llmdap.Bridge.from_env(), actor, args.question, model=args.model,
-                          embedder=llmdap.Embedder.from_env()),
+                          stages=retrieval.Stages.from_env()),
             "correlation_id": actor.correlation_id})
     return 0
 

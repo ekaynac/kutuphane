@@ -267,3 +267,21 @@ sızıntısı bulunmadı; düzeltilenler:
   - Gateway: LLMDAP `main` (0.26.0), stok `@llmdap/gateway`, yalnız bridge (`rag:false`, `memory:false`), subject-keys modu.
   - Upstream: yerel CPU bge-m3 + sabit sohbet ucu.
   - Bu deneme gateway'i Kütüphane oturumunun geçici alanında kaynaktan derleyerek yapıldı. Compose'a girmesi LLMDAP#237'yi (sade imaj) bekliyor.
+
+# M1d (3. kısım): reranker (LLMDAP rerank yüzeyi, #236/#238)
+
+- `retrieval.retrieve` HTTP, MCP, CLI ve cevaplar için tek giriş noktasıdır:
+  1. sorgu vektörü (isteğe bağlı);
+  2. ön-süzgeçli hibrit arama;
+  3. reranker (isteğe bağlı) hibrit sonucun ilk 30'unu yeniden sıralar; puan, reranker'ın ilgililik puanı olur.
+- Reranker yalnız aramanın zaten yetkilendirip kaydettiği pasajları yeniden sıralar. Havuzun tamamı çağıran adına
+  okunmuş sayılır ve kaydedilir, çünkü metni reranker'a gider.
+- Egress denetimi aynıdır: yerel kitabın pasajı bulut rerank rotasına gitmez.
+- `llmdap.rerank` cevabı denetler:
+  - her pasaj tam bir kez gelmeli;
+  - indeks gerçek tamsayı olmalı;
+  - puan sonlu olmalı.
+- Denetimden geçmeyen ya da başarısız çağrıda hibrit sıra kalır; çağrı `model_call`'da kayıtlıdır.
+- `llmdap.Routed`, embedding ve rerank rotaları için ortak tiptir (eski `Embedder`).
+- **AT-08 için not:** reranker puanı (bge-reranker için 0–1) "kütüphanede yok" eşiğine RRF puanından daha uygun bir
+  adaydır. Eşik etiketlerle belirlenir.

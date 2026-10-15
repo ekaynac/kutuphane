@@ -78,7 +78,7 @@ def test_failed_query_embedding_falls_back_to_full_text(conn, fake, okf_dir):
     publish(conn, okf_dir)
     authz.grant(conn, "book:kitap", "read", U)
     actor = Actor(U)
-    broken = llmdap.Embedder(fake.bridge(key="llmdap_sk_" + "x" * 43), "bge-m3")
+    broken = llmdap.Routed(fake.bridge(key="llmdap_sk_" + "x" * 43), "bge-m3")
     assert vectors.query_vector(conn, broken, actor, "kayıtlar") is None
     assert conn.execute("SELECT http_status FROM model_call WHERE correlation_id = %s",
                         (actor.correlation_id,)).fetchone() == (401,)              # the failure is on record
