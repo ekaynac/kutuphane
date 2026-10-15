@@ -9,6 +9,7 @@
 | `select_corpus.py` | Salt-okunur kaynak repolardan katmanlı örnekleme + sır taraması; `data/manifest.json`, `data/docs.json`; ~%30 kör |
 | `server.py` + `page.html` | Telefon dostu etiketleme sayfası (stdlib, token → cookie; metinler ASD-STE100 İngilizce, "Guide" paneli seçenekleri, farklarını ve örnekleri gösterir). Kör öğelerde taslak etiket kaydedilmeden gösterilmez, kayıttan sonra gösterilir; Laya tahmini hiç sunulmaz. "Restricted" seçilince çıkış "local only" olur (ürün kuralı). Etiketler `data/labels.jsonl` (ekleme; son kayıt geçerli) |
 | `laya_shadow.py` | `laya-multilingual` (sabit revizyon) CPU'da zero-shot; `data/laya-shadow.jsonl` |
+| `v2.py` + `page_v2.html` (`/v2`) | Ontoloji v2 etiketlemesi (docs/09 §5, D54): belge başlıklara göre bölümler halinde (bloklar `experiments/ontology/propose.py` kuralıyla); belge düzeyinde hassasiyet, egress ve kök ön ayar; bölüm başına ön ayar istisnası, "restricted" işareti, ayrıntılı inceleme işareti. Kör belgede öneri yok. Kayıt `data/labels_v2.jsonl`: bölümlerin blok hash'leriyle (metni değişmeyen blok etiketini korur). Restricted + bulut reddedilir. |
 
 Taslaklar (`data/drafts/batch-*.json`) Claude tarafından üretilir: kategori, hassasiyet, çıkış, gerekçe,
 0–1 soru + birebir pasaj. Gerçeklik referansı insan etiketidir (D30); taslak–insan uyumu ve çapalama etkisi

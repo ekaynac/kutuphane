@@ -36,6 +36,7 @@ TAILNET = ipaddress.ip_network("100.64.0.0/10")
 
 sys.path.insert(0, str(HERE))  # -I drops the script dir
 from secret_scan import find_secret  # noqa: E402
+import v2  # noqa: E402
 
 
 class Store:
@@ -49,6 +50,7 @@ class Store:
         self.order = order
         self.excluded = self._scan()
         self.labels_path = data_dir / "labels.jsonl"
+        self.labels_v2_path = data_dir / "labels_v2.jsonl"
         self.lock = Lock()
 
     def _scan(self) -> dict:
@@ -116,10 +118,10 @@ class Store:
             return None  # changed after the secret scan: never serve unscanned content
         return {"id": doc_id, "text": raw.decode("utf-8", errors="replace")}
 
-    def latest(self) -> dict:
-        out = {}
-        if self.labels_path.exists():
-            for line in self.labels_path.read_text().splitlines():
+    def latest(self, path: Path | None = None) -> dict:
+        out, path = {}, path or self.labels_path
+        if path.exists():
+            for line in path.read_text().splitlines():
                 if line.strip():
                     rec = json.loads(line)
                     out[rec["id"]] = rec
@@ -163,10 +165,39 @@ class Store:
             return {"task": task, "id": item_id, "values": {"relevance": rel}, "note": note, "ms": ms}
         raise ValueError("unknown task")
 
-    def append(self, rec: dict) -> None:
+    def append(self, rec: dict, path: Path | None = None) -> None:
         rec = {**rec, "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
-        with self.lock, self.labels_path.open("a") as f:
+        with self.lock, (path or self.labels_path).open("a") as f:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+    # --- v2 (docs/09 §5): sections and presets -------------------------------------------------------------
+
+    def items_v2(self) -> dict:
+        docs = [{"id": i, "path": self.docs[i]["path"], "group": self.docs[i]["group"], "chars": self.docs[i]["chars"],
+                 "blind": self.manifest[i]["blind"]} for i in self.order if i not in self.excluded]
+        return {"presets": v2.PRESETS, "taxonomy": self.taxonomy["questions"], "docs": docs}
+
+    def doc_v2(self, doc_id: str) -> dict | None:
+        full = self.full_text(doc_id)  # the same fail-closed checks as v1
+        if full is None:
+            return None
+        return v2.sections(self.manifest[doc_id]["path"], full["text"], self.manifest[doc_id]["blind"])
+
+    def validate_v2(self, body: dict) -> dict:
+        doc_id = body.get("id")
+        if not (isinstance(doc_id, str) and DOC_ID.match(doc_id)):
+            raise ValueError("unknown doc id")
+        doc = self.doc_v2(doc_id)
+        if doc is None:
+            raise ValueError("unknown doc id")
+        note = body.get("note") or ""
+        if not isinstance(note, str) or len(note) > MAX_NOTE:
+            raise ValueError("note too long")
+        ms = body.get("ms")
+        q = self.taxonomy["questions"]
+        rec = v2.validate(body, doc, q["sensitivity"]["options"], q["egress"]["options"])
+        return {"task": "doc2", "id": doc_id, **rec, "blind": self.manifest[doc_id]["blind"], "note": note,
+                "ms": int(ms) if isinstance(ms, (int, float)) and 0 <= ms < 86_400_000 else None}
 
 
 def load_token(data_dir: Path) -> str:
@@ -190,7 +221,7 @@ def check_host(host: str, allow_any: bool) -> None:
         raise SystemExit(f"refusing {host}: plain HTTP outside loopback/tailnet; pass --allow-any-interface to override")
 
 
-def make_handler(store: Store, token: str, page: bytes):
+def make_handler(store: Store, token: str, page: bytes, page_v2: bytes):
     class Handler(BaseHTTPRequestHandler):
         server_version = "kutuphane-label/1"
 
@@ -227,19 +258,33 @@ def make_handler(store: Store, token: str, page: bytes):
                 if not self.authed():
                     return self.send(HTTPStatus.UNAUTHORIZED, "Use the access link (.../?t=...).".encode(), "text/plain; charset=utf-8")
                 return self.send(HTTPStatus.OK, page, "text/html; charset=utf-8")
+            if url.path == "/v2":
+                if not self.authed():
+                    return self.send(HTTPStatus.UNAUTHORIZED, "Use the access link (.../?t=...).".encode(), "text/plain; charset=utf-8")
+                return self.send(HTTPStatus.OK, page_v2, "text/html; charset=utf-8")
             if not self.authed():
                 return self.json(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
             if url.path == "/api/items":
                 return self.json(HTTPStatus.OK, store.items())
             if url.path == "/api/state":
                 return self.json(HTTPStatus.OK, store.latest())
+            if url.path == "/api/v2/items":
+                return self.json(HTTPStatus.OK, store.items_v2())
+            if url.path == "/api/v2/state":
+                return self.json(HTTPStatus.OK, store.latest(store.labels_v2_path))
+            if url.path.startswith("/api/v2/doc/"):
+                doc = store.doc_v2(url.path.rsplit("/", 1)[-1])
+                if doc is None:
+                    return self.json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+                return self.json(HTTPStatus.OK, {k: v for k, v in doc.items() if not k.startswith("_")})
             if url.path.startswith("/api/doc/"):
                 doc = store.full_text(url.path.rsplit("/", 1)[-1])
                 return self.json(HTTPStatus.OK, doc) if doc else self.json(HTTPStatus.NOT_FOUND, {"error": "not found"})
             return self.json(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
         def do_POST(self):
-            if urlparse(self.path).path != "/api/label":
+            path = urlparse(self.path).path
+            if path not in ("/api/label", "/api/v2/label"):
                 return self.json(HTTPStatus.NOT_FOUND, {"error": "not found"})
             if not self.authed():
                 return self.json(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
@@ -247,9 +292,13 @@ def make_handler(store: Store, token: str, page: bytes):
             if length <= 0 or length > MAX_BODY:
                 return self.json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "body size"})
             try:
-                rec = store.validate(json.loads(self.rfile.read(length)))
-            except (ValueError, json.JSONDecodeError) as exc:
+                body = json.loads(self.rfile.read(length))
+                rec = store.validate_v2(body) if path == "/api/v2/label" else store.validate(body)
+            except (ValueError, json.JSONDecodeError, AttributeError) as exc:
                 return self.json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            if rec["task"] == "doc2":
+                store.append(rec, store.labels_v2_path)
+                return self.json(HTTPStatus.OK, {"ok": True})
             store.append(rec)
             revealed = store.shown(rec["id"], labelled=True) if rec["task"] == "doc" and not rec["skip"] else None
             return self.json(HTTPStatus.OK, {"ok": True, "draft": revealed})
@@ -270,7 +319,8 @@ def main() -> None:
     store = Store(data_dir)
     token = load_token(data_dir)
     page = (HERE / "page.html").read_bytes()
-    httpd = ThreadingHTTPServer((args.host, args.port), make_handler(store, token, page))
+    page_v2 = (HERE / "page_v2.html").read_bytes()
+    httpd = ThreadingHTTPServer((args.host, args.port), make_handler(store, token, page, page_v2))
     print(f"listening on {args.host}:{args.port} (token in {data_dir / 'token'})", file=sys.stderr)
     httpd.serve_forever()
 

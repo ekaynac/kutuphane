@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Kütüphane Labelling v2</title>
+<style>
+
+/* Layout: one card at a time, thumb-reach action bar pinned to the bottom. */
+:root {
+  --bg: #f3f4f1; --surface: #ffffff; --ink: #1d2320; --muted: #5d6762; --line: #d6dbd6;
+  --accent: #1f6f5c; --accent-ink: #ffffff; --accent-soft: #dcefe8; --blind: #7a4b9c; --blind-soft: #efe5f6;
+  --warn: #9a5b12;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121614; --surface: #1b201e; --ink: #e6ebe8; --muted: #9aa59f; --line: #2e3532;
+    --accent: #5cc3a5; --accent-ink: #0d1412; --accent-soft: #1f3a32; --blind: #c49be0; --blind-soft: #33263d;
+    --warn: #e0a85a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121614; --surface: #1b201e; --ink: #e6ebe8; --muted: #9aa59f; --line: #2e3532;
+  --accent: #5cc3a5; --accent-ink: #0d1412; --accent-soft: #1f3a32; --blind: #c49be0; --blind-soft: #33263d;
+  --warn: #e0a85a; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.45 var(--sans); padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+header { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line); padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 8px; }
+.head-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+h1 { font-size: 15px; margin: 0; letter-spacing: .02em; }
+.tabs { display: flex; gap: 6px; margin-top: 8px; }
+.tab { flex: 1; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 8px; padding: 8px; font: inherit; font-size: 13px; }
+.tab[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+main { padding: 12px 16px; max-width: 720px; margin: 0 auto; display: grid; gap: 14px; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+.chip { border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; font-variant-numeric: tabular-nums; }
+.chip.blind { color: var(--blind); background: var(--blind-soft); border-color: transparent; }
+.chip.draft { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+.chip.done { color: var(--accent-ink); background: var(--accent); border-color: transparent; }
+.path { font: 12px/1.35 var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+.doc { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.doc pre { margin: 0; padding: 12px; max-height: 42vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 12.5px/1.5 var(--mono); }
+.doc .more { display: flex; justify-content: space-between; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding: 6px 12px; font-size: 12px; color: var(--muted); }
+.linkbtn { background: none; border: 0; color: var(--accent); font: inherit; font-size: 13px; padding: 6px 0; cursor: pointer; }
+fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 6px; }
+legend { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 4px; padding: 0; }
+.opts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.opts.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.opt { position: relative; min-height: 48px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 8px; padding: 6px 6px; font: inherit; font-size: 13px; line-height: 1.2; text-align: left; cursor: pointer; }
+.opt b { display: block; font-size: 12px; color: var(--muted); font-weight: 600; }
+.opt[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.opt[aria-pressed="true"] b { color: var(--accent-ink); }
+.opt.suggested::after { content: "suggested"; position: absolute; top: 3px; right: 5px; font-size: 9px; letter-spacing: .05em; text-transform: uppercase; opacity: .75; }
+.opt:focus-visible, .tab:focus-visible, .act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.desc { font-size: 12.5px; color: var(--muted); min-height: 1.4em; }
+.why { font-size: 13px; color: var(--muted); border-left: 2px solid var(--line); padding-left: 10px; }
+input[type=text] { width: 100%; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 8px; padding: 10px; font: inherit; }
+.q { font-size: 18px; line-height: 1.35; font-weight: 600; text-wrap: balance; margin: 0; }
+blockquote { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
+.actions { position: fixed; left: 0; right: 0; bottom: 0; z-index: 2; background: var(--bg); border-top: 1px solid var(--line); padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 8px; justify-content: center; }
+.act { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 10px; min-height: 48px; padding: 0 14px; font: inherit; font-weight: 600; cursor: pointer; }
+.act.primary { flex: 1; max-width: 420px; background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.act:disabled { opacity: .45; cursor: default; }
+.msg { font-size: 13px; color: var(--warn); min-height: 1.2em; }
+.empty { color: var(--muted); padding: 24px 0; text-align: center; }
+.opt:disabled { opacity: .4; cursor: not-allowed; }
+.desc b { color: var(--ink); font-weight: 600; }
+.reveal { font-size: 13px; background: var(--blind-soft); color: var(--ink); border-radius: 8px; padding: 8px 10px; }
+.guide-btn { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 8px; padding: 4px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); padding: 0; width: min(720px, calc(100vw - 32px)); max-height: 85vh; }
+dialog::backdrop { background: rgb(0 0 0 / .45); }
+.guide { padding: 14px 16px 18px; overflow: auto; max-height: 85vh; }
+.guide h2 { font-size: 15px; margin: 16px 0 6px; }
+.guide h2:first-of-type { margin-top: 4px; }
+.guide dl { margin: 0; display: grid; gap: 10px; }
+.guide dt { font-weight: 700; }
+.guide dd { margin: 2px 0 0; font-size: 13.5px; color: var(--muted); }
+.guide dd span { display: block; }
+.guide .rule { font-size: 13.5px; border-left: 3px solid var(--accent); padding-left: 10px; margin: 8px 0; }
+.guide-close { position: sticky; top: 0; float: right; }
+@media (prefers-reduced-motion: reduce) { .bar > i { transition: none; } }
+
+.sec { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 8px 10px; display: grid; gap: 6px; }
+.sec.restricted { border-color: var(--warn); }
+.sec-head { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.sec-title { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+.sec pre { margin: 0; max-height: 40vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.45 var(--mono); }
+select { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 8px; padding: 6px; font: inherit; font-size: 13px; max-width: 58%; }
+select.override { border-color: var(--accent); }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+input[type=date] { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 8px; padding: 6px; font: inherit; }
+
+</style>
+</head>
+<body>
+<header>
+  <div class="head-row"><h1>Kütüphane · labelling v2</h1><span class="meta"><span id="count"></span><button class="guide-btn" id="btn-guide" type="button">Guide</button></span></div>
+  <div class="bar"><i id="progress"></i></div>
+</header>
+<main id="main"><p class="empty">Loading…</p></main>
+<dialog id="guide" aria-label="Label guide"><div class="guide" id="guide-body"></div></dialog>
+<div class="actions">
+  <button class="act" id="btn-prev" aria-label="Previous">‹</button>
+  <button class="act" id="btn-skip">Skip</button>
+  <button class="act primary" id="btn-save">Save</button>
+  <button class="act" id="btn-next" aria-label="Next">›</button>
+</div>
+<script>
+"use strict";
+// Labelling v2 (docs/09 §5): one document as sections. The root preset is the document default; a section can
+// have its own preset. Blind documents (D43) show no proposals. A restricted section makes the document restricted,
+// and restricted content stays local (the product rule).
+const S = { presets: {}, tax: null, docs: [], labels: {}, idx: 0, doc: null, sel: {}, over: {}, restr: new Set(), shownAt: 0 };
+const $ = (id) => document.getElementById(id);
+const el = (tag, props = {}, ...kids) => { const n = Object.assign(document.createElement(tag), props); kids.flat().forEach(k => n.append(k)); return n; };
+
+async function api(path, opts) {
+  const res = await fetch(path, { credentials: "same-origin", ...opts });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+  return body;
+}
+
+const current = () => S.docs[S.idx];
+const done = (d) => !!S.labels[d.id];
+
+function header() {
+  const n = S.docs.filter(done).length;
+  $("count").textContent = `${n}/${S.docs.length}`;
+  $("progress").style.width = S.docs.length ? `${(100 * n / S.docs.length).toFixed(1)}%` : "0";
+}
+
+function buttons(key, options, suggested, onPick, disabled = () => false) {
+  const wrap = el("div", { className: "opts two" });
+  const paint = () => { for (const b of wrap.children) { b.setAttribute("aria-pressed", String(b.dataset.v === S.sel[key])); b.disabled = disabled(b.dataset.v); } };
+  for (const [v, label] of Object.entries(options)) {
+    const b = el("button", { className: "opt" + (v === suggested ? " suggested" : ""), type: "button", textContent: label });
+    b.dataset.v = v;
+    b.addEventListener("click", () => { onPick(v); renderDoc(); });
+    wrap.append(b);
+  }
+  paint();
+  return wrap;
+}
+
+function restrictedNow() { return S.sel.sensitivity === "restricted" || S.restr.size > 0; }
+
+function renderDoc() {
+  header();
+  const item = current(), d = S.doc, main = $("main");
+  const y = window.scrollY;
+  main.replaceChildren();
+  if (!item || !d) { main.append(el("p", { className: "empty", textContent: "No document." })); return; }
+  if (restrictedNow()) S.sel.egress = "local_only";
+  const t = S.tax, prev = S.labels[item.id];
+  main.append(el("div", { className: "meta" },
+    el("span", { className: "chip", textContent: item.id }), el("span", { className: "chip", textContent: item.group }),
+    el("span", { className: "chip", textContent: `${item.chars.toLocaleString("en-US")} characters` }),
+    item.blind ? el("span", { className: "chip blind", textContent: "blind" }) : el("span", { className: "chip draft", textContent: "proposals" }),
+    prev ? el("span", { className: "chip done", textContent: "labelled" }) : ""),
+    el("div", { className: "path", textContent: item.path }));
+
+  const names = (spec) => Object.fromEntries(Object.entries(spec.options).map(([k, o]) => [k, o.name]));
+  main.append(el("fieldset", {}, el("legend", { textContent: "Sensitivity (who can read it)" }),
+    buttons("sensitivity", names(t.sensitivity), null, (v) => { S.sel.sensitivity = v; })));
+  main.append(el("fieldset", {}, el("legend", { textContent: "Egress (where a model can process it)" }),
+    buttons("egress", names(t.egress), null, (v) => { S.sel.egress = v; }, (v) => v === "cloud_ok" && restrictedNow())));
+  main.append(el("fieldset", {}, el("legend", { textContent: "Document preset (default for every section)" }),
+    buttons("root", Object.fromEntries(Object.entries(S.presets).map(([k, v]) => [k, v.split(":")[0]])), d.root, (v) => { S.sel.root = v; })));
+  const help = S.presets[S.sel.root];
+  if (help) main.append(el("div", { className: "desc", textContent: help }));
+  if (S.sel.root === "record") {
+    const date = el("input", { type: "date", value: S.sel.as_of || "" });
+    date.addEventListener("change", () => { S.sel.as_of = date.value || null; });
+    main.append(el("div", { className: "row" }, "Record date (the date of the facts, not the file):", date));
+  }
+
+  main.append(el("legend", { textContent: `Sections (${d.sections.length})` }));
+  for (const s of d.sections) {
+    const effective = S.over[s.i] || S.sel.root;
+    const pick = el("select", { className: S.over[s.i] ? "override" : "", "aria-label": `Preset for ${s.heading}` });
+    pick.append(el("option", { value: "", textContent: `Default (${S.sel.root || "—"})` }));
+    for (const [k, v] of Object.entries(S.presets)) pick.append(el("option", { value: k, textContent: v.split(":")[0] }));
+    pick.value = S.over[s.i] || "";
+    pick.addEventListener("change", () => { if (pick.value) S.over[s.i] = pick.value; else delete S.over[s.i]; renderDoc(); });
+    const restr = el("input", { type: "checkbox", checked: S.restr.has(s.i) });
+    restr.addEventListener("change", () => { restr.checked ? S.restr.add(s.i) : S.restr.delete(s.i); renderDoc(); });
+    const pre = el("pre", { textContent: s.text.slice(0, 400) + (s.text.length > 400 ? "…" : "") });
+    const more = el("button", { className: "linkbtn", type: "button", textContent: s.text.length > 400 ? "Show all" : "" });
+    more.addEventListener("click", () => { pre.textContent = s.text; more.remove(); });
+    main.append(el("div", { className: "sec" + (S.restr.has(s.i) ? " restricted" : "") },
+      el("div", { className: "sec-head" }, el("span", { className: "sec-title", textContent: `${s.heading} · ${s.n_blocks} blocks` }), pick),
+      s.proposal && s.proposal !== d.root ? el("div", { className: "meta", textContent: `Proposal for this section: ${s.proposal}` }) : "",
+      pre, more,
+      el("label", { className: "row" }, restr, "This section is restricted"),
+      effective === "agent" ? el("div", { className: "meta", textContent: "Agent instruction: delivery needs activate." }) : ""));
+  }
+  const review = el("input", { type: "checkbox", checked: !!S.sel.needs_review });
+  review.addEventListener("change", () => { S.sel.needs_review = review.checked; });
+  const note = el("input", { type: "text", placeholder: "Note (optional)", value: S.sel.note || "", maxLength: 500 });
+  note.addEventListener("input", () => { S.sel.note = note.value; });
+  main.append(el("label", { className: "row" }, review, "Needs detailed review (a workflow mark, not a label)"), note,
+    el("div", { className: "msg", id: "msg" }));
+  $("btn-prev").disabled = S.idx === 0;
+  $("btn-next").disabled = S.idx >= S.docs.length - 1;
+  window.scrollTo({ top: y });
+}
+
+async function open(i) {
+  S.idx = Math.max(0, Math.min(S.docs.length - 1, i));
+  const item = current();
+  $("main").replaceChildren(el("p", { className: "empty", textContent: "Loading…" }));
+  try { S.doc = await api(`/api/v2/doc/${item.id}`); }
+  catch (e) { $("main").replaceChildren(el("p", { className: "empty", textContent: `Load failed: ${e.message}` })); return; }
+  const prev = S.labels[item.id];
+  if (prev) {
+    S.sel = { ...prev.values, as_of: prev.as_of, needs_review: prev.needs_review, note: prev.note };
+    S.over = { ...prev.sections }; S.restr = new Set(prev.restricted);
+  } else {
+    S.sel = { root: S.doc.root, as_of: S.doc.root === "record" ? S.doc.date : null };
+    S.over = {}; S.restr = new Set();
+    for (const s of S.doc.sections) if (s.proposal && s.proposal !== S.doc.root) S.over[s.i] = s.proposal;
+  }
+  S.shownAt = performance.now();
+  window.scrollTo({ top: 0 });
+  renderDoc();
+}
+
+function nextOpen() { const i = S.docs.findIndex((d, k) => k > S.idx && !done(d)); return i < 0 ? S.idx : i; }
+
+async function save() {
+  const item = current();
+  const sections = Object.fromEntries(Object.entries(S.over).filter(([, v]) => v && v !== S.sel.root));
+  const body = { id: item.id, values: { sensitivity: S.sel.sensitivity, egress: S.sel.egress, root: S.sel.root },
+    sections, restricted: [...S.restr], as_of: S.sel.root === "record" ? (S.sel.as_of || null) : null,
+    needs_review: !!S.sel.needs_review, note: S.sel.note || "", ms: Math.round(performance.now() - S.shownAt) };
+  if (!body.values.sensitivity || !body.values.egress || !body.values.root) { $("msg").textContent = "Select sensitivity, egress and a document preset."; return; }
+  try {
+    await api("/api/v2/label", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    S.labels[item.id] = { ...body, as_of: body.as_of };
+    open(nextOpen());
+  } catch (e) { $("msg").textContent = `Not saved: ${e.message}.`; }
+}
+
+function renderGuide() {
+  const body = $("guide-body"); body.replaceChildren();
+  const close = el("button", { className: "guide-btn guide-close", type: "button", textContent: "Close" });
+  close.addEventListener("click", () => $("guide").close());
+  const rules = [
+    "Label the whole document first: sensitivity, egress and the document preset. Then change only the sections that are different.",
+    "A preset is a short way to set the facets of ontology v2 (docs/09). Each value changes what the system does.",
+    "Record: facts as of a date. Use the date of the facts, not the date of the file. A record never becomes current truth.",
+    "Proposal: a rule that nobody accepted. Answers mark it 'proposed, not accepted'. Decision: an accepted rule.",
+    "Agent instruction: text that tells an agent what to do. An agent needs 'activate' to receive it.",
+    "Boilerplate: navigation, license or repeated text. It is not indexed.",
+    "A restricted section makes the whole document restricted. Restricted content stays local.",
+    "Blind documents show no proposals. This measures the effect of proposals (D43).",
+  ];
+  body.append(close, ...rules.map(r => el("div", { className: "rule", textContent: r })));
+  const dl = el("dl");
+  for (const [k, v] of Object.entries(S.presets)) dl.append(el("dt", { textContent: k }), el("dd", { textContent: v }));
+  body.append(el("h2", { textContent: "Presets" }), dl);
+}
+
+$("btn-prev").addEventListener("click", () => open(S.idx - 1));
+$("btn-next").addEventListener("click", () => open(S.idx + 1));
+$("btn-skip").addEventListener("click", () => open(nextOpen()));
+$("btn-save").addEventListener("click", save);
+$("btn-guide").addEventListener("click", () => { renderGuide(); $("guide").showModal(); });
+$("guide").addEventListener("click", (e) => { if (e.target === $("guide")) $("guide").close(); });
+
+(async () => {
+  try {
+    const [items, labels] = await Promise.all([api("/api/v2/items"), api("/api/v2/state")]);
+    Object.assign(S, { presets: items.presets, tax: items.taxonomy, docs: items.docs, labels });
+    const first = S.docs.findIndex(d => !done(d));
+    open(first < 0 ? 0 : first);
+  } catch (e) {
+    $("main").replaceChildren(el("p", { className: "empty", textContent: `Load failed: ${e.message}. Open the access link again.` }));
+  }
+})();
+</script>
+</body>
+</html>
