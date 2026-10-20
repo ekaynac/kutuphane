@@ -1,148 +1,180 @@
-# Knowledge standard — draft 0.1 (merged from brainstorm round 3)
+# Knowledge standard — draft 0.2
 
-**Status:** DRAFT 0.1, 2026-10-20. It merges three independent round-3 proposals: Claude, Astra (GPT-6) and Mythos (Claude Mythos 5.1). All three did web research. Their texts are in `docs/research/2026-10-20-round3-*.md`.
-- §8 lists the points where the three disagree.
-- §9 lists the questions for the operator.
-- Round 4 (critique) follows.
+**Status:** DRAFT 0.2, 2026-10-20. The working name is `kstd` (operator question Q5).
+- **History:** draft 0.1 merged three round-3 proposals (Claude, Astra, Mythos). Astra and Mythos critiqued it in round 4. The change log is in §10. The sources are in `docs/research/2026-10-20-round{3,4}-*`.
+- **Language:** ASD-STE100 Simplified Technical English. **MUST**, **MUST NOT** and **MAY** are normative.
 
-**Language:** ASD-STE100 Simplified Technical English.
+## 1. Scope and shape
 
-## 1. Thesis
+This standard governs **accountability for knowledge**:
+- who stands behind a statement;
+- what may be done with it and with what is derived from it;
+- how a correction or a withdrawal reaches the people and systems that check it.
 
-Knowledge is no longer scarce text. Models produce text without limit, but they cannot produce **accountability**:
-- who stands behind a statement, on what evidence;
-- what may be done with it, and with everything derived from it;
-- how a correction or a withdrawal reaches the people and systems that use it.
+It does not govern genres, storage or transport. The shape is an hourglass:
+- formats, models and languages above the waist;
+- storage and transport below it;
+- in the waist, only **artifacts**, **statements** and one **decision rule**.
 
-The standard governs these things. It does not govern genres or storage formats. Its shape is an **hourglass**:
-- **the narrow waist:** content-addressed artifacts and signed statements about them;
-- **above it, free to change:** formats, models and languages;
-- **below it, free to change:** storage and transport.
+It serves an organization node (on-prem, air-gapped possible) and a network of nodes (routers of shared knowledge) with the same model.
 
-Each node decides locally, from attributed statements and its own trust policy. The main loop is: **capture → test → authorize use → observe results → correct or withdraw.** Consolidation by agents is one step in this loop.
+## 2. The waist
 
-## 2. What all three proposals agree on
+| Element | Definition | Identity |
+|---|---|---|
+| **Artifact** | Exact bytes with a media type and a format version, in any format: text, table, code, vectors, a skill folder, a model checkpoint. The media type and format version select the decoder. An unsupported format MUST NOT get meaning from a guess. | multihash of the bytes |
+| **Statement** | A signed record by a named **issuer** about artifacts or statements: `issuer, about[], kind, body, issued_at`. Signed as DSSE (raw bytes, no canonicalization). | digest of the signed bytes |
+| **Package** | A manifest plus artifacts and statements, as a directory or a tar. It declares its **intended use** and its unresolved dependencies. It works over a network, USB or a data diode. | digest of the manifest |
 
-1. **The waist is small:** bytes with a digest, and signed statements about them. Blocks, chunking and claim extraction are profiles, not core.
-2. **Everything except the artifact digest is an attributed statement:** provenance, origin, rights, approvals, contests, withdrawals, policies and receipts. A signature binds a statement to a key; it does not make the statement true or authoritative. Disputed statements are kept, but they do not become effective policy.
-3. **Derive is a first-class operation.** Summarizing, translating, embedding, consolidating and training all create a new artifact from recorded inputs. Rights and handling of the result are the **meet** (the strictest combination) of the inputs. A withdrawal of an input finds every descendant.
-4. **Decisions have three outcomes:** `permit`, `deny`, `escalate` (needs review). Only `permit` allows the action.
-5. **Reading, activation and execution are separate rights.** An instruction label cannot secure an agent: hostile instructions can be in any content. Content is always delivered as typed data. Only an item with role `executable` can be activated, and only with a grant, at the host and tool boundary.
-6. **Time has more than one meaning:** observation time, applicability (valid) time, and approval or authorization expiry. `as_of(t) = window(t,t)` is wrong: a dated observation stays useful evidence.
-7. **Withdrawal does not travel by itself.** The status of an imported item is checked at use time against its issuer's signed status stream, with a declared maximum age. If the status cannot be checked, the item keeps its content but loses rule authority. Evidence: retractions reach only a small share of later citations; Certificate Transparency and TUF show the working patterns.
-8. **Erasure must be honest.** Encrypted or hashed personal data can still be personal data (EDPB). Personal data stays out of permanent logs: by reference, or by salted commitment. Erasure is a recorded disposition. It names its scope, its exceptions and the copies that were not resolved. It never claims universal removal.
-9. **Rights use existing vocabularies, with separate meanings:** copyright license (SPDX), TDM reservation (TDMRep / IETF AIPREF), data-protection basis, and local access policy. Unknown or conflicting required terms block the affected action. ODRL is a serialization; our own small decision rule is normative.
-10. **Trust is specific:** issuer × statement type × scope × action, with expiry and delegation limits. Trusting a node to transport a package does not mean trusting it to approve a procedure.
-11. **Availability is protected:** an untrusted proposal can never hide accepted knowledge. An emergency hold needs an owner and a review deadline.
-12. **Adoption needs a consumer on day one.**
-    - Each standard that won had a party that read the data and rewarded the producer.
-    - The core (specification, validator, package format, decision algorithm) must be open source.
-    - At least two independent implementations must exist before v1 is frozen.
-
-## 3. The narrow waist
-
-| Element | Definition |
-|---|---|
-| **Artifact** | Exact bytes with a media type, a format version and an agile content digest (multihash; SWHID-compatible). Any format: text, table, code, vectors, a skill folder, a model checkpoint. The digest gives identity, not meaning or permission. |
-| **Statement** | A signed, typed record by a named issuer about artifacts or other statements: `issuer, about[], kind, body, time, refs`. It uses the shape of an in-toto statement, with canonical JSON (JCS). |
-| **Package** | A signed manifest plus artifacts and statements, as a plain directory or tar (BagIt-like). It contains what a receiver needs to assess *one proposed use*. Unresolved dependencies are explicit. It works over a network, USB or a data diode. |
+An artifact identity and a statement identity are separate. A correction of rights changes a statement; the artifact keeps its identity.
 
 **Statement kinds (closed):**
 
-| Kind | Purpose |
-|---|---|
-| `item` | The claim envelope: it names artifacts and declares origin, rights, inputs, applicability and the personal-data flag. |
-| `judgment` | Acceptance, mandate (role), scope, contest, label. |
-| `policy` | Permission, prohibition, duty. |
-| `status` | Withdrawal, supersession, hold, erasure disposition. |
-| `receipt` | A use, a delivery, a transfer, or the outcome of a use. |
+| Kind | Body | Effect |
+|---|---|---|
+| `item` | names artifacts; declares origin, rights, inputs, applicability, personal data | makes the artifacts knowledge that the node can evaluate |
+| `acceptance` | `accepted` or `withdrawn` for an item, in a scope; a withdrawal names a successor or a terminal reason | eligibility for ordinary use |
+| `mandate` | rule authority for an item, in a scope | the item can impose a requirement |
+| `contest` | a dispute of an item, with a reason | a visible mark and a review; removes nothing |
+| `policy` | permissions and prohibitions on actions, with conditions; delegations | the input to the decision rule |
+| `status` | a signed, sequenced status stream of an issuer: withdrawals, holds, supersessions, with an expiry | freshness across nodes |
+| `receipt` | `use` (written by `deliver`) or `outcome` (signed by the actor; it references the `use` receipt) | audit; the trigger for reviews |
+| `disposition` | an erasure: its scope, completion, exceptions and unresolved copies | honest erasure |
 
-**The log** is the node's append-only, Merkle-chained sequence of statements. The standard specifies observable behavior; storage is free (disagreement D3 in §8).
+A field outside this standard MUST NOT change a decision.
 
-## 4. Operations (closed set)
+## 3. Operations
 
 | Operation | Effect |
 |---|---|
-| **register** | Admit an artifact or a received statement; verify format and identity; assign **no** authority. |
-| **derive** | Create an artifact from recorded inputs and a named process; the result is `pending`; the rights are the meet of the inputs. |
-| **attest** | Add a statement of any kind. A statement cannot give powers that its issuer does not have. |
-| **decide** | Evaluate action × actor × purpose × destination × context against the policy and the trust policy. Result: permit, deny or escalate. |
-| **deliver** | Release content or metadata to a person, model, tool or node, as typed data. It keeps the required notices and records the decision. |
-| **transfer** | Send or receive a package: verify, quarantine, compare, accept, receipt. A node never forwards what the receiver's rights do not allow. |
-| **erase** | Execute a disposition: remove the retained data and its derivatives in scope; record completion, exceptions and unresolved copies. |
+| **register** | Admit an artifact or a received statement. Verify the format, the identity and the signature. Assign **no** authority. A received status or receipt statement does not become an item. |
+| **derive** | Create an artifact from recorded inputs and a named process: summary, translation, embedding, consolidation, training. The new item lists its inputs. Its rights are checked per input for each proposed use (§5); its handling inherits the strictest input value. |
+| **attest** | Add a statement. A statement MUST NOT give powers that its issuer does not have. |
+| **decide** | Apply the decision rule (§4). Result: `permit`, `deny` or `escalate`, with a reason. |
+| **deliver** | Release content or metadata to a person, a model, a tool or a node, as typed data, with the required notices. Write a `use` receipt. |
+| **erase** | Execute a disposition. Remove the retained data and the recorded derivatives in its scope. Record completion, exceptions and unresolved copies. |
 
-**Named actions** for policies: `read`, `cite`, `infer`, `derive`, `train`, `forward`, `activate`, `execute`. Reading a procedure gives no right to execute it.
+**Transfer between nodes** is a composition: `deliver` to a node → `register` at the receiver → a `receipt`. A package is in quarantine until it passes registration and the receiver's acceptance policy.
+
+**Actions** in policies: `read`, `infer`, `derive`, `train` (a kind of `derive`), `forward`, `activate`.
+- Reading an item never permits activating it.
+- Execution after activation belongs to the host and the tool boundary, outside this standard.
+
+## 4. The decision rule (normative)
+
+Given the same request, policy, trust configuration, statements and evaluation time, two conforming implementations MUST return the same result and the same reason.
+
+1. The result is the strictest of all applicable rules: `deny` > `escalate` > `permit`.
+2. No applicable permission means `deny`.
+3. An unknown *required rights* term means `deny`. Unknown required *applicability* context means `escalate`.
+4. An imported statement that tightens applies at once. One that loosens applies only if the trust policy names its issuer for that **kind × scope × action**, with an expiry.
+5. When two trusted issuers conflict, the local precedence rule decides; without one, the result is `escalate`. A timestamp never decides between issuers.
+6. A status past its maximum age removes **rule authority** only. The content stays available as evidence.
+7. A `permit` is bound to exact artifact, statement and policy versions, and it has an expiry.
+8. No proposal from an issuer that is not trusted can remove an accepted item from use. A **hold** needs a named owner and a review deadline.
+
+The conformance test suite (a set of request → result cases) is part of the standard.
 
 ## 5. Properties and their behaviors
 
-| Property | Kind of statement | Behavior |
+| Property | Values | Behavior |
 |---|---|---|
-| **Origin** | `item` (declared by the accountable signer; IPTC digital source type: human, model, composite, external) | Training and consolidation input and transparency marking (AI Act Art. 50). Never the only basis of a mandate without review. A false origin is a signed lie with a name on it. |
-| **Inputs** | `item` | The derivation graph: the meet of rights, the reach of a withdrawal, the blast radius of poisoning. It separates "used as input" from "supports this conclusion". Repeated copies of one source do not count as independent evidence. |
-| **Rights** | `item` / `policy` | Gates derive, train, deliver and transfer. Unknown means no. |
-| **Applicability** | `item` / `judgment` | Conditions, exclusions and valid time. Missing required context blocks authoritative use and escalates. Dated evidence stays available with its date. |
-| **Acceptance** | `judgment` | `pending` (proposal view) → `accepted` (ordinary use) → `withdrawn` (history, with a reason and a successor or a terminal reason). It belongs to an issuer and a scope; it does not claim universal truth. |
-| **Mandate** | `judgment` | Roles: `rule` (can impose a requirement), `evidence` (support only), `executable` (activation only), `none` (not indexed; handling controls still apply). |
-| **Handling** | `policy` | Export: `normal` / `restricted`. Route: `cloud_ok` / `local_only`. The stricter value is inherited by derivatives. Before confirmation, the value is `local_only`. |
-| **Review conditions** | `policy` | Expiry, changed dependencies, contradictions, failed tests or bad outcomes cause a review or a suspension, as the policy declares. A review warning and an authorization expiry have different effects. |
-| **Outcome** | `receipt` | Task success, failure, harm, correction. It changes ranking and opens reviews; use counts alone never give authority. |
+| **Origin** (`item`) | `human`, `model`, `unknown` (counts as `model`) | `deliver` shows it as a notice. Training or legal controls are profile policies, not core rules. |
+| **Inputs** (`item`) | statement ids | Used for checking the rights of a derivative, the reach of a withdrawal and the reach of poisoning. Repeated copies of one source do not count as independent evidence. A withdrawal reaches every *recorded* descendant and every node that checks status. |
+| **Rights** (`item`) | license (SPDX id or `unknown`); holder (a person or a collective); `ai_use`: `search`, `ai_input`, `train` = `y` / `n` (absent = `n`); a legal basis note | The license terms of each input are checked for each proposed use; they are not merged into one value. Licenses stay valid as granted; a withdrawal does not cancel an irrevocable license. `ai_use` maps to IETF AIPREF and TDMRep in a versioned mapping. |
+| **Personal data** (`item`) | `yes`, `no`, `unknown` (counts as `yes`) | `yes`: `forward` needs a recorded legal basis; the data is stored encrypted and is in the scope of erasure. Logs at receivers hold no personal data; the origin's log holds pseudonymized data and is in the scope of erasure. |
+| **Applicability** (`item`) | conditions, exclusions; observation time; valid time | Outside the conditions or the valid time: no rule authority, and `escalate` if the request needs authority. Dated evidence stays available with its date. |
+| **Acceptance** | `pending` (default), `accepted`, `suspended`, `withdrawn` | Only `accepted` is eligible for ordinary use. `suspended` stops ordinary use until fresh authorization or a successful status check. `withdrawn` is history. |
+| **Mandate** | present in a scope / absent | Only an accepted item with a mandate can be cited as a requirement. Without one, an accepted item is evidence. |
+| **Handling** | export: `normal` / `restricted`; route: `cloud_ok` / `local_only` | `restricted`: never leaves the node. `local_only`: processed only in the locations that the node declares as under its control. Derivatives inherit the stricter value. Before an administrator confirms the value: `restricted` + `local_only`. |
+| **Activation** (`policy`) | a permission for `activate`, in a scope | Only then can an agent run the item as an instruction or a skill. The item can still be read as evidence. |
 
-Descriptive labels (open, SKOS-mapped) can change display and search. They never change a gate.
+## 6. State transitions
 
-## 6. State transitions (summary)
+Each change records: trigger, actor, scope, reason, policy version, prior statement.
 
-| Transition | Trigger and actor | Automatic? |
-|---|---|---|
-| new → pending | register or derive; system | yes |
-| pending → accepted | required evidence passes; an authorized approver (the author is never the approver) | only under explicit, bounded delegation (D2 in §8) |
-| accepted → suspended | approval expiry, an authorized hold, a failed dependency, a stale status; policy engine | yes, if the policy declares it |
-| accepted → withdrawn | correction, replacement or withdrawal; authorized issuer; supersession acts only in the shared scope and time | only under a prior replacement rule |
-| any → contested mark | a contest from a trusted issuer | yes; marks only, removes nothing |
-| grant → suspended | its source item is withdrawn | yes |
-| duty: issued → discharged / violated → escalated | a signed receipt or a deadline | discharge needs a receipt |
-| package: received → quarantined → accepted / rejected | transfer | acceptance by a human at L2+ |
-| retained → erased | a valid disposition decision; custodian | execution can be automatic; no guaranteed reversal |
-
-**Separate failure costs:**
-- *access* (who may read);
-- *availability* (accepted knowledge stays usable);
-- *authority* (what may be imposed).
-
-Each has its own rule. A single strictness order is not sufficient.
+| Transition | Trigger | Actor | Automatic? | Reversal |
+|---|---|---|---|---|
+| new → `pending` | register or derive | system | yes | removal under the retention policy |
+| `pending` → `accepted` | the required evidence passes | an approver whose identity is not the author's: a person, or an agent under a signed **delegation** (scope, expiry, a named accountable person) | only under delegation | withdrawal of acceptance |
+| `accepted` → `suspended` | approval expiry, a hold, a failed dependency, a stale status | policy engine, or a hold owner | yes, if the policy declares it | fresh authorization, or a successful status check |
+| `accepted` → `withdrawn` | correction, replacement, withdrawal; supersession only in the shared scope and time | the issuer, or a prior replacement rule | only under a replacement rule | a new acceptance; the withdrawal stays in history |
+| contest mark set | a contest from a trusted issuer | the contest issuer | yes (mark only) | the issuer withdraws it, or a reviewer closes it |
+| local permission → suspended | its source item is withdrawn, and the permission depends on continued acceptance | system | yes | the source is accepted again, and the grant holder confirms |
+| package: quarantined → registered / rejected | registration checks and the acceptance policy | the receiving node; a person or a delegated agent | as the policy declares | a resubmitted package |
+| retained → erased | a valid disposition | the custodian | execution can be automatic | none |
+| mandate, handling, rights, delegation changed | a new statement | an issuer with that power | tightening: yes; loosening: rule 4 of §4 | a new statement |
 
 ## 7. Conformance levels
 
 | Level | Requires | Rights |
 |---|---|---|
-| **L0 Described** | Files plus a small manifest: digests, issuer, origin, applicability, rights or `unknown`, required notices. A validator. "Dumb-down": a tool that ignores every field still reads the files. **About one hour.** | **Declared:** SPDX, rights holder (a person or a collective), TDM reservation, personal data flag. Rights meaning starts here. |
-| **L1 Verifiable** | Digests, signed statements and packages, agile signatures (post-quantum ready), revision checks, derive with inputs. | Bound to exact versions; travel inside the package. |
-| **L2 Governed** | decide / deliver / derive gates, acceptance and mandates, delegation, review conditions, receipts, duties, honest erasure. | **Enforced.** ODRL serialization; unsupported duties block use. |
-| **L3 Federated** | Capability negotiation, signed status streams with maximum age, withdrawal delivery, receipt tracking, trust policy per issuer × kind × scope × action. | Enforced across nodes. A controlled transfer needs an L2 receiver; a simple public release does not. |
+| **L0 Described** | One manifest file (§8). Unsigned. A tool that ignores every field still reads the files. **Reading the bytes is not permission to use them.** A validator checks digests, SPDX ids, `ai_use` terms and dates. | Declared. `unknown` gives no permission. |
+| **L1 Verifiable** | Signed statements (DSSE) and packages, multihash, agile algorithms, revision checks, derive with inputs. | Bound to exact versions. |
+| **L2 Governed** | The decision rule with its test suite, acceptance, mandates, delegation, activation, handling, receipts, honest erasure, a tamper-evident append-only audit. Storage is free. | Enforced. |
+| **L3 Federated** | Signed status streams with a maximum age (as in TUF timestamps and OCSP stapling), withdrawal delivery, trust policy per issuer × kind × scope × action, receipt tracking. | Enforced across nodes. A controlled transfer needs an L2 receiver; a public release does not. |
 
-**Compliance mappings** (GDPR, AI Act Art. 50/53, the DSM Directive) live in a separate, dated **compliance profile**, not in the core. Regulation moves, and a conformance badge must never claim general legal compliance.
+**Profiles** (outside the core, versioned): mappings (SWHID, IPTC, PROV-O, Web Annotation, ODRL, Croissant, Agent Skills, AIPREF/TDMRep), compliance (GDPR, AI Act Art. 50/53, DSM Directive), obligations, outcome ranking, labels, block and claim extraction, transparency witnesses. A conformance badge never claims legal compliance.
 
-## 8. Disagreements to resolve in round 4
+## 8. L0 example (`kstd.yaml`)
 
-| # | Question | Positions |
+```yaml
+standard: kstd/0.2
+issuer: "ACME GmbH <knowledge@acme.example>"   # who answers for this file
+issued: 2026-10-20
+rights:                                  # default for every item
+  license: CC-BY-4.0                     # SPDX id, or unknown
+  holder: "ACME GmbH"
+  ai_use: {search: y, ai_input: y, train: n}   # absent = n
+  personal_data: no                      # yes | no | unknown (= yes)
+notices: ["Attribution: ACME GmbH, 2026"]
+items:
+  - path: procedures/pressure-test.md
+    digest: sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+    origin: human                        # human | model | unknown (= model)
+    valid_from: 2026-01-01
+    applies_to: "Plant 3, line A"
+  - path: notes/weekly-summary.md
+    digest: sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    origin: model
+    rights: {personal_data: unknown}     # overrides the default
+```
+
+## 9. Questions for the operator
+
+| # | Question | Proposal |
 |---|---|---|
-| D1 | Does origin (human vs model) have a gate? | **Mythos, Claude:** yes, for training and consolidation input and marking. **Astra:** no human premium; evaluate evidence and process. *Draft: the gate is on training input and marking, not on authority.* |
-| D2 | Can approval be automatic? | **Astra:** yes, under bounded delegation; human-only in risk profiles. **Mythos, Claude:** a human approves, and the author is never the approver. Conflicts with D54 (`curate` is human-only). |
-| D3 | Is "every state is a fold over the log" normative? | **Claude, Mythos:** yes. **Astra:** specify behavior only; allow simpler storage. |
-| D4 | What is the travelling unit? | **Mythos, Claude:** the `item` statement (the claim). **Astra:** a package sufficient for one use; there is no universal smallest claim. *Draft: both: the `item` is the unit of identity, the package is the unit of transfer.* |
-| D5 | Which rights vocabulary? | **Mythos:** IETF AIPREF (draft-06) now. **Astra, Claude:** TDMRep (W3C CG final) now, and track AIPREF. |
-| D6 | Is reliance and outcome a core verb? | **Claude:** yes (rely/report). **Astra, Mythos:** receipts are statements. *Draft: `receipt` kind, no extra verb.* |
+| Q1 | License: D10 makes Kütüphane proprietary. | Specification CC-BY-4.0. Validator, decision rule, test suite and package tools Apache-2.0. The rest of Kütüphane: a separate decision. |
+| Q2 | The first consumer (day-one value). | LLMDAP and Kütüphane read `kstd.yaml`: answers show origin and rights, and egress follows `ai_use` and handling with no extra work. |
+| Q3 | Automatic approval under a signed delegation (§6). | Yes in the core; risk profiles can forbid it. D54 changes: the *delegation* is human-only. |
+| Q4 | Maximum status age at L3. | A default of 7 days, per node policy. |
+| Q5 | Standards home and name. | Map to the W3C AI Agent Memory community group and stay the layer below it. Find a second implementer before v1. Choose the final name. |
 
-## 9. Questions for the operator (all three asked them)
+## 10. Change log (0.1 → 0.2)
 
-1. **License (D10).** D10 makes Kütüphane proprietary. All three say that an open standard with a closed reference implementation fails. Proposal:
-   - specification text CC-BY;
-   - validator, package format, decision algorithm and conformance tests Apache-2.0;
-   - the rest of Kütüphane can stay a separate decision.
-2. **The first consumer.** Which workflow gives value on day one?
-   - **Mythos:** LLMDAP and the agent runtime visibly behave better with a manifest.
-   - **Astra:** reliable citations and controlled export.
-3. **Automatic approval** (D2 above).
-4. **Maximum offline age:** after how long without a status check must a node stop authoritative use of imported items?
-5. **Standards home and second implementation:**
-   - Join or map to the W3C AI Agent Memory Interoperability Community Group (chartered in 2026)?
-   - Who builds the second independent implementation?
+- **Decisions:**
+  - D1: no core origin gate; three values.
+  - D2: delegated approval.
+  - D3: storage is free; decision determinism is normative.
+  - D4: artifact and statement identities, package for transfer.
+  - D5: own `ai_use` terms, mapped to AIPREF and TDMRep.
+  - D6: `use` and `outcome` receipts.
+- **Added:** the decision rule (§4) and its test suite, reversals for every transition, behaviors for personal data and handling, the L0 example.
+- **Corrected:**
+  - rights are not merged into one value;
+  - withdrawal does not cancel irrevocable licenses;
+  - DSSE instead of JCS;
+  - SWHID and IPTC only as mappings;
+  - status freshness follows TUF and OCSP, not Certificate Transparency;
+  - "every descendant" became "recorded descendants and nodes that check";
+  - personal data in the origin's log is pseudonymized and in the scope of erasure.
+- **Removed from the core:**
+  - `transfer` (now a composition);
+  - `cite`, `execute`, `label`, `refs`;
+  - the mandate value `none` (it is indexing policy);
+  - the role list (replaced by mandate and activation);
+  - the Merkle log as storage;
+  - generic duties;
+  - outcome ranking;
+  - SKOS labels;
+  - the agreement history.
