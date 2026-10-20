@@ -140,17 +140,29 @@ items:
     rights: {personal_data: unknown}     # overrides the default
 ```
 
-## 9. Questions for the operator
+## 9. Licenses
 
-| # | Question | Proposal |
+Five different things have different licenses:
+
+| What | License | Why |
 |---|---|---|
-| Q1 | License: D10 makes Kütüphane proprietary. | Specification CC-BY-4.0. Validator, decision rule, test suite and package tools Apache-2.0. The rest of Kütüphane: a separate decision. |
-| Q2 | The first consumer (day-one value). | LLMDAP and Kütüphane read `kstd.yaml`: answers show origin and rights, and egress follows `ai_use` and handling with no extra work. |
-| Q3 | Automatic approval under a signed delegation (§6). | Yes in the core; risk profiles can forbid it. D54 changes: the *delegation* is human-only. |
-| Q4 | Maximum status age at L3. | A default of 7 days, per node policy. |
-| Q5 | Standards home and name. | Map to the W3C AI Agent Memory community group and stay the layer below it. Find a second implementer before v1. Choose the final name. |
+| The specification text | CC-BY-4.0 | Anyone can copy and implement it, with attribution. |
+| The code (Kütüphane, validator, decision rule, test suite, package tools) | an open-source license; proposal: Apache-2.0 | Permissive, with a patent grant, as used by MCP and OpenFGA. |
+| **Knowledge content** (artifacts) | **chosen by each issuer**, declared in `rights.license` | The standard never imposes a license on content. `unknown` gives no permission. |
+| **Statements and manifests** (metadata) | recommended default: CC0-1.0, unless the issuer declares otherwise | Metadata must flow freely, so that receivers can check rights and status (as Wikidata and Europeana do for metadata). A statement contains no content. |
+| Receipts and audit logs | not shared by default | They are local records, and they can contain personal data. |
 
-## 10. Change log (0.1 → 0.2)
+## 10. Operator decisions (2026-10-20)
+
+| # | Question | Decision |
+|---|---|---|
+| Q1 | License | **The standard and Kütüphane are fully open source** (D10 was a misunderstanding; corrected by D56). Code license proposal: Apache-2.0 (§9). Content licenses: §9. |
+| Q2 | Day-one value | Open: explained again to the operator. |
+| Q3 | Automatic approval under a signed delegation | **Yes.** D54 changes: the delegation is human-only; the approval can be automatic. |
+| Q4 | Maximum status age | Open: needs more detail. Kütüphane must work fully offline and on-prem. |
+| Q5 | Name | **`kstd` is the temporary name.** |
+
+## 11. Change log (0.1 → 0.2)
 
 - **Decisions:**
   - D1: no core origin gate; three values.
