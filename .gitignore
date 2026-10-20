@@ -9,3 +9,4 @@ deploy/dev/
 deploy/llmdap/bridge.env
 deploy/llmdap/config/keys.json
 deploy/llmdap/*.key
+research/
