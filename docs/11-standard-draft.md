@@ -67,9 +67,9 @@ Given the same request, policy, trust configuration, statements and evaluation t
 1. The result is the strictest of all applicable rules: `deny` > `escalate` > `permit`.
 2. No applicable permission means `deny`.
 3. An unknown *required rights* term means `deny`. Unknown required *applicability* context means `escalate`.
-4. An imported statement that tightens applies at once. One that loosens applies only if the trust policy names its issuer for that **kind × scope × action**, with an expiry.
+4. An imported statement that **tightens access** (rights, handling, a prohibition) applies at once, from any issuer. A statement that loosens applies only if the trust policy names its issuer for that **kind × scope × action**, with an expiry. A withdrawal or a hold affects **availability**, not access, so rule 8 applies to it: from an issuer that is not trusted, it is only a visible contest mark.
 5. When two trusted issuers conflict, the local precedence rule decides; without one, the result is `escalate`. A timestamp never decides between issuers.
-6. A status past its maximum age removes **rule authority** only. The content stays available as evidence.
+6. A status of an imported item that is past its maximum age removes **rule authority** only. The content stays available as evidence, and rule authority comes back when a current status arrives (over the network or in a package). The maximum age is set **per trusted source**; the default is 30 days. An administrator can set "never" for a source; when the last status is older than the default age, each use then shows the notice "status not checked". A node's own items need no status check.
 7. A `permit` is bound to exact artifact, statement and policy versions, and it has an expiry.
 8. No proposal from an issuer that is not trusted can remove an accepted item from use. A **hold** needs a named owner and a review deadline.
 
@@ -112,7 +112,7 @@ Each change records: trigger, actor, scope, reason, policy version, prior statem
 | **L0 Described** | One manifest file (§8). Unsigned. A tool that ignores every field still reads the files. **Reading the bytes is not permission to use them.** A validator checks digests, SPDX ids, `ai_use` terms and dates. | Declared. `unknown` gives no permission. |
 | **L1 Verifiable** | Signed statements (DSSE) and packages, multihash, agile algorithms, revision checks, derive with inputs. | Bound to exact versions. |
 | **L2 Governed** | The decision rule with its test suite, acceptance, mandates, delegation, activation, handling, receipts, honest erasure, a tamper-evident append-only audit. Storage is free. | Enforced. |
-| **L3 Federated** | Signed status streams with a maximum age (as in TUF timestamps and OCSP stapling), withdrawal delivery, trust policy per issuer × kind × scope × action, receipt tracking. | Enforced across nodes. A controlled transfer needs an L2 receiver; a public release does not. |
+| **L3 Federated** | Signed status streams with a maximum age per source (as in TUF timestamps and OCSP stapling; the stream can travel in packages, so air-gapped nodes conform), withdrawal delivery, trust policy per issuer × kind × scope × action, receipt tracking. | Enforced across nodes. A controlled transfer needs an L2 receiver; a public release does not. |
 
 **Profiles** (outside the core, versioned): mappings (SWHID, IPTC, PROV-O, Web Annotation, ODRL, Croissant, Agent Skills, AIPREF/TDMRep), compliance (GDPR, AI Act Art. 50/53, DSM Directive), obligations, outcome ranking, labels, block and claim extraction, transparency witnesses. A conformance badge never claims legal compliance.
 
@@ -156,10 +156,10 @@ Five different things have different licenses:
 
 | # | Question | Decision |
 |---|---|---|
-| Q1 | License | **The standard and Kütüphane are fully open source** (D10 was a misunderstanding; corrected by D56). Code license proposal: Apache-2.0 (§9). Content licenses: §9. |
-| Q2 | Day-one value | Open: explained again to the operator. |
+| Q1 | License | **The standard and Kütüphane are fully open source** (D10 was a misunderstanding; corrected by D56). Code license proposal: Apache-2.0. **The licenses of knowledge content and metadata (§9) are approved** (2026-10-21). |
+| Q2 | Day-one value | Proposal: Kütüphane itself. A folder with `kstd.yaml` gives answers with origin, validity and license at once, and the handling rules are enforced by Kütüphane and LLMDAP with no extra work. Waiting for confirmation. |
 | Q3 | Automatic approval under a signed delegation | **Yes.** D54 changes: the delegation is human-only; the approval can be automatic. |
-| Q4 | Maximum status age | Open: needs more detail. Kütüphane must work fully offline and on-prem. |
+| Q4 | Maximum status age | **Option c** (2026-10-21): a maximum age per source, default 30 days; "never" is allowed for air-gapped sources, with a visible warning (§4 rule 6). |
 | Q5 | Name | **`kstd` is the temporary name.** |
 
 ## 11. Change log (0.1 → 0.2)
