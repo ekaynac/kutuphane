@@ -221,9 +221,60 @@ def test_search_input_is_bounded(conn):
         search.search(conn, Actor(U), "kayıt", k=search.MAX_K + 1)
 
 
-def test_chunker_v2_is_a_different_profile_than_v1():  # Astra #3: behavior change => new id
-    v2 = profiles.spec("chunked")
-    v1 = {**v2, "components": {**v2["components"], "chunker": "paragraph@1"}}
-    assert v2["components"]["chunker"] == "paragraph@2" and ids.profile_id(v1) != ids.profile_id(v2)
+def test_chunker_changes_are_new_profiles():  # Astra #3: behavior change => new id
+    current = profiles.spec("chunked")
+    older = [{**current, "components": {**current["components"], "chunker": f"paragraph@{n}"}}
+             for n in range(1, profiles.CHUNKER_VERSION)]
+    assert older and all(ids.profile_id(o) != ids.profile_id(current) for o in older)
     one_block = read_file("blok.md", ("kelime " * 3000).encode())
-    assert len(profiles.split(v2, one_block)) > 1                       # v1 kept this as one chunk
+    assert len(profiles.split(current, one_block)) > 1                  # v1 kept this as one chunk
+
+
+JSONL = "\n".join([
+    '{"id": 1, "title": "NVFP4 Blackwell destegi", "model": "claude"}',
+    '{"id": 2, "title": "Pulse halkalarin yerini aldi", "model": "qwen"}',
+    "",
+    '{"id": 3, "title": "vLLM guvenlik duyurusu", "model": "claude"}',
+]) + "\n"
+
+
+def test_jsonl_book_is_searchable_per_record(conn, tmp_path):  # G1: one record, one passage, line in the citation
+    (tmp_path / "haberler.jsonl").write_text(JSONL, encoding="utf-8")
+    publish(conn, tmp_path)
+    authz.grant(conn, "book:kitap", "read", U)
+    rows = conn.execute("SELECT ordinal, line, text FROM chunk WHERE path = 'haberler.jsonl' ORDER BY ordinal").fetchall()
+    assert [(o, line) for o, line, _ in rows] == [(0, 1), (1, 2), (2, 4)]
+    (hit,) = search.search(conn, Actor(U), "guvenlik duyurusu")
+    assert hit.citation.path == "haberler.jsonl" and hit.line == 4
+    assert hit.text.strip() == JSONL.splitlines()[3]
+    assert search.open_citation(conn, Actor(U), hit.citation).line == 4
+
+
+FORMATS = {
+    "notlar.txt": "Yedekler her gece alinir: zebrakelime.\n",
+    "ayar.yaml": "servis:\n  aciklama: kaplankelime\n",
+    "veri.json": '{"aciklama": "aslankelime"}\n',
+    "ayar.toml": '[servis]\naciklama = "kartalkelime"\n',
+    "kur.sh": "#!/bin/sh\n# kurtkelime\necho tamam\n",
+    "arac.py": "def f():\n    return 'ceylankelime'\n",
+    "arac.ts": "export const ad = 'tilkikelime';\n",
+    "arac.js": "const ad = 'sincapkelime';\n",
+    "harita.xml": "<kok><ad>baykuskelime</ad></kok>\n",
+    "tablo.csv": "ad,deger\nmartikelime,1\n",
+    "sayfa.html": "<html><head><script>var x = 'gizlikelime';</script><style>p{}</style></head>"
+                  "<body><p>Görünen yunuskelime metni.</p><!-- yorumkelime --></body></html>\n",
+}
+
+
+def test_text_formats_are_searchable_and_html_only_by_visible_text(conn, tmp_path):  # G1
+    for name, text in FORMATS.items():
+        (tmp_path / name).write_text(text, encoding="utf-8")
+    publish(conn, tmp_path)
+    authz.grant(conn, "book:kitap", "read", U)
+    words = {"notlar.txt": "zebrakelime", "ayar.yaml": "kaplankelime", "veri.json": "aslankelime",
+             "ayar.toml": "kartalkelime", "kur.sh": "kurtkelime", "arac.py": "ceylankelime", "arac.ts": "tilkikelime",
+             "arac.js": "sincapkelime", "harita.xml": "baykuskelime", "tablo.csv": "martikelime",
+             "sayfa.html": "yunuskelime"}
+    for name, word in words.items():
+        assert [h.citation.path for h in search.search(conn, Actor(U), word)] == [name], word
+    assert search.search(conn, Actor(U), "gizlikelime") == [] and search.search(conn, Actor(U), "yorumkelime") == []

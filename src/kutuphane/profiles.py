@@ -3,39 +3,31 @@
 `whole` serves each file as one piece; `chunked` cuts at headings and blank lines into ~TARGET_CHARS pieces. Both
 are deterministic: same bytes + same profile → same chunks and offsets. A profile's id covers every component
 version and setting, so changing the cutter or the search configuration is a new profile, never a silent change.
+
+Searched formats (G1): markdown, PDF text layers, and the plain-text formats of source.TEXT_TYPES. Markdown cuts at
+headings; other text at blank lines; CSV at rows (merged); JSONL gives one passage per record, and every passage of
+a text file carries the line it starts on (for JSONL: the record's line). HTML is searched by its visible text
+only: no scripts, styles, templates or comments. Quarantined files (source.py) are stored but never cut.
 """
 import io
+import re
+from bisect import bisect_right
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from importlib.metadata import version
-from pathlib import PurePosixPath
 
 from pypdf import PdfReader
 
-from .source import MARKDOWN, PDF, SourceFile
+from .agentfiles import is_instruction
+from .source import CSV, HTML, JSONL, MARKDOWN, PDF, TEXT_TYPES, SourceFile, normalize_text
 
-READER_VERSION = 2  # 2: CRLF/BOM-tolerant frontmatter. Bump when source.py's classification changes.
-CHUNKER_VERSION = 2  # 2: oversized blocks are cut (_cap). Any change to cutting bumps this.
+READER_VERSION = 3  # 3: G1 text formats, G3 quarantine, G5 agent folders. Bump when source.py's classification changes.
+CHUNKER_VERSION = 3  # 3: per-format cutting, line numbers, cuts prefer line ends. Any change to cutting bumps this.
 TARGET_CHARS = 1200
 FTS_CONFIG = "turkish"  # Postgres text search configuration; part of the profile id
 MAX_CHUNK_CHARS = 4 * TARGET_CHARS  # a single huge block is cut at whitespace, so nothing escapes the index
 WHOLE_MAX_CHARS = 500_000  # tsvector holds at most 1 MB; larger files must use the chunked profile
-
-# Frontmatter `type`s and file names that mark an agent instruction (K3), compared case- and separator-
-# insensitively so `Skill`, `agent_card` or `agents.md` cannot slip past the activation gate. K3 status is
-# curator-declared metadata; content that hides instructions under another type is caught (if at all) by the
-# import scan (D29, M1f), not here.
-INSTRUCTION_TYPES = frozenset({"skill", "prompt", "agentcard", "agentinstructions", "systemprompt"})
-INSTRUCTION_FILES = frozenset({"agents.md", "claude.md", "skill.md", "gemini.md"})
-
-
-def _fold(value: str) -> str:
-    return "".join(ch for ch in value.casefold() if ch.isalnum())
-
-
-def is_instruction(entry: dict) -> bool:
-    okf_type = entry.get("okf_type") or ""
-    name = PurePosixPath(entry["path"]).name.casefold()
-    return _fold(okf_type) in INSTRUCTION_TYPES or name in INSTRUCTION_FILES
+_TEXT = frozenset(TEXT_TYPES.values())
 
 
 def _components(chunker: str) -> dict:
@@ -64,13 +56,62 @@ class Chunk:
     end: int
     text: str
     instruction: bool
+    line: int | None = None  # text files: 1-based line the passage starts on (JSONL: the record's line)
+
+
+class _VisibleText(HTMLParser):
+    """Text a reader sees: no script/style/template content, no comments; block elements become paragraphs."""
+    HIDDEN = frozenset({"script", "style", "template"})
+    BLOCKS = frozenset({"address", "article", "aside", "blockquote", "caption", "dd", "details", "div", "dl", "dt",
+                        "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr",
+                        "li", "main", "nav", "ol", "p", "pre", "section", "summary", "table", "td", "th", "title",
+                        "tr", "ul"})
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts, self.hidden, self.pre = [], 0, 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in self.HIDDEN:
+            self.hidden += 1
+        elif tag == "br":
+            self.parts.append("\n")
+        elif tag in self.BLOCKS:
+            self.pre += tag == "pre"
+            self.parts.append("\n\n")
+
+    def handle_startendtag(self, tag, attrs):
+        if tag not in self.HIDDEN:
+            self.handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag):
+        if tag in self.HIDDEN:
+            self.hidden = max(0, self.hidden - 1)
+        elif tag in self.BLOCKS:
+            self.pre = max(0, self.pre - (tag == "pre"))
+            self.parts.append("\n\n")
+
+    def handle_data(self, data):
+        if not self.hidden:
+            self.parts.append(data if self.pre else re.sub(r"\s+", " ", data))
+
+
+def html_text(source: str) -> str:
+    parser = _VisibleText()
+    parser.feed(source)
+    parser.close()
+    text = re.sub(r"[ \t]*\n[ \t]*", "\n", "".join(parser.parts))
+    return re.sub(r"\n{3,}", "\n\n", text).strip("\n") + "\n"
 
 
 def _pages(f: SourceFile) -> list[tuple[int | None, str]]:
-    if f.media_type == MARKDOWN:
-        return [(None, f.data.decode("utf-8").removeprefix("﻿").replace("\r\n", "\n").replace("\r", "\n"))]
+    if f.quarantine:
+        return []
     if f.media_type == PDF:
         return [(n, page.extract_text() or "") for n, page in enumerate(PdfReader(io.BytesIO(f.data)).pages, 1)]
+    if f.media_type in _TEXT:
+        text = normalize_text(f.data.decode("utf-8"))
+        return [(None, html_text(text) if f.media_type == HTML else text)]
     return []  # other assets are stored and citable as files, not searched
 
 
@@ -84,11 +125,11 @@ def _frontmatter_end(text: str) -> int:
     return len(text) if close < 0 else close + 1
 
 
-def _paragraph_spans(text: str, base: int) -> list[tuple[int, int]]:
-    """Blank-line separated blocks; a markdown heading always starts a new block."""
+def _paragraph_spans(text: str, base: int, headings: bool) -> list[tuple[int, int]]:
+    """Blank-line separated blocks; with `headings` (markdown), a heading line always starts a new block."""
     spans, start, i = [], None, 0
     for line in text.splitlines(keepends=True):
-        blank, heading = not line.strip(), line.lstrip().startswith("#")
+        blank, heading = not line.strip(), headings and line.lstrip().startswith("#")
         if (blank or heading) and start is not None:
             spans.append((start, i))
             start = None
@@ -100,12 +141,25 @@ def _paragraph_spans(text: str, base: int) -> list[tuple[int, int]]:
     return [(base + s, base + e) for s, e in spans]
 
 
+def _line_spans(text: str, base: int) -> list[tuple[int, int]]:
+    """One span per non-blank line (a CSV row, a JSONL record), line end included."""
+    spans, i = [], 0
+    for line in text.splitlines(keepends=True):
+        if line.strip():
+            spans.append((base + i, base + i + len(line)))
+        i += len(line)
+    return spans
+
+
 def _cap(spans: list[tuple[int, int]], text: str) -> list[tuple[int, int]]:
-    """Cut blocks longer than MAX_CHUNK_CHARS at the last whitespace before the limit (hard cut if none)."""
+    """Cut blocks longer than MAX_CHUNK_CHARS: at the last line end in the second half of the window, else at the
+    last space, else hard."""
     out = []
     for s, e in spans:
         while e - s > MAX_CHUNK_CHARS:
-            cut = text.rfind(" ", s + 1, s + MAX_CHUNK_CHARS)
+            cut = text.rfind("\n", s + MAX_CHUNK_CHARS // 2, s + MAX_CHUNK_CHARS)
+            if cut < 0:
+                cut = text.rfind(" ", s + 1, s + MAX_CHUNK_CHARS)
             cut = cut + 1 if cut > s else s + MAX_CHUNK_CHARS
             out.append((s, cut))
             s = cut
@@ -113,11 +167,11 @@ def _cap(spans: list[tuple[int, int]], text: str) -> list[tuple[int, int]]:
     return out
 
 
-def _merge(spans: list[tuple[int, int]], text: str) -> list[tuple[int, int]]:
-    """Greedy: join consecutive blocks up to TARGET_CHARS; a heading block starts a new chunk."""
+def _merge(spans: list[tuple[int, int]], text: str, headings: bool) -> list[tuple[int, int]]:
+    """Greedy: join consecutive blocks up to TARGET_CHARS; with `headings`, a heading block starts a new chunk."""
     out = []
     for s, e in spans:
-        heading = text[s:e].lstrip().startswith("#")
+        heading = headings and text[s:e].lstrip().startswith("#")
         if out and not heading and e - out[-1][0] <= TARGET_CHARS:
             out[-1] = (out[-1][0], e)
         else:
@@ -125,21 +179,37 @@ def _merge(spans: list[tuple[int, int]], text: str) -> list[tuple[int, int]]:
     return out
 
 
-def split(profile: dict, f: SourceFile) -> list[Chunk]:
-    instruction = is_instruction({"path": f.path, "okf_type": f.okf_type})
+def _cut(f: SourceFile, text: str, base: int, full: str) -> list[tuple[int, int]]:
+    """Spans of one page `text` that starts at `base` in `full` (the file's extracted text)."""
+    if f.media_type == JSONL:
+        return _cap(_line_spans(text, base), full)  # one record, one passage (cut only if huge)
+    if f.media_type == CSV:
+        return _merge(_cap(_line_spans(text, base), full), full, headings=False)
+    markdown = f.media_type == MARKDOWN
+    skip = _frontmatter_end(text) if markdown else 0  # metadata, not passage text
+    return _merge(_cap(_paragraph_spans(text[skip:], base + skip, markdown), full), full, markdown)
+
+
+def split(profile: dict, f: SourceFile, skills: frozenset[str] = frozenset()) -> list[Chunk]:
+    """`skills`: agentfiles.skill_dirs() of the whole content version, so skill folders mark their files."""
+    instruction = is_instruction({"path": f.path, "okf_type": f.okf_type}, skills)
     pages = _pages(f)
     if not pages:
         return []
     full = "".join(t for _, t in pages)
+    lines = [m.start() for m in re.finditer("\n", full)] if f.media_type in _TEXT - {HTML} else None
+
+    def line_of(start: int) -> int | None:
+        return None if lines is None else bisect_right(lines, start - 1) + 1
+
     if profile["name"] == "whole":
         if len(full) > WHOLE_MAX_CHARS:
             raise ValueError(f"{f.path}: {len(full)} characters is too long for the whole profile; use chunked")
-        return [Chunk(f.path, 0, pages[0][0], 0, len(full), full, instruction)] if full.strip() else []
+        return [Chunk(f.path, 0, pages[0][0], 0, len(full), full, instruction, line_of(0))] if full.strip() else []
     chunks, offset = [], 0
     for page, text in pages:
-        skip = _frontmatter_end(text) if f.media_type == MARKDOWN else 0  # metadata, not passage text
-        for s, e in _merge(_cap(_paragraph_spans(text[skip:], offset + skip), full), full):
-            chunks.append(Chunk(f.path, len(chunks), page, s, e, full[s:e], instruction))
+        for s, e in _cut(f, text, offset, full):
+            chunks.append(Chunk(f.path, len(chunks), page, s, e, full[s:e], instruction, line_of(s)))
         offset += len(text)
     return chunks
 

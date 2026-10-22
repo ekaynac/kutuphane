@@ -50,6 +50,7 @@ function PassagePanel({ passage, onClose }: { passage: Passage; onClose: () => v
           <div className="meta">
             {d.book} · sürüm {d.version} · parça {d.ordinal}
             {passage.page ? ` · sayfa ${passage.page}` : ""}
+            {passage.line ? ` · satır ${passage.line}` : ""}
           </div>
         </div>
         <button className="ghost" onClick={onClose} aria-label="Kapat">

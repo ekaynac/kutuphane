@@ -48,6 +48,7 @@ class Hit:
     end: int
     text: str
     score: float
+    line: int | None = None  # text files: the line the passage starts on (JSONL: the record's line)
 
 
 # The pre-filter, written once and used by both rankings: current version and profile of books readable now;
@@ -77,7 +78,7 @@ fused AS (
       FROM (SELECT * FROM lexical UNION ALL SELECT * FROM semantic) AS ranked
      GROUP BY book, content_id, profile_id, path, ordinal)
 SELECT c.book, c.content_id, c.profile_id, c.path, c.ordinal, c.page, c.start_char, c.end_char, c.text,
-       c.instruction, f.score
+       c.instruction, f.score, c.line
   FROM fused f JOIN chunk c USING (book, content_id, profile_id, path, ordinal)
  ORDER BY f.score DESC, c.book, c.path, c.ordinal
  LIMIT %(k)s
@@ -134,7 +135,7 @@ def search(conn, actor: Actor, query: str, k: int = DEFAULT_K, attempts: int = 2
                 gate.log_event(conn, actor, "search", obj, "read", authz.Decision(False, "changed during search"),
                                final.policies.get(obj), None, None)
             continue  # search again with the rights as they are now, so revoked books never consume `k`
-        hits = [Hit(Citation(*r[:5]), r[5], r[6], r[7], r[8], float(r[10])) for r in rows]
+        hits = [Hit(Citation(*r[:5]), r[5], r[6], r[7], r[8], float(r[10]), r[11]) for r in rows]
         for obj, ms in needs.items():
             book = obj.removeprefix("book:")
             mine = [h for h in hits if h.citation.book == book]
@@ -148,7 +149,7 @@ def search(conn, actor: Actor, query: str, k: int = DEFAULT_K, attempts: int = 2
 
 def open_citation(conn, actor: Actor, citation: Citation) -> Hit:
     """The stored passage of exactly that version and profile; rights are checked as of now."""
-    row = conn.execute("SELECT page, start_char, end_char, text, instruction FROM chunk WHERE book = %s AND "
+    row = conn.execute("SELECT page, start_char, end_char, text, instruction, line FROM chunk WHERE book = %s AND "
                        "content_id = %s AND profile_id = %s AND path = %s AND ordinal = %s",
                        (citation.book, citation.content_id, citation.profile_id, citation.path,
                         citation.ordinal)).fetchone()
@@ -157,7 +158,7 @@ def open_citation(conn, actor: Actor, citation: Citation) -> Hit:
     def fetch():
         if row is None:
             raise NotFound(citation.handle)
-        return Hit(citation, row[0], row[1], row[2], row[3], 0.0)
+        return Hit(citation, row[0], row[1], row[2], row[3], 0.0, row[5])
     return gate.guard(conn, actor, f"book:{citation.book}", modes, fetch, action="cite",
                       content_id=citation.content_id, path=citation.path, profile_id=citation.profile_id,
                       items=[citation.handle])

@@ -77,7 +77,7 @@ def op_search(dsn, stages, actor: Actor, query: str, k: int, model_reader: bool 
         out = []
         for h in hits:
             item = rights.info(h.citation.book, h.citation.content_id, h.citation.path)
-            out.append({"citation": h.citation.handle, "page": h.page, "score": round(h.score, 4),
+            out.append({"citation": h.citation.handle, "page": h.page, "line": h.line, "score": round(h.score, 4),
                         **_text(h.text, item, ai), "item": item})
         return out
     return _run(dsn, go)
@@ -88,7 +88,8 @@ def op_citation(dsn, actor: Actor, handle: str, model_reader: bool = False) -> d
         hit = search.open_citation(conn, actor, parse_citation(handle))
         c = hit.citation
         item = kstd.Rights(conn).info(c.book, c.content_id, c.path)
-        return {"citation": c.handle, "page": hit.page, **_text(hit.text, item, _for_model(actor, model_reader)),
+        return {"citation": c.handle, "page": hit.page, "line": hit.line,
+                **_text(hit.text, item, _for_model(actor, model_reader)),
                 "item": item}
     return _run(dsn, go)
 
