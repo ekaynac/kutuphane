@@ -308,3 +308,19 @@ sızıntısı bulunmadı; düzeltilenler:
 - `model-stub` (profil `dev-models`): yalnız standart kütüphane kullanan, belirlenimci sohbet, embedding ve rerank
   sunucusu. Ölçüm için kullanılmaz.
 - `llmdap_contract.py` (rerank kontrolü eklendi) compose'taki gerçek LLMDAP'a karşı 11/11.
+
+# Astra incelemesi #8 (PR #33–#42) ve düzeltmeler
+
+Ham metin: `docs/research/2026-10-22-astra-review-m1-8-raw.md`. Dokuz bulgunun hepsi düzeltildi:
+
+1. **MCP `ai_input`'u atlıyordu (yüksek):** MCP araçları ve `agent:` principal'ları model okuyucudur. `ai_input` izni olmayan pasajın metni dönmez (`text: null`, `withheld`), `read_document` reddedilir. Okuma yetkisi olmayan çağırana normal ret verilir; hak gerekçesi gösterilmez.
+2. **Gölge koşucu eski etiketle buluta gönderebiliyordu (yüksek):** her barındırılan istekten hemen önce güncel etiket yeniden okunur.
+3. **YAML'da yinelenen anahtar kısıtı eziyordu (orta):** yinelenen anahtar, merge anahtarı (`<<`) ve takma ad reddedilir; aşırı iç içe yapı `KstdError` olur.
+4. **Güven, eylem sınırını uygulamıyordu (yüksek):** güven artık açık eylem listesi ve süre sonu ister (karar kuralı 4).
+5. **Kabul edilmemiş ya da askıdaki öğe `permit` alabiliyordu (yüksek):** sıradan kullanım yalnız `accepted` öğede; `review` ve `history` görünümleri ayrı.
+6. **Koşul ya da süre dışındaki kural talebi `permit` alıyordu (orta):** artık `escalate`.
+7. **İzin sürüm bağlaması eksikti (orta):** öğe, politika sürümü ve sonraki ifadeler denetlenir.
+8. **Yeniden açılan cevapta öğe bilgisi yoktu (orta):** bilgi ortak cevap fonksiyonlarında eklenir; CLI de alır.
+9. **Lisans sözdizimi ve ayrıştırıcı hataları (düşük):** SPDX ifadesi gramerle denetlenir.
+
+Karar kuralı vakaları 20'den 33'e çıktı; her kural için, kural kaldırılınca kırılan vaka var.

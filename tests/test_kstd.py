@@ -152,3 +152,63 @@ def test_init_writes_a_manifest_that_passes_the_check(okf_dir):
     assert errors == [] and any("no default license" in w for w in warnings)
     info = kstd.effective(kstd.parse(text.encode()), "index.md")
     assert info["license"] == "unknown" and info["personal_data"] == "unknown" and info["ai_use"]["ai_input"] == "n"
+
+
+@pytest.mark.parametrize("text,needle", [
+    ("standard: kstd/0.2\nissuer: A\nissued: 2026-10-22\nrights:\n  ai_use: {ai_input: n, ai_input: y}\n", "duplicate key"),
+    ("standard: kstd/0.2\nissuer: A\nissued: 2026-10-22\nrights:\n  personal_data: yes\n  personal_data: no\n",
+     "duplicate key"),
+    ("base: &b {ai_input: n}\nstandard: kstd/0.2\nrights:\n  <<: *b\n", "not allowed"),
+    ("standard: kstd/0.2\nx-deep: " + "[" * 5000 + "]" * 5000 + "\n", "nested too deeply|not valid"),
+])
+def test_yaml_tricks_never_loosen_a_restriction(text, needle):  # Astra review #8
+    with pytest.raises(kstd.KstdError, match=needle):
+        kstd.parse(text.encode())
+
+
+@pytest.mark.parametrize("value,ok", [
+    ("MIT", True), ("(MIT OR Apache-2.0) AND CC-BY-4.0", True), ("LicenseRef-acme", True), ("unknown", True),
+    ("(MIT", False), ("MIT)", False), ("MIT AND", False), ("AND MIT", False), ("MIT WITH Classpath-exception-2.0", False),
+    ("", False), ("()", False),
+])
+def test_license_expressions_follow_the_spdx_grammar(value, ok):
+    assert kstd._license_ok(value) is ok
+
+
+def test_model_readers_never_receive_text_without_ai_input(conn, okf_dir):  # Astra review #8: MCP and agents
+    import os
+    from datetime import datetime, timedelta, timezone
+    from kutuphane import gate, server
+    write_manifest(okf_dir, runbook_item={"rights": {"ai_use": {"search": "y", "ai_input": "n"}}})
+    publish(conn, okf_dir)
+    content_id = catalog.book_state(conn, "kitap")["content_id"]
+    dsn = os.environ["KUTUPHANE_TEST_DSN"]
+    human = server.op_search(dsn, retrieval.Stages(), Actor(U), QUERY, 8)
+    runbook = next(h for h in human if "yedek-geri-yukleme" in h["citation"])
+    assert runbook["text"]                                                      # a person reads it
+    mcp = server.op_search(dsn, retrieval.Stages(), Actor(U), QUERY, 8, True)
+    hidden = next(h for h in mcp if h["citation"] == runbook["citation"])
+    assert hidden["text"] is None and "AI input" in hidden["withheld"]
+    assert server.op_citation(dsn, Actor(U), runbook["citation"], True)["text"] is None
+    authz.delegate(conn, delegator=U, delegate_to="agent:kobra-7", obj="book:kitap", mode="read",
+                   expires_at=datetime.now(timezone.utc) + timedelta(hours=1))
+    agent = Actor("agent:kobra-7", on_behalf_of=U)                              # an agent over HTTP is a model reader
+    assert server.op_citation(dsn, agent, runbook["citation"])["text"] is None
+    with pytest.raises(gate.Denied, match="AI input"):
+        server.op_file(dsn, Actor(U), "kitap", content_id, "runbook/yedek-geri-yukleme.md", True)
+    with pytest.raises(gate.Denied) as other:                                   # a non-reader learns nothing more
+        server.op_file(dsn, Actor("user:mehmet"), "kitap", content_id, "runbook/yedek-geri-yukleme.md", True)
+    assert "AI input" not in str(other.value)
+    data, _ = server.op_file(dsn, Actor(U), "kitap", content_id, "politika/veri-saklama.md", True)
+    assert data                                                                 # allowed files still flow
+
+
+def test_reopened_answers_keep_item_information(conn, okf_dir, fake):  # Astra review #8
+    from kutuphane import answers
+    write_manifest(okf_dir)
+    publish(conn, okf_dir)
+    fake.reply = "Kayıtlar iki yıl saklanır [1]."
+    out = answers.ask(conn, fake.bridge(), Actor(U), "kayıtlar saklanır", model="qwen")
+    assert out["status"] == "answered" and out["citations"][0]["item"]["license"] == "CC-BY-4.0"
+    again = answers.reopen(conn, Actor(U), out["id"])
+    assert again["evidence"][0]["item"]["license"] == "CC-BY-4.0"

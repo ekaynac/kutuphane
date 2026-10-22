@@ -25,7 +25,7 @@ A book with `kstd.yaml` follows it (`src/kutuphane/kstd.py`):
 |---|---|
 | invalid manifest | publication (ingest and approve-import) is refused |
 | `ai_use.search` not `y` | the file is not indexed |
-| `ai_use.ai_input` not `y` | its passages never reach a model: no embedding, no reranking, not in answer passages (the answer reports `withheld`) |
+| `ai_use.ai_input` not `y` | its passages never reach a model: no embedding, no reranking, not in answer passages (the answer reports `withheld`); MCP callers and agent principals get no text (`text: null`, `withheld`) and `read_document` is refused |
 | `personal_data` not `no` | `export` needs `--legal-basis`; the basis is recorded in the signed package |
 | origin, license, validity, applies_to, notices | shown with search results, citations and answers (`item`) |
 

@@ -91,7 +91,8 @@ def ask(conn, bridge: llmdap.Bridge, actor: Actor, question: str, *, model: str,
                     action="answer", items={f"book:{r['book']}": [_handle(c) for c in cited if c["book"] == r["book"]]
                                             for r in sources})
     stored = _store(conn, actor, question, status, body if status == "answered" else None, cited, sources, model)
-    return {**stored, "withheld": withheld}
+    citations = [{**c, "item": rights.info(c["book"], c["content_id"], c["path"])} for c in stored["citations"]]
+    return {**stored, "citations": citations, "withheld": withheld}
 
 
 def _chunk(conn, ref):
@@ -124,6 +125,7 @@ def reopen(conn, actor: Actor, answer_id: str) -> dict:
     gate.check_many(conn, actor, _needs(actor, sources, lambda ref: _is_instruction_chunk(conn, ref)),
                     action="reopen", items={f"book:{r['book']}": [_handle(c) for c in cited if c["book"] == r["book"]]
                                             for r in sources})
+    rights = kstd.Rights(conn)
     return {"id": answer_id, "question": question, "status": status, "body": body,
-            "evidence": [{"n": r["n"], "citation": _handle(r), "text": texts[r["n"]][0] if texts[r["n"]] else None}
-                         for r in cited]}
+            "evidence": [{"n": r["n"], "citation": _handle(r), "text": texts[r["n"]][0] if texts[r["n"]] else None,
+                          "item": rights.info(r["book"], r["content_id"], r["path"])} for r in cited]}
