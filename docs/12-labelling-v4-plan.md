@@ -57,4 +57,4 @@ v1 and v2 labelled human categories and facets. v4 labels only the **kstd fields
 2. **Granularity:** one label set per file, with a "needs split" mark. Agreed.
 3. **Public set with known facts:** yes. Add a small public test set.
 4. **Local LLM proposer:** `RadixArk/Qwen3.8-27B-NVFP4` on the Spark. It is already served by the local vLLM (port 8000), so no new GPU process is needed. LLMDAP gets a chat route to it. The route must reach the host from the `models` network; that change goes in the labelling v4 compose work.
-5. **New input before labelling starts:** the W3C community-group landscape (D59, `docs/13`). Its questions, datasets and test suites can change the fields and the public test set. The fields are re-checked against `docs/13` before the page is built.
+5. **New input before labelling starts:** the W3C community-group landscape (D59, `docs/13`). `docs/13` §5 proposes field changes (origin `assisted`, personal data `synthetic`, "not stated" kept apart from `n`, a DPV legal-basis list) and lists the public test set candidates. These wait for the operator. The page is built after that decision.

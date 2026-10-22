@@ -1,6 +1,6 @@
 # Vision — an open knowledge management standard
 
-**Status:** DRAFT 0.2, 2026-10-20 (D55).
+**Status:** DRAFT 0.2, 2026-10-20 (D55). **Changed by D59 (2026-10-22):** proposing a standard alone is too big. First we find and understand the existing work (`docs/13-landscape.md`). Then we join those communities and contribute. kstd becomes a profile of existing standards, and we propose new parts only where a gap exists. §1 must be read with this change.
 - Basis: the research map (`docs/research/2026-10-20-research-map.md`).
 - Next: this document is an input for brainstorm round 3 (`docs/research/2026-10-20-round3-brief.md`). Round 3 is free to change any part of it.
 
