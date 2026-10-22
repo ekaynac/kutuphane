@@ -1,0 +1,90 @@
+repo,path,kind,why
+anthropics/skills,skills/skill-creator/,skill,per-skill license Apache/proprietary/none
+anthropics/skills,skills/mcp-builder/,skill,per-skill license Apache/proprietary/none
+anthropics/skills,skills/webapp-testing/,skill,per-skill license Apache/proprietary/none
+anthropics/skills,skills/canvas-design/,skill,per-skill license Apache/proprietary/none
+anthropics/skills,skills/pdf/,skill,per-skill license Apache/proprietary/none
+anthropics/skills,skills/docx/,skill,per-skill license Apache/proprietary/none
+anthropics/skills,skills/doc-coauthoring/,skill,per-skill license Apache/proprietary/none
+anthropics/skills,skills/theme-factory/,skill,per-skill license Apache/proprietary/none
+anthropics/skills,template/SKILL.md,skill,per-skill license Apache/proprietary/none
+agentskills/agentskills,docs/specification.mdx,spec-doc/agents_md/hook,docs CC-BY-4.0 vs code Apache; read-only negative
+agentskills/agentskills,docs/skill-creation/best-practices.mdx,spec-doc/agents_md/hook,docs CC-BY-4.0 vs code Apache; read-only negative
+agentskills/agentskills,docs/skill-creation/using-scripts.mdx,spec-doc/agents_md/hook,docs CC-BY-4.0 vs code Apache; read-only negative
+agentskills/agentskills,AGENTS.md,spec-doc/agents_md/hook,docs CC-BY-4.0 vs code Apache; read-only negative
+agentskills/agentskills,.claude/hooks/session-start.sh,spec-doc/agents_md/hook,docs CC-BY-4.0 vs code Apache; read-only negative
+agentsmd/agents.md,AGENTS.md,agents_md,spec repo
+python/cpython,AGENTS.md,agents_md,public AGENTS.md; mandate scope; symlinks
+microsoft/vscode,AGENTS.md,agents_md,public AGENTS.md; mandate scope; symlinks
+vercel/next.js,AGENTS.md,agents_md,public AGENTS.md; mandate scope; symlinks
+rust-lang/rust,AGENTS.md,agents_md,public AGENTS.md; mandate scope; symlinks
+kubernetes/kubernetes,AGENTS.md,agents_md,public AGENTS.md; mandate scope; symlinks
+apache/airflow,AGENTS.md,agents_md,public AGENTS.md; mandate scope; symlinks
+pytorch/pytorch,AGENTS.md,agents_md,public AGENTS.md; mandate scope; symlinks
+huggingface/transformers,AGENTS.md,agents_md,public AGENTS.md; mandate scope; symlinks
+home-assistant/core,AGENTS.md,agents_md,public AGENTS.md; mandate scope; symlinks
+grafana/grafana,AGENTS.md,agents_md,public AGENTS.md; mandate scope; symlinks
+astral-sh/uv,AGENTS.md,agents_md,public AGENTS.md; mandate scope; symlinks
+temporalio/temporal,AGENTS.md,agents_md,public AGENTS.md; mandate scope; symlinks
+elastic/kibana,AGENTS.md,agents_md,public AGENTS.md; mandate scope; symlinks
+nodejs/node,AGENTS.md,agents_md,public AGENTS.md; mandate scope; symlinks
+langchain-ai/langchain,AGENTS.md,agents_md,public AGENTS.md; mandate scope; symlinks
+grafana/grafana,CLAUDE.md,claude_md,11-byte import stub
+microsoft/vscode,.github/copilot-instructions.md,copilot,Copilot repo instructions
+home-assistant/core,.github/copilot-instructions.md,copilot,Copilot repo instructions
+denoland/deno,.github/copilot-instructions.md,copilot,Copilot repo instructions
+temporalio/temporal,.github/copilot-instructions.md,copilot,Copilot repo instructions
+github/awesome-copilot,instructions/a11y.instructions.md,copilot,applyTo scope; Copilot-co-authored
+github/awesome-copilot,agents/CSharpExpert.agent.md,copilot,applyTo scope; Copilot-co-authored
+github/awesome-copilot,"(+4 instructions, +3 agents, +2 hooks by sample)",copilot,applyTo scope; Copilot-co-authored
+PatrickJS/awesome-cursorrules,rules/ai-agent-specialist.mdc,cursor,CC0; globs/alwaysApply
+PatrickJS/awesome-cursorrules,(+5 .mdc by sample),cursor,CC0; globs/alwaysApply
+hesreallyhim/awesome-claude-code,README.md,list,CC-BY-NC-ND-4.0
+hesreallyhim/awesome-claude-code,LICENSE,list,CC-BY-NC-ND-4.0
+multica-ai/andrej-karpathy-skills,CLAUDE.md,claude_md,"no license, 222k stars"
+Piebald-AI/claude-code-system-prompts,(2 prompt files),prompt,MIT claim over third-party text
+openclaw/openclaw,docs/reference/templates/AGENTS.md,openclaw,workspace standard files
+openclaw/openclaw,docs/reference/templates/SOUL.md,openclaw,workspace standard files
+openclaw/openclaw,docs/reference/templates/USER.md,openclaw,workspace standard files
+openclaw/openclaw,docs/reference/templates/IDENTITY.md,openclaw,workspace standard files
+openclaw/openclaw,docs/reference/templates/HEARTBEAT.md,openclaw,workspace standard files
+openclaw/openclaw,docs/reference/templates/BOOTSTRAP.md,openclaw,workspace standard files
+openclaw/openclaw,src/claws/fixtures/workspace/SOUL.md,openclaw,workspace standard files
+openclaw/openclaw,src/claws/fixtures/workspace/HEARTBEAT.md,openclaw,workspace standard files
+openclaw/openclaw,AGENTS.md,openclaw,workspace standard files
+openclaw/openclaw,src/agents/AGENTS.md,openclaw,workspace standard files
+openclaw/openclaw,.agents/skills/autoreview/SKILL.md,openclaw,workspace standard files
+openclaw/openclaw,.agents/skills/clawsweeper/SKILL.md,openclaw,workspace standard files
+openclaw/clawhub,docs/skill-format.md,registry,MIT-0 forced
+openclaw/clawhub,docs/claws.md,registry,MIT-0 forced
+openclaw/clawhub,(3 skills via /api/v1/skills/{slug}/file),registry,MIT-0 forced
+DietrichGebert/ponytail,AGENTS.md,ponytail,same bytes many hosts; embedded Apache copy
+DietrichGebert/ponytail,.github/copilot-instructions.md,ponytail,same bytes many hosts; embedded Apache copy
+DietrichGebert/ponytail,.windsurf/rules/ponytail.md,ponytail,same bytes many hosts; embedded Apache copy
+DietrichGebert/ponytail,.cursor/rules/ponytail.mdc,ponytail,same bytes many hosts; embedded Apache copy
+DietrichGebert/ponytail,.kiro/steering/ponytail.md,ponytail,same bytes many hosts; embedded Apache copy
+DietrichGebert/ponytail,skills/ponytail/SKILL.md,ponytail,same bytes many hosts; embedded Apache copy
+DietrichGebert/ponytail,.openclaw/skills/ponytail/SKILL.md,ponytail,same bytes many hosts; embedded Apache copy
+DietrichGebert/ponytail,hooks/ponytail-activate.js,ponytail,same bytes many hosts; embedded Apache copy
+DietrichGebert/ponytail,hooks/claude-codex-hooks.json,ponytail,same bytes many hosts; embedded Apache copy
+DietrichGebert/ponytail,benchmarks/arms/caveman-SKILL.md,ponytail,same bytes many hosts; embedded Apache copy
+morluto/rea,AGENTS.md,rea,dual-use RE skill
+morluto/rea,website/AGENTS.md,rea,dual-use RE skill
+morluto/rea,.agents/skills/reverse-engineer-anything/,rea,dual-use RE skill
+morluto/rea,.agents/skills/rea-ci-tests-audit/,rea,dual-use RE skill
+morluto/rea,.agents/skills/rea-tool-design/SKILL.md,rea,dual-use RE skill
+NVIDIA/SkillSpector,tests/fixtures/malicious_skill/,hostile,labelled hostile/clean pairs
+NVIDIA/SkillSpector,tests/fixtures/safe_skill/,hostile,labelled hostile/clean pairs
+NVIDIA/SkillSpector,tests/fixtures/ssd/ssd1_semantic_injection/,hostile,labelled hostile/clean pairs
+NVIDIA/SkillSpector,tests/fixtures/ssd/ssd2_novel_phrasing/,hostile,labelled hostile/clean pairs
+NVIDIA/SkillSpector,tests/fixtures/ssd/ssd3_nl_exfiltration/,hostile,labelled hostile/clean pairs
+NVIDIA/SkillSpector,tests/fixtures/ssd/ssd4_narrative_deception/,hostile,labelled hostile/clean pairs
+NVIDIA/SkillSpector,tests/fixtures/ssd/ssd_clean/,hostile,labelled hostile/clean pairs
+NVIDIA/SkillSpector,tests/fixtures/mcp_poisoned_tool/,hostile,labelled hostile/clean pairs
+NVIDIA/SkillSpector,tests/fixtures/mcp_overprivileged_skill/,hostile,labelled hostile/clean pairs
+NVIDIA/SkillSpector,tests/fixtures/sdi/sdi3_scope_creep/,hostile,labelled hostile/clean pairs
+NVIDIA/SkillSpector,tests/fixtures/tp4_markdown_fenced_code/,hostile,labelled hostile/clean pairs
+NVIDIA/SkillSpector,tests/fixtures/sqp/sqp3_plain_english_override/,hostile,labelled hostile/clean pairs
+aisa-group/skill-inject,data/obvious_injections.json,hostile,injection benchmark
+aisa-group/skill-inject,data/contextual_injections.json,hostile,injection benchmark
+aisa-group/skill-inject,(8 materialised skills via build_sandbox.py + 2 clean),hostile,injection benchmark
