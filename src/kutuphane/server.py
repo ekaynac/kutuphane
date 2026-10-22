@@ -56,51 +56,68 @@ def _run(dsn, fn):
         return fn(conn)
 
 
-def _with_items(conn, refs: list[dict]) -> list[dict]:
-    """kstd item information (origin, license, validity, notices) of each cited file; None without a manifest."""
-    rights = kstd.Rights(conn)
-    return [{**r, "item": rights.info(r["book"], r["content_id"], r["path"])} for r in refs]
+def _for_model(actor: Actor, model_reader: bool) -> bool:
+    """MCP callers and agent principals put what they read into a model's context: that is AI input (kstd)."""
+    return model_reader or actor.principal.startswith("agent:")
 
 
-def op_search(dsn, stages, actor: Actor, query: str, k: int) -> list[dict]:
+def _text(text, item, for_model: bool) -> dict:
+    """The passage text, or None with a reason when its kstd rights do not allow AI input for this reader."""
+    if for_model and not kstd.allows(item, "ai_input"):
+        return {"text": None, "withheld": "rights do not allow AI input"}
+    return {"text": text}
+
+
+def op_search(dsn, stages, actor: Actor, query: str, k: int, model_reader: bool = False) -> list[dict]:
     def go(conn):
         if not isinstance(query, str) or not query.strip() or len(query) > search.MAX_QUERY_CHARS:
             raise BadRequest(f"query must be 1..{search.MAX_QUERY_CHARS} characters")  # before any model call
-        hits, rights = retrieval.retrieve(conn, actor, query, k, stages), kstd.Rights(conn)
-        return [{"citation": h.citation.handle, "page": h.page, "score": round(h.score, 4), "text": h.text,
-                 "item": rights.info(h.citation.book, h.citation.content_id, h.citation.path)} for h in hits]
+        hits, rights, ai = retrieval.retrieve(conn, actor, query, k, stages), kstd.Rights(conn), \
+            _for_model(actor, model_reader)
+        out = []
+        for h in hits:
+            item = rights.info(h.citation.book, h.citation.content_id, h.citation.path)
+            out.append({"citation": h.citation.handle, "page": h.page, "score": round(h.score, 4),
+                        **_text(h.text, item, ai), "item": item})
+        return out
     return _run(dsn, go)
 
 
-def op_citation(dsn, actor: Actor, handle: str) -> dict:
+def op_citation(dsn, actor: Actor, handle: str, model_reader: bool = False) -> dict:
     def go(conn):
         hit = search.open_citation(conn, actor, parse_citation(handle))
         c = hit.citation
-        return {"citation": c.handle, "page": hit.page, "text": hit.text,
-                "item": kstd.Rights(conn).info(c.book, c.content_id, c.path)}
+        item = kstd.Rights(conn).info(c.book, c.content_id, c.path)
+        return {"citation": c.handle, "page": hit.page, **_text(hit.text, item, _for_model(actor, model_reader)),
+                "item": item}
     return _run(dsn, go)
 
 
 def op_ask(dsn, bridge, model: str, stages, actor: Actor, question: str) -> dict:
     if not isinstance(question, str) or not question.strip():
         raise BadRequest("question is required")
+    return _run(dsn, lambda c: answers.ask(c, bridge, actor, question, model=model, stages=stages))
 
+
+def op_reopen(dsn, actor: Actor, answer_id: str, model_reader: bool = False) -> dict:
+    out = _run(dsn, lambda c: answers.reopen(c, actor, answer_id))
+    ai = _for_model(actor, model_reader)
+    return {**out, "evidence": [{**e, **_text(e["text"], e["item"], ai)} for e in out["evidence"]]}
+
+
+def op_file(dsn, actor: Actor, book: str, content_id: str, path: str,
+             model_reader: bool = False) -> tuple[bytes, str]:
     def go(conn):
-        out = answers.ask(conn, bridge, actor, question, model=model, stages=stages)
-        return {**out, "citations": _with_items(conn, out["citations"])}
-    return _run(dsn, go)
-
-
-def op_reopen(dsn, actor: Actor, answer_id: str) -> dict:
-    return _run(dsn, lambda c: answers.reopen(c, actor, answer_id))
-
-
-def op_file(dsn, actor: Actor, book: str, content_id: str, path: str) -> tuple[bytes, str]:
-    def go(conn):
-        data = gate.deliver_file(conn, actor, book, content_id, normalize_path(path))
+        norm = normalize_path(path)
+        item = kstd.Rights(conn).info(book, content_id, norm)
+        if _for_model(actor, model_reader) and not kstd.allows(item, "ai_input"):
+            # Callers who may not read get the ordinary refusal; the rights refusal is only for readers.
+            gate.check_many(conn, actor, {f"book:{book}": {"read"}}, action="model-read")
+            raise gate.Denied(f"{norm}: its rights do not allow AI input")  # nothing is delivered
+        data = gate.deliver_file(conn, actor, book, content_id, norm)
         entry = conn.execute("SELECT m.entry->>'media_type' FROM content_version c CROSS JOIN LATERAL "
                              "jsonb_array_elements(c.manifest) AS m(entry) WHERE c.book = %s AND c.id = %s "
-                             "AND m.entry->>'path' = %s", (book, content_id, path)).fetchone()
+                             "AND m.entry->>'path' = %s", (book, content_id, norm)).fetchone()
         return data, entry[0] if entry else "application/octet-stream"
     return _run(dsn, go)
 
@@ -323,13 +340,13 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
     @_mcp_errors
     async def search_library(query: str, k: int = search.DEFAULT_K) -> list[dict]:
         """Search the books you may read now. Results carry citation handles for open_citation."""
-        return await run_in_threadpool(op_search, dsn, stages, _mcp_actor(), query, k)
+        return await run_in_threadpool(op_search, dsn, stages, _mcp_actor(), query, k, True)
 
     @mcp.tool()
     @_mcp_errors
     async def open_citation(handle: str) -> dict:
         """Open a citation handle: the exact passage of that version, if you may read it now."""
-        return await run_in_threadpool(op_citation, dsn, _mcp_actor(), handle)
+        return await run_in_threadpool(op_citation, dsn, _mcp_actor(), handle, True)
 
     @mcp.tool()
     @_mcp_errors
@@ -343,13 +360,13 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
     @_mcp_errors
     async def reopen_answer(answer_id: str) -> dict:
         """Show a stored answer and its evidence again (no model call; current rights apply)."""
-        return await run_in_threadpool(op_reopen, dsn, _mcp_actor(), answer_id)
+        return await run_in_threadpool(op_reopen, dsn, _mcp_actor(), answer_id, True)
 
     @mcp.tool()
     @_mcp_errors
     async def read_document(book: str, content_id: str, path: str) -> str:
         """Read a text document of a specific version (agent instructions need an activate grant)."""
-        data, media_type = await run_in_threadpool(op_file, dsn, _mcp_actor(), book, content_id, path)
+        data, media_type = await run_in_threadpool(op_file, dsn, _mcp_actor(), book, content_id, path, True)
         if media_type not in TEXT_TYPES:
             raise BadRequest("not a text document; use search_library and open_citation for its passages")
         return data.decode("utf-8")

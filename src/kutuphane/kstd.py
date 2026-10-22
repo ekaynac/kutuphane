@@ -41,20 +41,38 @@ class KstdError(ValueError):
     pass
 
 
-class _NoAliasLoader(yaml.SafeLoader):
+class _StrictLoader(yaml.SafeLoader):
+    """No aliases, no merge keys, no duplicate keys: a later key must never silently replace a restriction."""
+
     def compose_node(self, parent, index):
         if self.check_event(yaml.AliasEvent):
             raise yaml.YAMLError("YAML aliases are not allowed in kstd.yaml")
         return super().compose_node(parent, index)
+
+    def construct_mapping(self, node, deep=False):
+        keys = set()
+        for key_node, _ in node.value:
+            if key_node.tag == "tag:yaml.org,2002:merge":
+                raise yaml.YAMLError("YAML merge keys (<<) are not allowed in kstd.yaml")
+            key = self.construct_object(key_node, deep=True)
+            try:
+                if key in keys:
+                    raise yaml.YAMLError(f"duplicate key {key!r}")
+            except TypeError:
+                raise yaml.YAMLError("a mapping key must be a scalar") from None
+            keys.add(key)
+        return super().construct_mapping(node, deep=deep)
 
 
 def parse(data: bytes) -> dict:
     if len(data) > MAX_MANIFEST_BYTES:
         raise KstdError(f"{MANIFEST}: larger than {MAX_MANIFEST_BYTES} bytes")
     try:
-        doc = yaml.load(data.decode("utf-8"), Loader=_NoAliasLoader)
+        doc = yaml.load(data.decode("utf-8"), Loader=_StrictLoader)
     except (UnicodeDecodeError, yaml.YAMLError) as exc:
         raise KstdError(f"{MANIFEST}: not valid UTF-8 YAML ({exc})") from None
+    except RecursionError:
+        raise KstdError(f"{MANIFEST}: nested too deeply") from None
     if not isinstance(doc, dict):
         raise KstdError(f"{MANIFEST}: the top level must be a mapping")
     return doc
@@ -67,18 +85,42 @@ def _known(where: str, mapping: dict, allowed: set, errors: list) -> None:
 
 
 def _license_ok(value) -> bool:
+    """`unknown`, or an SPDX expression of ids and LicenseRef-… joined by AND/OR, with balanced parentheses.
+    WITH exceptions are not supported in kstd/0.2."""
     if value == "unknown":
         return True
-    if not isinstance(value, str) or not value.strip() or " WITH " in f" {value} ":
+    if not isinstance(value, str) or len(value) > 1000:
         return False
-    tokens = value.replace("(", " ").replace(")", " ").split()
-    for i, tok in enumerate(tokens):
-        if i % 2:  # operators between identifiers
-            if tok not in ("AND", "OR"):
+    tokens = value.replace("(", " ( ").replace(")", " ) ").split()
+    pos = 0
+
+    def term() -> bool:  # term := id | "(" expr ")"
+        nonlocal pos
+        if pos < len(tokens) and tokens[pos] == "(":
+            pos += 1
+            if not expr() or pos >= len(tokens) or tokens[pos] != ")":
                 return False
-        elif not (tok.removesuffix("+") in SPDX_IDS or LICENSE_REF.match(tok)):
+            pos += 1
+            return True
+        if pos < len(tokens) and (tokens[pos].removesuffix("+") in SPDX_IDS or LICENSE_REF.match(tokens[pos])):
+            pos += 1
+            return True
+        return False
+
+    def expr() -> bool:  # expr := term (("AND" | "OR") term)*
+        nonlocal pos
+        if not term():
             return False
-    return len(tokens) % 2 == 1
+        while pos < len(tokens) and tokens[pos] in ("AND", "OR"):
+            pos += 1
+            if not term():
+                return False
+        return True
+
+    try:
+        return expr() and pos == len(tokens)
+    except RecursionError:
+        return False
 
 
 def _yn(value):

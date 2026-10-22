@@ -1,13 +1,15 @@
-# kstd decision rule — conformance cases (draft 0.2, docs/11 §4).
+# kstd decision rule — conformance cases (draft 0.2, docs/11 §4–§5).
 # Each case: the inputs and the expected {result, authority, reasons, notices}.
-# A conforming implementation MUST return the same result, authority and reasons for every case.
+# A conforming implementation MUST return the same result, authority, reasons and notices for every case.
 
 base: &base
   now: 2026-11-01T00:00:00Z
   node: node:acme
+  policy_version: p1
   precedence: []
   trust:
-    - {issuer: node:partner, kinds: [acceptance, mandate, handling, status], scopes: [book:ops], max_status_age_days: 30}
+    - {issuer: node:partner, kinds: [acceptance, mandate, handling, status, hold], scopes: [book:ops],
+       actions: [read, infer, derive, forward, activate], expires: 2027-06-01T00:00:00Z, max_status_age_days: 30}
   policy:
     - {effect: permit, actions: [read, infer, derive, forward, activate], scopes: [book:ops], subjects: [user:ayse]}
   statements: &stmts
@@ -26,8 +28,15 @@ base: &base
     - {kind: mandate, about: i-imp, issuer: node:partner, issued_at: 2026-09-02T00:00:00Z, body: {}}
     - {kind: status, about: i-imp, issuer: node:partner, issued_at: 2026-10-25T00:00:00Z,
        body: {checked_at: 2026-10-25T00:00:00Z}}
+    - {id: i-new, kind: item, issuer: node:acme, issued_at: 2026-10-30T00:00:00Z,
+       body: {scope: book:ops, origin: model, rights: {license: CC-BY-4.0, personal_data: "no"}, applicability: {}}}
+    - {id: i-old, kind: item, issuer: node:acme, issued_at: 2026-01-01T00:00:00Z,
+       body: {scope: book:ops, origin: human, rights: {license: CC-BY-4.0, personal_data: "no"}, applicability: {}}}
+    - {kind: acceptance, about: i-old, issuer: node:acme, issued_at: 2026-10-10T00:00:00Z,
+       body: {value: withdrawn, terminal: superseded by policy 2026-10}}
 
 cases:
+  # --- rules 1-2: strictest result; no permission means deny ------------------------------------------------
   - name: own accepted mandated item in context is a rule
     rule: [1]
     <<: *base
@@ -40,6 +49,16 @@ cases:
     request: {actor: user:mehmet, action: read, item: i-own, want: evidence, context: {plant: "3"}}
     expect: {result: deny, authority: rule, reasons: [no-permission], notices: []}
 
+  - name: a prohibition overrides a permission
+    rule: [1]
+    <<: *base
+    policy:
+      - {effect: permit, actions: [read], scopes: [book:ops], subjects: [user:ayse]}
+      - {effect: prohibit, actions: [read], scopes: [book:ops], subjects: [user:ayse], purposes: [marketing]}
+    request: {actor: user:ayse, action: read, item: i-own, want: evidence, context: {}, purpose: marketing}
+    expect: {result: deny, authority: evidence, reasons: [prohibited], notices: []}
+
+  # --- rule 3: unknown rights deny; unknown applicability escalates ---------------------------------------
   - name: read does not permit train, and the item reserves training
     rule: [2, 3]
     <<: *base
@@ -58,72 +77,62 @@ cases:
     request: {actor: user:ayse, action: read, item: i-own, want: evidence, context: {}}
     expect: {result: permit, authority: evidence, reasons: [], notices: []}
 
-  - name: outside the conditions the item is evidence only
+  - name: a rule request outside the conditions escalates
     rule: [3]
     <<: *base
     request: {actor: user:ayse, action: read, item: i-own, want: rule, context: {plant: "7"}}
+    expect: {result: escalate, authority: evidence, reasons: [outside-conditions], notices: []}
+
+  - name: an evidence request outside the conditions is answered as evidence
+    rule: [3]
+    <<: *base
+    request: {actor: user:ayse, action: read, item: i-own, want: evidence, context: {plant: "7"}}
     expect: {result: permit, authority: evidence, reasons: [outside-conditions], notices: []}
 
-  - name: an imported item with a fresh status is a rule
-    rule: [6]
+  - name: a rule request outside the valid time escalates
+    rule: [3]
     <<: *base
-    request: {actor: user:ayse, action: read, item: i-imp, want: rule, context: {}}
-    expect: {result: permit, authority: rule, reasons: [], notices: []}
-
-  - name: an imported item with a stale status keeps only evidence authority
-    rule: [6]
-    <<: *base
-    now: 2026-12-15T00:00:00Z
-    request: {actor: user:ayse, action: read, item: i-imp, want: rule, context: {}}
-    expect: {result: permit, authority: evidence, reasons: [status-stale], notices: []}
-
-  - name: a source set to never expire keeps rule authority with a visible notice
-    rule: [6]
-    <<: *base
-    now: 2026-12-15T00:00:00Z
-    trust:
-      - {issuer: node:partner, kinds: [acceptance, mandate, handling, status], scopes: [book:ops], max_status_age_days: never}
-    request: {actor: user:ayse, action: read, item: i-imp, want: rule, context: {}}
-    expect: {result: permit, authority: rule, reasons: [], notices: [status-not-checked]}
-
-  - name: an untrusted withdrawal cannot remove accepted knowledge; it is a contest mark
-    rule: [8]
-    <<: *base
-    statements:
-      - *stmts
-      - [{kind: acceptance, about: i-own, issuer: node:stranger, issued_at: 2026-10-20T00:00:00Z, body: {value: withdrawn}}]
+    now: 2025-06-01T00:00:00Z
     request: {actor: user:ayse, action: read, item: i-own, want: rule, context: {plant: "3"}}
-    expect: {result: permit, authority: rule, reasons: [], notices: [contested-by:node:stranger]}
+    expect: {result: escalate, authority: evidence, reasons: [outside-valid-time], notices: []}
 
-  - name: two trusted issuers in conflict with no precedence escalate
-    rule: [5]
+  - name: an unknown license blocks derivation
+    rule: [3]
     <<: *base
     statements:
       - *stmts
-      - [{kind: acceptance, about: i-imp, issuer: node:acme, issued_at: 2026-10-20T00:00:00Z, body: {value: withdrawn}}]
-    request: {actor: user:ayse, action: read, item: i-imp, want: rule, context: {}}
-    expect: {result: escalate, authority: none, reasons: [conflict-no-precedence], notices: []}
+      - [{id: i-unk, kind: item, issuer: node:acme, issued_at: 2026-10-01T00:00:00Z,
+          body: {scope: book:ops, origin: model, rights: {license: unknown, personal_data: "no"}, applicability: {}}},
+         {kind: acceptance, about: i-unk, issuer: node:acme, issued_at: 2026-10-02T00:00:00Z, body: {value: accepted}}]
+    request: {actor: user:ayse, action: derive, item: i-unk, want: evidence, context: {}}
+    expect: {result: deny, authority: evidence, reasons: [rights-unknown], notices: []}
 
-  - name: the local precedence rule decides a conflict; the timestamp does not
-    rule: [5]
-    <<: *base
-    precedence: [node:partner, node:acme]
-    statements:
-      - *stmts
-      - [{kind: acceptance, about: i-imp, issuer: node:acme, issued_at: 2026-10-20T00:00:00Z, body: {value: withdrawn}}]
-    request: {actor: user:ayse, action: read, item: i-imp, want: rule, context: {}}
-    expect: {result: permit, authority: rule, reasons: [], notices: []}
-
-  - name: a hold suspends ordinary use until its review deadline
-    rule: [8]
+  - name: personal data unknown counts as yes, so forwarding needs a legal basis
+    rule: [3]
     <<: *base
     statements:
       - *stmts
-      - [{kind: hold, about: i-own, issuer: node:acme, issued_at: 2026-10-30T00:00:00Z,
-          body: {owner: user:ayse, review_by: 2026-11-07T00:00:00Z}}]
-    request: {actor: user:ayse, action: read, item: i-own, want: rule, context: {plant: "3"}}
-    expect: {result: permit, authority: none, reasons: [held], notices: []}
+      - [{id: i-pd, kind: item, issuer: node:acme, issued_at: 2026-10-01T00:00:00Z,
+          body: {scope: book:ops, origin: human, rights: {license: CC-BY-4.0, personal_data: unknown}, applicability: {}}},
+         {kind: acceptance, about: i-pd, issuer: node:acme, issued_at: 2026-10-02T00:00:00Z, body: {value: accepted}},
+         {kind: handling, about: i-pd, issuer: node:acme, issued_at: 2026-10-02T00:00:00Z, body: {export: normal, route: local_only}}]
+    request: {actor: user:ayse, action: forward, item: i-pd, want: evidence, context: {}, destination: node:partner}
+    expect: {result: deny, authority: evidence, reasons: [personal-data-basis-missing], notices: []}
 
+  - name: with a legal basis the same item can be forwarded
+    rule: [3]
+    <<: *base
+    statements:
+      - *stmts
+      - [{id: i-pd, kind: item, issuer: node:acme, issued_at: 2026-10-01T00:00:00Z,
+          body: {scope: book:ops, origin: human, rights: {license: CC-BY-4.0, personal_data: unknown}, applicability: {}}},
+         {kind: acceptance, about: i-pd, issuer: node:acme, issued_at: 2026-10-02T00:00:00Z, body: {value: accepted}},
+         {kind: handling, about: i-pd, issuer: node:acme, issued_at: 2026-10-02T00:00:00Z, body: {export: normal, route: local_only}}]
+    request: {actor: user:ayse, action: forward, item: i-pd, want: evidence, context: {}, destination: node:partner,
+              legal_basis: "GDPR Art. 6(1)(b)"}
+    expect: {result: permit, authority: evidence, reasons: [], notices: []}
+
+  # --- rule 4: tightening applies at once; loosening needs trust for kind x scope x action, with an expiry ---
   - name: an untrusted tightening of handling applies at once
     rule: [4]
     <<: *base
@@ -149,39 +158,149 @@ cases:
     request: {actor: user:ayse, action: forward, item: i-imp, want: evidence, context: {}, destination: node:other}
     expect: {result: deny, authority: rule, reasons: [handling-restricted], notices: []}
 
-  - name: an unknown license blocks derivation
-    rule: [3]
+  - name: trust for another action does not allow a loosening
+    rule: [4]
+    <<: *base
+    trust:
+      - {issuer: node:partner, kinds: [acceptance, mandate, status], scopes: [book:ops],
+         actions: [read, infer, derive, forward, activate], expires: 2027-06-01T00:00:00Z}
+      - {issuer: node:partner, kinds: [handling], scopes: [book:ops], actions: [read], expires: 2027-06-01T00:00:00Z}
+    statements:
+      - *stmts
+      - [{kind: handling, about: i-imp, issuer: node:partner, issued_at: 2026-10-20T00:00:00Z, body: {route: cloud_ok}}]
+    request: {actor: user:ayse, action: infer, item: i-imp, want: evidence, context: {}, destination: cloud}
+    expect: {result: deny, authority: rule, reasons: [route-local-only], notices: []}
+
+  - name: trust without an expiry is not trust
+    rule: [4]
+    <<: *base
+    trust:
+      - {issuer: node:partner, kinds: [acceptance, mandate, handling, status], scopes: [book:ops],
+         actions: [read, infer, derive, forward, activate]}
+    request: {actor: user:ayse, action: read, item: i-imp, want: rule, context: {}}
+    expect: {result: deny, authority: none, reasons: [not-accepted:pending], notices: []}
+
+  # --- rule 5: conflicts between trusted issuers -----------------------------------------------------------
+  - name: two trusted issuers in conflict with no precedence escalate
+    rule: [5]
     <<: *base
     statements:
       - *stmts
-      - [{id: i-unk, kind: item, issuer: node:acme, issued_at: 2026-10-01T00:00:00Z,
-          body: {scope: book:ops, origin: model, rights: {license: unknown, personal_data: "no"}, applicability: {}}}]
-    request: {actor: user:ayse, action: derive, item: i-unk, want: evidence, context: {}}
-    expect: {result: deny, authority: none, reasons: [not-accepted:pending, rights-unknown], notices: []}
+      - [{kind: acceptance, about: i-imp, issuer: node:acme, issued_at: 2026-10-20T00:00:00Z, body: {value: withdrawn}}]
+    request: {actor: user:ayse, action: read, item: i-imp, want: rule, context: {}}
+    expect: {result: escalate, authority: none, reasons: [conflict-no-precedence], notices: []}
 
-  - name: personal data unknown counts as yes, so forwarding needs a legal basis
-    rule: [3]
+  - name: the local precedence rule decides a conflict; the timestamp does not
+    rule: [5]
     <<: *base
+    precedence: [node:partner, node:acme]
     statements:
       - *stmts
-      - [{id: i-pd, kind: item, issuer: node:acme, issued_at: 2026-10-01T00:00:00Z,
-          body: {scope: book:ops, origin: human, rights: {license: CC-BY-4.0, personal_data: unknown}, applicability: {}}},
-         {kind: handling, about: i-pd, issuer: node:acme, issued_at: 2026-10-02T00:00:00Z, body: {export: normal, route: local_only}}]
-    request: {actor: user:ayse, action: forward, item: i-pd, want: evidence, context: {}, destination: node:partner}
-    expect: {result: deny, authority: none, reasons: [not-accepted:pending, personal-data-basis-missing], notices: []}
+      - [{kind: acceptance, about: i-imp, issuer: node:acme, issued_at: 2026-10-20T00:00:00Z, body: {value: withdrawn}}]
+    request: {actor: user:ayse, action: read, item: i-imp, want: rule, context: {}}
+    expect: {result: permit, authority: rule, reasons: [], notices: []}
 
-  - name: a permit bound to another version is stale
+  # --- rule 6: status freshness of imported items ----------------------------------------------------------
+  - name: an imported item with a fresh status is a rule
+    rule: [6]
+    <<: *base
+    request: {actor: user:ayse, action: read, item: i-imp, want: rule, context: {}}
+    expect: {result: permit, authority: rule, reasons: [], notices: []}
+
+  - name: an imported item with a stale status keeps only evidence authority
+    rule: [6]
+    <<: *base
+    now: 2026-12-15T00:00:00Z
+    request: {actor: user:ayse, action: read, item: i-imp, want: rule, context: {}}
+    expect: {result: permit, authority: evidence, reasons: [status-stale], notices: []}
+
+  - name: a source set to never expire keeps rule authority with a visible notice
+    rule: [6]
+    <<: *base
+    now: 2026-12-15T00:00:00Z
+    trust:
+      - {issuer: node:partner, kinds: [acceptance, mandate, handling, status], scopes: [book:ops],
+         actions: [read, infer, derive, forward, activate], expires: 2027-06-01T00:00:00Z, max_status_age_days: never}
+    request: {actor: user:ayse, action: read, item: i-imp, want: rule, context: {}}
+    expect: {result: permit, authority: rule, reasons: [], notices: [status-not-checked]}
+
+  # --- rule 7: a permit is bound to exact versions and has an expiry ---------------------------------------
+  - name: a permit for the same versions is still valid
     rule: [7]
     <<: *base
     request: {actor: user:ayse, action: read, item: i-own, want: evidence, context: {},
-              prior_permit: {item_version: i-own-v0, expires: 2026-12-01T00:00:00Z}}
+              prior_permit: {item_version: i-own, policy_version: p1, issued_at: 2026-10-15T00:00:00Z, expires: 2026-12-01T00:00:00Z}}
+    expect: {result: permit, authority: evidence, reasons: [], notices: []}
+
+  - name: a permit bound to another item version is stale
+    rule: [7]
+    <<: *base
+    request: {actor: user:ayse, action: read, item: i-own, want: evidence, context: {},
+              prior_permit: {item_version: i-own-v0, policy_version: p1, issued_at: 2026-10-15T00:00:00Z, expires: 2026-12-01T00:00:00Z}}
     expect: {result: deny, authority: evidence, reasons: [permit-stale], notices: []}
 
-  - name: a prohibition overrides a permission
-    rule: [1]
+  - name: a permit bound to another policy version is stale
+    rule: [7]
     <<: *base
-    policy:
-      - {effect: permit, actions: [read], scopes: [book:ops], subjects: [user:ayse]}
-      - {effect: prohibit, actions: [read], scopes: [book:ops], subjects: [user:ayse], purposes: [marketing]}
-    request: {actor: user:ayse, action: read, item: i-own, want: evidence, context: {}, purpose: marketing}
-    expect: {result: deny, authority: evidence, reasons: [prohibited], notices: []}
+    policy_version: p2
+    request: {actor: user:ayse, action: read, item: i-own, want: evidence, context: {},
+              prior_permit: {item_version: i-own, policy_version: p1, issued_at: 2026-10-15T00:00:00Z, expires: 2026-12-01T00:00:00Z}}
+    expect: {result: deny, authority: evidence, reasons: [permit-stale], notices: []}
+
+  - name: a permit issued before a later statement about the item is stale
+    rule: [7]
+    <<: *base
+    request: {actor: user:ayse, action: read, item: i-own, want: evidence, context: {},
+              prior_permit: {item_version: i-own, policy_version: p1, issued_at: 2026-10-01T12:00:00Z, expires: 2026-12-01T00:00:00Z}}
+    expect: {result: deny, authority: evidence, reasons: [permit-stale], notices: []}
+
+  - name: an expired permit is stale
+    rule: [7]
+    <<: *base
+    request: {actor: user:ayse, action: read, item: i-own, want: evidence, context: {},
+              prior_permit: {item_version: i-own, policy_version: p1, issued_at: 2026-10-15T00:00:00Z, expires: 2026-10-20T00:00:00Z}}
+    expect: {result: deny, authority: evidence, reasons: [permit-stale], notices: []}
+
+  # --- rule 8 and §5: availability --------------------------------------------------------------------------
+  - name: an untrusted withdrawal cannot remove accepted knowledge; it is a contest mark
+    rule: [8]
+    <<: *base
+    statements:
+      - *stmts
+      - [{kind: acceptance, about: i-own, issuer: node:stranger, issued_at: 2026-10-20T00:00:00Z, body: {value: withdrawn}}]
+    request: {actor: user:ayse, action: read, item: i-own, want: rule, context: {plant: "3"}}
+    expect: {result: permit, authority: rule, reasons: [], notices: [contested-by:node:stranger]}
+
+  - name: a hold stops ordinary use until its review deadline
+    rule: [8]
+    <<: *base
+    statements:
+      - *stmts
+      - [{kind: hold, about: i-own, issuer: node:acme, issued_at: 2026-10-30T00:00:00Z,
+          body: {owner: user:ayse, review_by: 2026-11-07T00:00:00Z}}]
+    request: {actor: user:ayse, action: read, item: i-own, want: rule, context: {plant: "3"}}
+    expect: {result: deny, authority: none, reasons: [held], notices: []}
+
+  - name: a pending item is not available for ordinary use
+    rule: [8]
+    <<: *base
+    request: {actor: user:ayse, action: read, item: i-new, want: evidence, context: {}}
+    expect: {result: deny, authority: none, reasons: [not-accepted:pending], notices: []}
+
+  - name: a pending item is available in the review view, without authority
+    rule: [8]
+    <<: *base
+    request: {actor: user:ayse, action: read, item: i-new, want: evidence, context: {}, view: review}
+    expect: {result: permit, authority: none, reasons: [], notices: []}
+
+  - name: a withdrawn item is not available for ordinary use
+    rule: [8]
+    <<: *base
+    request: {actor: user:ayse, action: read, item: i-old, want: evidence, context: {}}
+    expect: {result: deny, authority: none, reasons: [not-accepted:withdrawn], notices: []}
+
+  - name: a withdrawn item is available in the history view, without authority
+    rule: [8]
+    <<: *base
+    request: {actor: user:ayse, action: read, item: i-old, want: evidence, context: {}, view: history}
+    expect: {result: permit, authority: none, reasons: [], notices: []}

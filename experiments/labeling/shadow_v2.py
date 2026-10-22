@@ -77,14 +77,21 @@ def main() -> int:
     out_path = out_dir / f"{args.route}.jsonl"
     done = {json.loads(line)["id"] for line in out_path.read_text().splitlines()} if out_path.exists() else set()
     hosted = args.route not in LOCAL_ROUTES
-    allowed = None
-    if hosted:  # operator decision 2026-10-15: a hosted model sees only normal + cloud_ok documents, after the label
-        labels = store.latest(store.labels_v2_path)
-        allowed = {i for i, r in labels.items() if r["values"]["sensitivity"] == "normal"
-                   and r["values"]["egress"] == "cloud_ok" and not r["restricted"]}
-    extra = {} if hosted else {"max_len": 1024}
+
+    def cloud_ok(doc_id) -> bool:
+        """Operator decision 2026-10-15: a hosted model sees only documents whose CURRENT label is normal +
+        cloud_ok with no restricted section. Read again right before every outbound request (Astra review #8)."""
+        r = store.latest(store.labels_v2_path).get(doc_id)
+        return bool(r) and r["values"]["sensitivity"] == "normal" and r["values"]["egress"] == "cloud_ok" \
+            and not r["restricted"]
+
+    def send(doc_id, text, qs):
+        if hosted and not cloud_ok(doc_id):
+            raise PermissionError(f"{doc_id}: the label no longer allows a hosted model")
+        return ask(url, key, args.route, args.model, text, qs, {} if hosted else {"max_len": 1024})
+
     doc_q, sec_q = questions(store)
-    todo = [i for i in store.order if i not in store.excluded and i not in done and (allowed is None or i in allowed)]
+    todo = [i for i in store.order if i not in store.excluded and i not in done and (not hosted or cloud_ok(i))]
     if args.limit:
         todo = todo[:args.limit]
     for n, doc_id in enumerate(todo, 1):
@@ -96,12 +103,13 @@ def main() -> int:
         sections = v2.sections(path, full["text"], blind=False)["sections"]
         started = time.time()
         try:
-            answer = {"doc": ask(url, key, args.route, args.model, f"Path: {path}\n\n{full['text'][:DOC_CHARS]}",
-                                 doc_q, extra),
-                      "sections": {str(s["i"]): ask(url, key, args.route, args.model,
-                                                    f"Document: {path}\nSection: {s['heading']}\n\n"
-                                                    f"{s['text'][:SECTION_CHARS]}", sec_q, extra)["preset"]
+            answer = {"doc": send(doc_id, f"Path: {path}\n\n{full['text'][:DOC_CHARS]}", doc_q),
+                      "sections": {str(s["i"]): send(doc_id, f"Document: {path}\nSection: {s['heading']}\n\n"
+                                                             f"{s['text'][:SECTION_CHARS]}", sec_q)["preset"]
                                    for s in sections}}
+        except PermissionError as exc:
+            print(str(exc), file=sys.stderr)
+            continue
         except (urllib.error.URLError, OSError, KeyError, ValueError) as exc:
             print(f"{doc_id}: failed ({type(exc).__name__}: {getattr(exc, 'code', '')})", file=sys.stderr)
             continue
