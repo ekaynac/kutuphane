@@ -3,7 +3,7 @@ name = "kutuphane"
 version = "0.1.0"
 description = "Kütüphane Core: versioned, explainable knowledge access for people and agents"
 requires-python = ">=3.11"
-license = { text = "Proprietary — Mega Bilgisayar Tic. Ltd. Şti." }
+license = "Apache-2.0"
 dependencies = [
     "psycopg[binary]>=3.2,<4",
     "PyYAML>=6.0,<7",
