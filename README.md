@@ -1,7 +1,7 @@
 # Kütüphane
 
 Versioned, explainable knowledge access for people and LLM agents, on-prem and air-gapped.
-Decisions: `docs/01-direction-decisions.md`. Product: `docs/05`–`07`. Proprietary, see `LICENSE`.
+Decisions: `docs/01-direction-decisions.md`. Product: `docs/05`–`07`. Code: Apache-2.0 (`LICENSE`); specification text: CC-BY-4.0 (`NOTICE`).
 
 ## Development (M1a)
 
