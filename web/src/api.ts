@@ -3,7 +3,8 @@
 // kstd item information of a file (docs/11 §8); null when its book has no kstd.yaml.
 export type Item = {
   issuer: string;
-  origin: "human" | "model" | "unknown";
+  origin: "human" | "assisted" | "model" | "unknown";
+  reviewed_by: string | null; // set only for origin "assisted"
   license: string;
   holder: string | null;
   valid_from: string | null;
@@ -12,7 +13,8 @@ export type Item = {
   notices: string[];
   current: boolean;
 } | null;
-export type Hit = { citation: string; page: number | null; score: number; text: string; item?: Item };
+// text is null (with `withheld`) when the reader is a model and the item does not allow AI input.
+export type Hit = { citation: string; page: number | null; score: number; text: string | null; withheld?: string; item?: Item };
 export type Ref = { n: number; book: string; content_id: string; profile_id: string; path: string; ordinal: number; item?: Item };
 export type Answer = {
   id: string;
@@ -27,9 +29,9 @@ export type Reopened = {
   question: string;
   status: Answer["status"];
   body: string | null;
-  evidence: { n: number; citation: string; text: string | null }[];
+  evidence: { n: number; citation: string; text: string | null; withheld?: string; item?: Item }[];
 };
-export type Passage = { citation: string; page: number | null; text: string; item?: Item };
+export type Passage = { citation: string; page: number | null; text: string | null; withheld?: string; item?: Item };
 export type Me = { principal: string; on_behalf_of: string | null };
 
 export class ApiError extends Error {

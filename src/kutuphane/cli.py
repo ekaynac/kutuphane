@@ -318,7 +318,8 @@ def parser() -> argparse.ArgumentParser:
     ex_ = sub.add_parser("export", help="write a signed package of a book's current version (KUTUPHANE_SIGNING_KEY)")
     ex_.add_argument("book")
     ex_.add_argument("--out", required=True)
-    ex_.add_argument("--legal-basis", help="required when kstd.yaml marks files as personal data yes/unknown; "
+    ex_.add_argument("--legal-basis", help="DPV codes, e.g. eu-gdpr:A6-1-b (several: space separated); required "
+                     "when kstd.yaml marks files as personal data yes/unknown; "
                      "recorded in the signed package")
     ex_.set_defaults(fn=cmd_export)
     rc = sub.add_parser("receive", help="quarantine and verify a package; nothing is published")

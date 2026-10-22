@@ -140,17 +140,27 @@ def decide(case: dict) -> dict:
         results.append("deny"); reasons.append("prohibited")
     elif not any(r["effect"] == "permit" for r in rules):
         results.append("deny"); reasons.append("no-permission")  # rule 2
-    if action in ("derive", "train", "forward") and rights.get("license", "unknown") == "unknown":
-        results.append("deny"); reasons.append("rights-unknown")  # rule 3
-    ai_use = rights.get("ai_use", {})
-    if action == "train" and ai_use.get("train") != "y":
-        results.append("deny"); reasons.append("rights-reserved:train")
-    if action == "infer" and ai_use.get("ai_input") != "y":
-        results.append("deny"); reasons.append("rights-reserved:ai_input")
+    # §3 derive / §5 inputs: the rights of the item AND of every recorded input are checked for this use
+    inputs = body.get("inputs", [])
+    sources = [item] + [s for s in case["statements"] if s["kind"] == "item" and s["id"] in inputs]
+    if len(sources) - 1 < len(set(inputs)):
+        results.append("deny"); reasons.append("input-unknown")
+    for src in sources:
+        tag, src_rights = ("" if src is item else "input-"), src["body"].get("rights", {})
+        if action in ("derive", "train", "forward") and src_rights.get("license", "unknown") == "unknown":
+            results.append("deny"); reasons.append(f"{tag}rights-unknown")  # rule 3
+        ai_use = src_rights.get("ai_use", {})
+        if action == "train" and ai_use.get("train") != "y":
+            results.append("deny"); reasons.append(f"{tag}rights-reserved:train")
+        if action == "infer" and ai_use.get("ai_input") != "y":
+            results.append("deny"); reasons.append(f"{tag}rights-reserved:ai_input")
     if action == "forward":
         if handling_of(case, item["id"], scope, action, "export") == "restricted":
             results.append("deny"); reasons.append("handling-restricted")
-        if rights.get("personal_data", "unknown") != "no" and not req.get("legal_basis"):
+        personal = rights.get("personal_data", "unknown")
+        if personal == "synthetic" and not trusted(case, item["issuer"], "item", scope, action):
+            personal = "unknown"  # §5: only a trusted issuer can declare data synthetic
+        if personal not in ("no", "synthetic") and not req.get("legal_basis"):
             results.append("deny"); reasons.append("personal-data-basis-missing")
     if req.get("destination") == "cloud" and handling_of(case, item["id"], scope, action, "route") == "local_only":
         results.append("deny"); reasons.append("route-local-only")

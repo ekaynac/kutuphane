@@ -38,7 +38,7 @@ An artifact identity and a statement identity are separate. A correction of righ
 | `contest` | a dispute of an item, with a reason | a visible mark and a review; removes nothing |
 | `policy` | permissions and prohibitions on actions, with conditions; delegations | the input to the decision rule |
 | `status` | a signed, sequenced status stream of an issuer: withdrawals, holds, supersessions, with an expiry | freshness across nodes |
-| `receipt` | `use` (written by `deliver`) or `outcome` (signed by the actor; it references the `use` receipt) | audit; the trigger for reviews |
+| `use_record` | `use` (written by `deliver`) or `outcome` (signed by the actor; it references the `use` record). Not called "receipt": in SCITT a receipt is a log inclusion proof, and in DPV/ISO 27560 a consent record. | audit; the trigger for reviews |
 | `disposition` | an erasure: its scope, completion, exceptions and unresolved copies | honest erasure |
 
 A field outside this standard MUST NOT change a decision.
@@ -47,14 +47,14 @@ A field outside this standard MUST NOT change a decision.
 
 | Operation | Effect |
 |---|---|
-| **register** | Admit an artifact or a received statement. Verify the format, the identity and the signature. Assign **no** authority. A received status or receipt statement does not become an item. |
+| **register** | Admit an artifact or a received statement. Verify the format, the identity and the signature. Assign **no** authority. A received status or use record does not become an item. |
 | **derive** | Create an artifact from recorded inputs and a named process: summary, translation, embedding, consolidation, training. The new item lists its inputs. Its rights are checked per input for each proposed use (§5); its handling inherits the strictest input value. |
 | **attest** | Add a statement. A statement MUST NOT give powers that its issuer does not have. |
 | **decide** | Apply the decision rule (§4). Result: `permit`, `deny` or `escalate`, with a reason. |
-| **deliver** | Release content or metadata to a person, a model, a tool or a node, as typed data, with the required notices. Write a `use` receipt. |
+| **deliver** | Release content or metadata to a person, a model, a tool or a node, as typed data, with the required notices. Write a `use` record. |
 | **erase** | Execute a disposition. Remove the retained data and the recorded derivatives in its scope. Record completion, exceptions and unresolved copies. |
 
-**Transfer between nodes** is a composition: `deliver` to a node → `register` at the receiver → a `receipt`. A package is in quarantine until it passes registration and the receiver's acceptance policy.
+**Transfer between nodes** is a composition: `deliver` to a node → `register` at the receiver → a `use_record`. A package is in quarantine until it passes registration and the receiver's acceptance policy.
 
 **Actions** in policies: `read`, `infer`, `derive`, `train` (a kind of `derive`), `forward`, `activate`.
 - Reading an item never permits activating it.
@@ -79,10 +79,10 @@ The conformance test suite (a set of request → result cases) is part of the st
 
 | Property | Values | Behavior |
 |---|---|---|
-| **Origin** (`item`) | `human`, `model`, `unknown` (counts as `model`) | `deliver` shows it as a notice. Training or legal controls are profile policies, not core rules. |
+| **Origin** (`item`) | `human`, `assisted`, `model`, `unknown` (counts as `model`). `assisted` = model output that a named person (`reviewed_by`) reviewed and took editorial responsibility for. Mapping: IPTC Digital Source Type; W3C AI Content Disclosure `human-only` / `ai-assisted` / `ai-autonomous`. | `deliver` shows it as a notice. On export, `model` and `unknown` items are marked as AI-generated; `assisted` items are not marked and carry `reviewed_by` (EU AI Act Art. 50(4)). An `assisted` item gets authority only through acceptance, the same as a `model` item. Training or legal controls are profile policies, not core rules. |
 | **Inputs** (`item`) | statement ids | Used for checking the rights of a derivative, the reach of a withdrawal and the reach of poisoning. Repeated copies of one source do not count as independent evidence. A withdrawal reaches every *recorded* descendant and every node that checks status. |
-| **Rights** (`item`) | license (SPDX id or `unknown`); holder (a person or a collective); `ai_use`: `search`, `ai_input`, `train` = `y` / `n` (absent = `n`); a legal basis note | The license terms of each input are checked for each proposed use; they are not merged into one value. Licenses stay valid as granted; a withdrawal does not cancel an irrevocable license. `ai_use` maps to IETF AIPREF and TDMRep in a versioned mapping. |
-| **Personal data** (`item`) | `yes`, `no`, `unknown` (counts as `yes`) | `yes`: `forward` needs a recorded legal basis; the data is stored encrypted and is in the scope of erasure. Logs at receivers hold no personal data; the origin's log holds pseudonymized data and is in the scope of erasure. |
+| **Rights** (`item`) | license (SPDX id or `unknown`); holder (a person or a collective); `ai_use`: `search`, `ai_input`, `train` = `y` / `n` / absent | The license terms of each input are checked for each proposed use; they are not merged into one value. A package license does not replace an item license: an item with no license of its own stays `unknown`. Licenses stay valid as granted; a withdrawal does not cancel an irrevocable license. `ai_use` is stored with three states: an absent term is "not stated". **The decision treats an absent term as `n`**; an export writes it as absent, never as `n`. `ai_use` maps to IETF AIPREF, the ODRL AI profile and TDMRep in a versioned mapping (`train` covers generative and non-generative training). |
+| **Personal data** (`item`) | `yes`, `no`, `synthetic`, `unknown` (counts as `yes`); legal basis: one or more DPV codes (`eu-gdpr:A6-1-a`…`f`, `eu-gdpr:A9-2-a`…`j`) | `yes`: `forward` needs a recorded legal basis; the data is stored encrypted and is in the scope of erasure. `synthetic` (looks like personal data, describes no real person): no legal basis is needed, but only when the item issuer is trusted for `item` statements in the scope; from any other issuer it counts as `unknown`. Logs at receivers hold no personal data; the origin's log holds pseudonymized data and is in the scope of erasure. Categories use DPV PD. |
 | **Applicability** (`item`) | conditions, exclusions; observation time; valid time | Outside the conditions or the valid time: no rule authority, and `escalate` if the request needs authority. Dated evidence stays available with its date. |
 | **Acceptance** | `pending` (default), `accepted`, `suspended`, `withdrawn` | Only `accepted` is eligible for ordinary use. `suspended` stops ordinary use until fresh authorization or a successful status check. `withdrawn` is history. |
 | **Mandate** | present in a scope / absent | Only an accepted item with a mandate can be cited as a requirement. Without one, an accepted item is evidence. |
@@ -111,8 +111,8 @@ Each change records: trigger, actor, scope, reason, policy version, prior statem
 |---|---|---|
 | **L0 Described** | One manifest file (§8). Unsigned. A tool that ignores every field still reads the files. **Reading the bytes is not permission to use them.** A validator checks digests, SPDX ids, `ai_use` terms and dates. | Declared. `unknown` gives no permission. |
 | **L1 Verifiable** | Signed statements (DSSE) and packages, multihash, agile algorithms, revision checks, derive with inputs. | Bound to exact versions. |
-| **L2 Governed** | The decision rule with its test suite, acceptance, mandates, delegation, activation, handling, receipts, honest erasure, a tamper-evident append-only audit. Storage is free. | Enforced. |
-| **L3 Federated** | Signed status streams with a maximum age per source (as in TUF timestamps and OCSP stapling; the stream can travel in packages, so air-gapped nodes conform), withdrawal delivery, trust policy per issuer × kind × scope × action, receipt tracking. | Enforced across nodes. A controlled transfer needs an L2 receiver; a public release does not. |
+| **L2 Governed** | The decision rule with its test suite, acceptance, mandates, delegation, activation, handling, use records, honest erasure, a tamper-evident append-only audit. Storage is free. | Enforced. |
+| **L3 Federated** | Signed status streams with a maximum age per source (as in TUF timestamps and OCSP stapling; the stream can travel in packages, so air-gapped nodes conform), withdrawal delivery, trust policy per issuer × kind × scope × action, use-record tracking. | Enforced across nodes. A controlled transfer needs an L2 receiver; a public release does not. |
 
 **Profiles** (outside the core, versioned): mappings (SWHID, IPTC, PROV-O, Web Annotation, ODRL, Croissant, Agent Skills, AIPREF/TDMRep), compliance (GDPR, AI Act Art. 50/53, DSM Directive), obligations, outcome ranking, labels, block and claim extraction, transparency witnesses. A conformance badge never claims legal compliance.
 
@@ -125,18 +125,19 @@ issued: 2026-10-20
 rights:                                  # default for every item
   license: CC-BY-4.0                     # SPDX id, or unknown
   holder: "ACME GmbH"
-  ai_use: {search: y, ai_input: y, train: n}   # absent = n
-  personal_data: no                      # yes | no | unknown (= yes)
+  ai_use: {search: y, ai_input: y, train: n}   # absent = not stated; a decision treats it as n
+  personal_data: no                      # yes | no | synthetic | unknown (= yes)
 notices: ["Attribution: ACME GmbH, 2026"]
 items:
   - path: procedures/pressure-test.md
     digest: sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
-    origin: human                        # human | model | unknown (= model)
+    origin: human                        # human | assisted | model | unknown (= model)
     valid_from: 2026-01-01
     applies_to: "Plant 3, line A"
   - path: notes/weekly-summary.md
     digest: sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-    origin: model
+    origin: assisted                     # a model wrote it; a named person reviewed it
+    reviewed_by: "Ayşe Yılmaz <ayse@acme.example>"
     rights: {personal_data: unknown}     # overrides the default
 ```
 
@@ -150,7 +151,7 @@ Five different things have different licenses:
 | The code (Kütüphane, validator, decision rule, test suite, package tools) | an open-source license; proposal: Apache-2.0 | Permissive, with a patent grant, as used by MCP and OpenFGA. |
 | **Knowledge content** (artifacts) | **chosen by each issuer**, declared in `rights.license` | The standard never imposes a license on content. `unknown` gives no permission. |
 | **Statements and manifests** (metadata) | recommended default: CC0-1.0, unless the issuer declares otherwise | Metadata must flow freely, so that receivers can check rights and status (as Wikidata and Europeana do for metadata). A statement contains no content. |
-| Receipts and audit logs | not shared by default | They are local records, and they can contain personal data. |
+| Use records and audit logs | not shared by default | They are local records, and they can contain personal data. |
 
 ## 10. Operator decisions (2026-10-20)
 
@@ -171,6 +172,7 @@ Five different things have different licenses:
   - D4: artifact and statement identities, package for transfer.
   - D5: own `ai_use` terms, mapped to AIPREF and TDMRep.
   - D6: `use` and `outcome` receipts.
+  - D60 (2026-10-22, after the landscape study `docs/13`): origin `assisted` with `reviewed_by`; personal data `synthetic`; three-state `ai_use`; legal basis as DPV codes; `receipt` renamed to `use_record`.
 - **Added:** the decision rule (§4) and its test suite, reversals for every transition, behaviors for personal data and handling, the L0 example.
 - **Corrected:**
   - rights are not merged into one value;
