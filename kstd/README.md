@@ -5,6 +5,7 @@ The specification draft is `docs/11-standard-draft.md`. This folder holds the pa
 | Path | Purpose |
 |---|---|
 | `tests/decision/cases.yaml` | Conformance cases for the decision rule (§4): inputs and the expected `result`, `authority`, `reasons`, `notices`. A conforming implementation MUST give the same output for every case. |
+| `tests/erasure/cases.yaml`, `reference/erase.py` | Conformance cases for the reach of an erasure (§3 `erase`, §5 Inputs): erased, kept, unresolved copies at other nodes, derived items with unknown scope. |
 | `reference/decide.py` | A small reference evaluator. It proves that the cases are consistent. It is not a product component. |
 | `reference/test_cases.py` | Runs the cases: `cd kstd/reference && python -m pytest`. |
 

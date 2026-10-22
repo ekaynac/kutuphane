@@ -129,7 +129,7 @@ cases:
          {kind: acceptance, about: i-pd, issuer: node:acme, issued_at: 2026-10-02T00:00:00Z, body: {value: accepted}},
          {kind: handling, about: i-pd, issuer: node:acme, issued_at: 2026-10-02T00:00:00Z, body: {export: normal, route: local_only}}]
     request: {actor: user:ayse, action: forward, item: i-pd, want: evidence, context: {}, destination: node:partner,
-              legal_basis: "GDPR Art. 6(1)(b)"}
+              legal_basis: "eu-gdpr:A6-1-b"}
     expect: {result: permit, authority: evidence, reasons: [], notices: []}
 
   # --- rule 4: tightening applies at once; loosening needs trust for kind x scope x action, with an expiry ---
