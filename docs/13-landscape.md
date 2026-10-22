@@ -146,4 +146,4 @@ Groups to watch, with no contribution now:
 5. **OKF:** Will the core accept a `rights` family and a content digest? What does an absent value permit?
 6. **in-toto #67:** Is the authority to revoke a policy question or a predicate field?
 
-**Corrections after the contribution briefs (2026-10-22):** the rows for groups 2, 4 and 5 above were corrected. `docs/14-contributions.md` has the current, per-group plan.
+**D61 (2026-10-22): contributions are on hold until Kütüphane is used on real work projects.** **Corrections after the contribution briefs (2026-10-22):** the rows for groups 2, 4 and 5 above were corrected. `docs/14-contributions.md` has the current, per-group plan.
