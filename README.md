@@ -22,6 +22,9 @@ export KUTUPHANE_TEST_DSN="${KUTUPHANE_DSN}_test"
 .venv/bin/kutuphane show ornek
 ```
 
+A folder can carry a `kstd.yaml` manifest (the kstd standard, L0): rights, origin and validity of its files, which
+Kütüphane then enforces and shows. See `kstd/README.md` (`kutuphane kstd-init`, `kutuphane kstd-check`).
+
 Disk encryption is a deployment requirement at the volume level (D48); the application does not encrypt.
 
 Run the API + MCP server (M1e) behind the ingress proxy, with core isolated on an internal network:

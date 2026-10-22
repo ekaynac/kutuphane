@@ -12,7 +12,7 @@ import uuid
 
 from psycopg.types.json import Jsonb
 
-from . import gate, llmdap, retrieval, search
+from . import gate, kstd, llmdap, retrieval, search
 from .gate import Actor, Denied, NotFound
 
 NOT_IN_LIBRARY = "KÜTÜPHANEDE_YOK"
@@ -69,9 +69,12 @@ def _needs(actor: Actor, sources: list[dict], instruction_of) -> dict:
 
 def ask(conn, bridge: llmdap.Bridge, actor: Actor, question: str, *, model: str, k: int = search.DEFAULT_K,
         stages: retrieval.Stages = retrieval.Stages()) -> dict:
-    hits = retrieval.retrieve(conn, actor, question, k, stages)
+    found = retrieval.retrieve(conn, actor, question, k, stages)
+    rights = kstd.Rights(conn)  # kstd: a passage whose rights do not allow ai_input never reaches the answer model
+    hits = [h for h in found if rights.allows(h.citation.book, h.citation.content_id, h.citation.path, "ai_input")]
+    withheld = len(found) - len(hits)
     if not hits:
-        return _store(conn, actor, question, "not_in_library", None, [], [], None)
+        return {**_store(conn, actor, question, "not_in_library", None, [], [], None), "withheld": withheld}
     sources = [_ref(n, h) for n, h in enumerate(hits, start=1)]
     passages = "\n\n".join(f"[{n}] ({h.citation.book}/{h.citation.path})\n{h.text}" for n, h in enumerate(hits, 1))
     messages = [{"role": "system", "content": SYSTEM},
@@ -87,7 +90,8 @@ def ask(conn, bridge: llmdap.Bridge, actor: Actor, question: str, *, model: str,
     gate.check_many(conn, actor, _needs(actor, sources, lambda ref: _is_instruction_chunk(conn, ref)),
                     action="answer", items={f"book:{r['book']}": [_handle(c) for c in cited if c["book"] == r["book"]]
                                             for r in sources})
-    return _store(conn, actor, question, status, body if status == "answered" else None, cited, sources, model)
+    stored = _store(conn, actor, question, status, body if status == "answered" else None, cited, sources, model)
+    return {**stored, "withheld": withheld}
 
 
 def _chunk(conn, ref):

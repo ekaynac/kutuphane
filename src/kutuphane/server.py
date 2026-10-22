@@ -25,7 +25,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import answers, db, feedback, gate, identity, llmdap, retrieval, search
+from . import answers, db, feedback, gate, identity, kstd, llmdap, retrieval, search
 from .gate import Actor
 from .ids import normalize_path
 
@@ -56,24 +56,39 @@ def _run(dsn, fn):
         return fn(conn)
 
 
+def _with_items(conn, refs: list[dict]) -> list[dict]:
+    """kstd item information (origin, license, validity, notices) of each cited file; None without a manifest."""
+    rights = kstd.Rights(conn)
+    return [{**r, "item": rights.info(r["book"], r["content_id"], r["path"])} for r in refs]
+
+
 def op_search(dsn, stages, actor: Actor, query: str, k: int) -> list[dict]:
     def go(conn):
         if not isinstance(query, str) or not query.strip() or len(query) > search.MAX_QUERY_CHARS:
             raise BadRequest(f"query must be 1..{search.MAX_QUERY_CHARS} characters")  # before any model call
-        return retrieval.retrieve(conn, actor, query, k, stages)
-    hits = _run(dsn, go)
-    return [{"citation": h.citation.handle, "page": h.page, "score": round(h.score, 4), "text": h.text} for h in hits]
+        hits, rights = retrieval.retrieve(conn, actor, query, k, stages), kstd.Rights(conn)
+        return [{"citation": h.citation.handle, "page": h.page, "score": round(h.score, 4), "text": h.text,
+                 "item": rights.info(h.citation.book, h.citation.content_id, h.citation.path)} for h in hits]
+    return _run(dsn, go)
 
 
 def op_citation(dsn, actor: Actor, handle: str) -> dict:
-    hit = _run(dsn, lambda c: search.open_citation(c, actor, parse_citation(handle)))
-    return {"citation": hit.citation.handle, "page": hit.page, "text": hit.text}
+    def go(conn):
+        hit = search.open_citation(conn, actor, parse_citation(handle))
+        c = hit.citation
+        return {"citation": c.handle, "page": hit.page, "text": hit.text,
+                "item": kstd.Rights(conn).info(c.book, c.content_id, c.path)}
+    return _run(dsn, go)
 
 
 def op_ask(dsn, bridge, model: str, stages, actor: Actor, question: str) -> dict:
     if not isinstance(question, str) or not question.strip():
         raise BadRequest("question is required")
-    return _run(dsn, lambda c: answers.ask(c, bridge, actor, question, model=model, stages=stages))
+
+    def go(conn):
+        out = answers.ask(conn, bridge, actor, question, model=model, stages=stages)
+        return {**out, "citations": _with_items(conn, out["citations"])}
+    return _run(dsn, go)
 
 
 def op_reopen(dsn, actor: Actor, answer_id: str) -> dict:

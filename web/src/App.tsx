@@ -1,5 +1,22 @@
 import { useEffect, useRef, useState } from "react";
-import { Answer, ApiError, Hit, Me, Passage, Reopened, api, describe, loadToken, refHandle, saveToken } from "./api";
+import { Answer, ApiError, Hit, Item, Me, Passage, Reopened, api, describe, loadToken, refHandle, saveToken } from "./api";
+
+const ORIGIN: Record<string, string> = { human: "insan", model: "model", unknown: "köken bilinmiyor" };
+
+// kstd item information as one line: origin, license, validity, applicability, notices.
+function ItemLine({ item }: { item?: Item }) {
+  if (!item) return null;
+  const valid = item.valid_from || item.valid_to ? ` · geçerli ${item.valid_from ?? "…"}–${item.valid_to ?? "…"}` : "";
+  return (
+    <span className="meta item-line">
+      {ORIGIN[item.origin] ?? item.origin} · lisans {item.license}
+      {valid}
+      {item.current ? "" : " · güncel değil"}
+      {item.applies_to ? ` · ${item.applies_to}` : ""}
+      {item.notices.length ? ` · ${item.notices.join("; ")}` : ""}
+    </span>
+  );
+}
 
 // Model output is shown as plain text: no Markdown, no HTML, no images (Astra review #3). Only [n] becomes a button.
 function AnswerBody({ body, onCite }: { body: string; onCite: (n: number) => void }) {
@@ -37,6 +54,7 @@ function PassagePanel({ passage, onClose }: { passage: Passage; onClose: () => v
         </button>
       </header>
       <pre className="passage-text">{passage.text}</pre>
+      <ItemLine item={passage.item} />
       <footer className="meta">Bu pasaj atıf yapılan sürümden, güncel yetkinizle açıldı.</footer>
     </aside>
   );
@@ -183,6 +201,11 @@ function Workspace({ token, onSignOut }: { token: string; onSignOut: () => void 
                   Kütüphanede bu soruyu dayanaklı biçimde cevaplayan bir kaynak yok. Uydurma bir cevap üretilmedi.
                 </p>
               )}
+              {"withheld" in answer && answer.withheld ? (
+                <div className="meta">
+                  {answer.withheld} pasaj, kullanım hakları yapay zekâ girdisine izin vermediği için modele gönderilmedi.
+                </div>
+              ) : null}
               <div className="meta">Cevap kimliği: {answer.id}</div>
             </section>
           )}
@@ -200,6 +223,7 @@ function Workspace({ token, onSignOut }: { token: string; onSignOut: () => void 
                           {d.book} · sürüm {d.version}
                         </span>
                         <span className="snippet">{h.text.slice(0, 280)}</span>
+                        <ItemLine item={h.item} />
                       </button>
                     </li>
                   );

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from psycopg.types.json import Jsonb
 
-from . import ids, profiles
+from . import ids, kstd, profiles
 from .policy import check_policy
 from .source import SourceFile
 
@@ -36,7 +36,9 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
     policy_id = ids.policy_id(policy)
     profile = profiles.check_profile(profile)
     profile_id = ids.profile_id(profile)
-    chunks = [c for f in files for c in profiles.split(profile, f)]
+    manifest = kstd.validate(files)  # a folder with kstd.yaml follows it; an invalid manifest blocks publication
+    searchable = [f for f in files if manifest is None or kstd.allows(kstd.effective(manifest, f.path), "search")]
+    chunks = [c for f in searchable for c in profiles.split(profile, f)]
     fts = profile["settings"]["fts"]
     with conn.transaction():
         conn.execute("INSERT INTO book (slug, title) VALUES (%s, %s) ON CONFLICT (slug) DO NOTHING", (book, title))
