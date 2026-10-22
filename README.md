@@ -35,6 +35,14 @@ KUTUPHANE_OIDC_JWKS_FILE=<jwks.json> docker compose --profile app up -d --build
 docker compose --profile app exec -T core python -I - < deploy/egress_probe.py   # AT-10 network check
 ```
 
+Real local models (D61; nothing leaves the machine): Qwen3.8-27B on the host's vLLM for answers, bge-m3 and
+bge-reranker-v2-m3 on CPU for vectors and reranking. Download the pinned weights once (`deploy/llmdap/README.md`), then:
+
+```sh
+docker compose -f compose.yaml -f deploy/compose.local-models.yaml \
+  --profile app --profile decision-models --profile local-models up -d --build
+```
+
 Identity and egress (M1c) are configured by environment:
 `KUTUPHANE_OIDC_ISSUER`, `KUTUPHANE_OIDC_AUDIENCE`, `KUTUPHANE_OIDC_JWKS` (path to a JWKS file);
 `KUTUPHANE_LLMDAP_URL`, `KUTUPHANE_LLMDAP_KEY` (Core's LLMDAP subject key; LLMDAP runs with
