@@ -13,16 +13,15 @@ import io
 import re
 from bisect import bisect_right
 from dataclasses import dataclass
-from html.parser import HTMLParser
 from importlib.metadata import version
 
 from pypdf import PdfReader
 
 from .agentfiles import is_instruction
-from .source import CSV, HTML, JSONL, MARKDOWN, PDF, TEXT_TYPES, SourceFile, normalize_text
+from .source import CSV, HTML, JSONL, MARKDOWN, PDF, TEXT_TYPES, SourceFile, extracted_text
 
 READER_VERSION = 3  # 3: G1 text formats, G3 quarantine, G5 agent folders. Bump when source.py's classification changes.
-CHUNKER_VERSION = 3  # 3: per-format cutting, line numbers, cuts prefer line ends. Any change to cutting bumps this.
+CHUNKER_VERSION = 4  # 4: lines end only at "\n" (U+2028 inside a JSONL string is not a record end). Any change bumps this.
 TARGET_CHARS = 1200
 FTS_CONFIG = "turkish"  # Postgres text search configuration; part of the profile id
 MAX_CHUNK_CHARS = 4 * TARGET_CHARS  # a single huge block is cut at whitespace, so nothing escapes the index
@@ -59,59 +58,13 @@ class Chunk:
     line: int | None = None  # text files: 1-based line the passage starts on (JSONL: the record's line)
 
 
-class _VisibleText(HTMLParser):
-    """Text a reader sees: no script/style/template content, no comments; block elements become paragraphs."""
-    HIDDEN = frozenset({"script", "style", "template"})
-    BLOCKS = frozenset({"address", "article", "aside", "blockquote", "caption", "dd", "details", "div", "dl", "dt",
-                        "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr",
-                        "li", "main", "nav", "ol", "p", "pre", "section", "summary", "table", "td", "th", "title",
-                        "tr", "ul"})
-
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.parts, self.hidden, self.pre = [], 0, 0
-
-    def handle_starttag(self, tag, attrs):
-        if tag in self.HIDDEN:
-            self.hidden += 1
-        elif tag == "br":
-            self.parts.append("\n")
-        elif tag in self.BLOCKS:
-            self.pre += tag == "pre"
-            self.parts.append("\n\n")
-
-    def handle_startendtag(self, tag, attrs):
-        if tag not in self.HIDDEN:
-            self.handle_starttag(tag, attrs)
-
-    def handle_endtag(self, tag):
-        if tag in self.HIDDEN:
-            self.hidden = max(0, self.hidden - 1)
-        elif tag in self.BLOCKS:
-            self.pre = max(0, self.pre - (tag == "pre"))
-            self.parts.append("\n\n")
-
-    def handle_data(self, data):
-        if not self.hidden:
-            self.parts.append(data if self.pre else re.sub(r"\s+", " ", data))
-
-
-def html_text(source: str) -> str:
-    parser = _VisibleText()
-    parser.feed(source)
-    parser.close()
-    text = re.sub(r"[ \t]*\n[ \t]*", "\n", "".join(parser.parts))
-    return re.sub(r"\n{3,}", "\n\n", text).strip("\n") + "\n"
-
-
 def _pages(f: SourceFile) -> list[tuple[int | None, str]]:
     if f.quarantine:
         return []
     if f.media_type == PDF:
         return [(n, page.extract_text() or "") for n, page in enumerate(PdfReader(io.BytesIO(f.data)).pages, 1)]
     if f.media_type in _TEXT:
-        text = normalize_text(f.data.decode("utf-8"))
-        return [(None, html_text(text) if f.media_type == HTML else text)]
+        return [(None, extracted_text(f.media_type, f.data.decode("utf-8")))]  # the text source.py scanned
     return []  # other assets are stored and citable as files, not searched
 
 
@@ -125,30 +78,33 @@ def _frontmatter_end(text: str) -> int:
     return len(text) if close < 0 else close + 1
 
 
+def _lines(text: str):
+    """(offset, line) with its line end. A line ends only at "\\n" (text is normalized, so "\\r\\n" is one end too),
+    never at the other characters str.splitlines() breaks on: U+2028 or U+0085 inside a JSON string is content.
+    Citation line numbers (split's `line_of`) count the same "\\n"."""
+    for m in re.finditer(r"[^\n]*\n|[^\n]+\Z", text):
+        yield m.start(), m.group()
+
+
 def _paragraph_spans(text: str, base: int, headings: bool) -> list[tuple[int, int]]:
     """Blank-line separated blocks; with `headings` (markdown), a heading line always starts a new block."""
-    spans, start, i = [], None, 0
-    for line in text.splitlines(keepends=True):
+    spans, start, end = [], None, 0
+    for i, line in _lines(text):
         blank, heading = not line.strip(), headings and line.lstrip().startswith("#")
         if (blank or heading) and start is not None:
             spans.append((start, i))
             start = None
         if not blank and start is None:
             start = i
-        i += len(line)
+        end = i + len(line)
     if start is not None:
-        spans.append((start, i))
+        spans.append((start, end))
     return [(base + s, base + e) for s, e in spans]
 
 
 def _line_spans(text: str, base: int) -> list[tuple[int, int]]:
     """One span per non-blank line (a CSV row, a JSONL record), line end included."""
-    spans, i = [], 0
-    for line in text.splitlines(keepends=True):
-        if line.strip():
-            spans.append((base + i, base + i + len(line)))
-        i += len(line)
-    return spans
+    return [(base + i, base + i + len(line)) for i, line in _lines(text) if line.strip()]
 
 
 def _cap(spans: list[tuple[int, int]], text: str) -> list[tuple[int, int]]:

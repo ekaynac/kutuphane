@@ -33,7 +33,16 @@ What `ingest` takes from a folder (`src/kutuphane/source.py`, `profiles.py`, `ag
   report it in `quarantined` (and on stderr), `show` lists it. The version that fixes the file indexes it.
 - **Refused (the whole book):** an invalid `kstd.yaml`; a symlink, a path or size violation; markdown that is not
   UTF-8 or has invalid frontmatter; a credential-like file name (`credentials.json`, `*.env`, `id_rsa`, key stores,
-  `settings.local.json`) or credential-like text (keys, tokens, passwords, private key blocks).
+  `settings.local.json`) or credential-like text (keys, tokens, passwords, private key blocks). The scan reads the
+  original text and the extracted text that is cut into passages (HTML with entities decoded, PDF text layers),
+  JSON/JSONL key-value pairs with escapes decoded, and quoted literals whatever characters they hold. Placeholders
+  (`${PASSWORD}`, `<your-key>`, `changeme`) and semantic constants (`token: refresh_token`) are not credentials. The
+  error names the path, the line and the rule (e.g. `assigned-credential`, `api-key`), never the matched text.
+- **A reviewed false positive** can be accepted, narrowly: `ingest … --accept-finding <path>@sha256:<digest>:<rule>`
+  (repeatable; `<digest>` is `sha256sum <file>`). It covers that rule's findings in exactly that file content; a
+  changed file has another digest and is refused again, and an acceptance that matches no finding refuses the
+  ingest. Accepted findings are recorded in the publication (`accepted_findings` in the result and in `show`) and
+  printed on stderr. Package receipt accepts nothing: the receiving node scans again.
 - **Hidden paths** stay out (`.git/`, `.env*`, dotfiles), except the agent folders `.claude/` (`agents`,
   `commands`, `rules`, `skills`, `hooks`, and `CLAUDE.md`), `.cursor/rules/`, `.github/` (`copilot-instructions.md`,
   `instructions/`, `prompts/`, `agents/`, `chatmodes/`), `.agents/` and `.codex/`.

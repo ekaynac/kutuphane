@@ -1,4 +1,5 @@
 """AT-01: ingest and version ids (docs/07 §4)."""
+import hashlib
 import os
 import time
 
@@ -7,7 +8,7 @@ import pytest
 from conftest import make_pdf
 from kutuphane import catalog, db, profiles
 from kutuphane.policy import PolicyError, make_policy
-from kutuphane.source import SourceError, read_file, read_source
+from kutuphane.source import AcceptedFinding, SourceError, read_file, read_source
 
 POLICY = make_policy(sensitivity="normal", egress="local_only", protection="standard")
 
@@ -162,6 +163,11 @@ def test_symlinks_are_not_followed(okf_dir):
     ("credentials.json", "{}\n"),
     ("ayar/settings.local.json", "{}\n"),
     ("prod.env", "X=1\n"),
+    ("config.json", '{"password": "A9b8C7d6E5f4G3h2"}\n'),                       # Astra #9: quoted JSON key
+    (".codex/config.json", '{"pass\\u0077ord": "\\u0041\\u0039b8C7d6E5f4G3h2"}\n'),  # escaped key and value
+    ("kayitlar.jsonl", '{"id": 1}\n{"api_key": "Zq9!x.y-Uzun-Gizli"}\n'),         # a JSONL record
+    ("config.py", 'password = "aB3!very.secret-password"\n'),                    # a literal with punctuation
+    ("sayfa.html", "<p>api_key: &#115;k-proj-abcdefghijklmnopqrstuvwx</p>\n"),   # decoded only by extraction
 ])
 def test_a_secret_blocks_the_whole_book(conn, okf_dir, rel, text):  # security refusals stay book-level (G3)
     (okf_dir / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -171,13 +177,86 @@ def test_a_secret_blocks_the_whole_book(conn, okf_dir, rel, text):  # security r
     assert catalog.book_state(conn, "kitap") is None
 
 
-@pytest.mark.parametrize("text", [
-    "token = request.headers.get('Authorization')\n", "api_key: ${API_KEY}\n", "password: <redacted>\n",
-    "GATEWAY_AUTH_MODE=subject-keys\n", "author: claude-opus-4-5\n", "Bu belge token: kavramını anlatır.\n",
+@pytest.mark.parametrize("name,text", [
+    ("belge.md", "token = request.headers.get('Authorization')\n"), ("belge.md", "api_key: ${API_KEY}\n"),
+    ("belge.md", "password: <redacted>\n"), ("belge.md", "GATEWAY_AUTH_MODE=subject-keys\n"),
+    ("belge.md", "author: claude-opus-4-5\n"), ("belge.md", "Bu belge token: kavramını anlatır.\n"),
+    ("ayar.yaml", "token: refresh_token\n"), ("ayar.yaml", "password: ${PASSWORD}\n"),   # Astra #9: semantic
+    ("ayar.yaml", "api_key: <your-key>\n"), ("ayar.yaml", "secret: changeme\n"),         # constants, placeholders
+    ("oauth.json", '{"grant_type": "refresh_token", "token": "refresh_token", "tokenizer": "./models/tok"}\n'),
+    ("istemci.py", 'auth = "https://login.example.com/oauth"\npassword = "Parolanızı girin"\n'),
 ])
-def test_ordinary_text_is_not_a_secret(tmp_path, text):
-    (tmp_path / "belge.md").write_text(text, encoding="utf-8")
+def test_ordinary_text_is_not_a_secret(tmp_path, name, text):
+    (tmp_path / name).write_text(text, encoding="utf-8")
     assert read_source(tmp_path)
+
+
+def test_a_finding_names_path_line_and_rule_never_the_value():  # Astra #9
+    with pytest.raises(SourceError) as raised:
+        read_file("ayar/config.json", b'{\n  "user": "app",\n  "password": "A9b8C7d6E5f4G3h2"\n}\n')
+    assert "ayar/config.json: " in str(raised.value) and "line 3 (assigned-credential)" in str(raised.value)
+    assert "A9b8C7d6E5f4G3h2" not in str(raised.value)
+    with pytest.raises(SourceError) as raised:
+        read_file("sayfa.html", b"<h1>Kurulum</h1>\n<p>api_key: &#115;k-proj-abcdefghijklmnopqrstuvwx</p>\n")
+    assert "of the extracted text (api-key)" in str(raised.value) and "abcdefghijklmnop" not in str(raised.value)
+
+
+SECRET_DOC = "Örnek anahtar: AKIAIOSFODNN7EXAMPLE\ndb_password: s3cr3tW0rd2026\n"  # aws-access-key, assigned-credential
+
+
+def _accept(path, data, rule):
+    return AcceptedFinding.parse(f"{path}@sha256:{hashlib.sha256(data).hexdigest()}:{rule}")
+
+
+def test_accepted_finding_is_narrow_and_on_record(conn, okf_dir):  # Astra #9: a reviewed, auditable exception
+    doc = okf_dir / "belgeler" / "ornek.md"
+    doc.parent.mkdir()
+    doc.write_text(SECRET_DOC, encoding="utf-8")
+    data = doc.read_bytes()
+    aws, assigned = (_accept("belgeler/ornek.md", data, r) for r in ("aws-access-key", "assigned-credential"))
+    with pytest.raises(SourceError, match=r"line 2 \(assigned-credential\)"):  # one rule accepted, not the other
+        read_source(okf_dir, [aws])
+    with pytest.raises(SourceError, match="matches no finding"):               # a rule that does not fire
+        read_source(okf_dir, [aws, assigned, _accept("belgeler/ornek.md", data, "jwt")])
+    with pytest.raises(SourceError, match="matches no finding"):               # another file's acceptance
+        read_source(okf_dir, [aws, assigned, _accept("index.md", data, "jwt")])
+    files = read_source(okf_dir, [aws, assigned])
+    r = catalog.publish(conn, book="kitap", title="kitap", files=files, policy=POLICY, profile=catalog.whole_profile())
+    record = [{"path": "belgeler/ornek.md", "sha256": hashlib.sha256(data).hexdigest(), "rule": rule}
+              for rule in ("assigned-credential", "aws-access-key")]
+    assert r.accepted_findings == record
+    assert catalog.book_state(conn, "kitap")["publications"][-1]["accepted_findings"] == record
+
+    doc.write_text(SECRET_DOC + "Yeni satır.\n", encoding="utf-8")            # a changed file needs a new review
+    with pytest.raises(SourceError, match=r"belgeler/ornek\.md: looks like it holds a credential: line 1"):
+        read_source(okf_dir, [aws, assigned])
+
+
+@pytest.mark.parametrize("spec", ["a.md@sha256:abc:jwt", "a.md:jwt", f"a.md@sha256:{'0' * 64}:password",
+                                  f"../a.md@sha256:{'0' * 64}:jwt"])
+def test_accept_finding_syntax_is_strict(spec):
+    with pytest.raises(ValueError):
+        AcceptedFinding.parse(spec)
+
+
+def test_cli_accept_finding(conn, okf_dir, monkeypatch, capsys):  # Astra #9: on stdout, stderr and in `show`
+    import json
+    from kutuphane import cli, llmdap
+    monkeypatch.setenv(db.DSN_ENV, os.environ["KUTUPHANE_TEST_DSN"])
+    monkeypatch.delenv(llmdap.EMBED_ENV["route"], raising=False)
+    (okf_dir / "ornek.md").write_text("Örnek anahtar: AKIAIOSFODNN7EXAMPLE\n", encoding="utf-8")
+    digest = hashlib.sha256((okf_dir / "ornek.md").read_bytes()).hexdigest()
+    base = ["ingest", str(okf_dir), "--book", "kitap", "--sensitivity", "normal", "--egress", "local_only",
+            "--protection", "standard"]
+    assert cli.main(base) == 2
+    err = capsys.readouterr().err
+    assert "ornek.md: looks like it holds a credential: line 1 (aws-access-key)" in err and "AKIA" not in err
+    assert cli.main([*base, "--accept-finding", f"ornek.md@sha256:{digest}:aws-access-key"]) == 0
+    out = capsys.readouterr()
+    expected = [{"path": "ornek.md", "sha256": digest, "rule": "aws-access-key"}]
+    assert json.loads(out.out)["accepted_findings"] == expected and f"ornek.md@sha256:{digest}" in out.err
+    assert cli.main(["show", "kitap"]) == 0
+    assert json.loads(capsys.readouterr().out)["publications"][-1]["accepted_findings"] == expected
 
 
 def test_symlinked_directory_is_rejected(okf_dir, tmp_path):

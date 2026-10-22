@@ -4,7 +4,10 @@ nothing changes.
 Quarantine (G3): a file that source.py could not extract is stored and listed but not indexed. It is recorded per
 (content version, profile), like the chunks, so `book_state` and the publish result report the files of the
 version being served. A later version that fixes the file (new bytes), or a reader that can extract it (new
-profile), indexes it, and the quarantine of the old version no longer applies: nothing is carried over."""
+profile), indexes it, and the quarantine of the old version no longer applies: nothing is carried over.
+
+Accepted credential findings (`--accept-finding`, source.AcceptedFinding) are part of the publication record:
+[{path, sha256, rule}] for this publication, shown by `book_state`. The matched text is never recorded."""
 from dataclasses import dataclass, field
 
 from psycopg.types.json import Jsonb
@@ -27,6 +30,7 @@ class Published:
     new_content: bool
     new_policy: bool
     quarantined: list[dict] = field(default_factory=list)  # [{path, reason}]: stored, listed, not indexed
+    accepted_findings: list[dict] = field(default_factory=list)  # [{path, sha256, rule}]: reviewed secretscan findings
 
 
 def manifest_of(files: list[SourceFile]) -> list[dict]:
@@ -49,6 +53,8 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
     chunks = [c for f in searchable for c in profiles.split(profile, f, skills)]
     quarantined = [{"path": f.path, "reason": f.quarantine} for f in sorted(files, key=lambda f: f.path)
                    if f.quarantine]
+    accepted = [{"path": f.path, "sha256": f.sha256, "rule": rule} for f in sorted(files, key=lambda f: f.path)
+                for rule in f.accepted]
     fts = profile["settings"]["fts"]
     with conn.transaction():
         conn.execute("INSERT INTO book (slug, title) VALUES (%s, %s) ON CONFLICT (slug) DO NOTHING", (book, title))
@@ -78,10 +84,10 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
                                                for q in quarantined])
         conn.execute("UPDATE book SET title = %s, current_content = %s, current_profile = %s, current_policy = %s, "
                      "updated_at = now() WHERE slug = %s", (title, content_id, profile_id, policy_id, book))
-        conn.execute("INSERT INTO publication (book, content_id, profile_id, policy_id) VALUES (%s, %s, %s, %s)",
-                     (book, content_id, profile_id, policy_id))
-    return Published(book, content_id, profile_id, policy_id,
-                     new_content=current[0] != content_id, new_policy=current[1] != policy_id, quarantined=quarantined)
+        conn.execute("INSERT INTO publication (book, content_id, profile_id, policy_id, accepted_findings) "
+                     "VALUES (%s, %s, %s, %s, %s)", (book, content_id, profile_id, policy_id, Jsonb(accepted)))
+    return Published(book, content_id, profile_id, policy_id, new_content=current[0] != content_id,
+                     new_policy=current[1] != policy_id, quarantined=quarantined, accepted_findings=accepted)
 
 
 def book_state(conn, book: str) -> dict | None:
@@ -93,9 +99,10 @@ def book_state(conn, book: str) -> dict | None:
         return None
     versions = [r[0] for r in conn.execute("SELECT id FROM content_version WHERE book = %s ORDER BY created_at",
                                            (book,))]
-    pubs = [{"content_id": c, "profile_id": pf, "policy_id": pl, "published_at": t.isoformat()}
-            for c, pf, pl, t in conn.execute("SELECT content_id, profile_id, policy_id, published_at FROM publication "
-                                             "WHERE book = %s ORDER BY id", (book,))]
+    pubs = [{"content_id": c, "profile_id": pf, "policy_id": pl, "published_at": t.isoformat(), "accepted_findings": a}
+            for c, pf, pl, t, a in conn.execute("SELECT content_id, profile_id, policy_id, published_at, "
+                                                "accepted_findings FROM publication WHERE book = %s ORDER BY id",
+                                                (book,))]
     quarantined = [{"path": p, "reason": r} for p, r in conn.execute(
         "SELECT path, reason FROM quarantine WHERE book = %s AND content_id = %s AND profile_id = %s ORDER BY path",
         (book, row[2], row[6]))]

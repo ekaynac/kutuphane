@@ -75,6 +75,32 @@ def statements_after(case, item_id, moment) -> bool:
                if s.get("about") == item_id or s.get("id") == item_id)
 
 
+def lineage(case, item) -> tuple[list, bool]:
+    """§5 Inputs: every recorded ancestor of `item`, transitively (inputs of inputs), each once, so a cycle ends.
+    Returns (ancestor statements, whether a recorded input is missing). A missing ancestor fails closed."""
+    items = {s["id"]: s for s in case["statements"] if s["kind"] == "item"}
+    seen, todo, found, missing = {item["id"]}, list(item["body"].get("inputs", [])), [], False
+    while todo:
+        input_id = todo.pop()
+        if input_id in seen:
+            continue
+        seen.add(input_id)
+        if input_id not in items:
+            missing = True
+            continue
+        found.append(items[input_id])
+        todo.extend(items[input_id]["body"].get("inputs", []))
+    return found, missing
+
+
+def personal_data_of(case, src, action) -> str:
+    """§5: personal data unknown counts as yes; only a trusted issuer can declare data synthetic."""
+    personal = src["body"].get("rights", {}).get("personal_data", "unknown")
+    if personal == "synthetic" and not trusted(case, src["issuer"], "item", src["body"]["scope"], action):
+        return "unknown"
+    return personal
+
+
 def decide(case: dict) -> dict:
     req, now = case["request"], ts(case["now"])
     reasons, notices, results = [], [], []
@@ -133,18 +159,18 @@ def decide(case: dict) -> dict:
             reasons.append("status-stale")
 
     # --- the requested action ----------------------------------------------------------------------------------
-    rights = body.get("rights", {})
     rules = [r for r in case.get("policy", []) if action in r["actions"] and scope in r["scopes"]
              and req["actor"] in r["subjects"] and ("purposes" not in r or req.get("purpose") in r["purposes"])]
     if any(r["effect"] == "prohibit" for r in rules):
         results.append("deny"); reasons.append("prohibited")
     elif not any(r["effect"] == "permit" for r in rules):
         results.append("deny"); reasons.append("no-permission")  # rule 2
-    # §3 derive / §5 inputs: the rights of the item AND of every recorded input are checked for this use
-    inputs = body.get("inputs", [])
-    sources = [item] + [s for s in case["statements"] if s["kind"] == "item" and s["id"] in inputs]
-    if len(sources) - 1 < len(set(inputs)):
+    # §3 derive / §5 inputs: the item AND every recorded ancestor (inputs of inputs, transitively) are checked for
+    # this use: rights, AI-use terms and personal data per source; handling is inherited, the strictest value wins.
+    ancestors, missing = lineage(case, item)
+    if missing:
         results.append("deny"); reasons.append("input-unknown")
+    sources = [item] + ancestors
     for src in sources:
         tag, src_rights = ("" if src is item else "input-"), src["body"].get("rights", {})
         if action in ("derive", "train", "forward") and src_rights.get("license", "unknown") == "unknown":
@@ -154,15 +180,14 @@ def decide(case: dict) -> dict:
             results.append("deny"); reasons.append(f"{tag}rights-reserved:train")
         if action == "infer" and ai_use.get("ai_input") != "y":
             results.append("deny"); reasons.append(f"{tag}rights-reserved:ai_input")
-    if action == "forward":
-        if handling_of(case, item["id"], scope, action, "export") == "restricted":
-            results.append("deny"); reasons.append("handling-restricted")
-        personal = rights.get("personal_data", "unknown")
-        if personal == "synthetic" and not trusted(case, item["issuer"], "item", scope, action):
-            personal = "unknown"  # §5: only a trusted issuer can declare data synthetic
-        if personal not in ("no", "synthetic") and not req.get("legal_basis"):
-            results.append("deny"); reasons.append("personal-data-basis-missing")
-    if req.get("destination") == "cloud" and handling_of(case, item["id"], scope, action, "route") == "local_only":
+        if (action == "forward" and personal_data_of(case, src, action) not in ("no", "synthetic")
+                and not req.get("legal_basis")):
+            results.append("deny"); reasons.append(f"{tag}personal-data-basis-missing")
+    if action == "forward" and "restricted" in {handling_of(case, s["id"], s["body"]["scope"], action, "export")
+                                                for s in sources}:
+        results.append("deny"); reasons.append("handling-restricted")
+    if req.get("destination") == "cloud" and "local_only" in {
+            handling_of(case, s["id"], s["body"]["scope"], action, "route") for s in sources}:
         results.append("deny"); reasons.append("route-local-only")
     prior = req.get("prior_permit")  # rule 7: a permit is bound to exact versions and has an expiry
     if prior and (prior["item_version"] != item["id"] or prior["policy_version"] != case.get("policy_version")

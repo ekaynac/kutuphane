@@ -14,7 +14,7 @@ from pathlib import Path
 from . import (answers, audit, authz, catalog, db, devauth, gate, identity, kstd, llmdap, packages, profiles, search,
                retrieval, signing, vectors)
 from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, make_policy
-from .source import read_source
+from .source import AcceptedFinding, read_source
 
 
 def _print(obj) -> None:
@@ -28,11 +28,14 @@ def cmd_migrate(conn, _args) -> int:
 
 def cmd_ingest(conn, args) -> int:
     policy = make_policy(sensitivity=args.sensitivity, egress=args.egress, protection=args.protection)
-    files = read_source(Path(args.path))
+    accept = [AcceptedFinding.parse(spec) for spec in args.accept_finding]
+    files = read_source(Path(args.path), accept)
     result = catalog.publish(conn, book=args.book, title=args.title or args.book, files=files, policy=policy,
                              profile=profiles.spec(args.profile))
     _print({**dataclasses.asdict(result), **_index(conn, args.book)})
     _warn_quarantined(result)
+    for a in result.accepted_findings:  # on record in the publication; say so where a person looks
+        print(f"accepted finding (reviewed exception): {a['path']}@sha256:{a['sha256']}:{a['rule']}", file=sys.stderr)
     return 0
 
 
@@ -252,6 +255,10 @@ def parser() -> argparse.ArgumentParser:
     ing.add_argument("--egress", required=True, choices=EGRESS)
     ing.add_argument("--protection", required=True, choices=PROTECTION_M1)
     ing.add_argument("--profile", choices=("chunked", "whole"), default="chunked")
+    ing.add_argument("--accept-finding", action="append", default=[], metavar="PATH@sha256:DIGEST:RULE",
+                     help="accept one reviewed credential-scan finding: that rule, in exactly that file content "
+                          "(sha256 of the file); repeatable; a changed file needs a new review; recorded in the "
+                          "publication")
     ing.set_defaults(fn=cmd_ingest)
     ix = sub.add_parser("index", help="embed a book's current chunks that have no vector yet (through LLMDAP)")
     ix.add_argument("book")
