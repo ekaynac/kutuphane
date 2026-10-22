@@ -5,11 +5,15 @@ A book whose files contain `kstd.yaml` at the root follows it:
 - an invalid manifest blocks publication (fail closed);
 - a file with `ai_use.search` not `y` is not indexed;
 - a passage with `ai_use.ai_input` not `y` is never sent to a model (embedding, reranking, answers);
-- a file with `personal_data` not `no` is exported only with a recorded legal basis;
+- a file with `personal_data` not `no` or `synthetic` is exported only with a recorded legal basis (DPV codes);
+- an exported package marks files with origin `model` or `unknown` as AI-generated; `assisted` files (model output
+  that a named person reviewed) are not marked and carry `reviewed_by` (EU AI Act Art. 50(4));
 - search results, citations and answers show the item information.
 
-A book without `kstd.yaml` behaves as before: only its book policy applies. Absent `ai_use` terms mean `n` and an
-unknown license gives no permission (docs/11 §4 rule 3).
+A book without `kstd.yaml` behaves as before: only its book policy applies. `ai_use` keeps three states: an
+absent term is "not stated" and is reported as absent, but every decision treats it as `n`; an unknown license
+gives no permission (docs/11 §4 rule 3, §5). The `kstd.yaml` issuer publishes into this node, so its `synthetic`
+declaration is trusted here.
 
 The SPDX identifiers in `spdx_ids.txt` come from https://github.com/spdx/license-list-data (`json/licenses.json`).
 """
@@ -26,11 +30,15 @@ MANIFEST = "kstd.yaml"
 STANDARD = "kstd/0.2"
 MAX_MANIFEST_BYTES = 1024 * 1024
 AI_USE = ("search", "ai_input", "train")
-ORIGINS = ("human", "model", "unknown")
-PERSONAL_DATA = ("yes", "no", "unknown")
+ORIGINS = ("human", "assisted", "model", "unknown")
+AI_GENERATED = ("model", "unknown")  # `unknown` counts as `model` (docs/11 §5)
+PERSONAL_DATA = ("yes", "no", "synthetic", "unknown")
+NO_LEGAL_BASIS_NEEDED = ("no", "synthetic")
+# DPV legal bases for GDPR (https://w3id.org/dpv/legal/eu/gdpr): Art. 6(1)(a)–(f) and Art. 9(2)(a)–(j).
+LEGAL_BASES = frozenset([f"eu-gdpr:A6-1-{c}" for c in "abcdef"] + [f"eu-gdpr:A9-2-{c}" for c in "abcdefghij"])
 RIGHTS_KEYS = {"license", "holder", "ai_use", "personal_data"}
 TOP_KEYS = {"standard", "issuer", "issued", "rights", "notices", "items"}
-ITEM_KEYS = {"path", "digest", "origin", "valid_from", "valid_to", "applies_to", "rights", "notices"}
+ITEM_KEYS = {"path", "digest", "origin", "reviewed_by", "valid_from", "valid_to", "applies_to", "rights", "notices"}
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}\Z")
 LICENSE_REF = re.compile(r"^(DocumentRef-[A-Za-z0-9.-]+:)?LicenseRef-[A-Za-z0-9.-]+\Z")
 SPDX_IDS = frozenset(line for line in (Path(__file__).parent / "spdx_ids.txt").read_text().splitlines()
@@ -212,8 +220,14 @@ def check(manifest: dict, files: dict[str, str]) -> tuple[list[str], list[str]]:
             errors.append(f"{where}: digest must be sha256:<64 lowercase hex>")
         elif path in files and digest != f"sha256:{files[path]}":
             errors.append(f"{where}: digest does not match the file")
-        if item.get("origin", "unknown") not in ORIGINS:
+        origin = item.get("origin", "unknown")
+        if origin not in ORIGINS:
             errors.append(f"{where}: origin must be one of {', '.join(ORIGINS)}")
+        reviewer = item.get("reviewed_by")
+        if origin == "assisted" and not (isinstance(reviewer, str) and reviewer.strip()):
+            errors.append(f"{where}: origin assisted needs reviewed_by (the person who reviewed it)")
+        elif "reviewed_by" in item and origin != "assisted":
+            errors.append(f"{where}: reviewed_by is only for origin assisted")
         start, end = item.get("valid_from"), item.get("valid_to")
         for key, value in (("valid_from", start), ("valid_to", end)):
             if value is not None and _date(value) is None:
@@ -254,12 +268,13 @@ def effective(manifest: dict, path: str) -> dict | None:
         return None
     item = next((i for i in manifest.get("items", []) if normalize_path(str(i["path"])) == path), None)
     base, own = manifest.get("rights", {}), (item or {}).get("rights", {})
-    ai_use = {k: "n" for k in AI_USE} | base.get("ai_use", {}) | own.get("ai_use", {})
+    ai_use = base.get("ai_use", {}) | own.get("ai_use", {})  # stated terms only; allows() treats absent as n
     start, end = _date((item or {}).get("valid_from")), _date((item or {}).get("valid_to"))
     return {
         "issuer": manifest["issuer"],
         "listed": item is not None,
         "origin": (item or {}).get("origin", "unknown"),
+        "reviewed_by": (item or {}).get("reviewed_by"),
         "license": own.get("license", base.get("license", "unknown")),
         "holder": own.get("holder", base.get("holder")),
         "ai_use": {k: _yn(v) for k, v in ai_use.items()},
@@ -280,6 +295,16 @@ def is_current(info: dict, now: datetime | None = None) -> bool:
 def allows(info: dict | None, use: str) -> bool:
     """A file without a manifest follows its book policy only (True here)."""
     return info is None or info["ai_use"].get(use) == "y"
+
+
+def legal_basis(value) -> list[str]:
+    """One or more DPV legal-basis codes, separated by spaces or commas (e.g. `eu-gdpr:A6-1-b`)."""
+    codes = [c for c in re.split(r"[\s,]+", value.strip()) if c] if isinstance(value, str) else []
+    wrong = [c for c in codes if c not in LEGAL_BASES]
+    if not codes or wrong:
+        raise KstdError(f"legal basis must be DPV codes such as eu-gdpr:A6-1-b or eu-gdpr:A9-2-a"
+                        f"{f' (not valid: {wrong[0]})' if wrong else ''}")
+    return sorted(set(codes))
 
 
 class Rights:
@@ -317,8 +342,8 @@ def init(files: list, issuer: str, today: date | None = None) -> str:
         "rights:                               # defaults for every item",
         "  license: unknown                    # an SPDX id, e.g. CC-BY-4.0; unknown gives no permission",
         "  holder: " + yaml.safe_dump(issuer, default_style=chr(34)).strip(),
-        "  ai_use: {search: y, ai_input: n, train: n}   # absent = n",
-        "  personal_data: unknown              # yes | no | unknown (= yes)",
+        "  ai_use: {search: y, ai_input: n, train: n}   # absent = not stated; decisions treat it as n",
+        "  personal_data: unknown              # yes | no | synthetic | unknown (= yes)",
         "items:",
     ]
     for f in sorted(files, key=lambda f: f.path):
@@ -326,5 +351,5 @@ def init(files: list, issuer: str, today: date | None = None) -> str:
             continue
         lines += [f"  - path: {yaml.safe_dump(f.path, default_style=chr(34)).strip()}",
                   f"    digest: sha256:{hashlib.sha256(f.data).hexdigest()}",
-                  "    origin: unknown                   # human | model | unknown (= model)"]
+                  "    origin: unknown                   # human | assisted (+ reviewed_by) | model | unknown (= model)"]
     return "\n".join(lines) + "\n"

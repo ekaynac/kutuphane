@@ -60,6 +60,8 @@ def chunk_paths(conn) -> set:
     (lambda m: m["items"].append({"path": "missing.md", "digest": "sha256:" + "1" * 64}), "no such file"),
     (lambda m: m["items"][0].update(valid_to="2025-01-01"), "valid_from must be before valid_to"),
     (lambda m: m.update(standard="kstd/9"), "standard must be"),
+    (lambda m: m["items"][1].update(origin="assisted"), "assisted needs reviewed_by"),
+    (lambda m: m["items"][0].update(reviewed_by="Ayşe"), "only for origin assisted"),
 ])
 def test_an_invalid_manifest_blocks_publication(conn, okf_dir, change, needle):  # fail closed
     write_manifest(okf_dir)
@@ -132,17 +134,44 @@ def test_item_information_reaches_search_and_citations(conn, okf_dir, monkeypatc
     assert cited["item"]["valid_from"] == "2026-01-01"
 
 
-def test_export_of_possible_personal_data_needs_a_legal_basis(conn, okf_dir, tmp_path):
+def read_package(pkg) -> dict:
+    import io, json, tarfile
+    return json.loads(tarfile.open(fileobj=io.BytesIO(pkg)).extractfile("MANIFEST.json").read())
+
+
+def test_export_of_possible_personal_data_needs_a_dpv_legal_basis(conn, okf_dir, tmp_path):
     write_manifest(okf_dir, policy_item={"rights": {"personal_data": "unknown"}})
     publish(conn, okf_dir)
     signing.generate(tmp_path / "a.key")
     key = signing.load_private(tmp_path / "a.key")
     with pytest.raises(packages.PackageError, match="legal basis"):
         packages.export(conn, "kitap", key)
-    pkg = packages.export(conn, "kitap", key, legal_basis="GDPR Art. 6(1)(b), contract 2026-17")
-    import io, json, tarfile
-    manifest = json.loads(tarfile.open(fileobj=io.BytesIO(pkg)).extractfile("MANIFEST.json").read())
-    assert manifest["legal_basis"] == "GDPR Art. 6(1)(b), contract 2026-17"
+    with pytest.raises(packages.PackageError, match="not valid: GDPR"):  # free text is not a legal basis
+        packages.export(conn, "kitap", key, legal_basis="GDPR Art.6")
+    pkg = packages.export(conn, "kitap", key, legal_basis="eu-gdpr:A9-2-b, eu-gdpr:A6-1-b")
+    assert read_package(pkg)["legal_basis"] == ["eu-gdpr:A6-1-b", "eu-gdpr:A9-2-b"]
+
+
+def test_synthetic_personal_data_needs_no_legal_basis_and_origin_is_marked(conn, okf_dir, tmp_path):  # D60
+    write_manifest(okf_dir, policy_item={"origin": "assisted", "reviewed_by": "Ayşe Yılmaz",
+                                         "rights": {"personal_data": "synthetic"}})
+    (okf_dir / "notlar.md").write_text("model notu\n")                         # unlisted: origin unknown
+    publish(conn, okf_dir)
+    signing.generate(tmp_path / "a.key")
+    manifest = read_package(packages.export(conn, "kitap", signing.load_private(tmp_path / "a.key")))
+    assert "legal_basis" not in manifest
+    assert "notlar.md" in manifest["ai_generated"] and "politika/veri-saklama.md" not in manifest["ai_generated"]
+    assert "runbook/yedek-geri-yukleme.md" not in manifest["ai_generated"]   # human
+    assert manifest["reviewed"] == {"politika/veri-saklama.md": "Ayşe Yılmaz"}
+
+
+def test_absent_ai_use_is_reported_as_not_stated_but_denies(okf_dir):  # D60: three states
+    write_manifest(okf_dir)
+    doc = yaml.safe_load((okf_dir / kstd.MANIFEST).read_text())
+    del doc["rights"]["ai_use"]["train"]
+    info = kstd.effective(doc, "index.md")
+    assert "train" not in info["ai_use"] and info["ai_use"]["search"] == "y"
+    assert kstd.allows(info, "train") is False and kstd.allows(info, "search") is True
 
 
 def test_init_writes_a_manifest_that_passes_the_check(okf_dir):

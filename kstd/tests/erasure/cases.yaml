@@ -1,0 +1,34 @@
+# kstd erasure reach — conformance cases (draft 0.2, docs/11 §3 `erase`, §5 Inputs).
+# Each case: the statements, the items to erase, and the expected {erased, kept, unresolved, scope_unknown}.
+
+base: &stmts
+  - {id: A, kind: item, body: {origin: human}}                     # a record about user U
+  - {id: B, kind: item, body: {origin: human}}                     # a record about user V
+  - {id: N1, kind: item, body: {origin: model, inputs: [A]}}
+  - {id: N2, kind: item, body: {origin: model, inputs: [A, B]}}
+  - {id: N3, kind: item, body: {origin: model, inputs: [B]}}
+  - {id: X1, kind: item, body: {origin: model, inputs: [N1]}}      # an index entry made from N1
+  - {kind: use_record, body: {type: use, item: N1, to: node:Q}}    # N1 was delivered to node Q
+
+cases:
+  - name: erasure reaches every recorded descendant, transitively, and lists copies at other nodes
+    statements: *stmts
+    request: {erase: [A]}
+    expect: {erased: [A, N1, N2, X1], kept: [B, N3], unresolved: [N1@node:Q], scope_unknown: []}
+
+  - name: an item derived from both erased and kept inputs is removed whole
+    statements: *stmts
+    request: {erase: [B]}
+    expect: {erased: [B, N2, N3], kept: [A, N1, X1], unresolved: [], scope_unknown: []}
+
+  - name: a derived item with no recorded inputs is reported as scope unknown, not as clean
+    statements:
+      - *stmts
+      - [{id: N5, kind: item, body: {origin: model}}]
+    request: {erase: [A]}
+    expect: {erased: [A, N1, N2, X1], kept: [B, N3, N5], unresolved: [N1@node:Q], scope_unknown: [N5]}
+
+  - name: erasing a derived item does not reach its inputs
+    statements: *stmts
+    request: {erase: [N1]}
+    expect: {erased: [N1, X1], kept: [A, B, N2, N3], unresolved: [N1@node:Q], scope_unknown: []}

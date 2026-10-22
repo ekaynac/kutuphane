@@ -31,12 +31,12 @@
 | # | Group | Type, state | Why it matters to us | First contribution |
 |---|---|---|---|---|
 | 1 | ODRL CG → Digital Policy WG (ODRL 3.0) | W3C CG; the WG charter is in draft; work in 2027–2028 | It plans deterministic semantics, a conformance suite, an AI profile and a DPV profile. ODRL has no `escalate` result. | Our decision cases in the odrl-force test format; a use case for `escalate` and `activate` |
-| 2 | AI Agent Memory Interoperability CG | W3C CG; started 2026-06; very active | It asks for `derived-from`, citation fields and the rule "imported memory is evidence, not authority". This is our rule 4 and §5. | Two use cases as decision cases, **before 2026-10-30** |
+| 2 | AI Agent Memory Interoperability CG | W3C CG; started 2026-06; very active | It asks for `derived-from`, citation fields and the rule "imported memory is evidence, not authority". This is our rule 4 and §5. | Additions to the existing catalogue entries 4 (authority) and 5 (erasure reach), with test vectors, **before 2026-10-26** (working draft 2026-10-30) |
 | 3 | IETF AIPREF | IETF WG; vocab-08; IETF 127 on 2026-11-14 | It is the normative source of our `ai_use`. #246 (embeddings, indexes, memory) and #245 (preferences that travel) are open. | A comment on #246/#245: `derive` + `inputs` carries the preferences |
-| 4 | DPV CG | W3C CG; DPV 2.3; weekly calls | It is the code list for `personal_data`, `legal_basis` and purposes. Issue #221 asks for a flat format without RDF, which is our L0 case. | A comment on #221 with `kstd.yaml`; a "personal data presence unknown" concept |
-| 5 | Open Knowledge Format (OKF, Google) | Apache-2.0 repo; v0.2; active | It has the same shape as our L0 (markdown + YAML). It has no rights, digests or signatures. #15, #22 and #32 are our rules 4, 5 and 8. | A `rights` frontmatter proposal (knowledge-catalog#52) |
+| 4 | DPV CG | W3C CG; DPV 2.3; weekly calls | It is the code list for `personal_data`, `legal_basis` and purposes. Issue #221 asks for a flat format without RDF, which is our L0 case. `dpv:SyntheticData` already exists, and "presence unknown" is `hasPersonalData UnknownApplicability` (#102). | A comment on #221 with `kstd.yaml`; a usage note for `SyntheticData` (it does not imply non-personal data) |
+| 5 | Open Knowledge Format (OKF, Google) | Apache-2.0 repo; v0.2; maintainers quiet since 2026-08 | It has the same shape as our L0 (markdown + YAML). It has no rights, digests or signatures. #15, #22 and #32 are our rules 4, 5 and 8. | A new `rights` proposal issue in `open-knowledge-format` that links knowledge-catalog#52 (that copy is frozen) |
 | 6 | in-toto Attestation + DSSE | CNCF graduated | A kstd statement is almost an in-toto Statement. #67 (revocation) contains our rules 4 and 8. | Comment on #67; register kstd predicate types |
-| 7 | MCP (Agentic AI Foundation) | SEP process | SEP-1913 (trust and sensitivity labels, with block/escalate) is open. MCP is our `deliver` channel. | A typed `_meta` profile for rights and handling, with test cases |
+| 7 | MCP (Agentic AI Foundation) | SEP process; SEP-1913 is now an umbrella thread, the work is in the Tool Annotations IG (`experimental-ext-tool-annotations`) | Its open questions are "enforcement vs. advisory", declassification and taint. MCP is our `deliver` channel. | A #1913 comment and a "candidate scheme: rights and AI use" issue in the extension repo |
 | 8 | W3C AI Content Disclosure CG | Final Report 2026-10-09 | It has three origin levels (`human-only`, `ai-assisted`, `ai-autonomous`). #48 asks for formats that are not HTML. | A YAML/front-matter binding for #48 |
 | 9 | W3C Web & AI IG | W3C IG; TPAC talk 2026-10-29 | It coordinates the groups. Recommendation 5 of the 2026-10-20 paper ("separate disclosure, provenance and training preferences") is our design. | Send this landscape and the test set to #19 and #22 |
 | 10 | W3C Agent Conformance and Benchmarking CG | W3C CG, started 2026-08-30 | It wants reproducible suites and versioned corpora. | Our decision cases as a fixture set |
@@ -142,6 +142,8 @@ Groups to watch, with no contribution now:
 1. **ODRL 3.0:** Will conformance define a third result (`Indeterminate`/`escalate`) and a fixed precedence? Will it accept outside test cases?
 2. **Agent Memory CG:** Will cells carry rights, origin and legal basis, or point to an external statement layer? Will "imported memory is evidence, not authority" become a conformance rule with test vectors?
 3. **AIPREF:** Must a preference travel to embeddings, indexes and agent memory through recorded inputs, or is a new category (like RSL `ai-index`) needed?
-4. **DPV:** Can 2.5 add "personal data presence unknown" and publish a flat JSON list of legal bases and purposes?
+4. **DPV:** Is `hasPersonalData UnknownApplicability` the intended way to say "not assessed"? Does `SyntheticData` imply non-personal data? Can a flat JSON list of legal bases and purposes be published (#221)?
 5. **OKF:** Will the core accept a `rights` family and a content digest? What does an absent value permit?
 6. **in-toto #67:** Is the authority to revoke a policy question or a predicate field?
+
+**Corrections after the contribution briefs (2026-10-22):** the rows for groups 2, 4 and 5 above were corrected. `docs/14-contributions.md` has the current, per-group plan.

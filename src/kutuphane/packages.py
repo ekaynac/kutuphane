@@ -43,19 +43,30 @@ class PackageError(ValueError):
 
 def export(conn, book: str, key, legal_basis: str | None = None) -> bytes:
     """Sign the book's current version. The sequence for (this key, book) advances in the same transaction.
-    kstd: a file whose personal_data is not `no` leaves the node only with a recorded legal basis (docs/11 §5);
-    the basis goes into the signed manifest."""
+    kstd: a file whose personal_data is not `no` or `synthetic` leaves the node only with a recorded legal basis
+    (DPV codes, docs/11 §5); the basis goes into the signed manifest. Files with origin `model`/`unknown` are listed
+    as `ai_generated`; `assisted` files are listed in `reviewed` with their reviewer (EU AI Act Art. 50(4))."""
     issuer = signing.fingerprint(key.public_key())
     state = catalog.book_state(conn, book)
     if state is None:
         raise PackageError(f"no such book: {book}")
     rights = kstd.Rights(conn)
-    personal = [e["path"] for e in state["files"]
-                if (info := rights.info(book, state["content_id"], e["path"])) and info["personal_data"] != "no"]
-    basis = legal_basis.strip() if isinstance(legal_basis, str) else ""
-    if personal and not basis:
-        raise PackageError(f"{len(personal)} file(s) may contain personal data ({', '.join(personal[:3])}"
-                           f"{', …' if len(personal) > 3 else ''}); export needs a legal basis")
+    infos = {e["path"]: info for e in state["files"]
+             if (info := rights.info(book, state["content_id"], e["path"])) is not None}
+    personal = [p for p, i in infos.items() if i["personal_data"] not in kstd.NO_LEGAL_BASIS_NEEDED]
+    basis = None
+    if personal:
+        if not (isinstance(legal_basis, str) and legal_basis.strip()):
+            raise PackageError(f"{len(personal)} file(s) may contain personal data ({', '.join(personal[:3])}"
+                               f"{', …' if len(personal) > 3 else ''}); export needs a legal basis")
+        try:
+            basis = kstd.legal_basis(legal_basis)
+        except kstd.KstdError as exc:
+            raise PackageError(str(exc)) from None
+    origin = {
+        "ai_generated": sorted(p for p, i in infos.items() if i["origin"] in kstd.AI_GENERATED),
+        "reviewed": {p: i["reviewed_by"] for p, i in sorted(infos.items()) if i["origin"] == "assisted"},
+    } if infos else {}
     files = []
     for entry in state["files"]:
         data = catalog.read_file(conn, book, state["content_id"], entry["path"])
@@ -69,7 +80,8 @@ def export(conn, book: str, key, legal_basis: str | None = None) -> bytes:
         "format": FORMAT, "issuer": issuer, "book": book, "title": state["title"],
         "content_id": state["content_id"], "sequence": seq, "created_at": int(time.time()),
         "policy_suggestion": state["policy"],
-        **({"legal_basis": basis} if personal else {}),
+        **({"legal_basis": basis} if basis else {}),
+        **origin,
         "files": [{"path": p, "sha256": ids.sha256_hex(d), "size": len(d)} for p, d in sorted(files)],
     }
     body = ids.canonical(manifest)
@@ -224,7 +236,8 @@ def receive(conn, data: bytes) -> dict:
          Jsonb(findings), Jsonb(diff))).fetchone()[0]
     return {"id": pid, "status": "verified", "book": manifest["book"], "sequence": manifest["sequence"],
             "findings": findings, "diff": diff, "policy_suggestion": manifest.get("policy_suggestion"),
-            "legal_basis": manifest.get("legal_basis")}
+            "legal_basis": manifest.get("legal_basis"), "ai_generated": manifest.get("ai_generated"),
+            "reviewed": manifest.get("reviewed")}
 
 
 # --- decide -----------------------------------------------------------------------------------------------

@@ -22,3 +22,12 @@ def test_case(case):
     case = {**case, "statements": flatten(case["statements"])}
     got = decide(case)
     assert {k: got[k] for k in ("result", "authority", "reasons", "notices")} == case["expect"]
+
+
+ERASURE = yaml.safe_load((Path(__file__).parent.parent / "tests" / "erasure" / "cases.yaml").read_text())["cases"]
+
+
+@pytest.mark.parametrize("case", ERASURE, ids=[c["name"] for c in ERASURE])
+def test_erasure_case(case):
+    from erase import erase
+    assert erase({**case, "statements": flatten(case["statements"])}) == case["expect"]

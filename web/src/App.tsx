@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Answer, ApiError, Hit, Item, Me, Passage, Reopened, api, describe, loadToken, refHandle, saveToken } from "./api";
 
-const ORIGIN: Record<string, string> = { human: "insan", model: "model", unknown: "köken bilinmiyor" };
+const ORIGIN: Record<string, string> = {
+  human: "insan", assisted: "model, insan onaylı", model: "model", unknown: "köken bilinmiyor",
+};
 
 // kstd item information as one line: origin, license, validity, applicability, notices.
 function ItemLine({ item }: { item?: Item }) {
@@ -9,7 +11,8 @@ function ItemLine({ item }: { item?: Item }) {
   const valid = item.valid_from || item.valid_to ? ` · geçerli ${item.valid_from ?? "…"}–${item.valid_to ?? "…"}` : "";
   return (
     <span className="meta item-line">
-      {ORIGIN[item.origin] ?? item.origin} · lisans {item.license}
+      {ORIGIN[item.origin] ?? item.origin}
+      {item.reviewed_by ? ` (${item.reviewed_by})` : ""} · lisans {item.license}
       {valid}
       {item.current ? "" : " · güncel değil"}
       {item.applies_to ? ` · ${item.applies_to}` : ""}
@@ -53,7 +56,7 @@ function PassagePanel({ passage, onClose }: { passage: Passage; onClose: () => v
           ×
         </button>
       </header>
-      <pre className="passage-text">{passage.text}</pre>
+      <pre className="passage-text">{passage.text ?? passage.withheld}</pre>
       <ItemLine item={passage.item} />
       <footer className="meta">Bu pasaj atıf yapılan sürümden, güncel yetkinizle açıldı.</footer>
     </aside>
@@ -222,7 +225,7 @@ function Workspace({ token, onSignOut }: { token: string; onSignOut: () => void 
                         <span className="meta">
                           {d.book} · sürüm {d.version}
                         </span>
-                        <span className="snippet">{h.text.slice(0, 280)}</span>
+                        <span className="snippet">{(h.text ?? h.withheld ?? "").slice(0, 280)}</span>
                         <ItemLine item={h.item} />
                       </button>
                     </li>
