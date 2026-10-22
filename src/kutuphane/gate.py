@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from psycopg.types.json import Jsonb
 
 from . import authz, catalog
-from .profiles import is_instruction  # noqa: F401  (re-exported: the gate owns the K3 rule's use)
+from .agentfiles import is_instruction  # the K3 rule; the gate owns its use
 
 
 class Denied(PermissionError):
@@ -82,7 +82,8 @@ def modes_for(actor: Actor, instruction: bool) -> list[str]:
 
 def deliver_file(conn, actor: Actor, book: str, content_id: str, path: str) -> bytes:
     entry = catalog.manifest_entry(conn, book, content_id, path)
-    modes = modes_for(actor, bool(entry) and is_instruction(entry))
+    instruction = bool(entry) and is_instruction(entry, catalog.skill_dirs(conn, book, content_id))
+    modes = modes_for(actor, instruction)
 
     def fetch():
         if entry is None:

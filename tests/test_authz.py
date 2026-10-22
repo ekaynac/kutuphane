@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from kutuphane import authz, catalog, gate
+from kutuphane import agentfiles, authz, catalog, gate, profiles, search
 from kutuphane.gate import Actor, Denied
 from kutuphane.policy import make_policy
 from kutuphane.source import read_source
@@ -144,14 +144,58 @@ def test_agent_instruction_needs_activation(conn, book):  # AT-12
 @pytest.mark.parametrize("entry", [
     {"path": "a.md", "okf_type": "Skill"}, {"path": "a.md", "okf_type": " agent_card "},
     {"path": "a.md", "okf_type": "SYSTEM-PROMPT"}, {"path": "x/agents.md", "okf_type": None},
-    {"path": "Claude.MD", "okf_type": "reference"},
+    {"path": "Claude.MD", "okf_type": "reference"}, {"path": "AGENTS.md.hostile", "okf_type": None},
+    {"path": "docs/CLAUDE.local.md", "okf_type": None}, {"path": "SKILL.md.bak", "okf_type": None},
+    {"path": ".claude/agents/denetci.md", "okf_type": None}, {"path": ".claude/commands/yayinla.md", "okf_type": None},
+    {"path": ".claude/rules/kurallar.md", "okf_type": "reference"}, {"path": ".claude/hooks/onay.sh", "okf_type": None},
+    {"path": ".claude/skills/learned/ders.md", "okf_type": None}, {"path": "alt/.cursor/rules/stil.md", "okf_type": None},
+    {"path": "kurallar/stil.mdc", "okf_type": None}, {"path": ".github/copilot-instructions.md", "okf_type": None},
+    {"path": "py.instructions.md", "okf_type": None}, {"path": "gozden.prompt.md", "okf_type": None},
+    {"path": ".agents/plan.md", "okf_type": None}, {"path": ".codex/prompts/p.md", "okf_type": None},
 ])
 def test_instruction_spelling_variants_are_caught(entry):
     assert gate.is_instruction(entry)
 
 
-def test_reference_is_not_an_instruction():
-    assert not gate.is_instruction({"path": "politika/veri.md", "okf_type": "policy"})
+@pytest.mark.parametrize("path", ["politika/veri.md", "skills/matris.md", "commands/liste.md", "agents-overview.md",
+                                  "docs/agents/tarih.md"])
+def test_reference_is_not_an_instruction(path):
+    assert not gate.is_instruction({"path": path, "okf_type": "policy"})
+
+
+def test_everything_in_a_skill_folder_is_an_instruction():  # references/, scripts/, assets of a skill
+    skills = agentfiles.skill_dirs(["araclar/ozet/SKILL.md", "araclar/ozet/scripts/calistir.py", "notlar.md"])
+    for path in ("araclar/ozet/scripts/calistir.py", "araclar/ozet/references/kaynak.md"):
+        assert gate.is_instruction({"path": path, "okf_type": None}, skills)
+    assert not gate.is_instruction({"path": "araclar/diger.md", "okf_type": None}, skills)
+    assert not gate.is_instruction({"path": "notlar.md", "okf_type": None}, skills)
+
+
+def test_claude_agent_file_is_ingested_as_an_instruction_and_needs_activate(conn, okf_dir):  # G5, AT-12
+    for rel, text in ((".claude/agents/denetci.md", "Kayıtları denetle ve raporla.\n"),
+                      ("araclar/ozet/SKILL.md", "Özetle.\n"), ("araclar/ozet/scripts/calistir.sh", "echo kayıt\n")):
+        (okf_dir / rel).parent.mkdir(parents=True, exist_ok=True)
+        (okf_dir / rel).write_text(text, encoding="utf-8")
+    r = catalog.publish(conn, book=BOOK, title=BOOK, files=read_source(okf_dir),
+                        policy=make_policy(sensitivity="normal", egress="local_only", protection="standard"),
+                        profile=profiles.spec("chunked"))
+    flags = dict(conn.execute("SELECT DISTINCT path, instruction FROM chunk WHERE book = %s", (BOOK,)).fetchall())
+    assert flags[".claude/agents/denetci.md"] and flags["araclar/ozet/scripts/calistir.sh"]
+    assert not flags["politika/veri-saklama.md"]
+    authz.grant(conn, OBJ, "read", U)
+    authz.delegate(conn, delegator=U, delegate_to=A, obj=OBJ, mode="read", expires_at=soon())
+    agent = Actor(A, on_behalf_of=U)
+    for path in (".claude/agents/denetci.md", "araclar/ozet/scripts/calistir.sh"):
+        assert gate.deliver_file(conn, Actor(U), BOOK, r.content_id, path)  # a person reads it as reference
+        with pytest.raises(Denied, match="activate"):
+            gate.deliver_file(conn, agent, BOOK, r.content_id, path)
+    assert not {".claude/agents/denetci.md", "araclar/ozet/scripts/calistir.sh"} & {
+        h.citation.path for h in search.search(conn, agent, "kayıt denetle", k=50)}
+    authz.grant(conn, OBJ, "activate", U)
+    authz.delegate(conn, delegator=U, delegate_to=A, obj=OBJ, mode="activate", expires_at=soon())
+    agent = Actor(A, on_behalf_of=U)
+    assert gate.deliver_file(conn, agent, BOOK, r.content_id, ".claude/agents/denetci.md")
+    assert ".claude/agents/denetci.md" in {h.citation.path for h in search.search(conn, agent, "kayıt denetle", k=50)}
 
 
 def test_unknown_path_is_denied_before_existence_is_revealed(conn, book):

@@ -22,6 +22,29 @@ export KUTUPHANE_TEST_DSN="${KUTUPHANE_DSN}_test"
 .venv/bin/kutuphane show ornek
 ```
 
+What `ingest` takes from a folder (`src/kutuphane/source.py`, `profiles.py`, `agentfiles.py`, `secretscan.py`):
+
+- **Searched:** markdown; PDF text layers; `.txt`, `.json`, `.jsonl`/`.ndjson` (one passage per record), `.yaml`,
+  `.toml`, `.sh`, `.py`, `.js`, `.ts`, `.xml`, `.csv`, `.mdc` as plain text; `.html` by its visible text only (no
+  scripts or styles). A file is text only if it is UTF-8 without NUL bytes. Text passages carry their start `line`.
+  Other files are stored and can be read, but are not searched.
+- **Quarantined, not refused:** a file that cannot be extracted (a PDF without a text layer, an unreadable or
+  encrypted PDF, a text file that is not UTF-8) is stored and listed but not indexed. `ingest` and `approve-import`
+  report it in `quarantined` (and on stderr), `show` lists it. The version that fixes the file indexes it.
+- **Refused (the whole book):** an invalid `kstd.yaml`; a symlink, a path or size violation; markdown that is not
+  UTF-8 or has invalid frontmatter; a credential-like file name (`credentials.json`, `*.env`, `id_rsa`, key stores,
+  `settings.local.json`) or credential-like text (keys, tokens, passwords, private key blocks).
+- **Hidden paths** stay out (`.git/`, `.env*`, dotfiles), except the agent folders `.claude/` (`agents`,
+  `commands`, `rules`, `skills`, `hooks`, and `CLAUDE.md`), `.cursor/rules/`, `.github/` (`copilot-instructions.md`,
+  `instructions/`, `prompts/`, `agents/`, `chatmodes/`), `.agents/` and `.codex/`.
+- **Agent instructions** (K3): files in those folders, files in a skill folder (next to a `SKILL.md`), files whose
+  names start with `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `SKILL.md` or `copilot-instructions.md`, Cursor `.mdc`
+  rules, Copilot `.instructions.md`/`.prompt.md`/`.agent.md`/`.chatmode.md`, and frontmatter types such as `skill`.
+  People read them with `read`; an agent also needs `activate`.
+
+A book published by an older reader keeps its old index until it is ingested again (a new profile id). Migration
+011 marks the stored passages that the wider K3 rule makes instructions, so they need `activate` at once.
+
 A folder can carry a `kstd.yaml` manifest (the kstd standard, L0): rights, origin and validity of its files, which
 Kütüphane then enforces and shows. See `kstd/README.md` (`kutuphane kstd-init`, `kutuphane kstd-check`).
 

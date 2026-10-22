@@ -20,9 +20,9 @@ import time
 
 from psycopg.types.json import Jsonb
 
-from . import catalog, ids, kstd, profiles, signing
+from . import agentfiles, catalog, ids, kstd, profiles, signing
 from .policy import check_policy
-from .source import MAX_FILE_BYTES, MAX_SOURCE_BYTES, SourceError, read_file
+from .source import MAX_FILE_BYTES, MAX_SOURCE_BYTES, TEXT_TYPES, SourceError, read_file
 
 FORMAT = "kutuphane-package/1"
 MANIFEST, SIGNATURE, CONTENT = "MANIFEST.json", "MANIFEST.sig", "content/"
@@ -200,12 +200,14 @@ def _last_sequence(conn, issuer, book, lock=False) -> int:
 
 
 def _scan(files) -> list[dict]:
-    findings = []
+    findings, skills = [], agentfiles.skill_dirs(f.path for f in files)
     for f in files:
-        if profiles.is_instruction({"path": f.path, "okf_type": f.okf_type}):
+        if agentfiles.is_instruction({"path": f.path, "okf_type": f.okf_type}, skills):
             findings.append({"path": f.path, "kind": "agent_instruction",
                              "note": "Ajan talimatı (K3): etkinleştirme ayrı izin ister"})
-        if f.media_type.startswith("text/"):
+        if f.quarantine:
+            findings.append({"path": f.path, "kind": "quarantined", "note": f.quarantine})
+        if f.media_type.startswith("text/") or f.media_type in TEXT_TYPES.values():
             for m in SUSPICIOUS.finditer(f.data.decode("utf-8", errors="replace")):
                 findings.append({"path": f.path, "kind": "instruction_like_text", "match": m.group(0)})
     return findings

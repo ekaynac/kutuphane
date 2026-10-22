@@ -101,6 +101,28 @@ def test_without_a_manifest_nothing_changes(conn, okf_dir):  # opt-in: legacy bo
     assert kstd.Rights(conn).info("kitap", catalog.book_state(conn, "kitap")["content_id"], "index.md") is None
 
 
+def test_rights_gate_the_new_text_formats_like_markdown(conn, okf_dir, fake):  # G1: the same ai_use gates
+    import os
+    from kutuphane import server
+    (okf_dir / "kayitlar.jsonl").write_text('{"not": "yedek geri yükleme kayıtlar saklanır"}\n', encoding="utf-8")
+    (okf_dir / "notlar.txt").write_text("Yedek geri yükleme kayıtlar saklanır.\n", encoding="utf-8")
+    write_manifest(okf_dir)
+    doc = yaml.safe_load((okf_dir / kstd.MANIFEST).read_text())
+    doc["items"] += [
+        {"path": "kayitlar.jsonl", "digest": digest(okf_dir / "kayitlar.jsonl"), "rights": {"ai_use": {"search": "n"}}},
+        {"path": "notlar.txt", "digest": digest(okf_dir / "notlar.txt"), "rights": {"ai_use": {"ai_input": "n"}}}]
+    (okf_dir / kstd.MANIFEST).write_text(yaml.safe_dump(doc, allow_unicode=True))
+    publish(conn, okf_dir)
+    assert "kayitlar.jsonl" not in chunk_paths(conn) and "notlar.txt" in chunk_paths(conn)
+    assert kstd.MANIFEST not in chunk_paths(conn)                                # metadata, now a searched format
+    vectors.index(conn, fake.embedder(), "kitap")
+    embedded = {p for (p,) in conn.execute("SELECT DISTINCT path FROM chunk_vector")}
+    assert "index.md" in embedded and "notlar.txt" not in embedded
+    mcp = server.op_search(os.environ["KUTUPHANE_TEST_DSN"], retrieval.Stages(), Actor(U), QUERY, 8, True)
+    note = next(h for h in mcp if "/notlar.txt#" in h["citation"])
+    assert note["text"] is None and note["withheld"]
+
+
 def test_passages_without_ai_input_never_reach_a_model(conn, okf_dir, fake):
     from kutuphane import answers
     write_manifest(okf_dir, runbook_item={"rights": {"ai_use": {"search": "y", "ai_input": "n"}}})

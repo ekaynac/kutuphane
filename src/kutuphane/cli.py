@@ -32,7 +32,14 @@ def cmd_ingest(conn, args) -> int:
     result = catalog.publish(conn, book=args.book, title=args.title or args.book, files=files, policy=policy,
                              profile=profiles.spec(args.profile))
     _print({**dataclasses.asdict(result), **_index(conn, args.book)})
+    _warn_quarantined(result)
     return 0
+
+
+def _warn_quarantined(result: catalog.Published) -> None:
+    """Quarantined files are published (stored, listed) but not searchable; say so where a person looks."""
+    for q in result.quarantined:
+        print(f"quarantined (stored, not indexed): {q['path']}: {q['reason']}", file=sys.stderr)
 
 
 def _index(conn, book: str) -> dict:
@@ -98,8 +105,9 @@ def cmd_read(conn, args) -> int:
 def cmd_search(conn, args) -> int:
     actor = gate.Actor(args.principal, args.on_behalf_of)
     hits, rights = retrieval.retrieve(conn, actor, args.query, args.k, retrieval.Stages.from_env()), kstd.Rights(conn)
-    _print([{"citation": h.citation.handle, "page": h.page, "score": round(h.score, 4), "text": h.text,
-             "item": rights.info(h.citation.book, h.citation.content_id, h.citation.path)} for h in hits])
+    _print([{"citation": h.citation.handle, "page": h.page, "line": h.line, "score": round(h.score, 4),
+             "text": h.text, "item": rights.info(h.citation.book, h.citation.content_id, h.citation.path)}
+            for h in hits])
     return 0
 
 
@@ -195,6 +203,7 @@ def cmd_approve(conn, args) -> int:
     policy = make_policy(sensitivity=args.sensitivity, egress=args.egress, protection=args.protection)
     published = packages.approve(conn, args.id, by=args.by, policy=policy, profile=args.profile)
     _print({**dataclasses.asdict(published), **_index(conn, published.book)})
+    _warn_quarantined(published)
     return 0
 
 
