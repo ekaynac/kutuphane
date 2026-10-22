@@ -11,11 +11,12 @@ This guide gives the result and the order of work.
 
 ## 0. Rules for every contribution
 
+1. **Accounts (2026-10-22):** the GitHub account is linked to the W3C account, and a datatracker account exists. The Google CCLA for OKF is still open.
 1. **Make the text public first.** Make the repo public (§9), or put the test vectors directly in the post. Do not link to a private repo.
 2. **Small and concrete.** Give one problem, one proposal and test vectors (input → expected result). Do not ask a group to adopt kstd. Use the group's own terms, not ours.
 3. **Invented examples only.** Never put text, file names or numbers from our corpus in a post.
 4. **Disclose AI help.** MCP requires a disclosure line by policy. The AIPREF chair asks for short posts and makes the author responsible. Use this line: *"Drafted with AI assistance; I reviewed it and take responsibility."*
-5. **Patent check before you post.** All of these terms include a royalty-free patent commitment or a duty to disclose patents: the W3C CLA §3.1, IETF BCP 79, the Google CCLA and Apache-2.0 PRs. Ask company legal to confirm that the company has no patent in this area. **This was not verified.**
+5. **Patents:** the operator confirmed on 2026-10-22 that the company has no patents in this area. The W3C CLA §3.1, IETF BCP 79, the Google CCLA and Apache-2.0 PRs need no further patent disclosure.
 6. **Replace the placeholders** `<Company>`, `<Name>`, `[REPO-URL]` and `com.example` with real values.
 7. **Do not overclaim (§8).** Kütüphane implements L0 only. The reference rules are in `kstd/reference/`, not in the product.
 
@@ -119,7 +120,7 @@ This guide gives the result and the order of work.
   - Risk: the WG is split between publishers and AI firms. Call our default "local". Do not propose it as everyone's default.
 - **Steps:**
   1. Do the patent check.
-  2. Make a datatracker account and subscribe to `ai-control`.
+  2. The datatracker account exists (2026-10-22). Subscribe to `ai-control` with the same e-mail.
   3. Post the #246 comment and link it in #253.
   4. Send the mail by 10-30.
   5. Drafts: `brief-aipref.md` §7.
@@ -227,7 +228,7 @@ The reference suite has 38 decision cases and 4 erasure cases.
 - **Corpus file names:**
   - `docs/00-kickoff-brief.md` names 3 of your private documents (`…knowledge-layer-backlog`, `…saga-and-kobra-doctrine`, `…llmdap-mcp-doctrine`).
   - The old `KICKOFF-BRIEF.md` is still in the history.
-  - **Decide** if these names may be public. A history rewrite is the only way to remove them from old commits.
+  - **Operator decision (2026-10-22): these names may be public.** No history rewrite.
 - **Read once before you publish:**
   - `docs/00`, `docs/01` and `docs/08`, which are internal decisions in Turkish;
   - the raw review files in `docs/research/`;
