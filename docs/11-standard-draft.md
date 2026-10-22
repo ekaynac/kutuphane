@@ -1,6 +1,6 @@
 # Knowledge standard — draft 0.2
 
-**Status:** DRAFT 0.2, 2026-10-20. The working name is `kstd` (operator question Q5).
+**Status:** DRAFT 0.2, 2026-10-20. The working name is `kstd` (operator question Q5). **Since D59 (2026-10-22) this draft is a contribution and a test tool, not a standard proposed alone:** it is re-checked against the existing work in `docs/13-landscape.md` and brought to the matching communities.
 - **History:** draft 0.1 merged three round-3 proposals (Claude, Astra, Mythos). Astra and Mythos critiqued it in round 4. The change log is in §10. The sources are in `docs/research/2026-10-20-round{3,4}-*`.
 - **Language:** ASD-STE100 Simplified Technical English. **MUST**, **MUST NOT** and **MAY** are normative.
 
