@@ -7,7 +7,7 @@ the failed call stays on record in `model_call`.
 """
 import logging
 
-from . import llmdap, search
+from . import kstd, llmdap, search
 from .gate import Actor
 
 log = logging.getLogger(__name__)
@@ -33,8 +33,11 @@ def stored_dims(conn, model: str) -> int | None:
 
 def index(conn, embedder: llmdap.Routed, book: str) -> int:
     """Embed the book's current chunks that lack a vector of this model; returns how many vectors were added.
-    All vectors of one model have one width: a model that changed its output needs a new model name."""
-    rows = conn.execute(_MISSING, (book, embedder.model)).fetchall()
+    All vectors of one model have one width: a model that changed its output needs a new model name.
+    A passage whose kstd rights do not allow `ai_input` is never sent to the embedder (full text still finds it)."""
+    rights = kstd.Rights(conn)
+    rows = [r for r in conn.execute(_MISSING, (book, embedder.model)).fetchall()
+            if rights.allows(r[0], r[1], r[3], "ai_input")]
     actor = Actor(INDEXER)
     dims = stored_dims(conn, embedder.model)
     for start in range(0, len(rows), BATCH):

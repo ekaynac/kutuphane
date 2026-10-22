@@ -9,3 +9,24 @@ The specification draft is `docs/11-standard-draft.md`. This folder holds the pa
 | `reference/test_cases.py` | Runs the cases: `cd kstd/reference && python -m pytest`. |
 
 **Rule:** each new rule or value in the specification comes with at least one case that fails when the rule is removed.
+
+## L0 in Kütüphane
+
+```sh
+kutuphane kstd-init <folder> --issuer "ACME <kb@acme.example>"   # writes kstd.yaml: every file with its digest
+# edit license, ai_use and personal_data
+kutuphane kstd-check <folder>                                    # digests, SPDX ids, terms; exit 1 on errors
+kutuphane ingest <folder> --book … --sensitivity … --egress … --protection …
+```
+
+A book with `kstd.yaml` follows it (`src/kutuphane/kstd.py`):
+
+| Field | Effect in Kütüphane |
+|---|---|
+| invalid manifest | publication (ingest and approve-import) is refused |
+| `ai_use.search` not `y` | the file is not indexed |
+| `ai_use.ai_input` not `y` | its passages never reach a model: no embedding, no reranking, not in answer passages (the answer reports `withheld`) |
+| `personal_data` not `no` | `export` needs `--legal-basis`; the basis is recorded in the signed package |
+| origin, license, validity, applies_to, notices | shown with search results, citations and answers (`item`) |
+
+A book without `kstd.yaml` behaves as before. Absent `ai_use` terms mean `n`; an unknown license gives no permission.

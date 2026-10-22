@@ -28,7 +28,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-kutuphane = ["migrations/*.sql"]
+kutuphane = ["migrations/*.sql", "spdx_ids.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

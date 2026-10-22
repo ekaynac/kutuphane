@@ -11,7 +11,7 @@ import dataclasses
 import logging
 from dataclasses import dataclass
 
-from . import llmdap, search, vectors
+from . import kstd, llmdap, search, vectors
 from .gate import Actor
 
 log = logging.getLogger(__name__)
@@ -33,13 +33,19 @@ def retrieve(conn, actor: Actor, query: str, k: int = search.DEFAULT_K, stages: 
     if stages.reranker is None:
         return search.search(conn, actor, query, k, vector=vector)
     pool = search.search(conn, actor, query, max(k, RERANK_POOL), vector=vector)
-    if len(pool) < 2:
+    rights = kstd.Rights(conn)
+    slots = [i for i, h in enumerate(pool)  # kstd: only passages whose rights allow ai_input go to the reranker
+             if rights.allows(h.citation.book, h.citation.content_id, h.citation.path, "ai_input")]
+    if len(slots) < 2:
         return pool[:k]
     try:
-        scores = llmdap.rerank(conn, stages.reranker, actor, query, [h.text for h in pool],
-                               source_books=sorted({h.citation.book for h in pool}), purpose="rerank")
+        scores = llmdap.rerank(conn, stages.reranker, actor, query, [pool[i].text for i in slots],
+                               source_books=sorted({pool[i].citation.book for i in slots}), purpose="rerank")
     except llmdap.EgressError as exc:
         log.warning("reranking failed, keeping the hybrid order: %s", exc)
         return pool[:k]
-    order = sorted(range(len(pool)), key=lambda i: -scores[i])  # stable: ties keep the hybrid order
-    return [dataclasses.replace(pool[i], score=scores[i]) for i in order[:k]]
+    order = sorted(range(len(slots)), key=lambda j: -scores[j])  # stable: ties keep the hybrid order
+    out = list(pool)  # passages that were not reranked keep their hybrid position
+    for slot, j in zip(slots, order):
+        out[slot] = dataclasses.replace(pool[slots[j]], score=scores[j])
+    return out[:k]

@@ -37,6 +37,7 @@ class FakeBridge:
     def __init__(self):
         self.audit, self.hits, self.reply, self.on_request = [], [], "tamam", None
         self.embed_reply = self.rerank_reply = None
+        self.requests = []  # (path, body) of every request that passed authentication
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -69,6 +70,7 @@ class FakeBridge:
                                        "correlationId": derived, "model": body["model"], "outcome": "allow",
                                        "forSubject": self.headers.get("x-llmdap-for-subject")})
                 fake.last_body = body
+                fake.requests.append((self.path, body))
                 if self.path.endswith("/v1/rerank"):
                     results = fake.rerank_reply(body) if fake.rerank_reply else \
                         [{"index": i, "relevance_score": fake_relevance(body["query"], d)}

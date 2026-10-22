@@ -20,7 +20,7 @@ import time
 
 from psycopg.types.json import Jsonb
 
-from . import catalog, ids, profiles, signing
+from . import catalog, ids, kstd, profiles, signing
 from .policy import check_policy
 from .source import MAX_FILE_BYTES, MAX_SOURCE_BYTES, SourceError, read_file
 
@@ -41,12 +41,21 @@ class PackageError(ValueError):
 
 # --- export -----------------------------------------------------------------------------------------------
 
-def export(conn, book: str, key) -> bytes:
-    """Sign the book's current version. The sequence for (this key, book) advances in the same transaction."""
+def export(conn, book: str, key, legal_basis: str | None = None) -> bytes:
+    """Sign the book's current version. The sequence for (this key, book) advances in the same transaction.
+    kstd: a file whose personal_data is not `no` leaves the node only with a recorded legal basis (docs/11 §5);
+    the basis goes into the signed manifest."""
     issuer = signing.fingerprint(key.public_key())
     state = catalog.book_state(conn, book)
     if state is None:
         raise PackageError(f"no such book: {book}")
+    rights = kstd.Rights(conn)
+    personal = [e["path"] for e in state["files"]
+                if (info := rights.info(book, state["content_id"], e["path"])) and info["personal_data"] != "no"]
+    basis = legal_basis.strip() if isinstance(legal_basis, str) else ""
+    if personal and not basis:
+        raise PackageError(f"{len(personal)} file(s) may contain personal data ({', '.join(personal[:3])}"
+                           f"{', …' if len(personal) > 3 else ''}); export needs a legal basis")
     files = []
     for entry in state["files"]:
         data = catalog.read_file(conn, book, state["content_id"], entry["path"])
@@ -60,6 +69,7 @@ def export(conn, book: str, key) -> bytes:
         "format": FORMAT, "issuer": issuer, "book": book, "title": state["title"],
         "content_id": state["content_id"], "sequence": seq, "created_at": int(time.time()),
         "policy_suggestion": state["policy"],
+        **({"legal_basis": basis} if personal else {}),
         "files": [{"path": p, "sha256": ids.sha256_hex(d), "size": len(d)} for p, d in sorted(files)],
     }
     body = ids.canonical(manifest)
@@ -213,7 +223,8 @@ def receive(conn, data: bytes) -> dict:
         (manifest["issuer"], manifest["book"], manifest["sequence"], manifest["content_id"], Jsonb(manifest), data,
          Jsonb(findings), Jsonb(diff))).fetchone()[0]
     return {"id": pid, "status": "verified", "book": manifest["book"], "sequence": manifest["sequence"],
-            "findings": findings, "diff": diff, "policy_suggestion": manifest.get("policy_suggestion")}
+            "findings": findings, "diff": diff, "policy_suggestion": manifest.get("policy_suggestion"),
+            "legal_basis": manifest.get("legal_basis")}
 
 
 # --- decide -----------------------------------------------------------------------------------------------

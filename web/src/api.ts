@@ -1,13 +1,26 @@
 // Same-origin calls to Kütüphane Core. The token lives in memory (and sessionStorage for this tab only).
 
-export type Hit = { citation: string; page: number | null; score: number; text: string };
-export type Ref = { n: number; book: string; content_id: string; profile_id: string; path: string; ordinal: number };
+// kstd item information of a file (docs/11 §8); null when its book has no kstd.yaml.
+export type Item = {
+  issuer: string;
+  origin: "human" | "model" | "unknown";
+  license: string;
+  holder: string | null;
+  valid_from: string | null;
+  valid_to: string | null;
+  applies_to: string | null;
+  notices: string[];
+  current: boolean;
+} | null;
+export type Hit = { citation: string; page: number | null; score: number; text: string; item?: Item };
+export type Ref = { n: number; book: string; content_id: string; profile_id: string; path: string; ordinal: number; item?: Item };
 export type Answer = {
   id: string;
   status: "answered" | "not_in_library";
   body: string | null;
   citations: Ref[];
   correlation_id?: string;
+  withheld?: number;
 };
 export type Reopened = {
   id: string;
@@ -16,7 +29,7 @@ export type Reopened = {
   body: string | null;
   evidence: { n: number; citation: string; text: string | null }[];
 };
-export type Passage = { citation: string; page: number | null; text: string };
+export type Passage = { citation: string; page: number | null; text: string; item?: Item };
 export type Me = { principal: string; on_behalf_of: string | null };
 
 export class ApiError extends Error {

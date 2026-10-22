@@ -11,7 +11,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import (answers, audit, authz, catalog, db, devauth, gate, identity, llmdap, packages, profiles, search,
+from . import (answers, audit, authz, catalog, db, devauth, gate, identity, kstd, llmdap, packages, profiles, search,
                retrieval, signing, vectors)
 from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, make_policy
 from .source import read_source
@@ -97,10 +97,36 @@ def cmd_read(conn, args) -> int:
 
 def cmd_search(conn, args) -> int:
     actor = gate.Actor(args.principal, args.on_behalf_of)
-    hits = retrieval.retrieve(conn, actor, args.query, args.k, retrieval.Stages.from_env())
-    _print([{"citation": h.citation.handle, "page": h.page, "score": round(h.score, 4), "text": h.text}
-            for h in hits])
+    hits, rights = retrieval.retrieve(conn, actor, args.query, args.k, retrieval.Stages.from_env()), kstd.Rights(conn)
+    _print([{"citation": h.citation.handle, "page": h.page, "score": round(h.score, 4), "text": h.text,
+             "item": rights.info(h.citation.book, h.citation.content_id, h.citation.path)} for h in hits])
     return 0
+
+
+def cmd_kstd_init(_conn, args) -> int:
+    """Write a starting kstd.yaml that lists every file with its digest; all rights start as unknown."""
+    root = Path(args.path)
+    target = root / kstd.MANIFEST
+    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)  # never overwrite a curated manifest
+    with os.fdopen(fd, "w") as f:
+        f.write(kstd.init(read_source(root), args.issuer))
+    print(f"wrote {target}: set the license, ai_use and personal_data, then run `kutuphane kstd-check {root}`")
+    return 0
+
+
+def cmd_kstd_check(_conn, args) -> int:
+    files = read_source(Path(args.path))
+    found = [f for f in files if f.path == kstd.MANIFEST]
+    if not found:
+        print(f"no {kstd.MANIFEST} in {args.path}", file=sys.stderr)
+        return 1
+    errors, warnings = kstd.check(kstd.parse(found[0].data), {f.path: f.sha256 for f in files})
+    for w in warnings:
+        print(f"warning: {w}")
+    for e in errors:
+        print(f"error: {e}", file=sys.stderr)
+    print("kstd L0: " + ("FAIL" if errors else "PASS") + f" ({len(files) - 1} files)")
+    return 1 if errors else 0
 
 
 def cmd_ask(conn, args) -> int:
@@ -149,7 +175,7 @@ def cmd_untrust(conn, args) -> int:
 
 
 def cmd_export(conn, args) -> int:
-    data = packages.export(conn, args.book, signing.load_private())
+    data = packages.export(conn, args.book, signing.load_private(), legal_basis=args.legal_basis)
     fd = os.open(args.out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
     with os.fdopen(fd, "wb") as f:
         f.write(data)
@@ -292,6 +318,8 @@ def parser() -> argparse.ArgumentParser:
     ex_ = sub.add_parser("export", help="write a signed package of a book's current version (KUTUPHANE_SIGNING_KEY)")
     ex_.add_argument("book")
     ex_.add_argument("--out", required=True)
+    ex_.add_argument("--legal-basis", help="required when kstd.yaml marks files as personal data yes/unknown; "
+                     "recorded in the signed package")
     ex_.set_defaults(fn=cmd_export)
     rc = sub.add_parser("receive", help="quarantine and verify a package; nothing is published")
     rc.add_argument("package")
@@ -310,6 +338,13 @@ def parser() -> argparse.ArgumentParser:
     rj.add_argument("--reason", required=True)
     rj.set_defaults(fn=cmd_reject)
     sub.add_parser("imports", help="received packages and their verdicts").set_defaults(fn=cmd_imports)
+    ki = sub.add_parser("kstd-init", help="write a starting kstd.yaml for a folder (no database)")
+    ki.add_argument("path")
+    ki.add_argument("--issuer", required=True, help="who answers for this folder, e.g. 'ACME <kb@acme.example>'")
+    ki.set_defaults(fn=cmd_kstd_init, no_db=True)
+    kc = sub.add_parser("kstd-check", help="validate a folder's kstd.yaml: digests, SPDX ids, terms (no database)")
+    kc.add_argument("path")
+    kc.set_defaults(fn=cmd_kstd_check, no_db=True)
     sub.add_parser("whoami", help="verify an access token read from stdin").set_defaults(fn=cmd_whoami)
     ex = sub.add_parser("explain", help="unified audit for a correlation id (or, with --answer, an answer id)")
     ex.add_argument("id")
