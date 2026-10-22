@@ -1,0 +1,63 @@
+# Real local models (D61). Nothing leaves the machine: LLMDAP's routes (config/routes.local.json) reach
+#   chat   → spark-chat → the host's vLLM (RadixArk/Qwen3.8-27B-NVFP4, host port 8000; thinking forced off)
+#   emb    → embedder   (BAAI/bge-m3, 1024 dimensions, CPU)
+#   rerank → embedder   (BAAI/bge-reranker-v2-m3, CPU)
+#   laya   → laya       (unchanged)
+# The embedder weights come from the read-only Hugging Face cache at the commits pinned in deploy/models/server.py
+# (download them once; see deploy/llmdap/README.md). Core gets the matching route and model settings below.
+#
+#   docker compose -f compose.yaml -f deploy/compose.local-models.yaml \
+#     --profile app --profile decision-models --profile local-models up -d --build
+services:
+  llmdap:
+    environment:
+      BRIDGE_ROUTES_FILE: /etc/llmdap/routes.local.json
+
+  core:
+    environment:
+      KUTUPHANE_LLMDAP_ROUTE: chat
+      KUTUPHANE_ANSWER_MODEL: RadixArk/Qwen3.8-27B-NVFP4
+      KUTUPHANE_LLMDAP_EMBED_ROUTE: emb
+      KUTUPHANE_EMBED_MODEL: BAAI/bge-m3
+      KUTUPHANE_LLMDAP_RERANK_ROUTE: rerank
+      KUTUPHANE_RERANK_MODEL: BAAI/bge-reranker-v2-m3
+
+  embedder:
+    profiles: [local-models]
+    build: deploy/models
+    image: kutuphane-models:1.0
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    environment:
+      MODELS_THREADS: "8"
+      OMP_NUM_THREADS: "8"
+    cpus: 8
+    mem_limit: 8g          # the host's memory is shared with the GPU models
+    volumes:
+      - ${HF_CACHE:-~/.cache/huggingface}:/hf:ro   # pinned Hub revisions; the container has no network out
+    networks: [models]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 10s
+      start_period: 180s
+      retries: 3
+
+  spark-chat:
+    profiles: [local-models]
+    # Forwards only POST /v1/chat/completions, and only to the host's vLLM (deploy/spark-chat/nginx.conf).
+    image: nginx:1.27-alpine
+    entrypoint: ["nginx", "-c", "/etc/nginx/spark-chat/nginx.conf", "-g", "daemon off;"]
+    user: "101:101"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    volumes:
+      - ./deploy/spark-chat:/etc/nginx/spark-chat:ro
+    extra_hosts: ["vllm-host:host-gateway"]
+    networks: [models, spark]   # `models` is internal; `spark` is the one way to the host
+
+networks:
+  spark: {}
