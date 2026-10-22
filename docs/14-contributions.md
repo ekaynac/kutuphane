@@ -1,6 +1,6 @@
 # Contributions — a guide for the operator
 
-**Status:** 0.1, 2026-10-22 (D60). The facts were checked on 2026-10-22.
+**Status:** 0.2, 2026-10-22 (D60, D61). The facts were checked on 2026-10-22. **On hold (D61):** we post nothing until Kütüphane is used and tested on real work projects. The deadlines in §1 are kept only for reference. After the real-use evaluation, check each proposal again against what we learned.
 **Basis:** the briefs in `docs/research/2026-10-22-brief-*.md`. Each brief has:
 - the links and the quotes;
 - the full comparison table;
@@ -8,6 +8,22 @@
 
 This guide gives the result and the order of work.
 **Language:** ASD-STE100 Simplified Technical English.
+
+## Summary — what is missing in their work, and what we propose
+
+| Group | What their work does not cover today | What we propose | Our evidence |
+|---|---|---|---|
+| W3C Agent Memory CG | Test vectors for "imported memory is evidence, not authority". A rule for how far an erasure reaches into derived notes. A rule for a missing or `unknown` licence in citations. | Trust per issuer × kind × scope × action, with an expiry. A restriction counts from anyone; a loosening counts only from a trusted issuer. Erasure follows recorded inputs, transitively, and lists copies at other nodes. A missing licence gives nothing. | decision cases (rules 4, 5, 8); erasure cases |
+| ODRL CG → ODRL 3.0 WG | A result for each evaluation request (today they have results only per rule). A result for "cannot be determined". Fail-closed behaviour for unknown terms (2.2 says only "stop processing"). | Three results: permit / deny / escalate (as XACML `Indeterminate`). Unknown required term → deny. Reason codes with every result. | 38 decision cases; 2 converted to the odrl-force format |
+| IETF AIPREF | Preferences for a derived form that comes from **several** sources (the editor called it "nebulous" and asked for proposals). | A use is consistent only if it is consistent with **each** input: disallow if any input disallows; unknown if any input is unknown; else allow. | input-rights cases |
+| W3C DPV CG | A flat code list without RDF (#221). A statement that `SyntheticData` does not by itself mean "no personal data". | Our L0 manifest as a real user of DPV codes; a usage note for `SyntheticData`. | `kstd.yaml` validator; export with DPV codes |
+| OKF (Google) | No licence, AI-use, personal-data or digest fields. No rule that restrictions travel when trust does not. | An optional `rights` family; absent = "not stated", never "no"; restrictions are inherited. | L0 validator; rule 4 |
+| in-toto #67 | Who may revoke an attestation, and a monotonic way to do it. | Authority comes from verifier policy, not from a field. An unauthorized revocation is only a notice. Freshness instead of "deny if revoked". | rule 4, 6, 8 cases |
+| MCP (Tool Annotations IG) | "Enforcement or advisory?"; declassification; rights are not covered. | Decide on the server before delivery; a typed rights scheme. | Kütüphane MCP server (`withheld`) |
+| W3C AI Content Disclosure CG | Formats that are not HTML; who took editorial responsibility for `ai-assisted` text. | YAML front-matter keys; a separate review record (`reviewed_by`). | L0 `assisted` + `reviewed_by` |
+| W3C Web & AI IG | A list of missing specifications (#22 has no answers). | Three gaps: absent ≠ no; reviewed AI text; fragment-level metadata (we lack this too). | `docs/13` |
+
+**What we do not have yet (§8):** most of this evidence is in the reference rules (`kstd/reference/`), not in Kütüphane. Kütüphane implements L0 only. The real-use evaluation (D61) must show which of these rules matter in practice.
 
 ## 0. Rules for every contribution
 
@@ -212,12 +228,7 @@ The reference suite has 38 decision cases and 4 erasure cases.
 - metadata for fragments of a file (only per file);
 - the public test set (planned, not built).
 
-**For your decision:**
-1. On export to disclosure keys:
-   - `model` → `ai-autonomous`;
-   - `unknown` → no key.
-
-   Today the signed package lists `unknown` together with `model` as `ai_generated`, because it fails closed.
+**Decided (D61, 2026-10-22):** for export to disclosure keys, `model` → `ai-autonomous` and `unknown` → **no key** ("we do not know"). Inside Kütüphane, `unknown` still counts as `model` for every decision, and the signed package still lists it in `ai_generated`.
 
 ## 9. Before the repo becomes public (audit of 2026-10-22)
 
