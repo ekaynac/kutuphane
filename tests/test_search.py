@@ -250,6 +250,14 @@ def test_jsonl_book_is_searchable_per_record(conn, tmp_path):  # G1: one record,
     assert search.open_citation(conn, Actor(U), hit.citation).line == 4
 
 
+@pytest.mark.parametrize("end", ["\n", "\r\n"])
+def test_jsonl_records_end_only_at_newlines(end):  # Astra #9: U+2028 inside a JSON string is content, not a record end
+    records = ['{"id": 1, "metin": "birinci\u2028ikinci", "kaynak": "arsiv-7"}', '{"id": 2, "metin": "son"}']
+    f = read_file("kayit.jsonl", (end.join(records) + end).encode())
+    chunks = profiles.split(profiles.spec("chunked"), f)
+    assert [(c.line, c.text.rstrip("\n")) for c in chunks] == [(1, records[0]), (2, records[1])]
+
+
 FORMATS = {
     "notlar.txt": "Yedekler her gece alinir: zebrakelime.\n",
     "ayar.yaml": "servis:\n  aciklama: kaplankelime\n",

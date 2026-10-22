@@ -4,8 +4,8 @@ The specification draft is `docs/11-standard-draft.md`. This folder holds the pa
 
 | Path | Purpose |
 |---|---|
-| `tests/decision/cases.yaml` | Conformance cases for the decision rule (§4): inputs and the expected `result`, `authority`, `reasons`, `notices`. A conforming implementation MUST give the same output for every case. |
-| `tests/erasure/cases.yaml`, `reference/erase.py` | Conformance cases for the reach of an erasure (§3 `erase`, §5 Inputs): erased, kept, unresolved copies at other nodes, derived items with unknown scope. |
+| `tests/decision/cases.yaml` | Conformance cases for the decision rule (§4): inputs and the expected `result`, `authority`, `reasons`, `notices`. A conforming implementation MUST give the same output for every case. A derived item is checked against its whole recorded lineage (inputs of inputs, transitively, cycle-safe; a missing ancestor gives `input-unknown`): rights, `ai_use` and personal data (with the synthetic trust rule) per input, and it inherits the strictest `export` and `route` handling of the lineage. |
+| `tests/erasure/cases.yaml`, `reference/erase.py` | Conformance cases for the reach of an erasure (§3 `erase`, §5 Inputs): erased, kept, unresolved copies at other nodes, derived items with unknown scope. The reach starts from every requested id, also one that is not held locally; only local items are reported as erased, and deliveries of any reached item stay unresolved. `inputs: []` counts as no recorded inputs (scope unknown). |
 | `reference/decide.py` | A small reference evaluator. It proves that the cases are consistent. It is not a product component. |
 | `reference/test_cases.py` | Runs the cases: `cd kstd/reference && python -m pytest`. |
 
@@ -18,6 +18,8 @@ kutuphane kstd-init <folder> --issuer "ACME <kb@acme.example>"   # writes kstd.y
 # edit license, ai_use and personal_data
 kutuphane kstd-check <folder>                                    # digests, SPDX ids, terms; exit 1 on errors
 kutuphane ingest <folder> --book … --sensitivity … --egress … --protection …
+# a reviewed credential-scan false positive (see the root README): one rule, one exact file content, recorded
+kutuphane ingest <folder> … --accept-finding docs/ornek.md@sha256:<sha256sum of the file>:aws-access-key
 ```
 
 A book with `kstd.yaml` follows it (`src/kutuphane/kstd.py`):

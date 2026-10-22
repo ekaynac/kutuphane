@@ -33,7 +33,7 @@ def test_upgrade_to_011_marks_legacy_agent_chunks_as_instructions(conn):  # G5: 
     conn.execute("DROP SCHEMA public CASCADE")
     conn.execute("CREATE SCHEMA public")
     db.migrate(conn)
-    applied = [s.name for s in _scripts() if s.name >= "011"]
+    applied = [s.name for s in _scripts() if s.name.startswith("011")]  # later migrations stay applied
     conn.execute("DROP TABLE quarantine")
     conn.execute("ALTER TABLE chunk DROP COLUMN line")
     conn.execute("DELETE FROM schema_migration WHERE name = ANY(%s)", (applied,))
@@ -53,3 +53,19 @@ def test_upgrade_to_011_marks_legacy_agent_chunks_as_instructions(conn):  # G5: 
     assert flags == {p: agentfiles.is_instruction({"path": p}, skills) for p in paths}
     assert {p for p, v in flags.items() if not v} == {"index.md", "araclar/ozetler.md", "skills/matris.md",
                                                       "araclar_ozet/x.md"}
+
+
+def test_upgrade_to_012_gives_older_publications_no_accepted_findings(conn):  # Astra #9
+    conn.execute("DROP SCHEMA public CASCADE")
+    conn.execute("CREATE SCHEMA public")
+    db.migrate(conn)
+    conn.execute("ALTER TABLE publication DROP COLUMN accepted_findings")
+    conn.execute("DELETE FROM schema_migration WHERE name = '012_accepted_findings.sql'")
+    conn.execute("INSERT INTO profile_version (id, spec) VALUES ('pf_old', '{}')")
+    conn.execute("INSERT INTO policy_version (id, doc) VALUES ('pl_old', '{}')")
+    conn.execute("INSERT INTO book (slug, title) VALUES ('eski', 'eski')")
+    conn.execute("INSERT INTO content_version (book, id, manifest) VALUES ('eski', 'ct_old', '[]')")
+    conn.execute("INSERT INTO publication (book, content_id, profile_id, policy_id) "
+                 "VALUES ('eski', 'ct_old', 'pf_old', 'pl_old')")
+    assert db.migrate(conn) == ["012_accepted_findings.sql"]
+    assert conn.execute("SELECT accepted_findings FROM publication").fetchall() == [([],)]

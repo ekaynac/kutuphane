@@ -7,6 +7,10 @@ It serves the same openai-compatible shapes as `deploy/model_stub.py`, with real
 
 Both models load only from the pinned commit in the read-only Hugging Face cache; the container has no network out.
 One forward pass runs at a time (the CPU threads are the limit, not the request count).
+
+Request framing is strict, because the body limit depends on it: exactly one Content-Length of ASCII digits, at
+most MAX_BODY; Transfer-Encoding (chunked bodies) is refused. Every socket read has a timeout (READ_TIMEOUT), and
+at most MAX_INFLIGHT POST requests read a body or wait for the model at once; one more gets 503 at once.
 """
 import json
 import logging
@@ -32,12 +36,40 @@ RERANK_MAX_TOKENS = int(os.environ.get("RERANK_MAX_TOKENS", "1024"))
 MAX_BODY = 8 * 1024 * 1024  # LLMDAP's default maxRequestBytes
 MAX_ITEMS = 1000            # texts per embeddings request, documents per rerank request
 MICRO_BATCH = 16            # texts per forward pass, sorted by length so padding stays small
+READ_TIMEOUT = float(os.environ.get("MODELS_READ_TIMEOUT", "30"))  # seconds per socket read (headers, body)
+MAX_INFLIGHT = int(os.environ.get("MODELS_MAX_INFLIGHT", "8"))     # POSTs reading a body or waiting for the model
 
 log = logging.getLogger("models")
 
 
 class BadRequest(ValueError):
     pass
+
+
+class Refused(ValueError):
+    """A request refused before its body is read, with its HTTP status."""
+
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
+
+
+def body_length(headers) -> int:
+    """The body length: exactly one Content-Length of ASCII digits, at most MAX_BODY, and no Transfer-Encoding.
+    `-1` would make rfile.read() read to EOF past the limit; two lengths or chunked framing could disagree."""
+    if headers.get_all("transfer-encoding"):
+        raise Refused(501, "transfer-encoding is not supported; send one content-length")
+    values = headers.get_all("content-length") or []
+    if not values:
+        raise Refused(411, "content-length required")
+    if len(values) > 1:
+        raise Refused(400, "more than one content-length")
+    value = values[0].strip()
+    if not (value.isascii() and value.isdigit()):
+        raise Refused(400, "content-length must be a non-negative integer")
+    if len(value) > len(str(MAX_BODY)) or int(value) > MAX_BODY:
+        raise Refused(413, "request too large")
+    return int(value)
 
 
 def load(repo: str, cls):
@@ -126,8 +158,10 @@ def answer(models: Models, path: str, body) -> dict:
     raise BadRequest(f"unknown path {path}")
 
 
-def handler(models: Models):
+def handler(models: Models, inflight: threading.BoundedSemaphore):
     class Handler(BaseHTTPRequestHandler):
+        timeout = READ_TIMEOUT  # StreamRequestHandler sets it on the socket: a stalled client cannot keep a thread
+
         def log_message(self, *args):
             pass
 
@@ -136,6 +170,8 @@ def handler(models: Models):
             self.send_response(status)
             self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(data)))
+            if status == 503:
+                self.send_header("retry-after", "1")
             self.end_headers()
             self.wfile.write(data)
 
@@ -145,15 +181,29 @@ def handler(models: Models):
             self.send(200, {"status": "ok", "revisions": PINNED, "threads": torch.get_num_threads()})
 
         def do_POST(self):
+            self.close_connection = True  # one request per connection; nothing left unread is ever reused
             if self.path not in ("/v1/embeddings", "/v1/rerank"):
                 return self.send(404, {"error": "not found"})
+            if not inflight.acquire(blocking=False):
+                return self.send(503, {"error": "busy, retry later"})
             try:
-                length = int(self.headers.get("content-length") or 0)
-                if length > MAX_BODY:
-                    return self.send(413, {"error": "request too large"})
-                body = json.loads(self.rfile.read(length))
+                self.post()
+            finally:
+                inflight.release()
+
+        def post(self):
+            try:
+                length = body_length(self.headers)
+                data = self.rfile.read(length)
+                if len(data) != length:
+                    raise Refused(400, "body shorter than content-length")
+                body = json.loads(data)
+            except Refused as exc:
+                return self.send(exc.status, {"error": str(exc)})
+            except TimeoutError:
+                return self.send(408, {"error": "request body timed out"})
             except ValueError:
-                return self.send(400, {"error": "invalid JSON or content-length"})
+                return self.send(400, {"error": "invalid JSON"})
             try:
                 self.send(200, answer(models, self.path, body))
             except BadRequest as exc:
@@ -169,4 +219,4 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     models = Models()
     log.info("loaded %s", ", ".join(f"{m}@{r}" for m, r in PINNED.items()))
-    ThreadingHTTPServer(("0.0.0.0", 8000), handler(models)).serve_forever()
+    ThreadingHTTPServer(("0.0.0.0", 8000), handler(models, threading.BoundedSemaphore(MAX_INFLIGHT))).serve_forever()

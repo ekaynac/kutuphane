@@ -32,3 +32,18 @@ cases:
     statements: *stmts
     request: {erase: [N1]}
     expect: {erased: [N1, X1], kept: [A, B, N2, N3], unresolved: [N1@node:Q], scope_unknown: []}
+
+  - name: erasing an item that is not held here still reaches its local descendants and copies elsewhere
+    statements:
+      - *stmts
+      - [{id: N6, kind: item, body: {origin: model, inputs: [R]}},          # R is remote or already removed
+         {kind: use_record, body: {type: use, item: R, to: node:P}}]
+    request: {erase: [R]}
+    expect: {erased: [N6], kept: [A, B, N1, N2, N3, X1], unresolved: [R@node:P], scope_unknown: []}
+
+  - name: an empty inputs list is not proof of no inputs, so the item is scope unknown
+    statements:
+      - *stmts
+      - [{id: N7, kind: item, body: {origin: model, inputs: []}}]
+    request: {erase: [A]}
+    expect: {erased: [A, N1, N2, X1], kept: [B, N3, N7], unresolved: [N1@node:Q], scope_unknown: [N7]}
