@@ -88,7 +88,10 @@ function field(form, name, input, proposal) {
   form.append(el("label", { class: "f", for: name }, LABELS[name] || name));
   input.id = name; form.append(input);
   if (HELP[name]) form.append(el("div", { class: "prop" }, HELP[name]));
-  if (proposal) form.append(el("div", { class: "prop on" }, `öneri: ${JSON.stringify(proposal.value)} (${proposal.confidence}) — ${proposal.evidence}`));
+  if (proposal) form.append(el("div", { class: "prop on" }, `kural: ${JSON.stringify(proposal.value)} (${proposal.confidence}) — ${proposal.evidence}`));
+  const q = current && current.llm;
+  const qv = q && (name === "activate" ? (q.hostile === "yes" ? "deny" : null) : q[name]);
+  if (qv) form.append(el("div", { class: "prop on" }, `Qwen: ${qv}${q[`${name === "activate" ? "hostile" : name}_evidence`] ? " — " + q[`${name === "activate" ? "hostile" : name}_evidence`] : ""}`));
 }
 
 async function show() {

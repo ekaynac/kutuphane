@@ -5,7 +5,8 @@ The tools of the labelling v4 dataset. The dataset itself is local only and git 
 | File | What it does |
 |---|---|
 | `propose.py` | The rule proposer (G6). It reads the bytes, the path, the declared item license, the git signals and the record fields. It suggests origin, personal data, license, `ai_use`, acceptance, dates, scope, instruction and activate, with the evidence for each suggestion. It never reads the expected answers of the synthetic stratum. `--eval` scores the suggestions against the facts that each source states. |
-| `server.py`, `page.html` | The labelling page: batches of 20 in the order R → S → W → A. It shows the raw text, with hidden characters as `⟦U+…⟧`, and the suggestions. It appends to `labels.jsonl` and records which suggestions the person accepted unchanged (research question Q24). In the synthetic stratum the page hides the case notes, because they are the answers. |
+| `llm_propose.py` | The local LLM proposer: Qwen3.8 through the LLMDAP `chat` route. Content stays on this machine. It suggests origin, personal data, instruction, hostile intent and acceptance, with evidence, to `proposals_llm.jsonl`. It can resume a run. `--eval` scores it. |
+| `server.py`, `page.html` | The labelling page: batches of 20 in the order R → S → W → A. It shows the raw text, with hidden characters as `⟦U+…⟧`, and the rule and Qwen suggestions. It appends to `labels.jsonl` and records which suggestions the person accepted unchanged (research question Q24). In the synthetic stratum the page hides the case notes, because they are the answers. |
 
 ```
 python -I propose.py ../../research/labelling-v4 --eval
