@@ -347,3 +347,17 @@ Ham metin: `docs/research/2026-10-22-astra-review-9-raw.md`. On bulgunun hepsi d
 10. **Negatif Content-Length model sunucusunun gövde sınırını aşıyordu (orta):** tek, geçerli, negatif olmayan ve sınırlı bir Content-Length gerekir; `Transfer-Encoding` (501) ve yinelenen uzunluk (400) reddedilir; soket okuma zaman aşımı 30 sn (408); en çok 8 eşzamanlı POST, fazlası hemen 503 alır. Kapsayıcı içinde atılabilir bir betikle denendi; `embedder` yeniden kuruldu ve sağlıklı.
 
 Karar kuralı vakaları 38'den 45'e, silme vakaları 4'ten 6'ya çıktı.
+
+# Astra incelemesi #10 (PR #55–#57) ve düzeltmeler
+
+Ham metin: `docs/research/2026-10-23-astra-review-10-raw.md`. Dokuz bulgunun hepsi düzeltildi:
+
+1. **Boş jeton kimlik doğrulamayı kapatıyordu (yüksek, etiketleme sayfası):** 16 karakterden kısa jeton başlangıçta reddedilir; boş çerez hiçbir zaman geçmez.
+2. **Araç işareti model kanıtını eziyordu (orta):** model kanıtı önce değerlendirilir; `tool` yalnız adı belli bir kural tabanlı üreticiyle önerilir.
+3. **Durum satırı alt dize eşleşmesi (orta):** `unstable`, `not approved` artık kabul önermez; değer kelime kelime ve olumsuzlukla okunur.
+4. **Başka anahtarın geri çekmesi `accepted` öneriyordu (orta):** yalnız itiraz işareti olur; kaynağın kendi durumu korunur.
+5. **Qwen önericisi başarısız öğeleri bir daha denemiyordu (orta):** yalnız tam ve geçerli öneri "bitti" sayılır; değerlendirme her öğenin son sonucunu kullanır.
+6. **Bozuk model yanıtı tüm koşuyu düşürebiliyordu (orta):** yanıt zarfı ve beş alan tip olarak doğrulanır; şema hatası öğe başına kaydedilir.
+7. **Sayfada çift tıklama öğe atlatıyordu (orta):** kaydetme ve gezinme sırasında düğmeler kilitlenir; eski yanıt imleci oynatmaz.
+8. **`software_agent` sürümü sayı olarak kayboluyordu (orta):** ad ve sürüm dize olmalı (`version: "1.10"`); sayı ve mantıksal değer reddedilir.
+9. **Alınan pakette `tool_made` doğrulanmıyordu (orta):** köken listeleri paketteki geçerli `kstd.yaml`'dan yeniden hesaplanır; fark varsa paket reddedilir.

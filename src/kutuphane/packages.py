@@ -64,11 +64,7 @@ def export(conn, book: str, key, legal_basis: str | None = None) -> bytes:
             basis = kstd.legal_basis(legal_basis)
         except kstd.KstdError as exc:
             raise PackageError(str(exc)) from None
-    origin = {
-        "ai_generated": sorted(p for p, i in infos.items() if i["origin"] in kstd.AI_GENERATED),
-        "reviewed": {p: i["reviewed_by"] for p, i in sorted(infos.items()) if i["origin"] == "assisted"},
-        "tool_made": {p: i["software_agent"] for p, i in sorted(infos.items()) if i["origin"] == "tool"},
-    } if infos else {}
+    origin = origin_marks(infos)
     files = []
     for entry in state["files"]:
         data = catalog.read_file(conn, book, state["content_id"], entry["path"])
@@ -97,6 +93,21 @@ def export(conn, book: str, key, legal_basis: str | None = None) -> bytes:
             tar.addfile(info, io.BytesIO(data))
     return out.getvalue()
 
+
+
+ORIGIN_MARKS = ("ai_generated", "reviewed", "tool_made")
+
+
+def origin_marks(infos: dict) -> dict:
+    """The origin lists of a package manifest, from the item information of each file ({} without kstd.yaml).
+    Export writes them; receive recomputes them from the enclosed kstd.yaml and refuses any difference."""
+    if not infos:
+        return {}
+    return {
+        "ai_generated": sorted(p for p, i in infos.items() if i["origin"] in kstd.AI_GENERATED),
+        "reviewed": {p: i["reviewed_by"] for p, i in sorted(infos.items()) if i["origin"] == "assisted"},
+        "tool_made": {p: i["software_agent"] for p, i in sorted(infos.items()) if i["origin"] == "tool"},
+    }
 
 # --- receive ----------------------------------------------------------------------------------------------
 
@@ -187,6 +198,14 @@ def _verify(conn, members: dict[str, bytes]) -> tuple[dict, list]:
             raise PackageError(str(exc)) from None
     if ids.content_id({sf.path: sf.sha256 for sf in files}) != manifest["content_id"]:
         raise PackageError("content id does not match the files")
+    try:  # the origin lists are claims of the sender: they must follow from the enclosed, valid kstd.yaml
+        enclosed = kstd.validate(files)
+    except kstd.KstdError as exc:
+        raise PackageError(f"enclosed {kstd.MANIFEST} is not valid: {exc}") from None
+    infos = {f.path: info for f in files if enclosed and (info := kstd.effective(enclosed, f.path)) is not None}
+    expected = origin_marks(infos)
+    if {k: manifest[k] for k in ORIGIN_MARKS if k in manifest} != expected:
+        raise PackageError(f"origin lists ({', '.join(ORIGIN_MARKS)}) do not match the enclosed {kstd.MANIFEST}")
     if not 1 <= manifest["sequence"] < 2**63:  # a bigint column
         raise PackageError("invalid sequence")
     last = _last_sequence(conn, manifest["issuer"], manifest["book"])

@@ -164,7 +164,10 @@ def load_token(root: Path) -> str:
             f.write(secrets.token_urlsafe(18))
     if path.stat().st_mode & 0o077:
         raise SystemExit(f"{path} must be private (chmod 600)")
-    return path.read_text().strip()
+    token = path.read_text().strip()
+    if len(token) < 16:  # an empty or cut file would make every request look authenticated
+        raise SystemExit(f"{path} holds no valid token (16+ characters); delete it to make a new one")
+    return token
 
 
 def check_host(host: str, allow_any: bool) -> None:
@@ -185,7 +188,8 @@ def make_handler(store: Store, token: str, page: bytes):
 
         def authed(self) -> bool:
             jar = SimpleCookie(self.headers.get("Cookie", ""))
-            return hmac.compare_digest(jar[COOKIE].value if COOKIE in jar else "", token)
+            got = jar[COOKIE].value if COOKIE in jar else ""
+            return bool(got) and hmac.compare_digest(got, token)
 
         def send(self, status, body: bytes, ctype="application/json; charset=utf-8", extra=None):
             self.send_response(status)

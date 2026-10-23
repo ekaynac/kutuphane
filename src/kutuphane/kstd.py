@@ -145,10 +145,10 @@ def _pd(value):
 
 
 def _software_agent_ok(value) -> bool:
-    """{name, version}: both non-empty strings (a YAML number version, e.g. 1.2, is accepted as written)."""
-    return (isinstance(value, dict) and set(value) == {"name", "version"} and isinstance(value["name"], str)
-            and value["name"].strip() != "" and isinstance(value["version"], (str, int, float))
-            and str(value["version"]).strip() != "")
+    """{name, version}: both non-empty STRINGS. A YAML number would lose the exact version (1.10 → 1.1), so a
+    numeric-looking version must be quoted: version: "1.10"."""
+    return (isinstance(value, dict) and set(value) == {"name", "version"}
+            and all(isinstance(value[k], str) and value[k].strip() for k in ("name", "version")))
 
 
 def _date(value):
@@ -240,7 +240,7 @@ def check(manifest: dict, files: dict[str, str]) -> tuple[list[str], list[str]]:
             errors.append(f"{where}: reviewed_by is only for origin assisted")
         agent = item.get("software_agent")
         if origin == "tool" and not _software_agent_ok(agent):
-            errors.append(f"{where}: origin tool needs software_agent: {{name, version}} of the generator or recorder")
+            errors.append(f"{where}: origin tool needs software_agent: {{name, version}} of the generator or recorder, as strings (quote a version such as \"1.10\")")
         elif "software_agent" in item and origin != "tool":
             errors.append(f"{where}: software_agent is only for origin tool")
         start, end = item.get("valid_from"), item.get("valid_to")

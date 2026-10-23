@@ -268,6 +268,8 @@ def resigned(pkg: bytes, private, change) -> bytes:
 @pytest.mark.parametrize("change,reason", [
     (lambda m: {**m, "title": "a\x00b"}, "NUL"),
     (lambda m: {**m, "sequence": 2**63}, "invalid sequence"),
+    (lambda m: {**m, "tool_made": {"index.md": {"name": "x", "version": "1"}}}, "origin lists"),  # Astra #10
+    (lambda m: {**m, "ai_generated": []}, "origin lists"),
 ])
 def test_values_postgres_cannot_hold_are_recorded_rejections(conn, conn_b, key, source_book, change, reason):
     private, info = key
