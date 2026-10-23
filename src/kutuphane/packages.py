@@ -45,7 +45,8 @@ def export(conn, book: str, key, legal_basis: str | None = None) -> bytes:
     """Sign the book's current version. The sequence for (this key, book) advances in the same transaction.
     kstd: a file whose personal_data is not `no` or `synthetic` leaves the node only with a recorded legal basis
     (DPV codes, docs/11 §5); the basis goes into the signed manifest. Files with origin `model`/`unknown` are listed
-    as `ai_generated`; `assisted` files are listed in `reviewed` with their reviewer (EU AI Act Art. 50(4))."""
+    as `ai_generated`; `assisted` files are listed in `reviewed` with their reviewer (EU AI Act Art. 50(4)); `tool`
+    files are listed in `tool_made` with their software agent and carry no AI mark (docs/17)."""
     issuer = signing.fingerprint(key.public_key())
     state = catalog.book_state(conn, book)
     if state is None:
@@ -66,6 +67,7 @@ def export(conn, book: str, key, legal_basis: str | None = None) -> bytes:
     origin = {
         "ai_generated": sorted(p for p, i in infos.items() if i["origin"] in kstd.AI_GENERATED),
         "reviewed": {p: i["reviewed_by"] for p, i in sorted(infos.items()) if i["origin"] == "assisted"},
+        "tool_made": {p: i["software_agent"] for p, i in sorted(infos.items()) if i["origin"] == "tool"},
     } if infos else {}
     files = []
     for entry in state["files"]:
@@ -239,7 +241,7 @@ def receive(conn, data: bytes) -> dict:
     return {"id": pid, "status": "verified", "book": manifest["book"], "sequence": manifest["sequence"],
             "findings": findings, "diff": diff, "policy_suggestion": manifest.get("policy_suggestion"),
             "legal_basis": manifest.get("legal_basis"), "ai_generated": manifest.get("ai_generated"),
-            "reviewed": manifest.get("reviewed")}
+            "reviewed": manifest.get("reviewed"), "tool_made": manifest.get("tool_made")}
 
 
 # --- decide -----------------------------------------------------------------------------------------------

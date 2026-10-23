@@ -7,7 +7,9 @@ A book whose files contain `kstd.yaml` at the root follows it:
 - a passage with `ai_use.ai_input` not `y` is never sent to a model (embedding, reranking, answers);
 - a file with `personal_data` not `no` or `synthetic` is exported only with a recorded legal basis (DPV codes);
 - an exported package marks files with origin `model` or `unknown` as AI-generated; `assisted` files (model output
-  that a named person reviewed) are not marked and carry `reviewed_by` (EU AI Act Art. 50(4));
+  that a named person reviewed) are not marked and carry `reviewed_by` (EU AI Act Art. 50(4)); `tool` files (made
+  by software that runs only written rules, or records events; no learned model) are not marked and carry their
+  `software_agent` (docs/17, D63);
 - search results, citations and answers show the item information.
 
 A book without `kstd.yaml` behaves as before: only its book policy applies. `ai_use` keeps three states: an
@@ -30,7 +32,7 @@ MANIFEST = "kstd.yaml"
 STANDARD = "kstd/0.2"
 MAX_MANIFEST_BYTES = 1024 * 1024
 AI_USE = ("search", "ai_input", "train")
-ORIGINS = ("human", "assisted", "model", "unknown")
+ORIGINS = ("human", "assisted", "model", "tool", "unknown")
 AI_GENERATED = ("model", "unknown")  # `unknown` counts as `model` (docs/11 §5)
 PERSONAL_DATA = ("yes", "no", "synthetic", "unknown")
 NO_LEGAL_BASIS_NEEDED = ("no", "synthetic")
@@ -38,7 +40,8 @@ NO_LEGAL_BASIS_NEEDED = ("no", "synthetic")
 LEGAL_BASES = frozenset([f"eu-gdpr:A6-1-{c}" for c in "abcdef"] + [f"eu-gdpr:A9-2-{c}" for c in "abcdefghij"])
 RIGHTS_KEYS = {"license", "holder", "ai_use", "personal_data"}
 TOP_KEYS = {"standard", "issuer", "issued", "rights", "notices", "items"}
-ITEM_KEYS = {"path", "digest", "origin", "reviewed_by", "valid_from", "valid_to", "applies_to", "rights", "notices"}
+ITEM_KEYS = {"path", "digest", "origin", "reviewed_by", "software_agent", "valid_from", "valid_to", "applies_to",
+             "rights", "notices"}
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}\Z")
 LICENSE_REF = re.compile(r"^(DocumentRef-[A-Za-z0-9.-]+:)?LicenseRef-[A-Za-z0-9.-]+\Z")
 SPDX_IDS = frozenset(line for line in (Path(__file__).parent / "spdx_ids.txt").read_text().splitlines()
@@ -141,6 +144,13 @@ def _pd(value):
     return {True: "yes", False: "no"}.get(value, value) if isinstance(value, bool) else value
 
 
+def _software_agent_ok(value) -> bool:
+    """{name, version}: both non-empty strings (a YAML number version, e.g. 1.2, is accepted as written)."""
+    return (isinstance(value, dict) and set(value) == {"name", "version"} and isinstance(value["name"], str)
+            and value["name"].strip() != "" and isinstance(value["version"], (str, int, float))
+            and str(value["version"]).strip() != "")
+
+
 def _date(value):
     if isinstance(value, datetime):
         return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
@@ -228,6 +238,11 @@ def check(manifest: dict, files: dict[str, str]) -> tuple[list[str], list[str]]:
             errors.append(f"{where}: origin assisted needs reviewed_by (the person who reviewed it)")
         elif "reviewed_by" in item and origin != "assisted":
             errors.append(f"{where}: reviewed_by is only for origin assisted")
+        agent = item.get("software_agent")
+        if origin == "tool" and not _software_agent_ok(agent):
+            errors.append(f"{where}: origin tool needs software_agent: {{name, version}} of the generator or recorder")
+        elif "software_agent" in item and origin != "tool":
+            errors.append(f"{where}: software_agent is only for origin tool")
         start, end = item.get("valid_from"), item.get("valid_to")
         for key, value in (("valid_from", start), ("valid_to", end)):
             if value is not None and _date(value) is None:
@@ -275,6 +290,7 @@ def effective(manifest: dict, path: str) -> dict | None:
         "listed": item is not None,
         "origin": (item or {}).get("origin", "unknown"),
         "reviewed_by": (item or {}).get("reviewed_by"),
+        "software_agent": (item or {}).get("software_agent"),
         "license": own.get("license", base.get("license", "unknown")),
         "holder": own.get("holder", base.get("holder")),
         "ai_use": {k: _yn(v) for k, v in ai_use.items()},
@@ -351,5 +367,5 @@ def init(files: list, issuer: str, today: date | None = None) -> str:
             continue
         lines += [f"  - path: {yaml.safe_dump(f.path, default_style=chr(34)).strip()}",
                   f"    digest: sha256:{hashlib.sha256(f.data).hexdigest()}",
-                  "    origin: unknown                   # human | assisted (+ reviewed_by) | model | unknown (= model)"]
+                  "    origin: unknown                   # human | assisted (+ reviewed_by) | model | tool (+ software_agent) | unknown (= model)"]
     return "\n".join(lines) + "\n"

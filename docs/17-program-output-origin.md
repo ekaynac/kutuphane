@@ -1,6 +1,6 @@
 # Origin of program output — options and the exact boundary
 
-**Status:** PROPOSAL 0.2, 2026-10-23. It replaces `docs/16` §1, and it is for the operator's decision (§7).
+**Status:** 0.3, 2026-10-23. **D63:** option B (`tool`) is adopted for now; option D (two axes) is decided after the labelling v4 batches. A learned model that is not generative counts as `model` (§7.2). §7.3 (rule engines) is open; §8 gives the detail.
 **Basis:**
 - the operator's direction of 2026-10-23: one category is enough, unless a split changes a behavior; the new category must exclude generative AI by definition; categories must have exact definitions;
 - the research in `docs/research/2026-10-22-tool-origin.md`.
@@ -116,3 +116,33 @@ flowchart TD
 1. **Option B:** one value `tool`, with the definition in §4 and the behaviors in §5? Decide option D after the first labelling batches.
 2. **Learned but not generative** (classifiers, embeddings, neural OCR, speech recognition): count them as `model`, not as `tool` (recommended; fails closed)? The other choice is a sub-value of `model` for non-generative output, which changes only the export marking.
 3. **Rule engines:** may the output of a rule engine with rules that people wrote be `tool`, even though the EU AI Act can count such an engine as an AI technique (§2 note)?
+
+## 8. Rule engines in detail (open question §7.3)
+
+**What a rule engine is:** software that applies **if-then rules** to **facts** and returns conclusions. The rules are separate from the program code, so people can read and change them. Four kinds are relevant:
+
+| Kind | How it works | Examples |
+|---|---|---|
+| 1. Thresholds and decision tables | one pass: if a value crosses a limit, or a row of a table matches, return the result | inframedic "CPU > 90 % for 5 min → overload"; Zabbix triggers; a tax table |
+| 2. Policy engines | evaluate a request against written policies; the result is permit / deny | OPA (Rego), Cedar, XACML, **kstd `decide.py`**, Kütüphane's own authorization |
+| 3. Inference engines (expert systems) | **chain** rules: a conclusion becomes a new fact that triggers other rules (forward or backward chaining), until nothing changes | Drools, CLIPS, Prolog, OWL/SHACL reasoners that derive new triples |
+| 4. Rules with learned parts | the rules have the form of rules, but a threshold, weight or the rule itself was **fitted to data** | a decision tree trained on data and exported as rules; spam filters with trained scores; thresholds tuned by an optimizer |
+
+**The legal question:**
+- The EU AI Act (Art. 3(1), Recital 12) and the Commission guidelines C(2025) 5053 exclude systems "based on rules defined solely by natural persons to automatically execute operations" (kinds 1 and 2).
+- They also say that "logic- and knowledge-based approaches", which infer from encoded knowledge, **are** AI techniques. That can include kind 3.
+- So an expert system can be an "AI system" in law although it has no learned part.
+- This matters little for marking: Art. 50(2) applies to **generative** systems that make synthetic audio, image, video or text. A rule engine makes conclusions, not generated content.
+
+**Proposed kstd rule:** classify by where the rules and their parameters come from, not by how they are run.
+
+| Case | Origin |
+|---|---|
+| Kinds 1–3, and **every** rule, threshold and weight was written by people | `tool`, with `software_agent` = the engine + the rule-set version |
+| Kind 4: any rule, threshold or weight was fitted to data | `model` |
+| The rule set itself was written by an LLM and not reviewed | `model` (input rule: the rule set is an input) |
+| The rule set was written by an LLM and reviewed in substance by a named person | `assisted`, with that reviewer |
+| A rule engine fills a text template with its conclusions | `tool` (template + rules are both written) |
+| The conclusions are then put into words by an LLM | `model` for that text (needs split if both are in one file) |
+
+**Why:** a person can trace every conclusion of kinds 1–3 to a written rule and to the facts, and can suspend the rule-set version that caused an error. That is the behavior that `tool` gives. kstd records how content was made. It does not decide whether a system is an "AI system" in law: if a profile needs that, it adds a separate legal-status field.

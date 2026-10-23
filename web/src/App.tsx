@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Answer, ApiError, Hit, Item, Me, Passage, Reopened, api, describe, loadToken, refHandle, saveToken } from "./api";
 
 const ORIGIN: Record<string, string> = {
-  human: "insan", assisted: "model, insan onaylı", model: "model", unknown: "köken bilinmiyor",
+  human: "insan", assisted: "model, insan onaylı", model: "model", tool: "yazılım (kural/kayıt)", unknown: "köken bilinmiyor",
 };
 
 // kstd item information as one line: origin, license, validity, applicability, notices.
@@ -12,7 +12,8 @@ function ItemLine({ item }: { item?: Item }) {
   return (
     <span className="meta item-line">
       {ORIGIN[item.origin] ?? item.origin}
-      {item.reviewed_by ? ` (${item.reviewed_by})` : ""} · lisans {item.license}
+      {item.reviewed_by ? ` (${item.reviewed_by})` : ""}
+      {item.software_agent ? ` (${item.software_agent.name} ${item.software_agent.version})` : ""} · lisans {item.license}
       {valid}
       {item.current ? "" : " · güncel değil"}
       {item.applies_to ? ` · ${item.applies_to}` : ""}

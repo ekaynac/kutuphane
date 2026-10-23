@@ -3,8 +3,9 @@
 // kstd item information of a file (docs/11 §8); null when its book has no kstd.yaml.
 export type Item = {
   issuer: string;
-  origin: "human" | "assisted" | "model" | "unknown";
+  origin: "human" | "assisted" | "model" | "tool" | "unknown";
   reviewed_by: string | null; // set only for origin "assisted"
+  software_agent: { name: string; version: string | number } | null; // set only for origin "tool"
   license: string;
   holder: string | null;
   valid_from: string | null;

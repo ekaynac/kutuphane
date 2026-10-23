@@ -30,7 +30,7 @@ A book with `kstd.yaml` follows it (`src/kutuphane/kstd.py`):
 | `ai_use.search` not `y` | the file is not indexed (every searched format: markdown, PDF, text formats, JSONL records, HTML) |
 | `ai_use.ai_input` not `y` | its passages never reach a model: no embedding, no reranking, not in answer passages (the answer reports `withheld`); MCP callers and agent principals get no text (`text: null`, `withheld`) and `read_document` is refused |
 | `personal_data` not `no` or `synthetic` | `export` needs `--legal-basis` with DPV codes (e.g. `eu-gdpr:A6-1-b`); the codes are recorded in the signed package |
-| `origin` `model` or `unknown` / `assisted` | the signed package lists the file in `ai_generated` / in `reviewed` with its `reviewed_by` (EU AI Act Art. 50(4)); `assisted` needs `reviewed_by` |
+| `origin` `model` or `unknown` / `assisted` / `tool` | the signed package lists the file in `ai_generated` / in `reviewed` with its `reviewed_by` (EU AI Act Art. 50(4)) / in `tool_made` with its `software_agent`, and gives it no AI mark; `assisted` needs `reviewed_by`, `tool` needs `software_agent: {name, version}` |
 | `ai_use` term absent | reported as absent ("not stated"); every decision treats it as `n` |
 | origin, license, validity, applies_to, notices | shown with search results, citations and answers (`item`) |
 
