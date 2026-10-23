@@ -102,8 +102,17 @@ class Store:
         shown = {k: v for k, v in it.items() if not (blind and k in ("known", "notes", "hostile", "known_source"))}
         return {"item": shown,
                 "text": text, "hidden_chars": hidden, "truncated": bool(it.get("bytes", 0) > MAX_TEXT),
-                "proposals": self.proposals.get(iid, {}), "siblings": siblings,
+                "proposals": self.proposals.get(iid, {}), "llm": self.llm().get(iid), "siblings": siblings,
                 "label": self.labelled().get(iid)}
+
+    def llm(self) -> dict:
+        """Qwen suggestions (llm_propose.py); the file grows while a run is going, so it is read when it changes."""
+        path = self.root / "proposals_llm.jsonl"
+        mtime = path.stat().st_mtime if path.exists() else None
+        if mtime != getattr(self, "_llm_mtime", "unset"):
+            rows = [json.loads(l) for l in path.read_text().splitlines() if l.strip()] if mtime else []
+            self._llm, self._llm_mtime = {r["id"]: r["p"] for r in rows if "p" in r}, mtime
+        return self._llm
 
     def validate(self, body: dict) -> dict:
         iid = body.get("id")
