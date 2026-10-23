@@ -119,6 +119,40 @@ The set must let us answer 27 research questions. Each question is tied to a WG 
 
 ## 5. Decisions for the operator
 
-1. **Program output:** accept the two values `programmatic` and `observed`, with the behaviors in §1? The alternative is one value, `tool`, which loses the difference between a recording and a transform.
-2. **Dataset:** accept the four strata and about 820 items in small batches?
-3. **Agent hostile fixtures:** include the SkillSpector and Skill-Inject fixtures (Apache-2.0 / MIT) and our harmless replicas?
+1. **Program output:** replaced by `docs/17` (open).
+2. **Dataset:** accepted on 2026-10-23 (D62).
+3. **Agent hostile fixtures:** accepted on 2026-10-23 (D62).
+
+## 6. Build state and the first proposer results (2026-10-23)
+
+**Dataset:** 1,063 items in `research/labelling-v4/`, which git ignores. Each item is pinned to a commit or a dataset revision and has a sha256.
+
+| Stratum | Items | Copied | Reference only | Hostile |
+|---|---|---|---|---|
+| R radar | 290 | 279 | 11 | 0 |
+| W WG + public + nanopub | 333 | 221 | 112 | 1 |
+| A agent documents | 396 | 303 | 93 | 22 |
+| S synthetic | 44 | 44 | 0 | 2 |
+
+- A is larger than 150, because each file of a skill folder is its own item. Rights apply to each file, and `activate` applies to the folder.
+- RAID has 11 items, not 20, because the dataset API refused filtered queries. MAGE and Beemo cover the model side.
+
+**Rule proposer v0** (`experiments/labeling_v4/propose.py`), scored against the facts that each source states:
+
+| Stratum | Field | n | Agree | Wrong | Missing |
+|---|---|---|---|---|---|
+| R | origin | 169 | 160 | 4 | 5 |
+| W | origin | 109 | 17 | 0 | 92 |
+| W | personal_data | 43 | 0 | 13 | 30 |
+| W | acceptance | 58 | 22 | 10 | 26 |
+| S | origin | 16 | 6 | 1 | 9 |
+| S | personal_data | 11 | 1 | 1 | 9 |
+| S | acceptance | 7 | 2 | 1 | 4 |
+
+**Hostile agent files → `activate: deny`:** the proposer caught 9, missed 15 and gave 9 false alarms.
+
+**What this shows:**
+1. **Origin is easy only when a record names its model** (radar news, Jev). From plain text, rules find almost nothing (W: 17 of 109). The model text in public sets carries no marker.
+2. **Personal data in synthetic sets looks real** (W: 13 wrong). Text alone cannot tell `synthetic` from `yes`; only a trusted statement can (Q7).
+3. **Pattern rules cannot find semantic injection.** They missed all of the SkillSpector semantic-injection and narrative-deception fixtures. They also flagged real install instructions (`curl … | sh` in home-assistant), security-audit agents and a guard tool. Q22 is answered for rules: `activate` needs a person or a model review, not a regex gate.
+4. So the labelling page shows the evidence for each suggestion, and the person decides. The next proposer is Qwen3.8 through LLMDAP. It is compared with the rules for each field.
