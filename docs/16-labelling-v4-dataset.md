@@ -1,6 +1,6 @@
 # Labelling v4 — dataset and the origin of program output
 
-**Status:** PLAN 0.1, 2026-10-22. It is for the operator's decision (§5).
+**Status:** PLAN 0.2. §2 (the dataset) and the hostile fixtures were accepted on 2026-10-23 (D62). §1 is replaced by `docs/17-program-output-origin.md`.
 **Basis:**
 - `docs/12-labelling-v4-plan.md` (the 8 fields);
 - `docs/research/2026-10-22-tool-origin.md`;
