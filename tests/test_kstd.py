@@ -62,6 +62,9 @@ def chunk_paths(conn) -> set:
     (lambda m: m.update(standard="kstd/9"), "standard must be"),
     (lambda m: m["items"][1].update(origin="assisted"), "assisted needs reviewed_by"),
     (lambda m: m["items"][0].update(reviewed_by="Ayşe"), "only for origin assisted"),
+    (lambda m: m["items"][1].update(origin="tool"), "tool needs software_agent"),
+    (lambda m: m["items"][1].update(origin="tool", software_agent={"name": "typedoc"}), "tool needs software_agent"),
+    (lambda m: m["items"][0].update(software_agent={"name": "typedoc", "version": "0.26"}), "only for origin tool"),
 ])
 def test_an_invalid_manifest_blocks_publication(conn, okf_dir, change, needle):  # fail closed
     write_manifest(okf_dir)
@@ -172,6 +175,15 @@ def test_export_of_possible_personal_data_needs_a_dpv_legal_basis(conn, okf_dir,
         packages.export(conn, "kitap", key, legal_basis="GDPR Art.6")
     pkg = packages.export(conn, "kitap", key, legal_basis="eu-gdpr:A9-2-b, eu-gdpr:A6-1-b")
     assert read_package(pkg)["legal_basis"] == ["eu-gdpr:A6-1-b", "eu-gdpr:A9-2-b"]
+
+
+def test_tool_made_files_carry_their_generator_and_no_ai_mark(conn, okf_dir, tmp_path):  # docs/17, D63
+    write_manifest(okf_dir, policy_item={"origin": "tool", "software_agent": {"name": "policy-render", "version": "2.1"}})
+    publish(conn, okf_dir)
+    signing.generate(tmp_path / "a.key")
+    manifest = read_package(packages.export(conn, "kitap", signing.load_private(tmp_path / "a.key")))
+    assert "politika/veri-saklama.md" not in manifest["ai_generated"]
+    assert manifest["tool_made"] == {"politika/veri-saklama.md": {"name": "policy-render", "version": "2.1"}}
 
 
 def test_synthetic_personal_data_needs_no_legal_basis_and_origin_is_marked(conn, okf_dir, tmp_path):  # D60

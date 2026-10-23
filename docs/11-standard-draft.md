@@ -79,7 +79,7 @@ The conformance test suite (a set of request → result cases) is part of the st
 
 | Property | Values | Behavior |
 |---|---|---|
-| **Origin** (`item`) | `human`, `assisted`, `model`, `unknown` (counts as `model`). `assisted` = model output that a named person (`reviewed_by`) reviewed in substance (not only for spelling or grammar) and took editorial responsibility for. Mapping: IPTC Digital Source Type; W3C AI Content Disclosure `human-only` / `ai-assisted` / `ai-autonomous`. | `deliver` shows it as a notice. On export, `model` and `unknown` items are marked as AI-generated; `assisted` items are not marked and carry `reviewed_by` (EU AI Act Art. 50(4)). An `assisted` item gets authority only through acceptance, the same as a `model` item. Training or legal controls are profile policies, not core rules. |
+| **Origin** (`item`) | `human`, `assisted`, `model`, `tool`, `unknown` (counts as `model`). `assisted` = model output that a named person (`reviewed_by`) reviewed in substance (not only for spelling or grammar) and took editorial responsibility for. `model` = a **learned model** (parameters fitted to data: generative or not, e.g. LLMs, classifiers, embeddings, neural OCR, machine translation) produced or changed any part of the content. `tool` = software made the content by running **written rules** (code, templates, queries, configuration, rule sets that people wrote) on recorded inputs, or recorded events of the world; **no learned model at any step**; it needs `software_agent: {name, version}` (docs/17). If any input is `model` or `unknown` the output is `model`; an `assisted` input makes it `assisted`; a change of form only (format conversion, formatter) keeps the input origin. Mapping: IPTC Digital Source Type (`tool`: `dataDrivenMedia`, recordings `digitalCapture`); W3C AI Content Disclosure `human-only` / `ai-assisted` / `ai-autonomous` (`tool` → `human-only`, `unknown` → no key); C2PA `softwareAgent`. | `deliver` shows it as a notice. On export, `model` and `unknown` items are marked as AI-generated; `assisted` items are not marked and carry `reviewed_by` (EU AI Act Art. 50(4)); `tool` items are not marked and carry their `software_agent`, so all output of one generator version can be trusted or suspended together. An `assisted` item gets authority only through acceptance, the same as a `model` item. Training or legal controls are profile policies, not core rules. |
 | **Inputs** (`item`) | statement ids | Used for checking the rights of a derivative, the reach of a withdrawal and the reach of poisoning. The check covers the whole recorded lineage: inputs of inputs, transitively, each once (a cycle ends); a recorded ancestor that is not known denies (`input-unknown`). Rights, `ai_use` and personal data (with the synthetic trust rule) are checked per input; handling is inherited, the strictest value of the lineage wins. An empty input list is not proof that an item has no inputs. Repeated copies of one source do not count as independent evidence. A withdrawal or an erasure reaches every *recorded* descendant, also of a source that is not held locally, and every node that checks status. |
 | **Rights** (`item`) | license (SPDX id or `unknown`); holder (a person or a collective); `ai_use`: `search`, `ai_input`, `train` = `y` / `n` / absent | The license terms of each input are checked for each proposed use; they are not merged into one value. A package license does not replace an item license: an item with no license of its own stays `unknown`. Licenses stay valid as granted; a withdrawal does not cancel an irrevocable license. `ai_use` is stored with three states: an absent term is "not stated". **The decision treats an absent term as `n`**; an export writes it as absent, never as `n`. `ai_use` maps to IETF AIPREF, the ODRL AI profile and TDMRep in a versioned mapping (`train` covers generative and non-generative training). |
 | **Personal data** (`item`) | `yes`, `no`, `synthetic`, `unknown` (counts as `yes`); legal basis: one or more DPV codes (`eu-gdpr:A6-1-a`…`f`, `eu-gdpr:A9-2-a`…`j`) | `yes`: `forward` needs a recorded legal basis; the data is stored encrypted and is in the scope of erasure. `synthetic` (looks like personal data, describes no real person): no legal basis is needed, but only when the item issuer is trusted for `item` statements in the scope; from any other issuer it counts as `unknown`. Logs at receivers hold no personal data; the origin's log holds pseudonymized data and is in the scope of erasure. Categories use DPV PD. |
@@ -131,7 +131,7 @@ notices: ["Attribution: ACME GmbH, 2026"]
 items:
   - path: procedures/pressure-test.md
     digest: sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
-    origin: human                        # human | assisted | model | unknown (= model)
+    origin: human                        # human | assisted | model | tool | unknown (= model)
     valid_from: 2026-01-01
     applies_to: "Plant 3, line A"
   - path: notes/weekly-summary.md
@@ -139,6 +139,10 @@ items:
     origin: assisted                     # a model wrote it; a named person reviewed it
     reviewed_by: "Ayşe Yılmaz <ayse@acme.example>"
     rights: {personal_data: unknown}     # overrides the default
+  - path: reference/api/index.html
+    digest: sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae
+    origin: tool                         # written rules only; no learned model at any step
+    software_agent: {name: typedoc, version: 0.26.11}
 ```
 
 ## 9. Licenses
@@ -173,6 +177,7 @@ Five different things have different licenses:
   - D5: own `ai_use` terms, mapped to AIPREF and TDMRep.
   - D6: `use` and `outcome` receipts.
   - D60 (2026-10-22, after the landscape study `docs/13`): origin `assisted` with `reviewed_by`; personal data `synthetic`; three-state `ai_use`; legal basis as DPV codes; `receipt` renamed to `use_record`.
+  - D63 (2026-10-23): origin `tool` with `software_agent` (option B of docs/17, for now; the two-axis option is decided after labelling v4); a learned model that is not generative still counts as `model`.
 - **Added:** the decision rule (§4) and its test suite, reversals for every transition, behaviors for personal data and handling, the L0 example.
 - **Corrected:**
   - rights are not merged into one value;
