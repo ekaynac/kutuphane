@@ -63,12 +63,35 @@ def ask(url: str, key: str, path: str, text: str) -> tuple[dict, float]:
     started = time.time()
     with OPENER.open(req, timeout=300) as resp:
         out = json.loads(resp.read())
-    content = out["choices"][0]["message"]["content"]
+    return parse(out), round(time.time() - started, 1)
+
+
+class SchemaError(ValueError):
+    pass
+
+
+def parse(out) -> dict:
+    """A complete, correctly typed proposal or SchemaError. The model reads hostile files, so its answer is
+    untrusted input: every field must be one of the allowed strings."""
+    choices = out.get("choices") if isinstance(out, dict) else None
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        raise SchemaError("no choices")
+    content = (choices[0].get("message") or {}).get("content")
+    if not isinstance(content, str):
+        raise SchemaError("no text content")
     m = re.search(r"\{.*\}", content, re.S)
-    parsed = json.loads(m.group(0)) if m else {}
-    clean = {k: parsed.get(k) for k in CHOICES if parsed.get(k) in CHOICES[k]}
+    try:
+        parsed = json.loads(m.group(0)) if m else None
+    except ValueError:
+        raise SchemaError("not JSON") from None
+    if not isinstance(parsed, dict):
+        raise SchemaError("not a JSON object")
+    bad = [k for k in CHOICES if not (isinstance(parsed.get(k), str) and parsed[k] in CHOICES[k])]
+    if bad:
+        raise SchemaError(f"missing or invalid: {', '.join(bad)}")
+    clean = {k: parsed[k] for k in CHOICES}
     clean.update({k: str(parsed.get(k, ""))[:200] for k in ("origin_evidence", "personal_data_evidence", "hostile_evidence")})
-    return clean, round(time.time() - started, 1)
+    return clean
 
 
 def items(root: Path, stratum: str | None):
@@ -82,7 +105,12 @@ def items(root: Path, stratum: str | None):
 
 def evaluate(root: Path):
     facts = {it["id"]: it for it in items(root, None)}
-    rows = [json.loads(l) for l in (root / "proposals_llm.jsonl").read_text().splitlines() if l.strip()]
+    latest = {}
+    for line in (root / "proposals_llm.jsonl").read_text().splitlines():  # the latest result of each item counts
+        if line.strip():
+            r = json.loads(line)
+            latest[r["id"]] = r
+    rows = list(latest.values())
     norm = {"src:program": "tool", "src:classifier": "model", "src:captured-api-response": "tool", "superseded": "withdrawn"}
     table = defaultdict(Counter)
     for r in rows:
@@ -121,7 +149,10 @@ def main() -> int:
         return 0
     url, key = os.environ["KUTUPHANE_LLMDAP_URL"].rstrip("/"), os.environ["KUTUPHANE_LLMDAP_KEY"]
     out = root / "proposals_llm.jsonl"
-    done = {json.loads(l)["id"] for l in out.read_text().splitlines() if l.strip()} if out.exists() else set()
+    # only a validated proposal counts as done; failed items are tried again on the next run (one try per run)
+    done = {r["id"] for r in (json.loads(l) for l in out.read_text().splitlines() if l.strip())
+            if isinstance(r.get("p"), dict) and all(r["p"].get(k) in CHOICES[k] for k in CHOICES)} \
+        if out.exists() else set()
     todo = [it for it in items(root, args.stratum) if it["id"] not in done]
     todo = todo[:args.limit] if args.limit else todo
     for n, it in enumerate(todo, 1):
@@ -131,7 +162,9 @@ def main() -> int:
         try:
             p, secs = ask(url, key, it["ref"].get("path") or it["id"], data.decode("utf-8", "replace"))
             rec = {"id": it["id"], "stratum": it["stratum"], "model": MODEL, "p": p, "seconds": secs}
-        except (urllib.error.URLError, OSError, KeyError, ValueError) as exc:
+        except SchemaError as exc:
+            rec = {"id": it["id"], "stratum": it["stratum"], "error": f"schema: {exc}"}
+        except (urllib.error.URLError, OSError, KeyError, ValueError, TypeError) as exc:
             rec = {"id": it["id"], "stratum": it["stratum"], "error": f"{type(exc).__name__}: {getattr(exc, 'code', '')}"}
         with out.open("a") as f:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")

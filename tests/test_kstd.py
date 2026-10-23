@@ -64,6 +64,10 @@ def chunk_paths(conn) -> set:
     (lambda m: m["items"][0].update(reviewed_by="Ayşe"), "only for origin assisted"),
     (lambda m: m["items"][1].update(origin="tool"), "tool needs software_agent"),
     (lambda m: m["items"][1].update(origin="tool", software_agent={"name": "typedoc"}), "tool needs software_agent"),
+    (lambda m: m["items"][1].update(origin="tool", software_agent={"name": "typedoc", "version": 1.1}),
+     "tool needs software_agent"),
+    (lambda m: m["items"][1].update(origin="tool", software_agent={"name": "typedoc", "version": False}),
+     "tool needs software_agent"),
     (lambda m: m["items"][0].update(software_agent={"name": "typedoc", "version": "0.26"}), "only for origin tool"),
 ])
 def test_an_invalid_manifest_blocks_publication(conn, okf_dir, change, needle):  # fail closed
@@ -184,6 +188,20 @@ def test_tool_made_files_carry_their_generator_and_no_ai_mark(conn, okf_dir, tmp
     manifest = read_package(packages.export(conn, "kitap", signing.load_private(tmp_path / "a.key")))
     assert "politika/veri-saklama.md" not in manifest["ai_generated"]
     assert manifest["tool_made"] == {"politika/veri-saklama.md": {"name": "policy-render", "version": "2.1"}}
+
+
+def test_received_origin_lists_must_follow_the_enclosed_manifest(conn, conn_b, okf_dir, tmp_path):  # Astra #10
+    from test_packages import resigned, trust
+    write_manifest(okf_dir, policy_item={"origin": "tool", "software_agent": {"name": "policy-render", "version": "2.1"}})
+    publish(conn, okf_dir)
+    info = signing.generate(tmp_path / "a.key")
+    private = signing.load_private(tmp_path / "a.key")
+    trust(conn_b, info)
+    assert packages.receive(conn_b, packages.export(conn, "kitap", private))["status"] == "verified"
+    forged = resigned(packages.export(conn, "kitap", private), private,  # the signer drops the AI mark of a file
+                      lambda m: {**m, "ai_generated": [p for p in m["ai_generated"] if p != "index.md"]})
+    result = packages.receive(conn_b, forged)
+    assert result["status"] == "rejected" and "origin lists" in result["reasons"][0]
 
 
 def test_synthetic_personal_data_needs_no_legal_basis_and_origin_is_marked(conn, okf_dir, tmp_path):  # D60
