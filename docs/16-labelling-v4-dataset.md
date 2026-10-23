@@ -156,3 +156,29 @@ The set must let us answer 27 research questions. Each question is tied to a WG 
 2. **Personal data in synthetic sets looks real** (W: 13 wrong). Text alone cannot tell `synthetic` from `yes`; only a trusted statement can (Q7).
 3. **Pattern rules cannot find semantic injection.** They missed all of the SkillSpector semantic-injection and narrative-deception fixtures. They also flagged real install instructions (`curl … | sh` in home-assistant), security-audit agents and a guard tool. Q22 is answered for rules: `activate` needs a person or a model review, not a regex gate.
 4. So the labelling page shows the evidence for each suggestion, and the person decides. The next proposer is Qwen3.8 through LLMDAP. It is compared with the rules for each field.
+
+## 7. Qwen proposer results (2026-10-23)
+
+Qwen3.8-27B ran through the local LLMDAP `chat` route on the 797 copied text items. 796 answers are complete; 1 failed again on retry. One item took about 9 s; the whole run took 2 h 47 min. Scores against the stated facts, with the rule proposer for comparison:
+
+| Stratum | Field | n (Qwen) | Qwen agree | Rules agree |
+|---|---|---|---|---|
+| R | origin | 160 | 156 | 159 of 169 |
+| S | origin | 16 | 11 | 6 |
+| S | personal_data | 10 | 5 | 1 of 11 |
+| S | acceptance | 6 | 2 | 2 of 7 |
+| W | origin | 56 | 25 | 17 of 109 (92 missing) |
+| W | personal_data | 25 | 1 | 0 of 43 |
+| W | acceptance | 17 | 0 | 22 of 58 |
+
+| Hostile agent files | Caught | Missed | False alarms |
+|---|---|---|---|
+| Qwen (A + S) | 20 | 4 | 2 |
+| Rules (A + S) | 9 | 15 | 9 |
+
+**What this shows:**
+1. **Qwen is much better than the rules at hostile intent** (20 of 24 caught, 2 false alarms of about 270). It can be the first reviewer for `activate`, but it cannot replace a person: 4 hostile files passed.
+2. **Qwen cannot recognise model-written text by its style.** It called RAID and MAGE model text `human` (13 cases) and called most synthetic PII sets `human`/`tool`/`unknown`. The prompt told it not to guess from style. This agrees with research on AI-text detection. **Origin needs provenance (records, trailers, signed statements), not detection.** This supports the kstd design: origin is declared and signed, not inferred.
+3. **Synthetic vs real personal data is invisible in the text** for both proposers (W: 1 of 25 for Qwen). Only a trusted statement can say `synthetic` (Q7, D60).
+4. **Acceptance comes from outside the text** (nanopub retractions, the registry). Neither proposer can see it, and the rules see it only through signals. The page must show the source state.
+5. On the page, the person sees both suggestions. The share of suggestions that the person accepts unchanged answers Q24.
