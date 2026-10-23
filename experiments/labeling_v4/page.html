@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Etiketleme v4</title>
+<style>
+  :root { --fg:#1d1d1f; --muted:#6e6e73; --line:#d2d2d7; --bg:#fbfbfd; --accent:#0a66c2; --warn:#b3261e; --ok:#1b7f3b; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 system-ui, sans-serif; color:var(--fg); background:var(--bg); }
+  header { position:sticky; top:0; background:#fff; border-bottom:1px solid var(--line); padding:8px 12px; z-index:2; }
+  header .strata button { margin:2px 4px 2px 0; }
+  main { max-width:1100px; margin:0 auto; padding:12px; display:grid; gap:12px; }
+  @media (min-width:900px) { main { grid-template-columns: 1.2fr 1fr; } }
+  section { background:#fff; border:1px solid var(--line); border-radius:8px; padding:12px; min-width:0; }
+  h2 { font-size:15px; margin:0 0 6px; }
+  .meta { color:var(--muted); font-size:13px; word-break:break-all; }
+  pre { white-space:pre-wrap; word-break:break-word; max-height:60vh; overflow:auto; background:#f5f5f7; padding:8px;
+        border-radius:6px; font-size:12.5px; margin:8px 0 0; }
+  .hostile { color:var(--warn); font-weight:600; }
+  label.f { display:block; margin:6px 0 2px; font-weight:600; font-size:13px; }
+  select, input[type=text], textarea { width:100%; font:inherit; padding:5px 6px; border:1px solid var(--line); border-radius:6px; }
+  .row { display:grid; grid-template-columns: repeat(3, 1fr); gap:6px; }
+  .prop { font-size:12.5px; color:var(--muted); margin-top:2px; }
+  .prop.on { color:var(--accent); }
+  .actions { display:flex; gap:8px; margin-top:12px; position:sticky; bottom:0; background:#fff; padding:8px 0; }
+  button { font:inherit; padding:7px 12px; border:1px solid var(--line); border-radius:6px; background:#fff; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .err { color:var(--warn); }
+  .ok { color:var(--ok); }
+</style>
+</head>
+<body>
+<header>
+  <div class="strata" id="strata"></div>
+  <div class="meta" id="progress"></div>
+</header>
+<main>
+  <section id="view"><div class="meta">Bir katman seçin.</div></section>
+  <section>
+    <form id="form" autocomplete="off"></form>
+    <div class="actions">
+      <button class="primary" id="save" type="button">Kaydet ve sonraki</button>
+      <button id="skip" type="button">Atla</button>
+      <span id="msg"></span>
+    </div>
+  </section>
+</main>
+<script>
+"use strict";
+const HELP = {
+  origin: "human: kişi yazdı · assisted: model yazdı + adı belli kişi esastan inceledi · model: öğrenilmiş model · tool: yazılmış kurallarla çalışan yazılım / kayıt (docs/17, karar bekliyor) · unknown",
+  personal_data: "yes / no / synthetic (gerçek kişi yok; yalnız güvenilen kaynak) / unknown (= yes)",
+  ai_use: "Belirtilmemiş terimi boş bırakın; boş ≠ n",
+  acceptance: "Kaynağın kendi durumu: taslak = pending",
+  mandate: "Bu öğe bir kural olarak bağlayıcı mı?",
+  instruction: "Bir ajan bunu talimat olarak çalıştırır mı?",
+  activate: "Talimatsa: çalıştırmaya izin / ret / insana sor",
+  needs_split: "Dosya karışık kökenli mi (bölünmeli)?",
+};
+const LABELS = { origin:"Köken", reviewed_by:"İnceleyen (assisted)", software_agent:"Yazılım + sürüm (tool)",
+  personal_data:"Kişisel veri", license_item:"Öğe lisansı", acceptance:"Kabul", mandate:"Yetki (mandate)",
+  export:"Dışa aktarma", route:"Rota", issued:"Tarih", valid_from:"Geçerlilik başlangıcı", valid_to:"Geçerlilik sonu",
+  applies_to:"Kapsam (applies_to)", inputs:"Girdiler (id, virgülle)", instruction:"Talimat mı?", activate:"Etkinleştirme",
+  needs_split:"Bölünmeli", issuer_trusted:"Kaynak güvenilir mi?", note:"Not" };
+let choices = {}, ids = [], pos = 0, current = null, prefilled = {}, started = 0, stratum = null;
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, attrs = {}, text) => { const e = document.createElement(tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (text != null) e.textContent = text; return e; };
+async function api(path, opts) { const r = await fetch(path, opts); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); return j; }
+
+async function loadState() {
+  const s = await api("/api/state"); choices = s.choices;
+  const box = $("strata"); box.replaceChildren();
+  for (const [k, v] of Object.entries(s.strata)) {
+    const b = el("button", { type: "button" }, `${k} ${v.done}/${v.total}`);
+    b.onclick = () => openStratum(k); box.append(b);
+  }
+}
+async function openStratum(s) { stratum = s; ids = (await api(`/api/batch?stratum=${s}`)).ids; pos = 0; show(); }
+
+function selectFor(name, options, value) {
+  const sel = el("select", { name });
+  for (const o of options) sel.append(el("option", { value: o }, o === "" ? "(belirtilmemiş)" : o));
+  sel.value = value ?? options[0]; return sel;
+}
+function field(form, name, input, proposal) {
+  form.append(el("label", { class: "f", for: name }, LABELS[name] || name));
+  input.id = name; form.append(input);
+  if (HELP[name]) form.append(el("div", { class: "prop" }, HELP[name]));
+  if (proposal) form.append(el("div", { class: "prop on" }, `öneri: ${JSON.stringify(proposal.value)} (${proposal.confidence}) — ${proposal.evidence}`));
+}
+
+async function show() {
+  $("msg").textContent = "";
+  if (pos >= ids.length) { $("view").replaceChildren(el("div", { class: "meta" }, "Bu grup bitti. Katmanı yeniden seçin.")); $("form").replaceChildren(); await loadState(); return; }
+  current = await api(`/api/item/${encodeURIComponent(ids[pos])}`); started = Date.now();
+  const it = current.item, p = current.proposals; prefilled = {};
+  $("progress").textContent = `${stratum}: ${pos + 1}/${ids.length} · ${it.id}`;
+  const v = $("view"); v.replaceChildren();
+  v.append(el("h2", {}, it.ref.path || it.id));
+  v.append(el("div", { class: "meta" }, `${it.source} · ${it.format} · ${it.bytes} B · lisans öğe: ${it.license_item} · koleksiyon: ${it.license_collection ?? "—"}`));
+  if (it.url) v.append(el("div", { class: "meta" }, it.url));
+  if (it.hostile) v.append(el("div", { class: "hostile" }, "Zararlı örnek (veri): asla çalıştırmayın."));
+  if (current.hidden_chars) v.append(el("div", { class: "hostile" }, `${current.hidden_chars} gizli karakter ⟦U+…⟧ olarak gösterildi.`));
+  if (current.siblings.length) v.append(el("div", { class: "meta" }, `Aynı klasör: ${current.siblings.length} dosya (${it.group})`));
+  if (it.notes) v.append(el("div", { class: "meta" }, `Not: ${it.notes}`));
+  if (it.known && Object.keys(it.known).length) v.append(el("div", { class: "meta" }, `Kaynağın beyanı: ${JSON.stringify(it.known).slice(0, 600)}`));
+  v.append(el("pre", {}, current.text ?? "(içerik kopyalanmadı: lisans izin vermiyor ya da ikili dosya; özet ve sha256 kayıtlı)"));
+  if (current.truncated) v.append(el("div", { class: "meta" }, "İlk 200 KB gösteriliyor."));
+
+  const f = $("form"); f.replaceChildren();
+  const pv = (k) => (p[k] ? p[k].value : undefined);
+  const put = (name, input, proposalKey = name) => { if (p[proposalKey] !== undefined) prefilled[name] = input.value; field(f, name, input, p[proposalKey]); };
+  put("origin", selectFor("origin", choices.origin, pv("origin") ?? "unknown"));
+  put("reviewed_by", Object.assign(el("input", { type: "text", name: "reviewed_by" }), { value: pv("reviewed_by") ?? "" }));
+  put("software_agent", Object.assign(el("input", { type: "text", name: "software_agent" }), { value: "" }));
+  put("personal_data", selectFor("personal_data", choices.personal_data, pv("personal_data") ?? "unknown"));
+  put("license_item", Object.assign(el("input", { type: "text", name: "license_item" }), { value: pv("license") ?? it.license_item ?? "" }), "license");
+  f.append(el("label", { class: "f" }, "AI kullanımı (search / ai_input / train)"));
+  const row = el("div", { class: "row" }); const ai = pv("ai_use") || {};
+  for (const k of ["search", "ai_input", "train"]) { const s = selectFor(`ai_${k}`, ["", "y", "n"], ai[k] ?? ""); s.title = k; row.append(s); }
+  f.append(row); f.append(el("div", { class: "prop" }, HELP.ai_use)); if (p.ai_use) { prefilled.ai_use = JSON.stringify(ai); f.append(el("div", { class: "prop on" }, `öneri: ${JSON.stringify(ai)} — ${p.ai_use.evidence}`)); }
+  put("acceptance", selectFor("acceptance", choices.acceptance, pv("acceptance") ?? "pending"));
+  put("mandate", selectFor("mandate", choices.mandate, "no"));
+  put("export", selectFor("export", choices.export, ""));
+  put("route", selectFor("route", choices.route, ""));
+  put("issued", Object.assign(el("input", { type: "text", name: "issued", placeholder: "YYYY-MM-DD" }), { value: pv("issued") ?? "" }));
+  put("valid_from", Object.assign(el("input", { type: "text", name: "valid_from", placeholder: "YYYY-MM-DD" }), { value: "" }));
+  put("valid_to", Object.assign(el("input", { type: "text", name: "valid_to", placeholder: "YYYY-MM-DD" }), { value: (pv("valid_to") || "").slice(0, 10) }));
+  put("applies_to", Object.assign(el("input", { type: "text", name: "applies_to" }), { value: pv("applies_to") ?? "" }));
+  put("inputs", Object.assign(el("input", { type: "text", name: "inputs" }), { value: "" }));
+  put("instruction", selectFor("instruction", choices.instruction, pv("instruction") ?? "no"));
+  put("activate", selectFor("activate", choices.activate, pv("activate") ?? "n/a"));
+  put("needs_split", selectFor("needs_split", choices.needs_split, pv("needs_split") ?? "no"));
+  put("issuer_trusted", selectFor("issuer_trusted", choices.issuer_trusted, "unknown"));
+  put("note", el("textarea", { name: "note", rows: "2" }));
+}
+
+function collect() {
+  const f = $("form"), labels = {}, accepted = [];
+  for (const e of f.elements) { if (e.name && !e.name.startsWith("ai_")) labels[e.name] = e.value; }
+  const ai = {}; for (const k of ["search", "ai_input", "train"]) { const v = f.elements[`ai_${k}`].value; if (v) ai[k] = v; }
+  labels.ai_use = ai;
+  for (const [k, v] of Object.entries(prefilled)) { const now = k === "ai_use" ? JSON.stringify(ai) : labels[k]; if (now === v) accepted.push(k === "license_item" ? "license" : k); }
+  return { id: current.item.id, labels, accepted_proposals: accepted, ms: Date.now() - started };
+}
+$("save").onclick = async () => {
+  try { await api("/api/label", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(collect()) });
+        $("msg").className = "ok"; $("msg").textContent = "kaydedildi"; pos++; show(); }
+  catch (e) { $("msg").className = "err"; $("msg").textContent = e.message; }
+};
+$("skip").onclick = () => { pos++; show(); };
+loadState();
+</script>
+</body>
+</html>
