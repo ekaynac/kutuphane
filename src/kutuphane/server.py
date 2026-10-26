@@ -68,11 +68,12 @@ def _text(text, item, for_model: bool) -> dict:
     return {"text": text}
 
 
-def op_search(dsn, stages, actor: Actor, query: str, k: int, model_reader: bool = False) -> list[dict]:
+def op_search(dsn, stages, actor: Actor, query: str, k: int, model_reader: bool = False,
+              scope: search.Scope = search.Scope()) -> list[dict]:
     def go(conn):
         if not isinstance(query, str) or not query.strip() or len(query) > search.MAX_QUERY_CHARS:
             raise BadRequest(f"query must be 1..{search.MAX_QUERY_CHARS} characters")  # before any model call
-        hits, rights, ai = retrieval.retrieve(conn, actor, query, k, stages), kstd.Rights(conn), \
+        hits, rights, ai = retrieval.retrieve(conn, actor, query, k, stages, scope), kstd.Rights(conn), \
             _for_model(actor, model_reader)
         out = []
         for h in hits:
@@ -94,10 +95,19 @@ def op_citation(dsn, actor: Actor, handle: str, model_reader: bool = False) -> d
     return _run(dsn, go)
 
 
-def op_ask(dsn, bridge, model: str, stages, actor: Actor, question: str) -> dict:
+def op_ask(dsn, bridge, model: str, stages, actor: Actor, question: str, scope: search.Scope = search.Scope()) -> dict:
     if not isinstance(question, str) or not question.strip():
         raise BadRequest("question is required")
-    return _run(dsn, lambda c: answers.ask(c, bridge, actor, question, model=model, stages=stages))
+    return _run(dsn, lambda c: answers.ask(c, bridge, actor, question, model=model, stages=stages, scope=scope))
+
+
+def _flag(value) -> bool:
+    """A query-string boolean: true/1 or false/0 (absent: false)."""
+    if value in (None, "", "false", "0"):
+        return False
+    if value in ("true", "1"):
+        return True
+    raise BadRequest("current_only must be true or false")
 
 
 def op_reopen(dsn, actor: Actor, answer_id: str, model_reader: bool = False) -> dict:
@@ -216,13 +226,15 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
         return handler
 
     async def h_search(request, actor):
-        q = request.query_params.get("q", "")
+        p = request.query_params
         try:
-            k = int(request.query_params.get("k", search.DEFAULT_K))
+            k = int(p.get("k", search.DEFAULT_K))
         except ValueError:
             raise BadRequest("k must be an integer") from None
+        scope = search.Scope.of(p.getlist("book"), p.get("path"), p.getlist("origin"), _flag(p.get("current_only")))
         return JSONResponse({"correlation_id": actor.correlation_id,
-                             "results": await run_in_threadpool(op_search, dsn, stages, actor, q, k)})
+                             "results": await run_in_threadpool(op_search, dsn, stages, actor, p.get("q", ""), k,
+                                                                False, scope)})
 
     async def h_citation(request, actor):
         return JSONResponse(await run_in_threadpool(op_citation, dsn, actor, request.query_params.get("handle", "")))
@@ -234,8 +246,10 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
             body = await request.json()
         except ValueError:
             raise BadRequest("JSON body required") from None
-        question = body.get("question") if isinstance(body, dict) else None
-        result = await run_in_threadpool(op_ask, dsn, bridge, model, stages, actor, question)
+        if not isinstance(body, dict):
+            raise BadRequest("JSON object required")
+        scope = search.Scope.of(body.get("book"), body.get("path"), body.get("origin"), body.get("current_only", False))
+        result = await run_in_threadpool(op_ask, dsn, bridge, model, stages, actor, body.get("question"), scope)
         return JSONResponse({**result, "correlation_id": actor.correlation_id})
 
     async def h_answer(request, actor):
@@ -339,9 +353,14 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
 
     @mcp.tool()
     @_mcp_errors
-    async def search_library(query: str, k: int = search.DEFAULT_K) -> list[dict]:
-        """Search the books you may read now. Results carry citation handles for open_citation."""
-        return await run_in_threadpool(op_search, dsn, stages, _mcp_actor(), query, k, True)
+    async def search_library(query: str, k: int = search.DEFAULT_K, book: list[str] | None = None,
+                             path: str | None = None, origin: list[str] | None = None,
+                             current_only: bool = False) -> list[dict]:
+        """Search the books you may read now. Results carry citation handles for open_citation.
+        Optional filters narrow the evidence before ranking: `book` (slugs), `path` (prefix, e.g. "data/"),
+        `origin` (kstd origins: human, assisted, model, tool, unknown), `current_only` (kstd validity includes now)."""
+        scope = search.Scope.of(book, path, origin, current_only)
+        return await run_in_threadpool(op_search, dsn, stages, _mcp_actor(), query, k, True, scope)
 
     @mcp.tool()
     @_mcp_errors
@@ -351,11 +370,14 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
 
     @mcp.tool()
     @_mcp_errors
-    async def ask_library(question: str) -> dict:
-        """Answer from the library with [n] citations, or status not_in_library."""
+    async def ask_library(question: str, book: list[str] | None = None, path: str | None = None,
+                          origin: list[str] | None = None, current_only: bool = False) -> dict:
+        """Answer from the library with [n] citations, or status not_in_library. The optional filters are those of
+        search_library."""
         if bridge is None or not model:
             raise llmdap.EgressError("no model route configured")
-        return await run_in_threadpool(op_ask, dsn, bridge, model, stages, _mcp_actor(), question)
+        scope = search.Scope.of(book, path, origin, current_only)
+        return await run_in_threadpool(op_ask, dsn, bridge, model, stages, _mcp_actor(), question, scope)
 
     @mcp.tool()
     @_mcp_errors

@@ -286,3 +286,82 @@ def test_text_formats_are_searchable_and_html_only_by_visible_text(conn, tmp_pat
     for name, word in words.items():
         assert [h.citation.path for h in search.search(conn, Actor(U), word)] == [name], word
     assert search.search(conn, Actor(U), "gizlikelime") == [] and search.search(conn, Actor(U), "yorumkelime") == []
+
+
+def _books(hits) -> set:
+    return {h.citation.book for h in hits}
+
+
+def test_scope_narrows_before_ranking_and_never_widens(conn, okf_dir):  # G14
+    for book in ("acik", "ikinci", "gizli"):
+        publish(conn, okf_dir, book=book)
+    for book in ("acik", "ikinci"):
+        authz.grant(conn, f"book:{book}", "read", U)
+    q = "kayıtlar saklanır yedek geri yükleme"
+    assert _books(search.search(conn, Actor(U), q, k=50)) == {"acik", "ikinci"}
+    assert _books(search.search(conn, Actor(U), q, k=1, scope=search.Scope.of(["ikinci"]))) == {"ikinci"}  # before k
+    assert _books(search.search(conn, Actor(U), q, k=50, scope=search.Scope.of(["acik", "gizli"]))) == {"acik"}
+    assert search.search(conn, Actor(U), q, k=50, scope=search.Scope.of(["gizli"])) == []      # same as no book
+    assert search.search(conn, Actor(U), q, k=50, scope=search.Scope.of(["yok"])) == []
+    assert search.search(conn, Actor("user:mehmet"), q, scope=search.Scope.of(["gizli"])) == []
+    agent = Actor(A, on_behalf_of=U)                                   # an agent without delegation: still nothing
+    assert search.search(conn, agent, q, scope=search.Scope.of(["acik"])) == []
+    runbook = search.search(conn, Actor(U), q, k=50, scope=search.Scope.of(path="runbook/"))
+    assert runbook and {h.citation.path for h in runbook} == {"runbook/yedek-geri-yukleme.md"}
+    assert _books(runbook) == {"acik", "ikinci"}
+    assert search.search(conn, Actor(U), q, k=50, scope=search.Scope.of(path="runbook/yok/")) == []
+
+
+def test_scope_by_kstd_origin_and_validity(conn, okf_dir, tmp_path):  # G14
+    import shutil
+
+    from test_kstd import write_manifest
+    plain = tmp_path / "duz"
+    shutil.copytree(okf_dir, plain)                                    # the same files, no kstd.yaml
+    write_manifest(okf_dir, policy_item={"valid_from": "2020-01-01", "valid_to": "2021-01-01"})
+    publish(conn, okf_dir, book="kitap")
+    publish(conn, plain, book="duz")
+    publish(conn, okf_dir, book="gizli")                               # same origins, not readable
+    for book in ("kitap", "duz"):
+        authz.grant(conn, f"book:{book}", "read", U)
+
+    def found(**scope):
+        hits = search.search(conn, Actor(U), "kayıtlar saklanır yedek geri yükleme politika kitabı", k=50, scope=search.Scope.of(**scope))
+        return {(h.citation.book, h.citation.path) for h in hits}
+
+    assert found(origins=["human"]) == {("kitap", "runbook/yedek-geri-yukleme.md")}
+    assert found(origins="model") == {("kitap", "politika/veri-saklama.md")}
+    unknown = found(origins=["unknown"])                               # unlisted files, and books without kstd.yaml
+    assert ("kitap", "index.md") in unknown and {b for b, _ in unknown} == {"kitap", "duz"}
+    assert ("kitap", "politika/veri-saklama.md") not in unknown
+    current = found(current_only=True)
+    assert ("kitap", "politika/veri-saklama.md") not in current and ("duz", "politika/veri-saklama.md") in current
+    assert ("kitap", "runbook/yedek-geri-yukleme.md") in current
+    assert found(books=["gizli"], origins=["human"]) == set()
+
+
+@pytest.mark.parametrize("bad", [{"books": ["Büyük"]}, {"books": [""]}, {"books": {"a": 1}}, {"origins": ["llm"]},
+                                 {"path": "../x"}, {"path": "/"}, {"path": 3}, {"current_only": "yes"}])
+def test_scope_values_are_checked(bad):  # G14
+    with pytest.raises(ValueError):
+        search.Scope.of(**bad)
+
+
+def test_cli_search_takes_the_scope(conn, okf_dir, monkeypatch, capsys):  # G14
+    import json
+    import os
+
+    from kutuphane import cli, db, llmdap
+    monkeypatch.setenv(db.DSN_ENV, os.environ["KUTUPHANE_TEST_DSN"])
+    for env in (llmdap.EMBED_ENV, llmdap.RERANK_ENV):
+        monkeypatch.delenv(env["route"], raising=False)
+    publish(conn, okf_dir, book="acik")
+    publish(conn, okf_dir, book="gizli")
+    authz.grant(conn, "book:acik", "read", U)
+    q = "kayıtlar saklanır yedek geri yükleme"
+    assert cli.main(["search", U, q, "--book", "acik", "--book", "gizli", "--path", "runbook/", "--current-only"]) == 0
+    found = json.loads(capsys.readouterr().out)
+    assert found and all(h["citation"].startswith("acik@") and "/runbook/" in h["citation"] for h in found)
+    with pytest.raises(SystemExit):
+        cli.main(["search", U, q, "--origin", "llm"])                                  # argparse refuses it
+    assert cli.main(["search", U, q, "--path", "../x"]) == 2

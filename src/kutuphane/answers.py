@@ -81,8 +81,8 @@ def _needs(actor: Actor, sources: list[dict], instruction_of) -> dict:
 
 
 def ask(conn, bridge: llmdap.Bridge, actor: Actor, question: str, *, model: str, k: int = search.DEFAULT_K,
-        stages: retrieval.Stages = retrieval.Stages()) -> dict:
-    found = retrieval.retrieve(conn, actor, question, k, stages)
+        stages: retrieval.Stages = retrieval.Stages(), scope: search.Scope = search.Scope()) -> dict:
+    found = retrieval.retrieve(conn, actor, question, k, stages, scope)
     rights = kstd.Rights(conn)  # kstd: a passage whose rights do not allow ai_input never reaches the answer model
     hits = [h for h in found if rights.allows(h.citation.book, h.citation.content_id, h.citation.path, "ai_input")]
     withheld = len(found) - len(hits)

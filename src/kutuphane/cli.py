@@ -104,9 +104,22 @@ def cmd_read(conn, args) -> int:
     return 0
 
 
+def _scope_options(parser) -> None:
+    parser.add_argument("--book", action="append", help="only this book (repeatable)")
+    parser.add_argument("--path", help="only files whose path starts with this prefix (e.g. data/)")
+    parser.add_argument("--origin", action="append", choices=kstd.ORIGINS, help="only files with this kstd origin "
+                        "(repeatable; a book without kstd.yaml counts as unknown)")
+    parser.add_argument("--current-only", action="store_true", help="only files whose kstd validity includes now")
+
+
+def _scope(args) -> search.Scope:
+    return search.Scope.of(args.book, args.path, args.origin, args.current_only)
+
+
 def cmd_search(conn, args) -> int:
     actor = gate.Actor(args.principal, args.on_behalf_of)
-    hits, rights = retrieval.retrieve(conn, actor, args.query, args.k, retrieval.Stages.from_env()), kstd.Rights(conn)
+    hits = retrieval.retrieve(conn, actor, args.query, args.k, retrieval.Stages.from_env(), _scope(args))
+    rights = kstd.Rights(conn)
     _print([{"citation": h.citation.handle, "page": h.page, "line": h.line, "score": round(h.score, 4),
              "text": h.text, "item": rights.info(h.citation.book, h.citation.content_id, h.citation.path)}
             for h in hits])
@@ -153,7 +166,7 @@ def cmd_kstd_check(_conn, args) -> int:
 def cmd_ask(conn, args) -> int:
     actor = gate.Actor(args.principal, args.on_behalf_of)
     _print({**answers.ask(conn, llmdap.Bridge.from_env(), actor, args.question, model=args.model,
-                          stages=retrieval.Stages.from_env()),
+                          stages=retrieval.Stages.from_env(), scope=_scope(args)),
             "correlation_id": actor.correlation_id})
     return 0
 
@@ -303,12 +316,14 @@ def parser() -> argparse.ArgumentParser:
     se.add_argument("query")
     se.add_argument("--on-behalf-of")
     se.add_argument("-k", type=int, default=search.DEFAULT_K)
+    _scope_options(se)
     se.set_defaults(fn=cmd_search)
     ak = sub.add_parser("ask", help="answer from the library with citations, through LLMDAP")
     ak.add_argument("principal")
     ak.add_argument("question")
     ak.add_argument("--model", required=True)
     ak.add_argument("--on-behalf-of")
+    _scope_options(ak)
     ak.set_defaults(fn=cmd_ask)
     ro = sub.add_parser("reopen", help="show a stored answer and its evidence again (no model call)")
     ro.add_argument("principal")

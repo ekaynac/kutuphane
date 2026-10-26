@@ -28,11 +28,12 @@ class Stages:
         return cls(llmdap.Routed.from_env(llmdap.EMBED_ENV), llmdap.Routed.from_env(llmdap.RERANK_ENV))
 
 
-def retrieve(conn, actor: Actor, query: str, k: int = search.DEFAULT_K, stages: Stages = Stages()) -> list[search.Hit]:
+def retrieve(conn, actor: Actor, query: str, k: int = search.DEFAULT_K, stages: Stages = Stages(),
+             scope: search.Scope = search.Scope()) -> list[search.Hit]:
     vector = vectors.query_vector(conn, stages.embedder, actor, query)
     if stages.reranker is None:
-        return search.search(conn, actor, query, k, vector=vector)
-    pool = search.search(conn, actor, query, max(k, RERANK_POOL), vector=vector)
+        return search.search(conn, actor, query, k, vector=vector, scope=scope)
+    pool = search.search(conn, actor, query, max(k, RERANK_POOL), vector=vector, scope=scope)
     rights = kstd.Rights(conn)
     slots = [i for i, h in enumerate(pool)  # kstd: only passages whose rights allow ai_input go to the reranker
              if rights.allows(h.citation.book, h.citation.content_id, h.citation.path, "ai_input")]
