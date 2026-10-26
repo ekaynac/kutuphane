@@ -7,6 +7,7 @@ characters made visible) and the rule proposals, and appends each label to <data
 Plain HTTP only on loopback or the tailnet; the access token is exchanged for an HttpOnly cookie.
 """
 import argparse
+import hashlib
 import hmac
 import ipaddress
 import json
@@ -28,23 +29,30 @@ MAX_BODY, MAX_TEXT, BATCH = 64 * 1024, 200_000, 20
 STRATA = ("R", "S", "W", "A")  # labelling order (docs/16 §4)
 HIDDEN = re.compile("[\u200b\u200c\u200d\u2060\ufeff\u202a-\u202e\u2066-\u2069\u00ad]")
 
-ORIGIN = ("human", "assisted", "model", "tool", "unknown")  # `tool`: docs/17, not decided yet
+ORIGIN = ("human", "assisted", "model", "tool", "unknown")  # D63/D64
 CHOICES = {
+    "kind": ("note", "decision", "procedure", "instruction", "record"),  # a form preset only (docs/19 §4)
     "origin": ORIGIN,
     "personal_data": ("yes", "no", "synthetic", "unknown"),
     "acceptance": ("pending", "accepted", "withdrawn", "suspended"),
     "mandate": ("no", "yes"),
-    "export": ("", "normal", "restricted"),
-    "route": ("", "cloud_ok", "local_only"),
+    "export": ("normal", "restricted"),
+    "route": ("cloud_ok", "local_only"),
     "instruction": ("no", "yes"),
-    "activate": ("n/a", "allow", "deny", "escalate"),
+    "activate": ("allow", "deny", "escalate"),
     "needs_split": ("no", "yes"),
-    "issuer_trusted": ("unknown", "yes", "no"),
 }
+REQUIRED = ("kind", "origin", "instruction", "personal_data")  # every other field only when its condition shows it
 AI_USE = ("search", "ai_input", "train")
-TEXT_FIELDS = {"reviewed_by": 200, "license_item": 300, "applies_to": 300, "issued": 10, "valid_from": 10,
+TEXT_FIELDS = {"reviewed_by": 200, "license_item": 300, "applies_to": 300, "valid_from": 10,
                "valid_to": 10, "inputs": 2000, "software_agent": 200, "note": 2000}
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+BLIND_SHARE = 3  # of 10: items whose suggestions are withheld, to measure the proposers without anchoring
+
+
+def is_blind(iid: str) -> bool:
+    """A fixed ~30 % sample (docs/09 blind slice; Astra review of docs/19). Decided here, never by the page."""
+    return int(hashlib.sha256(iid.encode()).hexdigest(), 16) % 10 < BLIND_SHARE
 
 
 class Store:
@@ -98,11 +106,13 @@ class Store:
                 hidden = len(HIDDEN.findall(raw))
                 text = HIDDEN.sub(lambda m: f"⟦U+{ord(m.group(0)):04X}⟧", raw)
         siblings = [s for s in self.groups.get(it.get("group"), []) if s != iid]
-        blind = it["stratum"] == "S"  # the synthetic notes, facts and hostile flag are the answers
-        shown = {k: v for k, v in it.items() if not (blind and k in ("known", "notes", "hostile", "known_source"))}
-        return {"item": shown,
+        hide = it["stratum"] == "S"  # the synthetic notes, facts and hostile flag are the answers
+        shown = {k: v for k, v in it.items() if not (hide and k in ("known", "notes", "hostile", "known_source"))}
+        blind = is_blind(iid)
+        return {"item": shown, "blind": blind,
                 "text": text, "hidden_chars": hidden, "truncated": bool(it.get("bytes", 0) > MAX_TEXT),
-                "proposals": self.proposals.get(iid, {}), "llm": self.llm().get(iid), "siblings": siblings,
+                "proposals": {} if blind else self.proposals.get(iid, {}),
+                "llm": None if blind else self.llm().get(iid), "siblings": siblings,
                 "label": self.labelled().get(iid)}
 
     def llm(self) -> dict:
@@ -122,32 +132,42 @@ class Store:
         if not isinstance(labels, dict):
             raise ValueError("labels must be an object")
         rec = {}
-        for field, options in CHOICES.items():
-            value = labels.get(field, options[0])
-            if value not in options:
-                raise ValueError(f"{field}: not one of {options}")
-            rec[field] = value
-        ai_use = labels.get("ai_use") or {}
-        if not isinstance(ai_use, dict) or any(k not in AI_USE or v not in ("y", "n") for k, v in ai_use.items()):
-            raise ValueError("ai_use: only search/ai_input/train with y or n; leave a term out for 'not stated'")
-        rec["ai_use"] = ai_use
+        for field, options in CHOICES.items():  # only the fields that the page showed and the person set
+            if field in labels:
+                if labels[field] not in options:
+                    raise ValueError(f"{field}: not one of {options}")
+                rec[field] = labels[field]
+        missing = [f for f in REQUIRED if f not in rec]
+        if missing:
+            raise ValueError(f"required: {', '.join(missing)}")
+        if "ai_use" in labels:
+            ai_use = labels["ai_use"]
+            if not isinstance(ai_use, dict) or any(k not in AI_USE or v not in ("y", "n") for k, v in ai_use.items()):
+                raise ValueError("ai_use: only search/ai_input/train with y or n; leave a term out for 'not stated'")
+            rec["ai_use"] = ai_use
         for field, limit in TEXT_FIELDS.items():
-            value = labels.get(field, "")
+            if field not in labels:
+                continue
+            value = labels[field]
             if not isinstance(value, str) or len(value) > limit:
                 raise ValueError(f"{field}: text up to {limit} characters")
-            if field in ("issued", "valid_from", "valid_to") and value and not DATE.match(value):
+            if field in ("valid_from", "valid_to") and value and not DATE.match(value):
                 raise ValueError(f"{field}: YYYY-MM-DD")
-            rec[field] = value.strip()
-        if rec["origin"] == "assisted" and not rec["reviewed_by"]:
+            if value.strip():
+                rec[field] = value.strip()
+        if rec["origin"] == "assisted" and not rec.get("reviewed_by"):
             raise ValueError("assisted needs reviewed_by (a named person who reviewed it in substance)")
-        if rec["origin"] == "tool" and not rec["software_agent"]:
+        if rec["origin"] == "tool" and not rec.get("software_agent"):
             raise ValueError("tool needs software_agent (name and version)")
-        accepted = body.get("accepted_proposals", [])
-        if not isinstance(accepted, list) or not all(isinstance(a, str) for a in accepted):
-            raise ValueError("accepted_proposals must be a list of field names")
+        if rec["instruction"] == "yes" and "activate" not in rec:
+            raise ValueError("an instruction needs an activate decision (allow / deny / escalate)")
+        lists = {k: body.get(k, []) for k in ("accepted_proposals", "shown")}
+        if any(not isinstance(v, list) or not all(isinstance(a, str) and len(a) < 40 for a in v) for v in lists.values()):
+            raise ValueError("accepted_proposals and shown must be lists of field names")
         ms = body.get("ms")
         return {"id": iid, "stratum": self.items[iid]["stratum"], "labels": rec, "claim_source": "person",
-                "accepted_proposals": sorted(set(accepted))[:40],
+                "blind": is_blind(iid), "shown": sorted(set(lists["shown"]))[:40],
+                "accepted_proposals": [] if is_blind(iid) else sorted(set(lists["accepted_proposals"]))[:40],
                 "ms": int(ms) if isinstance(ms, (int, float)) and 0 <= ms < 86_400_000 else None,
                 "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
 
