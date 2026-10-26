@@ -35,6 +35,10 @@ class EgressError(RuntimeError):
     pass
 
 
+class PolicyRefused(EgressError):
+    """Our own egress check refused the call: nothing was sent, and a retry would be refused the same way."""
+
+
 NOT_SENT_POLICY = "not_sent:egress_policy"      # refused by our own egress check; never left the host
 NOT_SENT_UNREACHABLE = "not_sent:unreachable"   # connection refused; nothing was transmitted
 
@@ -108,7 +112,7 @@ def _check_egress(conn, bridge: Bridge, books: list[str]) -> None:
     known = {slug: egress for slug, egress in rows}
     blocked = sorted(b for b in books if known.get(b) != "cloud_ok")  # unknown books are blocked too
     if blocked:
-        raise EgressError(f"egress policy forbids sending {', '.join(blocked)} to cloud route {bridge.route}")
+        raise PolicyRefused(f"egress policy forbids sending {', '.join(blocked)} to cloud route {bridge.route}")
 
 
 def _post(conn, bridge: Bridge, actor: Actor, path: str, body: dict, *, model: str, source_books: list[str],
