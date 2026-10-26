@@ -57,12 +57,13 @@ const HELP = {
   instruction: "Bir ajan bunu talimat olarak çalıştırır mı?",
   activate: "Talimatsa: çalıştırmaya izin / ret / insana sor",
   needs_split: "Dosya karışık kökenli mi (bölünmeli)?",
+  kind: "Yalnız formu açar (karar/prosedür → kabul, yetki, geçerlilik); hiçbir kararı değiştirmez",
 };
-const LABELS = { origin:"Köken", reviewed_by:"İnceleyen (assisted)", software_agent:"Yazılım + sürüm (tool)",
+const LABELS = { kind:"Belge türü", origin:"Köken", reviewed_by:"İnceleyen (assisted)", software_agent:"Yazılım + sürüm (tool)",
   personal_data:"Kişisel veri", license_item:"Öğe lisansı", acceptance:"Kabul", mandate:"Yetki (mandate)",
-  export:"Dışa aktarma", route:"Rota", issued:"Tarih", valid_from:"Geçerlilik başlangıcı", valid_to:"Geçerlilik sonu",
+  export:"Dışa aktarma", route:"Rota", valid_from:"Geçerlilik başlangıcı", valid_to:"Geçerlilik sonu",
   applies_to:"Kapsam (applies_to)", inputs:"Girdiler (id, virgülle)", instruction:"Talimat mı?", activate:"Etkinleştirme",
-  needs_split:"Bölünmeli", issuer_trusted:"Kaynak güvenilir mi?", note:"Not" };
+  needs_split:"Bölünmeli", note:"Not" };
 let choices = {}, ids = [], pos = 0, current = null, prefilled = {}, started = 0, stratum = null;
 
 const $ = (id) => document.getElementById(id);
@@ -123,47 +124,102 @@ async function show() {
   v.append(el("pre", {}, current.text ?? "(içerik kopyalanmadı: lisans izin vermiyor ya da ikili dosya; özet ve sha256 kayıtlı)"));
   if (current.truncated) v.append(el("div", { class: "meta" }, "İlk 200 KB gösteriliyor."));
 
-  const f = $("form"); f.replaceChildren();
-  const pv = (k) => (p[k] ? p[k].value : undefined);
-  const put = (name, input, proposalKey = name) => { if (p[proposalKey] !== undefined) prefilled[name] = input.value; field(f, name, input, p[proposalKey]); };
-  put("origin", selectFor("origin", choices.origin, pv("origin") ?? "unknown"));
-  put("reviewed_by", Object.assign(el("input", { type: "text", name: "reviewed_by" }), { value: pv("reviewed_by") ?? "" }));
-  put("software_agent", Object.assign(el("input", { type: "text", name: "software_agent" }), { value: "" }));
-  put("personal_data", selectFor("personal_data", choices.personal_data, pv("personal_data") ?? "unknown"));
-  put("license_item", Object.assign(el("input", { type: "text", name: "license_item" }), { value: pv("license") ?? it.license_item ?? "" }), "license");
-  f.append(el("label", { class: "f" }, "AI kullanımı (search / ai_input / train)"));
-  const row = el("div", { class: "row" }); const ai = pv("ai_use") || {};
-  for (const k of ["search", "ai_input", "train"]) { const s = selectFor(`ai_${k}`, ["", "y", "n"], ai[k] ?? ""); s.title = k; row.append(s); }
-  f.append(row); f.append(el("div", { class: "prop" }, HELP.ai_use)); if (p.ai_use) { prefilled.ai_use = JSON.stringify(ai); f.append(el("div", { class: "prop on" }, `öneri: ${JSON.stringify(ai)} — ${p.ai_use.evidence}`)); }
-  put("acceptance", selectFor("acceptance", choices.acceptance, pv("acceptance") ?? "pending"));
-  put("mandate", selectFor("mandate", choices.mandate, "no"));
-  put("export", selectFor("export", choices.export, ""));
-  put("route", selectFor("route", choices.route, ""));
-  put("issued", Object.assign(el("input", { type: "text", name: "issued", placeholder: "YYYY-MM-DD" }), { value: pv("issued") ?? "" }));
-  put("valid_from", Object.assign(el("input", { type: "text", name: "valid_from", placeholder: "YYYY-MM-DD" }), { value: "" }));
-  put("valid_to", Object.assign(el("input", { type: "text", name: "valid_to", placeholder: "YYYY-MM-DD" }), { value: (pv("valid_to") || "").slice(0, 10) }));
-  put("applies_to", Object.assign(el("input", { type: "text", name: "applies_to" }), { value: pv("applies_to") ?? "" }));
-  put("inputs", Object.assign(el("input", { type: "text", name: "inputs" }), { value: "" }));
-  put("instruction", selectFor("instruction", choices.instruction, pv("instruction") ?? "no"));
-  put("activate", selectFor("activate", choices.activate, pv("activate") ?? "n/a"));
-  put("needs_split", selectFor("needs_split", choices.needs_split, pv("needs_split") ?? "no"));
-  put("issuer_trusted", selectFor("issuer_trusted", choices.issuer_trusted, "unknown"));
-  put("note", el("textarea", { name: "note", rows: "2" }));
+  if (current.blind) v.prepend(el("div", { class: "meta" }, "Kör örnek: bu öğede öneriler gizli (önericileri ölçmek için). Kendi kararınızı verin."));
+  buildForm(it, p);
 }
 
+// --- the form: few fields by default; others open by condition (docs/19) -------------------------------------
+const KINDS = { note: "not / referans", decision: "karar / politika", procedure: "prosedür / runbook",
+                instruction: "ajan talimatı", record: "kayıt / veri / log" };
+function guessKind(it, p) {
+  const path = (it.ref.path || it.id).toLowerCase();
+  if (p.instruction && p.instruction.value === "yes") return "instruction";
+  if (/(^|[\/_.-])(adr|decision|karar|polic|politika)/.test(path)) return "decision";
+  if (/(runbook|procedure|prosed|how-?to|playbook)/.test(path)) return "procedure";
+  if (/\.(jsonl|ndjson|log|csv|ttl|trig|xml|json)$/.test(path)) return "record";
+  return "note";
+}
+const val = (n) => { const e = $("form").elements[n]; return e ? e.value : ""; };
+let rows = [], showAll = false, showException = false;
+
+function buildForm(it, p) {
+  const f = $("form"); f.replaceChildren(); rows = []; showAll = false; showException = false;
+  const pv = (k) => (p[k] ? p[k].value : undefined);
+  const blank = (name, options, value) => selectFor(name, ["", ...options], value ?? "");  // "" = not chosen yet
+  const text = (name, value = "", ph = "") => Object.assign(el("input", { type: "text", name, placeholder: ph }), { value });
+  const add = (name, input, when = () => true, proposalKey = name) => {
+    const box = el("div"); box.dataset.field = name;
+    if (p[proposalKey] !== undefined) prefilled[name] = input.value;
+    field(box, name, input, p[proposalKey]); f.append(box); rows.push({ name, box, when });
+  };
+  const kind = (k) => val("kind") === k;
+  const rule = () => kind("decision") || kind("procedure");
+
+  add("kind", blank("kind", Object.keys(KINDS), current.blind ? "" : guessKind(it, p)));
+  add("origin", blank("origin", choices.origin, pv("origin")));
+  add("reviewed_by", text("reviewed_by", pv("reviewed_by") ?? ""), () => val("origin") === "assisted");
+  add("software_agent", text("software_agent", "", "ad + sürüm, ör. typedoc 0.26.11"), () => val("origin") === "tool");
+  add("inputs", text("inputs", "", "kaynak öğe id'leri, virgülle"), () => ["model", "tool", "assisted"].includes(val("origin")) || showAll);
+  add("instruction", blank("instruction", choices.instruction, pv("instruction")));
+  add("activate", blank("activate", choices.activate.filter((x) => x !== "n/a"), pv("activate")), () => val("instruction") === "yes");
+  add("personal_data", blank("personal_data", choices.personal_data, pv("personal_data")));
+  add("acceptance", blank("acceptance", choices.acceptance, pv("acceptance")), () => rule() || showAll);
+  add("mandate", blank("mandate", choices.mandate, ""), () => rule() || showAll);
+  add("valid_from", text("valid_from", "", "YYYY-MM-DD"), () => rule() || showAll);
+  add("valid_to", text("valid_to", (pv("valid_to") || "").slice(0, 10), "YYYY-MM-DD"), () => rule() || showAll);
+  add("applies_to", text("applies_to", pv("applies_to") ?? ""), () => rule() || kind("instruction") || showAll);
+  add("needs_split", blank("needs_split", choices.needs_split, pv("needs_split") ?? "no"));
+
+  // inherited rights: one summary line; an exception opens the fields
+  const inherited = el("div", { class: "prop" }, `Devralınan: lisans ${it.license_item}${it.license_collection ? ` (koleksiyon ${it.license_collection})` : ""} · AI kullanımı: belirtilmemiş`);
+  const exc = el("button", { type: "button" }, "İstisna (lisans / AI kullanımı)");
+  exc.onclick = () => { showException = !showException; refresh(); };
+  f.append(inherited, exc);
+  add("license_item", text("license_item", pv("license") ?? it.license_item ?? ""), () => showException || showAll, "license");
+  const aiBox = el("div"); aiBox.dataset.field = "ai_use";
+  aiBox.append(el("label", { class: "f" }, "AI kullanımı (search / ai_input / train)"));
+  const row = el("div", { class: "row" }); const ai = pv("ai_use") || {};
+  for (const k of ["search", "ai_input", "train"]) { const s = selectFor(`ai_${k}`, ["", "y", "n"], ai[k] ?? ""); s.title = k; row.append(s); }
+  aiBox.append(row, el("div", { class: "prop" }, HELP.ai_use)); f.append(aiBox);
+  if (p.ai_use) prefilled.ai_use = JSON.stringify(ai);
+  rows.push({ name: "ai_use", box: aiBox, when: () => showException || showAll });
+  add("export", blank("export", choices.export.filter(Boolean), ""), () => showAll);
+  add("route", blank("route", choices.route.filter(Boolean), ""), () => showAll);
+
+  const all = el("button", { type: "button" }, "Tüm alanlar");
+  all.onclick = () => { showAll = !showAll; all.textContent = showAll ? "Az alan" : "Tüm alanlar"; refresh(); };
+  const note = el("details"); note.append(el("summary", {}, "Not"), el("textarea", { name: "note", rows: "2" }));
+  f.append(all, note);
+  f.onchange = refresh; refresh();
+}
+function refresh() { for (const r of rows) r.box.style.display = r.when() ? "" : "none"; }
+
+const REQUIRED = ["kind", "origin", "instruction", "personal_data"];
 function collect() {
-  const f = $("form"), labels = {}, accepted = [];
-  for (const e of f.elements) { if (e.name && !e.name.startsWith("ai_")) labels[e.name] = e.value; }
-  const ai = {}; for (const k of ["search", "ai_input", "train"]) { const v = f.elements[`ai_${k}`].value; if (v) ai[k] = v; }
-  labels.ai_use = ai;
-  for (const [k, v] of Object.entries(prefilled)) { const now = k === "ai_use" ? JSON.stringify(ai) : labels[k]; if (now === v) accepted.push(k === "license_item" ? "license" : k); }
-  return { id: current.item.id, labels, accepted_proposals: accepted, ms: Date.now() - started };
+  const f = $("form"), labels = {}, accepted = [], shown = [];
+  for (const r of rows) {
+    if (r.box.style.display === "none") continue;
+    shown.push(r.name);
+    if (r.name === "ai_use") {
+      const ai = {}; for (const k of ["search", "ai_input", "train"]) { const v = f.elements[`ai_${k}`].value; if (v) ai[k] = v; }
+      labels.ai_use = ai; if (prefilled.ai_use === JSON.stringify(ai)) accepted.push("ai_use");
+    } else {
+      const v = f.elements[r.name].value; if (v !== "") labels[r.name] = v;
+      if (r.name in prefilled && prefilled[r.name] === v && v !== "") accepted.push(r.name === "license_item" ? "license" : r.name);
+    }
+  }
+  if (f.elements.note.value.trim()) labels.note = f.elements.note.value;
+  const missing = REQUIRED.filter((n) => !labels[n]);
+  if (missing.length) throw new Error(`Seçilmedi: ${missing.map((n) => LABELS[n] || n).join(", ")}`);
+  return { id: current.item.id, labels, shown, accepted_proposals: accepted, ms: Date.now() - started };
 }
 let busy = false, generation = 0;  // one save or move at a time; a stale reply never moves the cursor
 function setBusy(on) { busy = on; for (const id of ["save", "skip"]) $(id).disabled = on; for (const b of $("strata").querySelectorAll("button")) b.disabled = on; }
 $("save").onclick = async () => {
   if (busy || !current) return;
-  const gen = generation, body = collect();
+  let body;
+  try { body = collect(); } catch (e) { $("msg").className = "err"; $("msg").textContent = e.message; return; }
+  const gen = generation;
   setBusy(true);
   try {
     await api("/api/label", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -173,6 +229,7 @@ $("save").onclick = async () => {
   finally { setBusy(false); }
 };
 $("skip").onclick = async () => { if (busy) return; setBusy(true); generation++; pos++; try { await show(); } finally { setBusy(false); } };
+document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); $("save").click(); } });
 loadState().catch((e) => { $("view").replaceChildren(el("div", { class: "err" }, e.message)); });
 </script>
 </body>
