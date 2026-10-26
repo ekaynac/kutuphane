@@ -201,3 +201,25 @@ def test_explain_starts_from_the_answer_id(conn, fake, library):  # AT-09
     assert report["status"] == "answered" and report["complete"]
     assert [a["action"] for a in report["access"]] == ["search", "answer"]
     assert report["access"][1]["items"] == [c for c in [answers._handle(result["citations"][0])]]
+
+
+def test_long_passages_are_cut_in_the_prompt_only(conn, fake, okf_dir):  # G26
+    words = " ".join(f"kayıt{i}" for i in range(400))                 # one passage, PROMPT_CHARS < length < max
+    (okf_dir / "uzun.md").write_text(f"# Uzun\n\nyedek kayıtlar {words}\n", encoding="utf-8")
+    catalog.publish(conn, book="kitap", title="kitap", files=read_source(okf_dir),
+                    policy=make_policy(sensitivity="normal", egress="local_only", protection="standard"),
+                    profile=profiles.spec("chunked"))
+    authz.grant(conn, "book:kitap", "read", U)
+    (ordinal, text) = conn.execute("SELECT ordinal, text FROM chunk WHERE book = 'kitap' AND path = 'uzun.md' AND "
+                                   "text LIKE %s", ("%kayıt399%",)).fetchone()
+    assert len(text) > answers.PROMPT_CHARS
+    fake.reply = "Kayıtlar [1]."
+    result = ask(conn, fake, Actor(U), "yedek kayıtlar")
+    system, user = (m["content"] for m in fake.last_body["messages"])
+    assert "150" in system and "Kısa" in system                                 # a short answer is asked for
+    assert text[:answers.PROMPT_CHARS] + answers.CUT_MARK in user and "kayıt399" not in user
+    sources = conn.execute("SELECT sources FROM answer WHERE id = %s", (result["id"],)).fetchone()[0]
+    long_n = next(s["n"] for s in sources if (s["path"], s["ordinal"]) == ("uzun.md", ordinal))
+    fake.reply = f"Kayıtlar [{long_n}]."
+    cited = ask(conn, fake, Actor(U), "yedek kayıtlar")
+    assert answers.reopen(conn, Actor(U), cited["id"])["evidence"][0]["text"] == text   # the whole passage

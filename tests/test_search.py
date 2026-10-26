@@ -326,7 +326,8 @@ def test_scope_by_kstd_origin_and_validity(conn, okf_dir, tmp_path):  # G14
         authz.grant(conn, f"book:{book}", "read", U)
 
     def found(**scope):
-        hits = search.search(conn, Actor(U), "kayıtlar saklanır yedek geri yükleme politika kitabı", k=50, scope=search.Scope.of(**scope))
+        hits = search.search(conn, Actor(U), "kayıtlar saklanır yedek geri yükleme politika kitabı", k=50,
+                             scope=search.Scope.of(**scope))
         return {(h.citation.book, h.citation.path) for h in hits}
 
     assert found(origins=["human"]) == {("kitap", "runbook/yedek-geri-yukleme.md")}
