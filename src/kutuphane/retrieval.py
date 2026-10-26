@@ -9,6 +9,7 @@
    on record in `model_call`. Reranking only reorders passages the search already authorized and logged (the
    pool is logged as read on the caller's behalf, since its text goes to the reranker). Passages in the other
    language (Turkish/English) that the hybrid search ranked in its top k keep up to LANGUAGE_RESERVE places (G19).
+4. A question about recent things prefers newer passages among the most relevant ones (G22, `_prefer_recent`).
 """
 import dataclasses
 import logging
@@ -16,6 +17,7 @@ import re
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
+from datetime import date
 
 from . import kstd, llmdap, profiles, search, vectors
 from .gate import Actor
@@ -68,6 +70,47 @@ def _keep_other_language(query: str, ranked: list[search.Hit], hybrid: list[sear
     return [h for i, h in enumerate(top) if i not in drop] + [by_citation[c] for c in add]
 
 
+# G22: a question that asks for recent things ("recent", "latest", "son", "en yeni", …) ranks the top 2k passages by
+# relevance rank + date rank (newest first), so a newer passage of about the same relevance comes first. A passage's
+# date is its kstd valid_from, else the first date (YYYY-MM-DD or ISO week YYYY-Www) in its path, else the first in
+# its text (a record's own date, e.g. `classified_at`). The date rank counts the passages with a newer date; an
+# undated passage ranks after every dated one.
+_RECENT = re.compile(r"\b(recent|recently|lately|latest|newest|last (?:week|weeks|month|months)|this (?:week|month)|"
+                     r"son|en yeni|güncel|yakın zamanda|bu hafta|geçen hafta)\b", re.IGNORECASE)
+_DATE = re.compile(r"(?<!\d)(20\d\d)-(?:(\d\d)-(\d\d)|W(\d\d))(?!\d)")
+
+
+def asks_recent(query: str) -> bool:
+    return _RECENT.search(query) is not None
+
+
+def _first_date(text: str) -> date | None:
+    for m in _DATE.finditer(text):
+        year, month, day, week = m.groups()
+        try:
+            return date.fromisocalendar(int(year), int(week), 1) if week else date(int(year), int(month), int(day))
+        except ValueError:
+            continue
+    return None
+
+
+def passage_date(rights: kstd.Rights, hit: search.Hit) -> date | None:
+    c = hit.citation
+    info = rights.info(c.book, c.content_id, c.path)
+    if info and info.get("valid_from"):
+        return date.fromisoformat(info["valid_from"])
+    return _first_date(c.path) or _first_date(hit.text)
+
+
+def _prefer_recent(conn, ranked: list[search.Hit], k: int) -> list[search.Hit]:
+    head, rights = ranked[:2 * k], kstd.Rights(conn)
+    dates = [passage_date(rights, h) for h in head]
+    known = [d for d in dates if d]
+    date_rank = [sum(e > d for e in known) if d else len(known) for d in dates]
+    order = sorted(range(len(head)), key=lambda i: (i + date_rank[i], i))  # ties: the more relevant first
+    return [head[i] for i in order] + ranked[2 * k:]
+
+
 @dataclass(frozen=True)
 class Stages:
     embedder: llmdap.Routed | None = None
@@ -104,22 +147,33 @@ def query_vector(conn, embedder: llmdap.Routed | None, actor: Actor, query: str)
 def retrieve(conn, actor: Actor, query: str, k: int = search.DEFAULT_K, stages: Stages = Stages(),
              scope: search.Scope = search.Scope()) -> list[search.Hit]:
     vector = query_vector(conn, stages.embedder, actor, query)
+    recent = asks_recent(query)
     if stages.reranker is None:
-        return search.search(conn, actor, query, k, vector=vector, scope=scope)
+        hits = search.search(conn, actor, query, min(2 * k, search.MAX_K) if recent else k, vector=vector,
+                             scope=scope)
+        return _prefer_recent(conn, hits, k)[:k] if recent else hits
     pool = search.search(conn, actor, query, max(k, RERANK_POOL), vector=vector, scope=scope)
+    ranked = _rerank(conn, stages.reranker, actor, query, pool)
+    if recent:
+        ranked = _prefer_recent(conn, ranked, k)
+    return _keep_other_language(query, ranked, pool, k)
+
+
+def _rerank(conn, reranker: llmdap.Routed, actor: Actor, query: str, pool: list[search.Hit]) -> list[search.Hit]:
+    """The pool in the reranker's order, with its scores; the hybrid order if reranking is not possible."""
     rights = kstd.Rights(conn)
     slots = [i for i, h in enumerate(pool)  # kstd: only passages whose rights allow ai_input go to the reranker
              if rights.allows(h.citation.book, h.citation.content_id, h.citation.path, "ai_input")]
     if len(slots) < 2:
-        return pool[:k]
+        return pool
     try:
-        scores = llmdap.rerank(conn, stages.reranker, actor, query, [pool[i].text[:RERANK_CHARS] for i in slots],
+        scores = llmdap.rerank(conn, reranker, actor, query, [pool[i].text[:RERANK_CHARS] for i in slots],
                                source_books=sorted({pool[i].citation.book for i in slots}), purpose="rerank")
     except llmdap.EgressError as exc:
         log.warning("reranking failed, keeping the hybrid order: %s", exc)
-        return pool[:k]
+        return pool
     order = sorted(range(len(slots)), key=lambda j: -scores[j])  # stable: ties keep the hybrid order
     out = list(pool)  # passages that were not reranked keep their hybrid position
     for slot, j in zip(slots, order):
         out[slot] = dataclasses.replace(pool[slots[j]], score=scores[j])
-    return _keep_other_language(query, out, pool, k)
+    return out

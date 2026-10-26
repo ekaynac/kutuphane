@@ -141,3 +141,39 @@ def test_the_language_reserve_changes_nothing_in_one_language(conn, fake, tmp_pa
     query = "logs of the backup"
     ranked = retrieval.retrieve(conn, Actor(U), query, k=4, stages=retrieval.Stages(reranker=fake.reranker()))
     assert [h.citation for h in ranked] == [h.citation for h in search.search(conn, Actor(U), query, k=30)][:4]
+
+
+# Relevance order (path order for full text, first letter for the fake reranker): W30, W40, W33, W36.
+WEEKS = {f"{p}-brief-2026-W{w}.md": f"{p}: model x{w} entered the pilot ring.\n"
+         for p, w in (("a", 30), ("b", 40), ("c", 33), ("d", 36))}
+
+
+@pytest.mark.parametrize("query,recent", [
+    ("Which models entered the pilot ring recently?", True), ("the latest pilot ring moves", True),
+    ("Hangi modeller son haftalarda pilot halkasına girdi?", True), ("En yeni modeller hangileri?", True),
+    ("Which models entered the pilot ring?", False), ("Sonra ne oldu?", False),
+])
+def test_recency_questions_are_recognized(query, recent):  # G22
+    assert retrieval.asks_recent(query) is recent
+
+
+def test_passage_dates():  # G22
+    from datetime import date
+    assert retrieval._first_date("data/briefs/brief-2026-W40.json") == date(2026, 9, 28)
+    assert retrieval._first_date("digests/digest_2026-W28.html") == date(2026, 7, 6)
+    assert retrieval._first_date('{"x": 1, "classified_at": "2026-08-05T09:21:18Z"}') == date(2026, 8, 5)
+    assert retrieval._first_date("v2026-13-45 and 12026-01-01, then 2026-02-03") == date(2026, 2, 3)
+    assert retrieval._first_date("no date here") is None
+
+
+@pytest.mark.parametrize("stages", ["reranker", "none"])
+def test_a_recency_question_prefers_newer_passages(conn, fake, tmp_path, stages):  # G22
+    _bilingual(conn, tmp_path, WEEKS)
+    fake.rerank_reply = lambda b: [{"index": i, "relevance_score": 1.0 - ord(d[0]) / 1000}
+                                   for i, d in enumerate(b["documents"])]
+    st = retrieval.Stages(reranker=fake.reranker()) if stages == "reranker" else retrieval.Stages()
+
+    def weeks(query):
+        return [h.citation.path[-5:-3] for h in retrieval.retrieve(conn, Actor(U), query, k=2, stages=st)]
+    assert weeks("Which models entered the pilot ring?") == ["30", "40"]
+    assert weeks("Which models entered the pilot ring recently?") == ["40", "30"]  # rank sums: 1+0 < 0+3
