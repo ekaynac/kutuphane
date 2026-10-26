@@ -9,6 +9,7 @@
 """
 import dataclasses
 import logging
+import re
 from dataclasses import dataclass
 
 from . import kstd, llmdap, search, vectors
@@ -16,6 +17,23 @@ from .gate import Actor
 
 log = logging.getLogger(__name__)
 RERANK_POOL = 30  # M0: bge-reranker-v2-m3 over the top 30 hybrid hits, R@1 0.34 -> 0.41
+
+# Language detection for the two languages of the library (G19, G20): common function words, plus the letters that
+# only Turkish uses. Good enough to tell a Turkish question or passage from an English one; anything else is None.
+_WORD = re.compile(r"\w+")
+_TR_LETTERS = re.compile(r"[çğışöüÇĞİŞÖÜ]")
+_TR_WORDS = frozenset("ve veya bir bu şu ne neden niçin nasıl hangi hangisi mi mı mu mü için ile son nedir kim kaç "
+                      "var yok olan gibi daha çok da de ki ya göre hakkında değil ama fakat her hiç ise".split())
+_EN_WORDS = frozenset("the a an and or of to in on for with what which why how who when where is are was were be "
+                      "do does did about from by this that these those not but it its has have had".split())
+
+
+def language(text: str) -> str | None:
+    """'tr', 'en' or None (no clear signal)."""
+    words = _WORD.findall(text.lower())
+    tr = sum(w in _TR_WORDS for w in words) + len(_TR_LETTERS.findall(text))
+    en = sum(w in _EN_WORDS for w in words)
+    return "tr" if tr > en else "en" if en > tr else None
 
 
 @dataclass(frozen=True)

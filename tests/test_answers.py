@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from kutuphane import answers, audit, authz, catalog, profiles
+from kutuphane import answers, audit, authz, catalog, profiles, retrieval
 from kutuphane.gate import Actor, Denied
 from kutuphane.policy import make_policy
 from kutuphane.source import read_source
@@ -166,6 +166,32 @@ def test_an_unknown_number_in_a_group_rejects_the_answer(conn, fake, library, ci
 def test_cited_numbers():  # G21
     assert answers.cited_numbers("a [2,3,5] b [2, 3] c [7-9] d [4] e [x] f [10–11]") == [2, 3, 4, 5, 7, 8, 9, 10, 11]
     assert answers.cited_numbers("[3-1]") == [0] and answers.cited_numbers("[2026-10-26]") == []
+
+
+@pytest.mark.parametrize("question,lang,needle,label", [
+    ("How long are access logs kept?", "en", "Answer in English", "Question: "),
+    ("Erişim kayıtları ne kadar saklanır?", "tr", "Türkçe cevap ver", "Soru: "),
+    ("Wie lange werden Protokolle gespeichert?", None, "language of the question", "Question: "),
+])
+def test_the_answer_follows_the_language_of_the_question(conn, fake, library, question, lang, needle, label):  # G20
+    fake.reply = "x [1]."
+    question += " runbook"                                                    # a word that finds a passage
+    ask(conn, fake, Actor(U), question)
+    assert retrieval.language(question) == lang
+    system, user = (m["content"] for m in fake.last_body["messages"])
+    assert needle in system and answers.NOT_IN_LIBRARY in system and user.startswith(label)
+
+
+@pytest.mark.parametrize("text,lang", [
+    ("Which on-prem serving engines support NVFP4 on Blackwell?", "en"),
+    ("Why were rings replaced with Pulse?", "en"),
+    ("Halkalar neden Pulse ile değiştirildi?", "tr"),
+    ("Hangi modeller son haftalarda pilot halkasına girdi ve neden?", "tr"),
+    ("NVFP4 Blackwell", None),
+])
+def test_language_of_pilot_questions(text, lang):  # G19, G20
+    assert retrieval.language(text) == lang
+
 
 
 def test_explain_starts_from_the_answer_id(conn, fake, library):  # AT-09
