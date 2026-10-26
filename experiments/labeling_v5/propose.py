@@ -23,7 +23,7 @@ from pathlib import Path, PurePosixPath
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 from kutuphane import agentfiles  # noqa: E402  (instruction-file rules of Kütüphane itself)
 
-RULES_VERSION, BASELINE_VERSION = "rules-v5.0", "baseline-v5.0"
+RULES_VERSION, BASELINE_VERSION = "rules-v5.1", "baseline-v5.1"  # 5.1: no declared licence in the auto set
 
 # --- signals -----------------------------------------------------------------------------------------------
 GENERATOR_TOOL = re.compile(  # a NAMED rule-based generator only; generic "this file was generated" proves nothing
@@ -130,17 +130,23 @@ def p(value, confidence, evidence):
 
 
 # --- the only input: what a real installation sees -----------------------------------------------------------
-def view(case: dict, case_dir: Path, baseline: bool = False) -> dict:
+UNDER_TEST = "LicenseRef-under-test"
+
+
+def view(case: dict, case_dir: Path, baseline: bool = False, declared_licence: bool = True) -> dict:
     """The proposer input. Copies ONLY file bytes, path, role, declared licence and `evidence` out of the case;
-    every other key (statements, why_selected, questions, group, gold) stays behind. `baseline` drops the bytes."""
+    every other key (statements, why_selected, questions, group, gold, copy, local_path) stays behind. `baseline`
+    drops the bytes. `declared_licence=False` (the auto set, where the item licence is an answer under test) drops
+    `license_item`; a `LicenseRef-under-test` placeholder is never passed on."""
     files = []
     for f in case.get("files") or []:
         text = None
         if not baseline and f.get("local_path"):
             data = (case_dir / f["local_path"]).read_bytes()
             text = None if b"\0" in data[:8192] else data.decode("utf-8", "replace")
+        declared = f.get("license_item") if declared_licence and f.get("license_item") != UNDER_TEST else None
         files.append({"path": f.get("path") or f.get("local_path") or "", "role": f.get("role") or "main",
-                      "license_item": f.get("license_item"), "text": text})
+                      "license_item": declared, "text": text})
     return {"id": case["id"], "files": files, "evidence": case.get("evidence") or {}}
 
 
@@ -281,8 +287,8 @@ def propose(v: dict) -> dict:
         out["license"] = p("see package LICENSE", "medium", f"license file in the package: {pkg_license[0]['path']}")
     elif declared and declared != "unknown":
         out["license"] = p(declared, "medium", "declared item license")
-    else:
-        out["license"] = p("unknown", "medium", "no item-level license")
+    elif main_text:  # no bytes → no claim: a missing copy says nothing about the licence
+        out["license"] = p("unknown", "medium", "no item-level license in the file or its declaration")
 
     # ai_use: only what the item states; absent stays absent (D60)
     cu, tdm = CONTENT_USAGE.search(main_text), TDM.search(main_text)
@@ -377,7 +383,8 @@ def load(root: Path, set_name: str, slice_name: str | None):
 def run(root: Path, set_name: str, slice_name: str | None, baseline: bool) -> list[dict]:
     version = BASELINE_VERSION if baseline else RULES_VERSION
     return [{"id": case["id"], "set": set_name, "group": case.get("group"), "proposer_version": version,
-             "mode": "baseline" if baseline else "rules", "proposals": propose(view(case, case_dir, baseline))}
+             "mode": "baseline" if baseline else "rules",
+             "proposals": propose(view(case, case_dir, baseline, declared_licence=set_name != "auto"))}
             for case, case_dir in load(root, set_name, slice_name)]
 
 

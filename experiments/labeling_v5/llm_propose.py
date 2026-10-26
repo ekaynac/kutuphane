@@ -23,7 +23,7 @@ from pathlib import Path, PurePosixPath
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from propose import load, view  # noqa: E402  (the same evidence as the rule proposer)
 
-LLM_VERSION = "llm-v5.0"
+LLM_VERSION = "llm-v5.1"  # 5.1: no declared licence in the auto set (the same view as propose.py)
 ROUTE, MODEL, PURPOSE = "chat", "RadixArk/Qwen3.8-27B-NVFP4", "labelling-proposals"
 MAX_FILE_CHARS, MAX_EVIDENCE_CHARS, MAX_STRING = 14000, 6000, 700
 SYSTEM = """You label one case for a knowledge library. A case is a whole document, a skill package, or a pull request
@@ -215,7 +215,7 @@ def main() -> int:
     todo = [(c, d) for c, d in load(root, args.set, args.slice) if c["id"] not in done]
     todo = todo[:args.limit] if args.limit else todo
     for n, (case, case_dir) in enumerate(todo, 1):
-        v = view(case, case_dir)
+        v = view(case, case_dir, declared_licence=args.set != "auto")
         head = {"id": case["id"], "set": args.set, "group": case.get("group"), "proposer_version": LLM_VERSION}
         if not any(f["text"] for f in v["files"]) and not v["evidence"]:
             rec = {**head, "error": "no readable content"}

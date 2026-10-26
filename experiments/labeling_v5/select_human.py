@@ -22,8 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from llm_propose import LLM_VERSION, MODEL, valid  # noqa: E402
-from propose import BASELINE_VERSION, RULES_VERSION  # noqa: E402
+from llm_propose import MODEL, valid  # noqa: E402
 
 SEED = 20261026
 QUOTA = {"calibration": 5, "disagreement": 15, "random": 10}
@@ -194,7 +193,8 @@ def main() -> int:
     digest = hashlib.sha256("".join(sorted(c["id"] for c in cands)).encode()).hexdigest()
     selection = {"frozen_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "seed": SEED, "quota": QUOTA,
                  "family_cap": FAMILY_CAP,
-                 "proposers": {"rules": RULES_VERSION, "baseline": BASELINE_VERSION, "llm": LLM_VERSION, "llm_model": MODEL},
+                 "proposers": {"rules": sorted({r["proposer_version"] for r in rules.values()}),
+                               "llm": sorted({r["proposer_version"] for r in llm.values()}), "llm_model": MODEL},
                  "candidate_ids_sha256": digest, "candidates": len(cands), "groups": report,
                  "cases": [{"id": c["id"], "group": c["group"], "family": c["family"], "stratum": c["selection_stratum"],
                             "second_reader": c["id"] in report[c["group"]]["second_reader"]} for c in cases]}

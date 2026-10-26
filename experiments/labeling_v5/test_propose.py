@@ -49,6 +49,16 @@ def test_stale_after_is_not_validity(tmp_path):
     assert out["stale_after"]["value"] == "2026-12-01"
 
 
+def test_auto_set_hides_the_declared_licence_and_a_missing_copy(tmp_path):
+    case, case_dir = make_case(tmp_path, {})
+    case["files"][0].update(license_item="unknown", copy=False, local_path=None)
+    assert "license" not in propose.propose(propose.view(case, case_dir, declared_licence=False))
+    case["files"][0].update(license_item="MIT", local_path="retries.md")
+    assert propose.propose(propose.view(case, case_dir, declared_licence=False))["license"]["value"] == "unknown"
+    case["files"][0]["license_item"] = propose.UNDER_TEST
+    assert propose.view(case, case_dir)["files"][0]["license_item"] is None
+
+
 def test_approval_without_remarks_is_not_substantive(tmp_path):
     ev = {"pr": {"author": "Copilot", "author_type": "Bot", "merged_by": "alice"},
           "commits": [{"sha": "s1", "author_login": "Copilot", "message": "Add page"}],
