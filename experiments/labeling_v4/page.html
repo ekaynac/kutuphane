@@ -30,7 +30,7 @@
   summary { cursor:pointer; color:var(--accent); }
   .meta { color:var(--muted); font-size:13px; word-break:break-word; }
   h2 { font-size:16px; margin:0 0 4px; word-break:break-all; }
-  pre { white-space:pre-wrap; word-break:break-word; max-height:70vh; overflow:auto; background:#f5f5f7; padding:10px;
+  pre { white-space:pre-wrap; word-break:break-word; max-height:45vh; overflow:auto; background:#f5f5f7; padding:10px;
         border-radius:8px; font-size:13px; margin:8px 0 0; }
   .actions { position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid var(--line); padding:10px 12px;
              display:flex; gap:8px; align-items:center; justify-content:center; z-index:3; }
@@ -48,8 +48,8 @@
 </header>
 <main>
   <div id="banner"></div>
-  <section id="questions"><div class="meta">Choose a group above.</div></section>
-  <section id="doc"></section>
+  <section id="doc"><div class="meta">Choose a group above.</div></section>
+  <section id="questions"></section>
 </main>
 <div class="actions">
   <button class="primary" id="save" type="button">Save &amp; next</button>
@@ -58,7 +58,7 @@
 </div>
 <script>
 "use strict";
-// Labelling v4, easy form (operator, 2026-10-26): three questions, large buttons, the document below.
+// Labelling v4, easy form (operator, 2026-10-26): the document first (scrolls inside its box), then three questions with large buttons.
 // Suggestions are preselected: an exact rule first, else Qwen, else a weaker rule. About 30 % of the items are
 // blind (no suggestions) so that the suggestions can be measured; the server decides which.
 const GROUPS = { R: "R · radar", S: "S · synthetic", W: "W · public sets", A: "A · agent files" };
@@ -114,7 +114,7 @@ async function api(path, opts = {}) {
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || r.status); return j;
 }
-function fail(message) { $("questions").replaceChildren(el("div", { class: "err" }, message)); $("doc").replaceChildren(); current = null; }
+function fail(message) { $("doc").replaceChildren(el("div", { class: "err" }, message)); $("questions").replaceChildren(); current = null; }
 
 async function loadState() {
   const s = await api("/api/state");
@@ -140,7 +140,7 @@ function suggestion(name) {
 
 async function show() {
   $("msg").textContent = "";
-  if (pos >= ids.length) { $("questions").replaceChildren(el("div", { class: "meta" }, "This batch is done. Choose the group again for the next 20.")); $("doc").replaceChildren(); $("banner").replaceChildren(); await loadState(); return; }
+  if (pos >= ids.length) { $("doc").replaceChildren(el("div", { class: "meta" }, "This batch is done. Choose the group again for the next 20.")); $("questions").replaceChildren(); $("banner").replaceChildren(); await loadState(); return; }
   current = await api(`/api/item/${encodeURIComponent(ids[pos])}`); started = Date.now();
   const it = current.item;
   $("progress").textContent = `${GROUPS[stratum] || stratum} · item ${pos + 1} of ${ids.length}`;
