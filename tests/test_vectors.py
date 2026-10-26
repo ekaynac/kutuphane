@@ -40,6 +40,20 @@ def test_index_embeds_through_llmdap_once(conn, fake, okf_dir):
     assert calls and all(c == (vectors.INDEXER, ["kitap"], None) for c in calls)
 
 
+def test_long_passages_are_embedded_in_smaller_batches(conn, fake, tmp_path):  # pilot radar: 504 on JSON briefs
+    (tmp_path / "records.jsonl").write_text("".join(f'{{"n": {i}, "text": "{"x " * 1500}"}}\n' for i in range(20)))
+    publish(conn, tmp_path)
+    assert vectors.index(conn, fake.embedder(), "kitap") == 20
+    sizes = [sum(map(len, body["input"])) for path, body in fake.requests if path.endswith("/embeddings")]
+    assert len(sizes) > 1 and all(s <= vectors.BATCH_CHARS for s in sizes)
+
+
+def test_a_batch_holds_one_passage_even_beyond_the_char_budget():
+    rows = [(None,) * 5 + ("y" * (vectors.BATCH_CHARS + 1),), (None,) * 5 + ("z",)]
+    assert [len(b) for b in vectors._batches(rows)] == [1, 1]
+    assert [len(b) for b in vectors._batches([(None,) * 5 + ("a",)] * 40)] == [vectors.BATCH, 8]
+
+
 def test_local_only_book_is_never_embedded_on_a_cloud_route(conn, fake, okf_dir):  # E5 egress
     publish(conn, okf_dir)
     with pytest.raises(llmdap.EgressError, match="kitap"):

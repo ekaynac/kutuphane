@@ -349,15 +349,19 @@ class Rights:
         return allows(self.info(book, content_id, path), use)
 
 
+def _quoted(value: str) -> str:
+    return yaml.safe_dump(value, default_style='"', allow_unicode=True, width=1_000_000).strip()
+
+
 def init(files: list, issuer: str, today: date | None = None) -> str:
     """A starting manifest for a folder: every file listed with its digest, all rights unknown, origin unknown."""
     lines = [
         f"standard: {STANDARD}",
-        f"issuer: {yaml.safe_dump(issuer, default_style=chr(34)).strip()}   # who answers for this folder",
+        f"issuer: {_quoted(issuer)}   # who answers for this folder",
         f"issued: {(today or date.today()).isoformat()}",
         "rights:                               # defaults for every item",
         "  license: unknown                    # an SPDX id, e.g. CC-BY-4.0; unknown gives no permission",
-        "  holder: " + yaml.safe_dump(issuer, default_style=chr(34)).strip(),
+        "  holder: " + _quoted(issuer),
         "  ai_use: {search: y, ai_input: n, train: n}   # absent = not stated; decisions treat it as n",
         "  personal_data: unknown              # yes | no | synthetic | unknown (= yes)",
         "items:",
@@ -365,7 +369,7 @@ def init(files: list, issuer: str, today: date | None = None) -> str:
     for f in sorted(files, key=lambda f: f.path):
         if f.path == MANIFEST:
             continue
-        lines += [f"  - path: {yaml.safe_dump(f.path, default_style=chr(34)).strip()}",
+        lines += [f"  - path: {_quoted(f.path)}",
                   f"    digest: sha256:{hashlib.sha256(f.data).hexdigest()}",
                   "    origin: unknown                   # human | assisted (+ reviewed_by) | model | tool (+ software_agent) | unknown (= model)"]
     return "\n".join(lines) + "\n"

@@ -235,6 +235,31 @@ def test_init_writes_a_manifest_that_passes_the_check(okf_dir):
     assert info["license"] == "unknown" and info["personal_data"] == "unknown" and info["ai_use"]["ai_input"] == "n"
 
 
+def test_init_keeps_turkish_names_readable_and_long_paths_on_one_line(okf_dir):  # pilot radar
+    long = "belgeler/" + "çok-uzun-klasör-adı/" * 6 + "yedek.md"
+    (okf_dir / long).parent.mkdir(parents=True)
+    (okf_dir / long).write_text("# Yedek\n", encoding="utf-8")
+    files = read_source(okf_dir)
+    text = kstd.init(files, "Kütüphane Ekibi <kb@acme.example>")
+    assert 'issuer: "Kütüphane Ekibi <kb@acme.example>"' in text and f'  - path: "{long}"' in text
+    assert kstd.check(kstd.parse(text.encode()), {f.path: f.sha256 for f in files})[0] == []
+
+
+def test_init_and_check_take_the_reviewed_finding_and_leave_no_empty_manifest(okf_dir, capsys):  # pilot radar
+    from kutuphane import cli
+    (okf_dir / "ornek.md").write_text("Clients send `Authorization: Bearer your-secret`.\n", encoding="utf-8")
+    accept = f"ornek.md@sha256:{hashlib.sha256((okf_dir / 'ornek.md').read_bytes()).hexdigest()}:authorization-header"
+    init = ["kstd-init", str(okf_dir), "--issuer", "ACME <kb@acme.example>"]
+    assert cli.main(init) == 2
+    assert "authorization-header" in capsys.readouterr().err
+    assert not (okf_dir / kstd.MANIFEST).exists()          # a refused init writes nothing, so it can run again
+    assert cli.main([*init, "--accept-finding", accept]) == 0
+    assert yaml.safe_load((okf_dir / kstd.MANIFEST).read_text())["items"]
+    assert cli.main(["kstd-check", str(okf_dir)]) == 2
+    assert cli.main(["kstd-check", str(okf_dir), "--accept-finding", accept]) == 0
+    assert "kstd L0: PASS" in capsys.readouterr().out
+
+
 @pytest.mark.parametrize("text,needle", [
     ("standard: kstd/0.2\nissuer: A\nissued: 2026-10-22\nrights:\n  ai_use: {ai_input: n, ai_input: y}\n", "duplicate key"),
     ("standard: kstd/0.2\nissuer: A\nissued: 2026-10-22\nrights:\n  personal_data: yes\n  personal_data: no\n",

@@ -18,7 +18,8 @@ kutuphane kstd-init <folder> --issuer "ACME <kb@acme.example>"   # writes kstd.y
 # edit license, ai_use and personal_data
 kutuphane kstd-check <folder>                                    # digests, SPDX ids, terms; exit 1 on errors
 kutuphane ingest <folder> --book … --sensitivity … --egress … --protection …
-# a reviewed credential-scan false positive (see the root README): one rule, one exact file content, recorded
+# a reviewed credential-scan false positive (see the root README): one rule, one exact file content, recorded;
+# kstd-init and kstd-check take the same --accept-finding values
 kutuphane ingest <folder> … --accept-finding docs/ornek.md@sha256:<sha256sum of the file>:aws-access-key
 ```
 

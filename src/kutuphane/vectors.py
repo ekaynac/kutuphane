@@ -12,6 +12,7 @@ from .gate import Actor
 
 log = logging.getLogger(__name__)
 BATCH = 32
+BATCH_CHARS = 24_000  # long passages (JSON, HTML) make a 32-passage batch outlast the gateway timeout on CPU
 INDEXER = "service:indexer"  # the principal recorded for indexing calls (an operation, not a person's request)
 
 _MISSING = """
@@ -40,8 +41,7 @@ def index(conn, embedder: llmdap.Routed, book: str) -> int:
             if rights.allows(r[0], r[1], r[3], "ai_input")]
     actor = Actor(INDEXER)
     dims = stored_dims(conn, embedder.model)
-    for start in range(0, len(rows), BATCH):
-        batch = rows[start:start + BATCH]
+    for batch in _batches(rows):
         vectors = llmdap.embed(conn, embedder, actor, [r[5] for r in batch], source_books=[book], purpose="index")
         dims = dims or len(vectors[0])
         if len(vectors[0]) != dims:
@@ -52,6 +52,18 @@ def index(conn, embedder: llmdap.Routed, book: str) -> int:
                             [(*r[:5], embedder.model, search.QueryVector(embedder.model, v).literal())
                              for r, v in zip(batch, vectors)])
     return len(rows)
+
+
+def _batches(rows: list) -> list[list]:
+    """At most BATCH passages and, beyond the first passage, at most BATCH_CHARS characters per embedding call."""
+    out, size = [], 0
+    for r in rows:
+        if not out or len(out[-1]) == BATCH or size + len(r[5]) > BATCH_CHARS:
+            out.append([])
+            size = 0
+        out[-1].append(r)
+        size += len(r[5])
+    return out
 
 
 def query_vector(conn, embedder: llmdap.Routed | None, actor: Actor, query: str) -> search.QueryVector | None:
