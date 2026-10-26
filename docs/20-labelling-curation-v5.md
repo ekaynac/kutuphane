@@ -1,6 +1,6 @@
 # Labelling v5 — curation first
 
-**Status:** PLAN 0.1, 2026-10-26. It is for the operator's decision (§7).
+**Status:** PLAN 1.0, 2026-10-26. Accepted as D67; §7 records the answers.
 **Basis:**
 - the operator, 2026-10-26: the v4 labelling is "meaningless"; the radar queue asks to label single `labels.jsonl` records whose answers are known;
 - Astra's review: `docs/research/2026-10-26-astra-curation-raw.md`;
@@ -136,7 +136,16 @@ flowchart LR
 
 The old v4 queue is closed. Any labels that are already saved are kept as history.
 
-## 7. Questions for the operator
+## 7. Operator answers (D67, 2026-10-26)
+
+1. Replace the queue: **yes.**
+2. First operations: **search and model answers.**
+3. Suggestions: **judge first, then see the suggestions.**
+4. Second reviewer: **Astra** (human-human agreement is not measured; the limit is reported).
+5. Stale status: **removes rule authority only.**
+6. Redistribution: **references + hashes + our labels only** for unclear rights.
+
+### The questions as asked
 
 1. **Replace the queue:** may we close the 1,063-item v4 queue and use this plan (about 190 automatic, 72 scenarios, 120 human)?
 2. **First operations:** which two operations matter most first: search, model answers, export, agent activation, or "is this the current rule"?
