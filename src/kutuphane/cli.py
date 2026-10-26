@@ -29,13 +29,12 @@ def cmd_migrate(conn, _args) -> int:
 def cmd_ingest(conn, args) -> int:
     policy = make_policy(sensitivity=args.sensitivity, egress=args.egress, protection=args.protection)
     files = read_source(Path(args.path), _accepted(args))
+    embedder, settings = _indexing()  # a configuration error stops here, before anything is published
     result = catalog.publish(conn, book=args.book, title=args.title or args.book, files=files, policy=policy,
                              profile=profiles.spec(args.profile))
-    _print({**dataclasses.asdict(result), **_index(conn, args.book)})
-    _warn_quarantined(result)
     for a in result.accepted_findings:  # on record in the publication; say so where a person looks
         print(f"accepted finding (reviewed exception): {a['path']}@sha256:{a['sha256']}:{a['rule']}", file=sys.stderr)
-    return 0
+    return _published_then_index(conn, result, embedder, settings)
 
 
 def _warn_quarantined(result: catalog.Published) -> None:
@@ -44,17 +43,54 @@ def _warn_quarantined(result: catalog.Published) -> None:
         print(f"quarantined (stored, not indexed): {q['path']}: {q['reason']}", file=sys.stderr)
 
 
-def _index(conn, book: str) -> dict:
-    """Vectors for the new version when an embeddings route is configured; otherwise search stays full text."""
-    embedder = llmdap.Routed.from_env(llmdap.EMBED_ENV)
-    return {"vectors_added": vectors.index(conn, embedder, book)} if embedder else {}
+INDEX_INCOMPLETE = 3  # exit code: the version is published (live), but some of its passages have no vector yet
+
+
+def _indexing(**overrides) -> tuple[llmdap.Routed | None, vectors.Settings]:
+    """The embeddings route (None: search stays full text) and the index settings (KUTUPHANE_INDEX_*, options)."""
+    return llmdap.Routed.from_env(llmdap.EMBED_ENV), vectors.Settings.from_env(**overrides)
+
+
+def _index_problem(report: dict) -> str | None:
+    if "index_error" in report:
+        return report["index_error"]
+    if report.get("failed") or report.get("not_attempted"):
+        return f"{len(report['failed'])} passages failed, {report['not_attempted']} not attempted"
+    return None
+
+
+def _published_then_index(conn, published: catalog.Published, embedder: llmdap.Routed | None,
+                          settings: vectors.Settings) -> int:
+    """A published version is live; indexing comes after it and cannot undo it (G12). The publication result is
+    always printed; an index failure is reported with it, and the exit code is then INDEX_INCOMPLETE."""
+    _warn_quarantined(published)
+    report = {}
+    if embedder:
+        try:
+            report = vectors.index(conn, embedder, published.book, settings).report()
+        except (ValueError, OSError, RuntimeError) as exc:  # EgressError is a RuntimeError
+            report = {"index_error": str(exc)}
+    _print({**dataclasses.asdict(published), **report})
+    problem = _index_problem(report)
+    if problem:
+        print(f"error: {published.book} {published.content_id} is published and live, but its index is incomplete: "
+              f"{problem}; `kutuphane index {published.book}` adds the missing vectors", file=sys.stderr)
+        return INDEX_INCOMPLETE
+    return 0
 
 
 def cmd_index(conn, args) -> int:
-    if llmdap.Routed.from_env(llmdap.EMBED_ENV) is None:
+    embedder, settings = _indexing(batch=args.batch, batch_chars=args.batch_chars, concurrency=args.concurrency)
+    if embedder is None:
         print(f"no embeddings route: set {llmdap.EMBED_ENV['route']}", file=sys.stderr)
         return 1
-    _print({"book": args.book, **_index(conn, args.book)})
+    report = vectors.index(conn, embedder, args.book, settings).report()
+    _print({"book": args.book, **report})
+    problem = _index_problem(report)
+    if problem:
+        print(f"error: index of {args.book} is incomplete: {problem}; run `kutuphane index {args.book}` again",
+              file=sys.stderr)
+        return INDEX_INCOMPLETE
     return 0
 
 
@@ -214,10 +250,9 @@ def cmd_receive(conn, args) -> int:
 
 def cmd_approve(conn, args) -> int:
     policy = make_policy(sensitivity=args.sensitivity, egress=args.egress, protection=args.protection)
+    embedder, settings = _indexing()
     published = packages.approve(conn, args.id, by=args.by, policy=policy, profile=args.profile)
-    _print({**dataclasses.asdict(published), **_index(conn, published.book)})
-    _warn_quarantined(published)
-    return 0
+    return _published_then_index(conn, published, embedder, settings)
 
 
 def cmd_reject(conn, args) -> int:
@@ -267,8 +302,17 @@ def parser() -> argparse.ArgumentParser:
     ing.add_argument("--profile", choices=("chunked", "whole"), default="chunked")
     _accept_finding_option(ing, "recorded in the publication")
     ing.set_defaults(fn=cmd_ingest)
-    ix = sub.add_parser("index", help="embed a book's current chunks that have no vector yet (through LLMDAP)")
+    ix = sub.add_parser("index", help="give a book's current chunks a vector: copy unchanged ones, embed the rest "
+                                      "(through LLMDAP)")
     ix.add_argument("book")
+    ix.add_argument("--batch", type=int, help=f"passages per embedding call (env {vectors.SETTINGS_ENV['batch']}, "
+                                              f"default {vectors.Settings.batch})")
+    ix.add_argument("--batch-chars", type=int, help="embedded characters per call "
+                                                    f"(env {vectors.SETTINGS_ENV['batch_chars']}, "
+                                                    f"default {vectors.Settings.batch_chars})")
+    ix.add_argument("--concurrency", type=int, help="embedding calls in flight "
+                                                    f"(env {vectors.SETTINGS_ENV['concurrency']}, "
+                                                    f"default {vectors.Settings.concurrency})")
     ix.set_defaults(fn=cmd_index)
     show = sub.add_parser("show", help="current versions and files of a book")
     show.add_argument("book")
