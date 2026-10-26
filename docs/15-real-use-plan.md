@@ -58,6 +58,8 @@
 | G10 | Access per item and per device; redaction before indexing; per-payload encryption | inframedic | inframedic keeps these; not needed for the pilot | large; later |
 | G11 | Duplicate detection across books, and links between translations | Polemik (the same PDF in 3 repos), LLMDAP (TR/EN pages) | duplicate hits | small; later |
 
+Pilot 1 (radar) added G12–G26: see `docs/18-pilot-radar.md` §5.
+
 **Model routes:** the LLMDAP routes `chat`, `emb` and `rerank` still point to the stub models. A separate branch, `feat/local-models`, wires these real local models:
 - bge-m3 for embeddings;
 - bge-reranker-v2-m3 for reranking;

@@ -42,7 +42,8 @@ What `ingest` takes from a folder (`src/kutuphane/source.py`, `profiles.py`, `ag
   (repeatable; `<digest>` is `sha256sum <file>`). It covers that rule's findings in exactly that file content; a
   changed file has another digest and is refused again, and an acceptance that matches no finding refuses the
   ingest. Accepted findings are recorded in the publication (`accepted_findings` in the result and in `show`) and
-  printed on stderr. Package receipt accepts nothing: the receiving node scans again.
+  printed on stderr. `kstd-init` and `kstd-check` scan the same way and take the same `--accept-finding` values.
+  Package receipt accepts nothing: the receiving node scans again.
 - **Hidden paths** stay out (`.git/`, `.env*`, dotfiles), except the agent folders `.claude/` (`agents`,
   `commands`, `rules`, `skills`, `hooks`, and `CLAUDE.md`), `.cursor/rules/`, `.github/` (`copilot-instructions.md`,
   `instructions/`, `prompts/`, `agents/`, `chatmodes/`), `.agents/` and `.codex/`.

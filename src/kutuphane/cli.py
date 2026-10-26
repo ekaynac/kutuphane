@@ -28,8 +28,7 @@ def cmd_migrate(conn, _args) -> int:
 
 def cmd_ingest(conn, args) -> int:
     policy = make_policy(sensitivity=args.sensitivity, egress=args.egress, protection=args.protection)
-    accept = [AcceptedFinding.parse(spec) for spec in args.accept_finding]
-    files = read_source(Path(args.path), accept)
+    files = read_source(Path(args.path), _accepted(args))
     result = catalog.publish(conn, book=args.book, title=args.title or args.book, files=files, policy=policy,
                              profile=profiles.spec(args.profile))
     _print({**dataclasses.asdict(result), **_index(conn, args.book)})
@@ -114,19 +113,30 @@ def cmd_search(conn, args) -> int:
     return 0
 
 
+def _accepted(args) -> list[AcceptedFinding]:
+    return [AcceptedFinding.parse(spec) for spec in args.accept_finding]
+
+
+def _accept_finding_option(parser, effect: str) -> None:
+    parser.add_argument("--accept-finding", action="append", default=[], metavar="PATH@sha256:DIGEST:RULE",
+                        help="accept one reviewed credential-scan finding: that rule, in exactly that file content "
+                             f"(sha256 of the file); repeatable; a changed file needs a new review; {effect}")
+
+
 def cmd_kstd_init(_conn, args) -> int:
     """Write a starting kstd.yaml that lists every file with its digest; all rights start as unknown."""
     root = Path(args.path)
     target = root / kstd.MANIFEST
+    files = read_source(root, _accepted(args))  # the same reviewed exceptions that ingest will need
     fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)  # never overwrite a curated manifest
     with os.fdopen(fd, "w") as f:
-        f.write(kstd.init(read_source(root), args.issuer))
+        f.write(kstd.init(files, args.issuer))
     print(f"wrote {target}: set the license, ai_use and personal_data, then run `kutuphane kstd-check {root}`")
     return 0
 
 
 def cmd_kstd_check(_conn, args) -> int:
-    files = read_source(Path(args.path))
+    files = read_source(Path(args.path), _accepted(args))
     found = [f for f in files if f.path == kstd.MANIFEST]
     if not found:
         print(f"no {kstd.MANIFEST} in {args.path}", file=sys.stderr)
@@ -255,10 +265,7 @@ def parser() -> argparse.ArgumentParser:
     ing.add_argument("--egress", required=True, choices=EGRESS)
     ing.add_argument("--protection", required=True, choices=PROTECTION_M1)
     ing.add_argument("--profile", choices=("chunked", "whole"), default="chunked")
-    ing.add_argument("--accept-finding", action="append", default=[], metavar="PATH@sha256:DIGEST:RULE",
-                     help="accept one reviewed credential-scan finding: that rule, in exactly that file content "
-                          "(sha256 of the file); repeatable; a changed file needs a new review; recorded in the "
-                          "publication")
+    _accept_finding_option(ing, "recorded in the publication")
     ing.set_defaults(fn=cmd_ingest)
     ix = sub.add_parser("index", help="embed a book's current chunks that have no vector yet (through LLMDAP)")
     ix.add_argument("book")
@@ -358,9 +365,11 @@ def parser() -> argparse.ArgumentParser:
     ki = sub.add_parser("kstd-init", help="write a starting kstd.yaml for a folder (no database)")
     ki.add_argument("path")
     ki.add_argument("--issuer", required=True, help="who answers for this folder, e.g. 'ACME <kb@acme.example>'")
+    _accept_finding_option(ki, "give the same acceptances to ingest")
     ki.set_defaults(fn=cmd_kstd_init, no_db=True)
     kc = sub.add_parser("kstd-check", help="validate a folder's kstd.yaml: digests, SPDX ids, terms (no database)")
     kc.add_argument("path")
+    _accept_finding_option(kc, "give the same acceptances to ingest")
     kc.set_defaults(fn=cmd_kstd_check, no_db=True)
     sub.add_parser("whoami", help="verify an access token read from stdin").set_defaults(fn=cmd_whoami)
     ex = sub.add_parser("explain", help="unified audit for a correlation id (or, with --answer, an answer id)")
