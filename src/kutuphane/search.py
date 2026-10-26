@@ -2,6 +2,8 @@
 
 - Pre-filter: the query only ever sees books the caller may `read` now (and, for agents, instruction chunks only
   where `activate` is held), so ranks, counts and snippets cannot leak other books (AT-04).
+- Optional scope filters (book, path prefix, kstd origin, valid now; G14) narrow that pre-filter in the same
+  statement, before ranking. They never add a book.
 - Before results are handed out, the whole result set is decided again in ONE statement (the request's
   linearization point). If rights changed in between, the search runs again with current rights (so revoked books
   never consume `k`); a second change refuses the request. Delivered chunks are logged by citation handle.
@@ -12,10 +14,12 @@ Ranking is hybrid (D31, M0 measurement in experiments/retrieval): Postgres full 
 caller brings a query vector (embedded through LLMDAP), exact cosine distance over the same pre-filtered chunks,
 fused by reciprocal rank (RRF). Without a vector the order is full text alone. One statement either way.
 """
+import re
 from dataclasses import dataclass
 
-from . import authz, gate, profiles
+from . import authz, gate, kstd, profiles
 from .gate import Actor, NotFound
+from .ids import normalize_path
 
 DEFAULT_K = 8
 # ts_rank_cd normalization 4 (divide by mean harmonic distance between extents). M0 baseline on hand-checked
@@ -52,10 +56,12 @@ class Hit:
 
 
 # The pre-filter, written once and used by both rankings: current version and profile of books readable now;
-# instruction chunks only where `activate` is held too (agents).
+# instruction chunks only where `activate` is held too (agents). The scope filters (G14) only narrow it further.
 _ALLOWED = """
   JOIN book b ON b.slug = c.book AND b.current_content = c.content_id AND b.current_profile = c.profile_id
- WHERE ('book:' || c.book) = ANY(%(read)s) AND (NOT c.instruction OR ('book:' || c.book) = ANY(%(activate)s))"""
+ WHERE ('book:' || c.book) = ANY(%(read)s) AND (NOT c.instruction OR ('book:' || c.book) = ANY(%(activate)s))
+   AND (%(prefix)s::text IS NULL OR starts_with(c.path, %(prefix)s))
+   AND (%(files)s::text[] IS NULL OR (c.book || '/' || c.content_id || '/' || c.path) = ANY(%(files)s::text[]))"""
 
 _SEARCH = f"""
 WITH terms AS (  -- any stemmed query word may match; ts_rank_cd rewards matching more of them, closer together
@@ -85,6 +91,66 @@ SELECT c.book, c.content_id, c.profile_id, c.path, c.ordinal, c.page, c.start_ch
 """
 
 
+MAX_SCOPE_BOOKS = 50
+_SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}\Z")
+
+
+@dataclass(frozen=True)
+class Scope:
+    """Optional evidence filters (G14). They are applied inside the pre-filter, in the ranking statement, so they
+    narrow the passages before ranking and `k`. They never widen it: a book the caller may not read stays out
+    whatever the filter names, and naming such a book gives the same empty result as naming one that does not
+    exist. Origin and validity come from the kstd item information of the book's current version; a book without
+    kstd.yaml has none, so it counts as origin `unknown` (docs/11 §5) and as current (no validity stated)."""
+    books: tuple[str, ...] = ()      # only these books
+    path: str | None = None          # only files whose path starts with this text ("data/" = below data/)
+    origins: tuple[str, ...] = ()    # only files with one of these kstd origins
+    current_only: bool = False       # only files whose kstd validity includes now
+
+    @classmethod
+    def of(cls, books=None, path=None, origins=None, current_only=False) -> "Scope":
+        """A checked scope from request values; raises ValueError for a malformed value."""
+        books, origins = _strings("book", books), _strings("origin", origins)
+        if len(books) > MAX_SCOPE_BOOKS or not all(_SLUG.match(b) for b in books):
+            raise ValueError(f"book must be up to {MAX_SCOPE_BOOKS} book slugs")
+        if any(o not in kstd.ORIGINS for o in origins):
+            raise ValueError(f"origin must be one of {', '.join(kstd.ORIGINS)}")
+        if path is not None:
+            if not isinstance(path, str) or not path.strip("/") or len(path) > MAX_QUERY_CHARS:
+                raise ValueError("path must be a relative path prefix")
+            path = normalize_path(path.rstrip("/")) + ("/" if path.endswith("/") else "")
+        if not isinstance(current_only, bool):
+            raise ValueError("current_only must be true or false")
+        return cls(tuple(sorted(set(books))), path, tuple(sorted(set(origins))), current_only)
+
+    def admits(self, info: dict | None) -> bool:
+        """Whether a file with this kstd item information (None: no manifest) passes the origin and time filters."""
+        if self.origins and (info["origin"] if info else "unknown") not in self.origins:
+            return False
+        return not self.current_only or info is None or kstd.is_current(info)
+
+
+def _strings(name: str, value) -> list[str]:
+    value = [] if value is None else [value] if isinstance(value, str) else value
+    if not isinstance(value, (list, tuple)) or not all(isinstance(v, str) and v for v in value):
+        raise ValueError(f"{name} must be one or more names")
+    return list(value)
+
+
+def _scope_files(conn, scope: Scope, books: list[str]) -> list[str] | None:
+    """`book/content_id/path` of the current files that pass the origin and time filters (None: no such filter).
+    Keyed by content id, so a version published meanwhile matches nothing here: the filter fails closed."""
+    if not scope.origins and not scope.current_only:
+        return None
+    rights, out = kstd.Rights(conn), []
+    rows = conn.execute("SELECT b.slug, v.id, v.manifest FROM book b JOIN content_version v ON v.book = b.slug AND "
+                        "v.id = b.current_content WHERE b.slug = ANY(%s)", (books,)).fetchall()
+    for book, content_id, manifest in rows:
+        out += [f"{book}/{content_id}/{f['path']}" for f in manifest
+                if scope.admits(rights.info(book, content_id, f["path"]))]
+    return out
+
+
 @dataclass(frozen=True)
 class QueryVector:
     """The query embedded through LLMDAP by `model`; compared only with chunk vectors of the same model."""
@@ -108,7 +174,7 @@ def _needs(actor: Actor, rows) -> dict:
 
 
 def search(conn, actor: Actor, query: str, k: int = DEFAULT_K, attempts: int = 2,
-           vector: QueryVector | None = None) -> list[Hit]:
+           vector: QueryVector | None = None, scope: Scope = Scope()) -> list[Hit]:
     if not isinstance(query, str) or not query.strip() or len(query) > MAX_QUERY_CHARS:
         raise ValueError(f"query must be 1..{MAX_QUERY_CHARS} characters")
     if not 1 <= k <= MAX_K:
@@ -118,14 +184,18 @@ def search(conn, actor: Actor, query: str, k: int = DEFAULT_K, attempts: int = 2
     for _ in range(attempts):
         pre = authz.allowed(conn, actor.principal, actor.on_behalf_of, modes)
         read = pre.objects("read")
+        if scope.books:  # an intersection: the filter can only remove readable books
+            read = read & {f"book:{b}" for b in scope.books}
         if not read:
             return []
         activate = pre.objects("activate") if agent else read
+        files = _scope_files(conn, scope, sorted(o.removeprefix("book:") for o in read))
         rows = conn.execute(_SEARCH, {"cfg": profiles.FTS_CONFIG, "q": query, "read": sorted(read),
                                       "activate": sorted(activate), "k": k, "norm": RANK_NORMALIZATION,
                                       "pool": max(POOL, k), "rrf": RRF_K,
                                       "qv": vector.literal() if vector else None,
-                                      "model": vector.model if vector else None}).fetchall()
+                                      "model": vector.model if vector else None,
+                                      "prefix": scope.path, "files": files}).fetchall()
         needs = _needs(actor, rows)
         # One final statement for the whole result set: the request's single linearization point.
         final = authz.allowed(conn, actor.principal, actor.on_behalf_of, modes)
