@@ -210,7 +210,10 @@ def make_handler(store: Store, token: str, page: bytes):
             if url.path == "/":
                 t = parse_qs(url.query).get("t", [""])[0]
                 if t and hmac.compare_digest(t, token):
-                    cookie = f"{COOKIE}={token}; Max-Age={COOKIE_MAX_AGE}; Path=/; HttpOnly; SameSite=Strict"
+                    # Lax, not Strict: a link opened from Telegram is a cross-site navigation, and the browser would
+                    # not send a Strict cookie on the redirect to "/" (the page then asks for the link again).
+                    # Lax still blocks the cookie on cross-site POSTs, so /api/label cannot be forged from elsewhere.
+                    cookie = f"{COOKIE}={token}; Max-Age={COOKIE_MAX_AGE}; Path=/; HttpOnly; SameSite=Lax"
                     return self.send(HTTPStatus.SEE_OTHER, b"", "text/plain", {"Set-Cookie": cookie, "Location": "/"})
                 if not self.authed():
                     return self.send(HTTPStatus.UNAUTHORIZED, b"Use the access link (.../?t=...).", "text/plain")
