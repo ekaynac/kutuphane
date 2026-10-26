@@ -361,3 +361,18 @@ Ham metin: `docs/research/2026-10-23-astra-review-10-raw.md`. Dokuz bulgunun hep
 7. **Sayfada çift tıklama öğe atlatıyordu (orta):** kaydetme ve gezinme sırasında düğmeler kilitlenir; eski yanıt imleci oynatmaz.
 8. **`software_agent` sürümü sayı olarak kayboluyordu (orta):** ad ve sürüm dize olmalı (`version: "1.10"`); sayı ve mantıksal değer reddedilir.
 9. **Alınan pakette `tool_made` doğrulanmıyordu (orta):** köken listeleri paketteki geçerli `kstd.yaml`'dan yeniden hesaplanır; fark varsa paket reddedilir.
+
+# Astra incelemesi #11 (PR #61–#65) ve düzeltmeler
+
+Ham metin: `docs/research/2026-10-26-astra-review-11-raw.md`. On bulgunun hepsi ele alındı; etiketleme sunucusunun testleri `experiments/labeling_v4/test_server.py`'de:
+
+1. **Aynı makineden CSRF (orta, etiketleme sayfası):** `/api/label` yalnız `Content-Type: application/json` ve sunucunun kendi kaynağıyla (`Origin` = `http://<Host>`) kabul edilir; `text/plain` ve başka port ya da alan 403 alır.
+2. **Gösterilmeyen alanlar kaydediliyordu (orta):** sunucu, seçilen tür, köken, talimat ve form kipinden (`basic`/`exception`/`all`) görünür alan kümesini sayfayla aynı kurallarla hesaplar. Her etiket `shown` içinde, `shown` izinli küme artı `kept` içinde, zorunlu alanlar `shown` içinde olmalı; değilse 400.
+3. **Kabul edilen öneriler sahtelenebiliyordu (orta):** `accepted_proposals` istemciden alınmaz; değer, o öğe için gösterilen kural önerisine ya da Qwen önerisine eşitse sunucu alanı kabul sayar. Kayıt `proposal_version` taşır: `proposals.jsonl` ve `proposals_llm.jsonl` baytlarının sha256'sı.
+4. **Ön ayar değişince girilen değer siliniyordu (orta):** değeri olan alan koşulu düşse de görünür kalır, `kept` olarak gönderilir; "Temizle" ile boşaltılabilir.
+5. **Kör örnek aileler arasında sızıyordu (orta):** kör seçim aile başınadır (öğenin `group`'u, yoksa kaynak + `ref.path` klasörü); her katmanda öğelerin ~%30'u (sha256 sırasıyla, katmanın payına sığan aileler). Kayıt `blind` ve `family` taşır. Canlı veride 1.063 öğenin 319'u (%30,0; R 87/290, S 13/44, W 100/333, A 119/396), 264 ailenin 123'ü kör. Kayıtlı etiket yoktu; hiçbir etiket yeniden yazılmaz.
+6. **Kör öğede `needs_split` varsayılanı (düşük):** kör öğede boş başlar, isteğe bağlı kalır; boş bırakılırsa kayıtta yoktur (`no` değil).
+7. **Yeniden yüklemede çerezsiz oturum düşüyordu (orta):** `/` kimlik doğrulamasız, veri içermeyen statik sayfa kabuğudur; her `/api/` yolu çerez ya da `X-Label-Token` ister; `?t=` çerezi yine kurar. 401'de sayfa "Oturum yok: Telegram'daki bağlantıyı yeniden açın." yazar. Başsız Chromium'da çerezsiz yeniden yükleme denendi.
+8. **Tek uzun pasaj gömme bütçesini aşıyordu (orta):** `EMBED_CHARS` (= 24.000 karakter) üstündeki pasajın yalnız başı gömülür; vektör `chunk_vector.truncated` ile işaretlenir (013 göçü). Pasaj metni ve tam metin araması değişmez.
+9. **G21 yanlış teşhis (orta, `docs/18`):** saklanan cevapta atıflar kendi `n`'lerini taşır (4, 6, 7, 8). Tekrarlanabilen sorun gruplu referanstır: `[2,3,5,6]` okunmaz, 2, 3 ve 5 ne denetlenir ne listelenir. Atıf-kanıt çelişkisi saklanan cevapta yok (pasaj 6 `llama-3.1-8b` için avoid → pilot der); G21 buna göre düzeltildi.
+10. **G19 karışık teşhis (düşük, `docs/18`):** soru 2 gömme yolu sağlıklıyken yeniden soruldu. İngilizcede rapor karma listede 7., yeniden sıralamadan sonra 10. sırada (kesim 8) → "kütüphanede yok"; Türkçede ilk sırada → doğru cevap. G19 bu izlerle, tek soru çifti olarak yeniden yazıldı.

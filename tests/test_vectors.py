@@ -54,6 +54,19 @@ def test_a_batch_holds_one_passage_even_beyond_the_char_budget():
     assert [len(b) for b in vectors._batches([(None,) * 5 + ("a",)] * 40)] == [vectors.BATCH, 8]
 
 
+def test_an_oversized_passage_is_embedded_by_a_bounded_prefix(conn, fake, tmp_path):  # Astra review #11
+    text = "kelime " * (vectors.EMBED_CHARS // 7 + 10) + "sonuncusözcük\n"
+    (tmp_path / "uzun.md").write_text(text)
+    catalog.publish(conn, book="kitap", title="kitap", files=read_source(tmp_path), policy=LOCAL,
+                    profile=profiles.spec("whole"))
+    assert vectors.index(conn, fake.embedder(), "kitap") == 1
+    sent = [s for path, body in fake.requests if path.endswith("/embeddings") for s in body["input"]]
+    assert sent == [text[:vectors.EMBED_CHARS]]
+    assert conn.execute("SELECT truncated FROM chunk_vector").fetchall() == [(True,)]
+    stored, found = conn.execute("SELECT text, tsv @@ to_tsquery('turkish', 'sonuncusözcük') FROM chunk").fetchone()
+    assert stored == text and found  # the passage is stored and found by full text whole
+
+
 def test_local_only_book_is_never_embedded_on_a_cloud_route(conn, fake, okf_dir):  # E5 egress
     publish(conn, okf_dir)
     with pytest.raises(llmdap.EgressError, match="kitap"):

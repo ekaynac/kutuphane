@@ -73,11 +73,11 @@ personal data, notices). No passage was withheld.
 | # | Question | Answer quality | Citations OK? | Time |
 |---|---|---|---|---|
 | 1 | Which on-prem serving engines support NVFP4 on Blackwell? | Partly correct. vLLM evidence is correct (3 news records). The claim that the sources have nothing for the other engines is not shown; `config/platform-matrix.yaml` was not retrieved. | 3 of 4. Citation [2] (README, technique radar) does not support the claim. | 102 s |
-| 2 | Why were rings replaced with Pulse? | "Not in library". Wrong: the rescue report (Turkish) gives the reason (rings, calls ledger and lineage produced noise, ring flapping KN-4), and `docs/pulse.md` lists the frozen parts. | — | 58 s |
+| 2 | Why were rings replaced with Pulse? | "Not in library". Wrong: the rescue report (Turkish) gives the reason (rings, calls ledger and lineage produced noise, ring flapping KN-4), and `docs/pulse.md` lists the frozen parts. Re-run with working embeddings: the same; asked in Turkish: answered correctly (G19). | — | 58 s |
 | 3 | Security news about vLLM and llama.cpp, classified records only | Correct content (engine as attack surface; isolate, patch). | No. The only citation is brief W35, not a `news-classified` record. Kütüphane cannot limit the evidence to one file or book. | 93 s |
 | 4 | How do Jev and Claude disagree on news relevance? | Good. Different product question; F1 0.83, agreement 79.3%, event-type 63.9%; `other` vs `community`. | Yes (`docs/jev.md`, rescue report). | 104 s |
 | 5 | What did the weekly brief of 2026-W40 recommend? | Good. Two ring moves to pilot, one benchmark move, new repositories ignored below 200 stars/day. | Yes (brief W40, digest W40). | 112 s |
-| 6 | Hangi modeller son haftalarda pilot halkasına girdi ve neden? | Partly wrong. It omits `hf-qwen3-8-27b-nvfp4` (W40, the most recent). It says `llama-3.1-8b` moved from avoid to pilot; the cited passage says adopt → pilot (demoted). The body cites [2], [3] and [5], which are not in the citation list. | Partly. | 98 s |
+| 6 | Hangi modeller son haftalarda pilot halkasına girdi ve neden? | Partly wrong. It omits `hf-qwen3-8-27b-nvfp4` (W40, the most recent). The last sentence cites `[2,3,5,6]`; passages 2, 3 and 5 are not in the citation list (G21). | Partly. The cited claims match their passages (checked against the stored answer, Astra review #11). | 98 s |
 | 7 | Boiling point of liquid nitrogen at sea level (not in library) | "Not in library" — correct | — | 80 s |
 | 8 | Winner of the 2018 FIFA World Cup final (not in library) | "Not in library" — correct | — | 48 s |
 
@@ -95,7 +95,8 @@ All answers are in Turkish, also for the English questions. `kutuphane search` f
 3. **`kstd-init` wrote non-ASCII text as escapes** (`"K\xFCt\xFCphane"`), and a long path could wrap onto two
    lines. Now names stay readable and each value stays on one line.
 4. **Indexing long passages failed with HTTP 504.** A batch of 32 passages of JSON or HTML took more than the
-   120 s gateway time on CPU. Batches now also have a character limit (24,000 characters, at least one passage).
+   120 s gateway time on CPU. Batches now also have a character limit (24,000 characters). A longer single passage
+   is embedded by its first 24,000 characters, and its vector is marked `truncated` (Astra review #11).
 
 ### New gaps (continuing `docs/15` §3)
 
@@ -108,9 +109,9 @@ All answers are in Turkish, also for the English questions. `kutuphane search` f
 | G16 | **Origin is per file, not per record.** One `kstd.yaml` item covers 2,533 records. Their `model` and `classified_at` fields are not shown or checked. A file with records from different models, or with some reviewed records, cannot be described. | Correct here only because one model wrote all records. | medium (G2 follow-up) |
 | G17 | **Any change re-embeds the whole book.** Vectors are keyed by `content_id`; the radar bots append records every 2 hours. [INFERENCE from the key: one appended record re-embeds all 7,560 news passages, about 37 min on CPU.] | No incremental update for bot-written data. | medium (with G9) |
 | G18 | **Indexing is slow on CPU and blocks queries.** About 1 passage/s. During indexing, query embedding failed with HTTP 504 and `ask` fell back to full text (question 2, first try). | A 10,000-passage pilot needs about 1.5 h; questions during that time are worse. | medium (queue or priority for query calls) |
-| G19 | **Cross-language retrieval misses.** An English question did not find the Turkish rescue report that answers it (question 2). | False "not in library". | medium |
+| G19 | **A Turkish passage falls below the rerank cut for an English question.** Re-run of question 2 with the embedding route working (every `emb` call without error; no full-text fallback). English: full text has no passage of the rescue report or `docs/pulse.md` in its top 30; the hybrid list has the report at rank 7; the reranker moves it to rank 10 (score 0.005), outside the 8 passages that the answer model gets, so the answer is "not in library". Turkish ("Halkalar neden Pulse ile değiştirildi?"): the reranker puts the same passage first (score 0.52), and the answer is correct and cites the report. One question pair only: the language effect is shown for this pair, not measured. | False "not in library" for a question in the other language. | medium (measure on a bilingual question set) |
 | G20 | **Answer language does not follow the question.** The system prompt is Turkish; all answers are Turkish. | English users get Turkish answers. | small |
-| G21 | **The answer body can cite passages that are not in the citation list** (question 6: [2], [3], [5]), and a cited passage can contradict the sentence that cites it. | Unsupported claims look supported. | medium (citation check) |
+| G21 | **A grouped reference is not read.** The stored answer to question 6 ends with `[2,3,5,6]`. `answers.CITE` reads only `[n]`, so 2, 3 and 5 are neither checked nor listed; the listed citations keep their own numbers (`n` 4, 6, 7, 8). An answer that cites only in grouped form becomes "not in library". (The first version of this row also said that a cited passage contradicted its sentence; the stored answer does not show that: passage 6 says `llama-3.1-8b` avoid → pilot.) | Part of the evidence is not shown and not checked. | small (read `[a,b]`, or ask for one number per bracket) |
 | G22 | **Recency is not understood.** "Recent weeks" did not rank the newest brief first (question 6). | Old evidence wins. | medium (dates as a filter or ranking signal) |
 | G23 | **Republished model text is not linked to its source.** Brief summaries are copies of `news-classified` summaries; `news-observations` repeats the titles. | Duplicate hits; question 3 cited the copy, not the record (with G11). | medium |
 | G24 | **The `tool` boundary is not clear for third-party text and batch statistics.** Digests copy GitHub repository names and news titles (origin of the third party unknown), and ring calibration uses quartiles of the current batch. | `tool` is a judgement here; the input rule could make every digest `model`. | decision (D64 follow-up) |
@@ -120,10 +121,10 @@ All answers are in Turkish, also for the English questions. `kutuphane search` f
 ## 6. Recommendations
 
 1. Fix G12, G13, G15 and G20 first. They are small and they affect every user.
-2. Add an evidence filter (G14) and a citation check (G21) before the next pilot. Without them, answers about
-   one source type cannot be trusted.
+2. Add an evidence filter (G14) and read grouped citations (G21) before the next pilot. Without the filter,
+   answers about one source type cannot be trusted.
 3. Use per-record provenance for JSONL (G16): read `model` and similar fields into the item information.
 4. Make embedding incremental and give query calls priority over indexing (G17, G18).
-5. Test a multilingual question set; consider query translation or a bilingual query for Turkish/English books
-   (G19).
+5. Test a multilingual question set with working embeddings and keep the retrieval traces; then consider query
+   translation, a bilingual query or a larger rerank cut for Turkish/English books (G19).
 6. Decide G24 in the D64 follow-up: whether verbatim third-party text and batch statistics keep an output `tool`.

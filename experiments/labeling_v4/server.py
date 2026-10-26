@@ -4,7 +4,9 @@ characters made visible) and the rule proposals, and appends each label to <data
     python -I server.py --data <research/labelling-v4> --host <tailnet-ip> --port 8791
     open http://<ip>:8791/?t=<data/token>     (the token is made on the first run, mode 600)
 
-Plain HTTP only on loopback or the tailnet; the access token is exchanged for an HttpOnly cookie.
+Plain HTTP only on loopback or the tailnet; the access token is exchanged for an HttpOnly cookie. "/" is a static
+page shell served to anyone; every /api/ route needs the cookie or the X-Label-Token header, and a label POST must be
+JSON from this server's own origin (Astra review #11).
 """
 import argparse
 import hashlib
@@ -12,10 +14,12 @@ import hmac
 import ipaddress
 import json
 import os
+import posixpath
 import re
 import secrets
 import sys
 import time
+from collections import Counter, defaultdict
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -46,13 +50,74 @@ REQUIRED = ("kind", "origin", "instruction", "personal_data")  # every other fie
 AI_USE = ("search", "ai_input", "train")
 TEXT_FIELDS = {"reviewed_by": 200, "license_item": 300, "applies_to": 300, "valid_from": 10,
                "valid_to": 10, "inputs": 2000, "software_agent": 200, "note": 2000}
+FIELDS = frozenset(CHOICES) | frozenset(TEXT_FIELDS) | {"ai_use"}
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-BLIND_SHARE = 3  # of 10: items whose suggestions are withheld, to measure the proposers without anchoring
+BLIND_SHARE = 0.3  # of the items per stratum: suggestions withheld, to measure the proposers without anchoring
+MODES = ("basic", "exception", "all")  # the page's form mode: few fields, + licence/AI use, every field
+ALWAYS = frozenset({"kind", "origin", "instruction", "personal_data", "needs_split", "note"})
+RULE_FIELDS = frozenset({"acceptance", "mandate", "valid_from", "valid_to", "applies_to"})
 
 
-def is_blind(iid: str) -> bool:
-    """A fixed ~30 % sample (docs/09 blind slice; Astra review of docs/19). Decided here, never by the page."""
-    return int(hashlib.sha256(iid.encode()).hexdigest(), 16) % 10 < BLIND_SHARE
+def allowed_fields(labels: dict, mode: str) -> frozenset:
+    """The fields that the page shows for these choices in this mode (page.html buildForm, docs/19)."""
+    if mode == "all":
+        return FIELDS
+    out = set(ALWAYS)
+    origin, kind = labels.get("origin"), labels.get("kind")
+    if origin == "assisted":
+        out.add("reviewed_by")
+    if origin == "tool":
+        out.add("software_agent")
+    if origin in ("model", "tool", "assisted"):
+        out.add("inputs")
+    if labels.get("instruction") == "yes":
+        out.add("activate")
+    if kind in ("decision", "procedure"):
+        out |= RULE_FIELDS
+    if kind == "instruction":
+        out.add("applies_to")
+    if mode == "exception":
+        out |= {"license_item", "ai_use"}
+    return frozenset(out)
+
+
+def family(it: dict) -> str:
+    """Items that share provenance: the group (a skill folder), else the source and the file's directory."""
+    return it.get("group") or f"{it['source']}:{posixpath.dirname(it['ref'].get('path') or '')}"
+
+
+def blind_families(items: list) -> set:
+    """A fixed sample of whole families, ~BLIND_SHARE of the items of each stratum (docs/09 blind slice; Astra
+    reviews of docs/19 and #11): a person never sees suggestions for a sibling of a blind item. Families are taken in
+    sha256 order while they fit the stratum's share. Decided here, never by the page."""
+    sizes, totals = defaultdict(Counter), Counter()
+    for it in items:
+        sizes[family(it)][it["stratum"]] += 1
+        totals[it["stratum"]] += 1
+    target = {s: round(n * BLIND_SHARE) for s, n in totals.items()}
+    taken, out = Counter(), set()
+    for fam in sorted(sizes, key=lambda f: hashlib.sha256(f.encode()).hexdigest()):
+        if all(taken[s] + n <= target[s] for s, n in sizes[fam].items()):
+            out.add(fam)
+            taken.update(sizes[fam])
+    return out
+
+
+def _sha256(data: bytes | None) -> str | None:
+    return hashlib.sha256(data).hexdigest() if data is not None else None
+
+
+def _same(field: str, value, proposal) -> bool:
+    """Is the stored value the proposal as the page prefilled or showed it?"""
+    if field == "ai_use":
+        return isinstance(proposal, dict) and value == proposal
+    if isinstance(proposal, list):
+        proposal = ",".join(map(str, proposal))
+    if not isinstance(proposal, str):
+        return False
+    if field in ("valid_from", "valid_to"):
+        proposal = proposal[:10]
+    return value == proposal.strip()
 
 
 class Store:
@@ -66,8 +131,11 @@ class Store:
                     it = json.loads(line)
                     self.items[it["id"]] = it
         prop = root / "proposals.jsonl"
+        data = prop.read_bytes() if prop.exists() else None
         self.proposals = {json.loads(l)["id"]: json.loads(l)["proposals"]
-                          for l in (prop.read_text().splitlines() if prop.exists() else []) if l.strip()}
+                          for l in (data.decode().splitlines() if data else []) if l.strip()}
+        self.proposals_sha256 = _sha256(data)  # of the bytes that were loaded (the file is read once)
+        self.blind = blind_families(list(self.items.values()))
         self.labels_path = root / "labels.jsonl"
         self.groups = {}
         for it in self.items.values():
@@ -108,21 +176,48 @@ class Store:
         siblings = [s for s in self.groups.get(it.get("group"), []) if s != iid]
         hide = it["stratum"] == "S"  # the synthetic notes, facts and hostile flag are the answers
         shown = {k: v for k, v in it.items() if not (hide and k in ("known", "notes", "hostile", "known_source"))}
-        blind = is_blind(iid)
+        blind = self.is_blind(iid)
         return {"item": shown, "blind": blind,
                 "text": text, "hidden_chars": hidden, "truncated": bool(it.get("bytes", 0) > MAX_TEXT),
                 "proposals": {} if blind else self.proposals.get(iid, {}),
                 "llm": None if blind else self.llm().get(iid), "siblings": siblings,
                 "label": self.labelled().get(iid)}
 
+    def is_blind(self, iid: str) -> bool:
+        return family(self.items[iid]) in self.blind
+
     def llm(self) -> dict:
         """Qwen suggestions (llm_propose.py); the file grows while a run is going, so it is read when it changes."""
+        return self._llm_state()[0]
+
+    def _llm_state(self) -> tuple:
+        """(suggestions, sha256 of the bytes they were read from)."""
         path = self.root / "proposals_llm.jsonl"
         mtime = path.stat().st_mtime if path.exists() else None
         if mtime != getattr(self, "_llm_mtime", "unset"):
-            rows = [json.loads(l) for l in path.read_text().splitlines() if l.strip()] if mtime else []
-            self._llm, self._llm_mtime = {r["id"]: r["p"] for r in rows if "p" in r}, mtime
+            data = path.read_bytes() if mtime is not None else None
+            rows = [json.loads(l) for l in data.decode().splitlines() if l.strip()] if data else []
+            self._llm, self._llm_mtime = ({r["id"]: r["p"] for r in rows if "p" in r}, _sha256(data)), mtime
         return self._llm
+
+    def accepted(self, iid: str, rec: dict, llm: dict) -> list:
+        """The label fields whose value is the rule proposal or the Qwen suggestion shown for this item."""
+        if self.is_blind(iid):
+            return []
+        rule, qwen = self.proposals.get(iid, {}), llm.get(iid) or {}
+        out = []
+        for field, value in rec.items():
+            seen = []
+            key = "license" if field == "license_item" else field
+            if isinstance(rule.get(key), dict) and "value" in rule[key]:
+                seen.append(rule[key]["value"])
+            if field == "activate":
+                seen += ["deny"] if qwen.get("hostile") == "yes" else []
+            elif field in qwen:
+                seen.append(qwen[field])
+            if any(_same(field, value, p) for p in seen):
+                out.append(field)
+        return sorted(out)
 
     def validate(self, body: dict) -> dict:
         iid = body.get("id")
@@ -131,6 +226,24 @@ class Store:
         labels = body.get("labels")
         if not isinstance(labels, dict):
             raise ValueError("labels must be an object")
+        if set(labels) - FIELDS:
+            raise ValueError(f"unknown fields: {', '.join(sorted(set(labels) - FIELDS))}")
+        mode = body.get("mode")
+        if mode not in MODES:
+            raise ValueError(f"mode: one of {MODES}")
+        lists = {k: body.get(k, []) for k in ("shown", "kept")}
+        if any(not isinstance(v, list) or not all(isinstance(a, str) and a in FIELDS for a in v) for v in lists.values()):
+            raise ValueError("shown and kept must be lists of field names")
+        shown, kept = set(lists["shown"]), set(lists["kept"])
+        if set(labels) - shown:
+            raise ValueError(f"not shown: {', '.join(sorted(set(labels) - shown))}")
+        if kept - set(labels) or kept - shown:
+            raise ValueError("kept: only shown fields that hold a value")
+        if set(REQUIRED) - shown:
+            raise ValueError(f"required fields not shown: {', '.join(sorted(set(REQUIRED) - shown))}")
+        hidden = shown - allowed_fields(labels, mode) - kept
+        if hidden:
+            raise ValueError(f"not visible in mode {mode} for these choices: {', '.join(sorted(hidden))}")
         rec = {}
         for field, options in CHOICES.items():  # only the fields that the page showed and the person set
             if field in labels:
@@ -161,13 +274,13 @@ class Store:
             raise ValueError("tool needs software_agent (name and version)")
         if rec["instruction"] == "yes" and "activate" not in rec:
             raise ValueError("an instruction needs an activate decision (allow / deny / escalate)")
-        lists = {k: body.get(k, []) for k in ("accepted_proposals", "shown")}
-        if any(not isinstance(v, list) or not all(isinstance(a, str) and len(a) < 40 for a in v) for v in lists.values()):
-            raise ValueError("accepted_proposals and shown must be lists of field names")
         ms = body.get("ms")
+        llm, llm_sha256 = self._llm_state()
         return {"id": iid, "stratum": self.items[iid]["stratum"], "labels": rec, "claim_source": "person",
-                "blind": is_blind(iid), "shown": sorted(set(lists["shown"]))[:40],
-                "accepted_proposals": [] if is_blind(iid) else sorted(set(lists["accepted_proposals"]))[:40],
+                "blind": self.is_blind(iid), "family": family(self.items[iid]), "mode": mode,
+                "shown": sorted(shown), "kept": sorted(kept),
+                "accepted_proposals": self.accepted(iid, rec, llm),  # derived here; a client list is ignored
+                "proposal_version": {"proposals": self.proposals_sha256, "proposals_llm": llm_sha256},
                 "ms": int(ms) if isinstance(ms, (int, float)) and 0 <= ms < 86_400_000 else None,
                 "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
 
@@ -232,16 +345,15 @@ def make_handler(store: Store, token: str, page: bytes):
         def do_GET(self):
             url = urlparse(self.path)
             if url.path == "/":
+                # The page shell is static and holds no data, so it is served without authentication: a reload
+                # in a browser that keeps no cookie still runs the page, which sends its tab token from
+                # sessionStorage on every /api/ call (Astra review #11). The page removes ?t= from the address bar.
                 t = parse_qs(url.query).get("t", [""])[0]
                 if t and hmac.compare_digest(t, token):
-                    # The page is served directly (no redirect): a browser that drops a cookie set on a redirect
-                    # after a cross-site navigation still gets the page; the page removes the token from the
-                    # address bar. Lax (not Strict) so later navigations to "/" carry the cookie; Lax still
-                    # withholds it on cross-site POSTs, so /api/label cannot be forged from elsewhere.
+                    # Lax (not Strict) so later navigations to "/" carry the cookie; a label POST is also checked
+                    # for its Origin and JSON content type (SameSite ignores ports).
                     cookie = f"{COOKIE}={token}; Max-Age={COOKIE_MAX_AGE}; Path=/; HttpOnly; SameSite=Lax"
                     return self.send(HTTPStatus.OK, page, "text/html; charset=utf-8", {"Set-Cookie": cookie})
-                if not self.authed():
-                    return self.send(HTTPStatus.UNAUTHORIZED, b"Use the access link (.../?t=...).", "text/plain")
                 return self.send(HTTPStatus.OK, page, "text/html; charset=utf-8")
             if not self.authed():
                 return self.json(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
@@ -259,6 +371,12 @@ def make_handler(store: Store, token: str, page: bytes):
         def do_POST(self):
             if urlparse(self.path).path != "/api/label":
                 return self.json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            # CSRF (Astra review #11): a page on another port of this host shares the SameSite cookie scope and can
+            # send a text/plain "simple" POST; only a JSON body from this server's own origin is accepted.
+            host = self.headers.get("Host", "")
+            if self.headers.get_content_type() != "application/json" or not host or \
+                    self.headers.get("Origin") != f"http://{host}":
+                return self.json(HTTPStatus.FORBIDDEN, {"error": "cross-origin or non-JSON request"})
             if not self.authed():
                 return self.json(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
             raw = self.headers.get("Content-Length", "")
