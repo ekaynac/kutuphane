@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 ORDER = {"permit": 0, "escalate": 1, "deny": 2}  # rule 1: the strictest result wins
 STRICT = {"export": ["normal", "restricted"], "route": ["cloud_ok", "local_only"]}
 DEFAULT_MAX_AGE_DAYS = 30
-VIEWS = {"ordinary": {"accepted"}, "review": {"accepted", "pending"}, "history": {"accepted", "withdrawn"}}
+VIEWS = {"ordinary": {"accepted"}, "review": {"accepted", "pending"}, "history": {"accepted", "withdrawn", "rejected"}}  # rejected: never accepted (D68)
 
 
 def ts(value) -> datetime:
