@@ -166,7 +166,7 @@ def cmd_kstd_check(_conn, args) -> int:
 def cmd_ask(conn, args) -> int:
     actor = gate.Actor(args.principal, args.on_behalf_of)
     _print({**answers.ask(conn, llmdap.Bridge.from_env(), actor, args.question, model=args.model,
-                          stages=retrieval.Stages.from_env(), scope=_scope(args)),
+                          stages=retrieval.Stages.from_env(answer_model=args.model), scope=_scope(args)),
             "correlation_id": actor.correlation_id})
     return 0
 

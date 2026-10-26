@@ -2,7 +2,7 @@
 a failed or malformed rerank keeps the hybrid order."""
 import pytest
 
-from kutuphane import authz, catalog, profiles, retrieval, search
+from kutuphane import authz, catalog, llmdap, profiles, retrieval, search
 from kutuphane.gate import Actor
 from kutuphane.policy import make_policy
 from kutuphane.source import read_source
@@ -177,3 +177,38 @@ def test_a_recency_question_prefers_newer_passages(conn, fake, tmp_path, stages)
         return [h.citation.path[-5:-3] for h in retrieval.retrieve(conn, Actor(U), query, k=2, stages=st)]
     assert weeks("Which models entered the pilot ring?") == ["30", "40"]
     assert weeks("Which models entered the pilot ring recently?") == ["40", "30"]  # rank sums: 1+0 < 0+3
+
+
+def _blind(body):
+    """A reranker with the G19 blind spot: a passage in the other language than the query scores 0."""
+    from test_egress_audit import fake_relevance
+    lang = retrieval.language(body["query"])
+    return [{"index": i, "relevance_score": fake_relevance(body["query"], d) if retrieval.language(d) == lang else 0.0}
+            for i, d in enumerate(body["documents"])]
+
+
+def test_other_language_passages_are_reranked_with_a_translated_query(conn, fake, tmp_path):  # G19
+    _bilingual(conn, tmp_path, {**ENGLISH, **TURKISH})
+    fake.rerank_reply, fake.reply = _blind, "Yedekler ve loglar için ne yapılır?"
+    stages = retrieval.Stages(reranker=fake.reranker(), translator=llmdap.Routed(fake.bridge(), "qwen"))
+    ranked = retrieval.retrieve(conn, Actor(U), "logs of the backup", k=4, stages=stages)
+    assert ranked[0].citation.path == "tr.md" and ranked[0].score > ranked[1].score   # scored in its own language
+    chats = [(p, h) for p, h in fake.hits if p.endswith("/chat/completions")]
+    assert len(chats) == 1 and chats[0][1]["x-llmdap-purpose"] == "translate"
+    asked = next(b for p, b in fake.requests if p.endswith("/chat/completions"))
+    assert [m["content"] for m in asked["messages"]][1:] == ["logs of the backup"]   # only the question goes out
+    reranks = [b for p, b in fake.requests if p.endswith("/v1/rerank")]
+    assert sorted(b["query"] for b in reranks) == ["Yedekler ve loglar için ne yapılır?", "logs of the backup"]
+    assert conn.execute("SELECT source_books FROM model_call WHERE model = 'qwen'").fetchone() == ([],)
+
+
+def test_no_translation_for_a_one_language_pool_or_a_bad_translation(conn, fake, tmp_path):  # G19
+    _bilingual(conn, tmp_path, ENGLISH)
+    stages = retrieval.Stages(reranker=fake.reranker(), translator=llmdap.Routed(fake.bridge(), "qwen"))
+    retrieval.retrieve(conn, Actor(U), "logs of the backup", k=4, stages=stages)
+    assert not any(p.endswith("/chat/completions") for p, _ in fake.hits)
+    (tmp_path / "tr.md").write_text(TURKISH["tr.md"], encoding="utf-8")
+    _bilingual(conn, tmp_path, {})
+    fake.rerank_reply, fake.reply = _blind, "logs of the backup"                  # not a translation: ignored
+    ranked = retrieval.retrieve(conn, Actor(U), "logs of the backup", k=4, stages=stages)
+    assert ranked[-1].citation.path == "tr.md"                                   # the language reserve still holds

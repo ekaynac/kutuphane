@@ -7,12 +7,16 @@
    scores become the reranker's relevance. The reranker reads the first RERANK_CHARS characters of each passage
    (G26); the passage itself stays whole. If the reranker fails, the hybrid order stands; the failed call is
    on record in `model_call`. Reranking only reorders passages the search already authorized and logged (the
-   pool is logged as read on the caller's behalf, since its text goes to the reranker). Passages in the other
-   language (Turkish/English) that the hybrid search ranked in its top k keep up to LANGUAGE_RESERVE places (G19).
+   pool is logged as read on the caller's behalf, since its text goes to the reranker).
+   Two languages (G19): when the pool holds passages in both Turkish and English, the answer model translates the
+   query (`translator`), a second hybrid search runs with the translation, the two pools are merged, and each
+   passage is reranked against the query in its own language. Without a translation, passages in the other
+   language that the hybrid search ranked in its top k keep up to LANGUAGE_RESERVE places.
 4. A question about recent things prefers newer passages among the most relevant ones (G22, `_prefer_recent`).
 """
 import dataclasses
 import logging
+import os
 import re
 import threading
 from collections import OrderedDict
@@ -29,9 +33,12 @@ RERANK_POOL = 30  # M0: bge-reranker-v2-m3 over the top 30 hybrid hits, R@1 0.34
 RERANK_CHARS = profiles.TARGET_CHARS
 QUERY_CACHE = 256
 # G19: bge-reranker-v2-m3 scores a passage in the other language near zero even when it answers the question (pilot
-# radar, question 2: hybrid rank 7 -> rerank rank 10). So up to LANGUAGE_RESERVE passages of the other language that
-# the hybrid search put in its top k keep a place in the top k after reranking.
+# radar, question 2: hybrid rank 7 -> rerank rank 10, and the English question got "not in library").
 LANGUAGE_RESERVE = 2
+OTHER_LANGUAGE = {"tr": "en", "en": "tr"}
+TRANSLATE = {"tr": "Translate the user's question into Turkish. Write only the translated question.",
+             "en": "Translate the user's question into English. Write only the translated question."}
+ANSWER_MODEL_ENV = "KUTUPHANE_ANSWER_MODEL"
 
 # Language detection for the two languages of the library (G19, G20): common function words, plus the letters that
 # only Turkish uses. Good enough to tell a Turkish question or passage from an English one; anything else is None.
@@ -115,10 +122,14 @@ def _prefer_recent(conn, ranked: list[search.Hit], k: int) -> list[search.Hit]:
 class Stages:
     embedder: llmdap.Routed | None = None
     reranker: llmdap.Routed | None = None
+    translator: llmdap.Routed | None = None  # the answer model on its chat route; translates queries (G19)
 
     @classmethod
-    def from_env(cls) -> "Stages":
-        return cls(llmdap.Routed.from_env(llmdap.EMBED_ENV), llmdap.Routed.from_env(llmdap.RERANK_ENV))
+    def from_env(cls, answer_model: str | None = None) -> "Stages":
+        model = answer_model or os.environ.get(ANSWER_MODEL_ENV)
+        translator = llmdap.Routed(llmdap.Bridge.from_env(), model) if model and os.environ.get(
+            llmdap.ENV["route"]) else None
+        return cls(llmdap.Routed.from_env(llmdap.EMBED_ENV), llmdap.Routed.from_env(llmdap.RERANK_ENV), translator)
 
 
 _vectors: OrderedDict = OrderedDict()  # (route url, route, model, query) -> QueryVector, least recently used first
@@ -152,23 +163,71 @@ def retrieve(conn, actor: Actor, query: str, k: int = search.DEFAULT_K, stages: 
         hits = search.search(conn, actor, query, min(2 * k, search.MAX_K) if recent else k, vector=vector,
                              scope=scope)
         return _prefer_recent(conn, hits, k)[:k] if recent else hits
-    pool = search.search(conn, actor, query, max(k, RERANK_POOL), vector=vector, scope=scope)
-    ranked = _rerank(conn, stages.reranker, actor, query, pool)
+    size = max(k, RERANK_POOL)
+    pool = search.search(conn, actor, query, size, vector=vector, scope=scope)
+    translated = translate(conn, stages.translator, actor, query, pool)
+    if translated:
+        second = search.search(conn, actor, translated, size, scope=scope,
+                               vector=query_vector(conn, stages.embedder, actor, translated))
+        pool = _merge(pool, second, size)
+    queries = {OTHER_LANGUAGE[language(query)]: translated} if translated else {}
+    ranked = _rerank(conn, stages.reranker, actor, query, queries, pool)
     if recent:
         ranked = _prefer_recent(conn, ranked, k)
-    return _keep_other_language(query, ranked, pool, k)
+    return ranked[:k] if translated else _keep_other_language(query, ranked, pool, k)
 
 
-def _rerank(conn, reranker: llmdap.Routed, actor: Actor, query: str, pool: list[search.Hit]) -> list[search.Hit]:
-    """The pool in the reranker's order, with its scores; the hybrid order if reranking is not possible."""
+def translate(conn, translator: llmdap.Routed | None, actor: Actor, query: str,
+              pool: list[search.Hit]) -> str | None:
+    """The query in the other language, if the pool holds passages in that language and the answer model can
+    translate it; else None. Only the query goes to the model (no book content)."""
+    lang = language(query)
+    if translator is None or lang is None or not any(language(h.text) == OTHER_LANGUAGE[lang] for h in pool):
+        return None
+    target = OTHER_LANGUAGE[lang]
+    try:
+        payload = llmdap.chat(conn, translator.bridge, actor, model=translator.model, source_books=[],
+                              purpose="translate", messages=[{"role": "system", "content": TRANSLATE[target]},
+                                                             {"role": "user", "content": query}])
+        text = payload["choices"][0]["message"]["content"]
+    except (llmdap.EgressError, KeyError, IndexError, TypeError) as exc:
+        log.warning("query translation failed, reranking with the question only: %s", exc)
+        return None
+    text = " ".join(text.split())[:search.MAX_QUERY_CHARS] if isinstance(text, str) else ""
+    return text if text and text != query and language(text) == target else None
+
+
+def _merge(first: list[search.Hit], second: list[search.Hit], size: int) -> list[search.Hit]:
+    """Both hybrid lists in turns (1st, 1st, 2nd, 2nd, …), each passage once, at most `size` passages."""
+    out, seen = [], set()
+    for pair in zip(first + [None] * len(second), second + [None] * len(first)):
+        for h in pair:
+            if h is not None and h.citation not in seen:
+                seen.add(h.citation)
+                out.append(h)
+    return out[:size]
+
+
+def _rerank(conn, reranker: llmdap.Routed, actor: Actor, query: str, queries: dict, pool: list[search.Hit]
+            ) -> list[search.Hit]:
+    """The pool in the reranker's order, with its scores; the hybrid order if reranking is not possible.
+    `queries` maps a passage language to the query to rerank it with (default: `query`)."""
     rights = kstd.Rights(conn)
     slots = [i for i, h in enumerate(pool)  # kstd: only passages whose rights allow ai_input go to the reranker
              if rights.allows(h.citation.book, h.citation.content_id, h.citation.path, "ai_input")]
     if len(slots) < 2:
         return pool
+    groups: dict[str, list[int]] = {}
+    for j, i in enumerate(slots):
+        groups.setdefault(queries.get(language(pool[i].text), query), []).append(j)
+    scores = [0.0] * len(slots)
     try:
-        scores = llmdap.rerank(conn, reranker, actor, query, [pool[i].text[:RERANK_CHARS] for i in slots],
-                               source_books=sorted({pool[i].citation.book for i in slots}), purpose="rerank")
+        for q, members in groups.items():
+            got = llmdap.rerank(conn, reranker, actor, q, [pool[slots[j]].text[:RERANK_CHARS] for j in members],
+                                source_books=sorted({pool[slots[j]].citation.book for j in members}),
+                                purpose="rerank")
+            for j, s in zip(members, got):
+                scores[j] = s
     except llmdap.EgressError as exc:
         log.warning("reranking failed, keeping the hybrid order: %s", exc)
         return pool
