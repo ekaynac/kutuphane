@@ -182,6 +182,7 @@ async function show() {
   if (current.hidden_chars) banner.append(el("div", { class: "banner danger" }, `${current.hidden_chars} hidden characters, shown as ⟦U+…⟧ in the text.`));
   const about = $("about"); about.replaceChildren();
   const line = el("div", { class: "about" }, "This case is about: "); line.append(el("b", {}, OPERATIONS[c.operation] || c.operation || "—")); about.append(line);
+  if (c.title) about.append(el("h2", { style: "margin-top:6px" }, c.title));
   if (c.why_selected) about.append(el("div", { class: "why-sel" }, `Why it was selected: ${c.why_selected}`));
   about.append(el("div", { class: "meta" }, [c.source, c.family, c.group, (c.questions || []).join(" ")].filter(Boolean).join(" · ")));
   renderDoc(); renderEvidence(); render();
@@ -222,6 +223,8 @@ function renderDoc() {
   }
   if (f.text != null) d.append(el("pre", {}, f.text));
   if (f.note) d.append(el("div", { class: "meta" }, f.note));
+  if (f.redistribute === false) d.append(el("div", { class: "meta" }, "Local copy only: the public set keeps the reference and hash, not this text."));
+  if (isHuman() && !current.first) d.append(el("div", { class: "meta" }, "The source path and link show after your first answer."));
 }
 
 function renderValue(v) {
@@ -354,6 +357,7 @@ $("save").onclick = async () => {
     if (gen !== generation || !current || id !== current.case.id) return;
     if (stage === "first") {  // judge first, then reveal (D67)
       current.first = answer; current.latest = answer; current.suggestions = r.suggestions; revealed = Date.now();
+      try { current.files = (await api(`/api/case/${encodeURIComponent(id)}`)).files; renderDoc(); } catch (e) { /* the refs stay hidden */ }
       busy = false; render(); say("Saved. Now see the suggestions below.", "ok");
       const panel = $("questions").querySelector(".reveal"); if (panel) panel.scrollIntoView({ block: "center" });
       return;

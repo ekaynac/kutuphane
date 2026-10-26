@@ -63,9 +63,12 @@ SCENARIO_TEXT = {"reason": 500, "notices": 1000, "note": 2000}
 STAGES = {"human": ("first", "revision"), "scenario": ("answer",)}
 # The case keys that the page may see. Anything else (an expected result, a held-out mark, the selection stratum)
 # stays on the server, so held-out bases look like the others.
-CASE_KEYS = ("id", "set", "group", "source", "family", "operation", "questions", "why_selected", "evidence",
+CASE_KEYS = ("id", "set", "group", "source", "family", "operation", "questions", "title", "why_selected", "evidence",
              "statements", "policy", "trust", "request", "evaluation_time", "eval_time", "now", "actor")
-FILE_KEYS = ("path", "url", "ref", "sha256", "bytes", "copy", "license_item", "role")
+FILE_KEYS = ("path", "url", "ref", "sha256", "bytes", "copy", "license_item", "role", "redistribute")
+# Before the first choice of a human case, a file shows its own path but not its source path or URL: a fixture
+# folder name (".../malicious_skill/SKILL.md") would give the answer away. Repo and commit stay visible.
+BLIND_REF = ("repo", "commit")
 
 
 def _sha256(data: bytes | None) -> str | None:
@@ -148,28 +151,33 @@ class Proposals:
         return self._rows, self._sha
 
 
+def slice_indexes(root: Path) -> list:
+    """(set, slice, index path) of every case index to label. A candidate pool (`<slice>-candidates*.cases.jsonl`)
+    is the input of a selection, not a case list, so it is never shown."""
+    return [(s, index.name[:-len(".cases.jsonl")], index) for s in SETS
+            for index in sorted((root / s).glob("*.cases.jsonl")) if "-candidates" not in index.name]
+
+
 class Store:
     def __init__(self, root: Path):
         self.root = root
         self.cases, self.dirs = {}, {}
         self.skipped = []
-        for s in SETS:
-            for index in sorted((root / s).glob("*.cases.jsonl")):
-                slice_ = index.name[:-len(".cases.jsonl")]
-                for line in index.read_text().splitlines():
-                    if not line.strip():
-                        continue
-                    c = json.loads(line)
-                    cid = c.get("id")
-                    if not isinstance(cid, str) or not CASE_ID.match(cid) or cid in self.cases:
-                        self.skipped.append(f"{index.name}: bad or repeated id {cid!r}")
-                        continue
-                    if s == "human" and c.get("group") not in GROUPS:
-                        self.skipped.append(f"{index.name}: {cid}: no question for group {c.get('group')!r}")
-                        continue
-                    c["set"] = s
-                    self.cases[cid] = c
-                    self.dirs[cid] = root / s / slice_ / cid
+        for s, slice_, index in slice_indexes(root):
+            for line in index.read_text().splitlines():
+                if not line.strip():
+                    continue
+                c = json.loads(line)
+                cid = c.get("id")
+                if not isinstance(cid, str) or not CASE_ID.match(cid) or cid in self.cases:
+                    self.skipped.append(f"{index.name}: bad or repeated id {cid!r}")
+                    continue
+                if s == "human" and c.get("group") not in GROUPS:
+                    self.skipped.append(f"{index.name}: {cid}: no question for group {c.get('group')!r}")
+                    continue
+                c["set"] = s
+                self.cases[cid] = c
+                self.dirs[cid] = root / s / slice_ / cid
         self.rules = {s: Proposals(root / f"proposals.{s}.jsonl", "proposals") for s in SETS}
         self.llm = {s: Proposals(root / f"proposals_llm.{s}.jsonl", "p") for s in SETS}
         self.batches = {s: self._freeze(s) for s in SETS}
@@ -212,11 +220,15 @@ class Store:
         return [[{"id": i, "status": self.status(i), "group": self.cases[i].get("group")} for i in b]
                 for b in self.batches[s]]
 
-    def files(self, cid: str) -> tuple:
+    def files(self, cid: str, blind: bool = False) -> tuple:
         out, hidden = [], 0
         folder = self.dirs[cid].resolve()
         for f in self.cases[cid].get("files") or []:
             meta = {k: f[k] for k in FILE_KEYS if k in f}
+            if blind:
+                meta.pop("url", None)
+                if isinstance(meta.get("ref"), dict):
+                    meta["ref"] = {k: v for k, v in meta["ref"].items() if k in BLIND_REF}
             text, n, note = None, 0, None
             local = f.get("local_path")
             if f.get("copy") and isinstance(local, str) and local:
@@ -252,12 +264,8 @@ class Store:
         q = (llm.get(cid) or {}).get("p", {})
         for field in related:
             if field in q:
-                ev = q.get(f"{field}_evidence")
-                if field == "review":
-                    ev = ev or q.get("review_evidence")
-                elif field == "normative":
-                    ev = ev or q.get("normative_evidence")
-                out.append({"from": "Qwen", "field": field, "value": q[field], "evidence": ev})
+                out.append({"from": "Qwen", "field": field, "value": q[field],
+                            "confidence": q.get(f"{field}_confidence"), "evidence": q.get(f"{field}_evidence")})
         return {"items": out,
                 "version": {"proposals": rules_sha, "proposals_llm": llm_sha,
                             "rule": (rule or {}).get("proposer_version"),
@@ -267,11 +275,11 @@ class Store:
         c = self.cases.get(cid)
         if c is None:
             return None
-        files, hidden = self.files(cid)
-        out = {"case": {k: c[k] for k in CASE_KEYS if k in c}, "files": files, "hidden_chars": hidden,
-               "first": None, "latest": None, "suggestions": None}
         with self.lock:
             first, last = self.first.get(cid), self.last.get(cid)
+        files, hidden = self.files(cid, blind=c["set"] == "human" and not first)
+        out = {"case": {k: c[k] for k in CASE_KEYS if k in c}, "files": files, "hidden_chars": hidden,
+               "first": None, "latest": None, "suggestions": None}
         if first:
             out["first"], out["latest"] = first["labels"], last["labels"]
         if c["set"] == "human":

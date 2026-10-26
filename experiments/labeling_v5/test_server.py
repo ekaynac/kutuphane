@@ -26,7 +26,8 @@ def human(n):
             "operation": "search" if n % 2 else "model-answer", "questions": ["Q12"], "why_selected": f"case {n}",
             "selection_stratum": "random",
             "files": [{"path": "doc.md", "sha256": "0" * 64, "bytes": 9, "copy": True, "local_path": "doc.md",
-                       "license_item": "MIT"},
+                       "license_item": "MIT", "role": "main", "url": "https://example.org/malicious_skill/doc.md",
+                       "ref": {"repo": "org/fx", "commit": "c0ffee", "path": "fixtures/malicious_skill/doc.md"}},
                       {"path": "closed.md", "sha256": "1" * 64, "bytes": 9, "copy": False,
                        "license_item": "unknown"}],
             "evidence": {"status": "Status: Final", "reviews": [{"user": "ayse", "state": "APPROVED"}]},
@@ -336,3 +337,19 @@ def test_unknown_groups_are_skipped(tmp_path):
                                                       json.dumps({"id": "../b", "group": "personal-data"}) + "\n")
     store = server.Store(tmp_path)
     assert store.cases == {} and len(store.skipped) == 2
+    (tmp_path / "human" / "pool-candidates.ins.cases.jsonl").write_text(
+        json.dumps({"id": "cand", "group": "personal-data"}) + "\n")
+    assert "cand" not in server.Store(tmp_path).cases                         # a candidate pool is not a case list
+
+
+def test_source_paths_show_only_after_the_first_choice(srv, data):
+    _, port = srv
+    cid = case_of("instruction-safety")
+    got = get(port, f"/api/case/{cid}")[1]
+    assert "malicious" not in json.dumps(got)                                 # the fixture folder names the answer
+    assert got["files"][0]["ref"] == {"repo": "org/fx", "commit": "c0ffee"} and got["files"][0]["path"] == "doc.md"
+    assert post(port, first(cid, activation_risk="unknown"))[0] == 200
+    f = get(port, f"/api/case/{cid}")[1]["files"][0]
+    assert f["ref"]["path"] == "fixtures/malicious_skill/doc.md" and f["url"].endswith("/doc.md")
+    sc = get(port, f"/api/case/{SCEN[0]['id']}")[1]                           # scenarios have no first choice
+    assert sc["files"][0]["path"] == "policy.yaml"
