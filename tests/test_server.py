@@ -131,6 +131,33 @@ def test_mcp_agent_and_http_user_see_the_same_evidence(app_env, keys, verifier, 
     assert [r["citation"] for r in agent_results] == [r["citation"] for r in human]
 
 
+def test_scope_filters_over_http_and_mcp(app_env, keys, verifier, conn, okf_dir, fake):  # G14
+    app, _, dsn = app_env
+    catalog.publish(conn, book="gizli", title="gizli", files=read_source(okf_dir),
+                    policy=make_policy(sensitivity="normal", egress="local_only", protection="standard"),
+                    profile=profiles.spec("chunked"))                    # U may not read it
+    q = "kayıtlar saklanır yedek geri yükleme"
+    with TestClient(app) as client:
+        h = bearer(keys)
+        runbook = client.get("/v1/search", params={"q": q, "path": "runbook/", "book": ["kitap", "gizli"]},
+                             headers=h).json()["results"]
+        assert runbook and all(r["citation"].startswith("kitap@") and "/runbook/" in r["citation"] for r in runbook)
+        assert client.get("/v1/search", params={"q": q, "book": "gizli"}, headers=h).json()["results"] == []
+        assert client.get("/v1/search", params={"q": q, "origin": "llm"}, headers=h).status_code == 400
+        assert client.get("/v1/search", params={"q": q, "current_only": "maybe"}, headers=h).status_code == 400
+        assert client.get("/v1/search", params={"q": q, "current_only": "true"}, headers=h).json()["results"]
+        fake.reply = "Kayıtlar saklanır [1]."
+        asked = client.post("/v1/ask", json={"question": q, "book": ["gizli"]}, headers=h).json()
+        assert asked["status"] == "not_in_library" and asked["citations"] == []
+        assert client.post("/v1/ask", json={"question": q, "path": "../x"}, headers=h).status_code == 400
+    mcp = server.build_mcp(dsn=dsn, verifier=verifier, bridge=None, model=None, public_url=PUBLIC)
+    tokens = asyncio.run(server._Verifier(verifier).verify_token(token(keys)))
+    _content, structured = call_tool(mcp, tokens.claims, "search_library", {"query": q, "path": "runbook/"})
+    assert [r["citation"] for r in structured["result"]] == [r["citation"] for r in runbook]
+    _content, structured = call_tool(mcp, tokens.claims, "search_library", {"query": q, "book": ["gizli"]})
+    assert structured["result"] == []
+
+
 def test_mcp_endpoint_requires_a_token(app_env, keys):
     app, _, _ = app_env
     init = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
