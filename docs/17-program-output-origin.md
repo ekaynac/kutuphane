@@ -1,6 +1,6 @@
 # Origin of program output — options and the exact boundary
 
-**Status:** 0.3, 2026-10-23. **D63:** option B (`tool`) is adopted for now; option D (two axes) is decided after the labelling v4 batches. A learned model that is not generative counts as `model` (§7.2). §7.3 (rule engines) is open; §8 gives the detail.
+**Status:** 0.3, 2026-10-23. **D63:** option B (`tool`) is adopted for now; option D (two axes) is decided after the labelling v4 batches. A learned model that is not generative counts as `model` (§7.2). **D64 (2026-10-26):** rule engines follow §8: kinds 1–3 with rules, thresholds and weights that people wrote → `tool`; anything fitted to data → `model`.
 **Basis:**
 - the operator's direction of 2026-10-23: one category is enough, unless a split changes a behavior; the new category must exclude generative AI by definition; categories must have exact definitions;
 - the research in `docs/research/2026-10-22-tool-origin.md`.
@@ -115,9 +115,9 @@ flowchart TD
 
 1. **Option B:** one value `tool`, with the definition in §4 and the behaviors in §5? Decide option D after the first labelling batches.
 2. **Learned but not generative** (classifiers, embeddings, neural OCR, speech recognition): count them as `model`, not as `tool` (recommended; fails closed)? The other choice is a sub-value of `model` for non-generative output, which changes only the export marking.
-3. **Rule engines:** may the output of a rule engine with rules that people wrote be `tool`, even though the EU AI Act can count such an engine as an AI technique (§2 note)?
+3. **Rule engines:** may the output of a rule engine with rules that people wrote be `tool`, even though the EU AI Act can count such an engine as an AI technique (§2 note)? **Decided (D64): yes, as in §8.**
 
-## 8. Rule engines in detail (open question §7.3)
+## 8. Rule engines in detail (decided: D64)
 
 **What a rule engine is:** software that applies **if-then rules** to **facts** and returns conclusions. The rules are separate from the program code, so people can read and change them. Four kinds are relevant:
 
@@ -134,7 +134,7 @@ flowchart TD
 - So an expert system can be an "AI system" in law although it has no learned part.
 - This matters little for marking: Art. 50(2) applies to **generative** systems that make synthetic audio, image, video or text. A rule engine makes conclusions, not generated content.
 
-**Proposed kstd rule:** classify by where the rules and their parameters come from, not by how they are run.
+**kstd rule (D64):** classify by where the rules and their parameters come from, not by how they are run.
 
 | Case | Origin |
 |---|---|
