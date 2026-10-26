@@ -23,7 +23,7 @@ from pathlib import Path, PurePosixPath
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 from kutuphane import agentfiles  # noqa: E402  (instruction-file rules of Kütüphane itself)
 
-RULES_VERSION, BASELINE_VERSION = "rules-v5.1", "baseline-v5.1"  # 5.1: no declared licence in the auto set
+RULES_VERSION, BASELINE_VERSION = "rules-v5.2", "baseline-v5.2"  # 5.2: a source "Rejected" is `rejected` (D68)
 
 # --- signals -----------------------------------------------------------------------------------------------
 GENERATOR_TOOL = re.compile(  # a NAMED rule-based generator only; generic "this file was generated" proves nothing
@@ -76,7 +76,8 @@ RISKY = [  # powers that are legitimate in many skills but raise the activation 
 ]
 SCRIPT_SUFFIXES = (".sh", ".bash", ".py", ".js", ".mjs", ".ts", ".ps1", ".rb")
 STATUS_WORDS = {"accepted": {"approved", "accepted", "decided", "final", "stable", "active", "kabul", "onaylı", "onaylandı"},
-                "withdrawn": {"superseded", "deprecated", "withdrawn", "retracted", "obsolete", "replaced", "rejected"},
+                "withdrawn": {"superseded", "deprecated", "withdrawn", "retracted", "obsolete", "replaced"},
+                "rejected": {"rejected", "declined", "reddedildi"},  # D68: never accepted, not `withdrawn`
                 "pending": {"draft", "proposed", "proposal", "pending", "wip", "provisional", "taslak"},
                 "suspended": {"suspended", "paused", "on hold"}}
 NEGATION = re.compile(r"(?i)\b(not|no|non|un|yet|değil|henüz)\b|\b(un|non|not)-?\w")
@@ -333,8 +334,8 @@ def propose(v: dict) -> dict:
     if main_text and not rs:
         musts, shoulds = len(MUST.findall(main_text)), len(SHOULD.findall(main_text))
         hist = HISTORY.search(main_text)
-        withdrawn = bool(status) and status_value(status) == "withdrawn"
-        if hist or withdrawn:
+        history_state = bool(status) and status_value(status) in ("withdrawn", "rejected")
+        if hist or history_state:
             out["normative"] = p("history", "low", f"history marker: {(hist.group(0) if hist else status)[:40]}")
         elif musts >= 3 and musts >= shoulds:
             out["normative"] = p("binding", "low", f"{musts} must/shall vs {shoulds} should/recommend")
