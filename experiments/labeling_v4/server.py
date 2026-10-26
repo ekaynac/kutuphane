@@ -35,7 +35,7 @@ HIDDEN = re.compile("[\u200b\u200c\u200d\u2060\ufeff\u202a-\u202e\u2066-\u2069\u
 
 ORIGIN = ("human", "assisted", "model", "tool", "unknown")  # D63/D64
 CHOICES = {
-    "kind": ("note", "decision", "procedure", "instruction", "record"),  # a form preset only (docs/19 §4)
+    "rule": ("no", "yes"),  # optional: the document states a rule, decision or procedure; it opens the rule fields
     "origin": ORIGIN,
     "personal_data": ("yes", "no", "synthetic", "unknown"),
     "acceptance": ("pending", "accepted", "withdrawn", "suspended"),
@@ -46,7 +46,7 @@ CHOICES = {
     "activate": ("allow", "deny", "escalate"),
     "needs_split": ("no", "yes"),
 }
-REQUIRED = ("kind", "origin", "instruction", "personal_data")  # every other field only when its condition shows it
+REQUIRED = ("origin", "instruction", "personal_data")  # every other field only when its condition shows it
 AI_USE = ("search", "ai_input", "train")
 TEXT_FIELDS = {"reviewed_by": 200, "license_item": 300, "applies_to": 300, "valid_from": 10,
                "valid_to": 10, "inputs": 2000, "software_agent": 200, "note": 2000}
@@ -54,7 +54,7 @@ FIELDS = frozenset(CHOICES) | frozenset(TEXT_FIELDS) | {"ai_use"}
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 BLIND_SHARE = 0.3  # of the items per stratum: suggestions withheld, to measure the proposers without anchoring
 MODES = ("basic", "exception", "all")  # the page's form mode: few fields, + licence/AI use, every field
-ALWAYS = frozenset({"kind", "origin", "instruction", "personal_data", "needs_split", "note"})
+ALWAYS = frozenset({"origin", "instruction", "personal_data", "rule", "needs_split", "note"})
 RULE_FIELDS = frozenset({"acceptance", "mandate", "valid_from", "valid_to", "applies_to"})
 
 
@@ -63,7 +63,7 @@ def allowed_fields(labels: dict, mode: str) -> frozenset:
     if mode == "all":
         return FIELDS
     out = set(ALWAYS)
-    origin, kind = labels.get("origin"), labels.get("kind")
+    origin = labels.get("origin")
     if origin == "assisted":
         out.add("reviewed_by")
     if origin == "tool":
@@ -71,11 +71,9 @@ def allowed_fields(labels: dict, mode: str) -> frozenset:
     if origin in ("model", "tool", "assisted"):
         out.add("inputs")
     if labels.get("instruction") == "yes":
-        out.add("activate")
-    if kind in ("decision", "procedure"):
+        out |= {"activate", "applies_to"}
+    if labels.get("rule") == "yes":
         out |= RULE_FIELDS
-    if kind == "instruction":
-        out.add("applies_to")
     if mode == "exception":
         out |= {"license_item", "ai_use"}
     return frozenset(out)

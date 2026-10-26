@@ -74,7 +74,7 @@ def sighted(store, stratum="R"):
 
 
 def label(iid, mode="basic", shown=None, kept=(), **labels):
-    labels = {"kind": "note", "origin": "human", "instruction": "no", "personal_data": "no", **labels}
+    labels = {"origin": "human", "instruction": "no", "personal_data": "no", **labels}
     return {"id": iid, "labels": labels, "mode": mode, "kept": list(kept),
             "shown": list(shown if shown is not None else labels)}
 
@@ -118,7 +118,7 @@ def test_fields_outside_the_visible_set_are_refused(srv, data):
     review["shown"] = list(review["labels"])
     status, err = post(port, review)
     assert status == 400 and "activate" in err["error"] and "mandate" in err["error"]
-    assert post(port, label(iid, shown=["kind", "origin", "instruction"]))[0] == 400  # a label not shown
+    assert post(port, label(iid, shown=["origin", "instruction"]))[0] == 400  # a label not shown
     no_required = label(iid)
     del no_required["labels"]["personal_data"]
     no_required["shown"].remove("personal_data")
@@ -131,10 +131,11 @@ def test_fields_outside_the_visible_set_are_refused(srv, data):
     assert not (data / "labels.jsonl").exists()
     assert post(port, label(iid, mode="exception", license_item="MIT"))[0] == 200
     assert post(port, label(iid, mode="all", export="restricted", mandate="yes"))[0] == 200
-    assert post(port, label(iid, kind="decision", acceptance="withdrawn", valid_to="2027-01-01"))[0] == 200
+    assert post(port, label(iid, rule="yes", acceptance="withdrawn", valid_to="2027-01-01"))[0] == 200
+    assert post(port, label(iid, acceptance="withdrawn"))[0] == 400            # rule fields need rule = yes
     assert post(port, label(iid, origin="tool", software_agent="x 1"))[0] == 200
-    assert post(port, label(iid, instruction="yes", activate="deny", kind="instruction", applies_to="*"))[0] == 200
-    # kind changed from decision to note after acceptance was entered: kept, and recorded as such
+    assert post(port, label(iid, instruction="yes", activate="deny", applies_to="*"))[0] == 200
+    # rule changed from yes to empty after acceptance was entered: kept, and recorded as such
     assert post(port, label(iid, acceptance="withdrawn", kept=["acceptance"]))[0] == 200
     recs = saved(data)
     assert recs[-1]["kept"] == ["acceptance"] and recs[-1]["labels"]["acceptance"] == "withdrawn"
@@ -145,7 +146,7 @@ def test_accepted_proposals_are_derived_by_the_server(srv, data):
     store, port = srv
     iid = sighted(store)
     body = label(iid, origin="model", mode="exception", license_item="MIT", acceptance="pending",
-                 instruction="yes", activate="deny", kind="decision", personal_data="no", inputs="a")
+                 instruction="yes", activate="deny", rule="yes", personal_data="no", inputs="a")
     body["accepted_proposals"] = ["mandate", "export", "made-up"]
     assert post(port, body)[0] == 200
     rec = saved(data)[-1]
