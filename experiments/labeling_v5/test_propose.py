@@ -33,6 +33,16 @@ def test_status_line_in_evidence_gives_acceptance(tmp_path):
     assert propose.propose(propose.view(case, case_dir))["acceptance"]["value"] == "accepted"
 
 
+def test_rejected_status_is_rejected_not_withdrawn(tmp_path):
+    """D68: a source "Rejected" was never accepted, so it is its own state, not `withdrawn`."""
+    case, case_dir = make_case(tmp_path, {}, text="Status: Rejected\n\n" + TEXT)
+    out = propose.propose(propose.view(case, case_dir))
+    assert out["acceptance"]["value"] == "rejected"
+    assert out["normative"]["value"] == "history"
+    assert propose.status_value("REJECTED") == "rejected"
+    assert propose.status_value("Withdrawn") == "withdrawn"
+
+
 def test_view_keeps_only_bytes_path_licence_and_evidence(tmp_path):
     case, case_dir = make_case(tmp_path, {"repo": "org/repo"})
     v = propose.view(case, case_dir)
