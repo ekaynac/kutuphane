@@ -305,6 +305,30 @@ cases:
     request: {actor: user:ayse, action: read, item: i-old, want: evidence, context: {}, view: history}
     expect: {result: permit, authority: none, reasons: [], notices: []}
 
+  - name: a rejected proposal is not available for ordinary use (D68)
+    rule: [8]
+    <<: *base
+    statements:
+      - *stmts
+      - [{id: i-rej, kind: item, issuer: node:acme, issued_at: 2026-09-01T00:00:00Z,
+          body: {scope: book:ops, origin: human, rights: {license: CC-BY-4.0, personal_data: "no"}, applicability: {}}},
+         {kind: acceptance, about: i-rej, issuer: node:acme, issued_at: 2026-09-20T00:00:00Z,
+          body: {value: rejected, reason: "duplicate of an existing procedure"}}]
+    request: {actor: user:ayse, action: read, item: i-rej, want: evidence, context: {}}
+    expect: {result: deny, authority: none, reasons: [not-accepted:rejected], notices: []}
+
+  - name: a rejected proposal stays readable in the history view, without authority
+    rule: [8]
+    <<: *base
+    statements:
+      - *stmts
+      - [{id: i-rej, kind: item, issuer: node:acme, issued_at: 2026-09-01T00:00:00Z,
+          body: {scope: book:ops, origin: human, rights: {license: CC-BY-4.0, personal_data: "no"}, applicability: {}}},
+         {kind: acceptance, about: i-rej, issuer: node:acme, issued_at: 2026-09-20T00:00:00Z,
+          body: {value: rejected, reason: "duplicate of an existing procedure"}}]
+    request: {actor: user:ayse, action: read, item: i-rej, want: evidence, context: {}, view: history}
+    expect: {result: permit, authority: none, reasons: [], notices: []}
+
   # --- §5 personal data: synthetic data needs no legal basis, but only from a trusted issuer -----------------
   - name: synthetic personal data from a trusted issuer is forwarded without a legal basis
     rule: [3]
