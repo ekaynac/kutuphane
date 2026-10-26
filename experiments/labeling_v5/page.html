@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Labelling v5</title>
+<style>
+  :root { --fg:#1d1d1f; --muted:#6e6e73; --line:#d2d2d7; --bg:#f5f5f7; --accent:#0a66c2; --soft:#e8f0fb; --warn:#b3261e; --ok:#1b7f3b; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:16px/1.45 system-ui, sans-serif; color:var(--fg); background:var(--bg); }
+  header { position:sticky; top:0; background:#fff; border-bottom:1px solid var(--line); padding:8px 12px; z-index:2; }
+  header button { margin:2px 4px 2px 0; padding:8px 12px; font:inherit; border-radius:8px; border:1px solid var(--line); background:#fff; }
+  header button.on { border-color:var(--accent); background:var(--soft); }
+  #progress { color:var(--muted); font-size:13px; margin-top:4px; }
+  main { max-width:860px; margin:0 auto; padding:12px; display:grid; gap:12px; padding-bottom:100px; }
+  section { background:#fff; border:1px solid var(--line); border-radius:10px; padding:14px; min-width:0; scroll-margin-top:90px; }
+  section:empty { display:none; }
+  .banner { background:#fff6e5; border:1px solid #f0c36d; border-radius:8px; padding:8px 10px; font-size:14px; margin-bottom:6px; }
+  .danger { background:#fdecea; border-color:#f2b8b5; color:var(--warn); font-weight:600; }
+  .about { font-size:18px; }
+  .about b { color:var(--accent); }
+  .why-sel { margin-top:4px; }
+  .meta { color:var(--muted); font-size:13px; word-break:break-word; }
+  h2 { font-size:16px; margin:0 0 6px; word-break:break-all; }
+  h3 { font-size:15px; margin:12px 0 4px; }
+  .tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px; }
+  .tab { padding:6px 10px; border:1px solid var(--line); border-radius:8px; background:#fff; font:inherit; font-size:14px; cursor:pointer; }
+  .tab.on { border-color:var(--accent); background:var(--soft); }
+  pre { white-space:pre-wrap; word-break:break-word; max-height:50vh; overflow:auto; background:#f5f5f7; padding:10px;
+        border-radius:8px; font-size:13px; margin:6px 0 0; }
+  dl { margin:0; display:grid; grid-template-columns:minmax(90px, max-content) 1fr; gap:4px 10px; font-size:14px; }
+  dt { color:var(--muted); word-break:break-word; }
+  dd { margin:0; min-width:0; word-break:break-word; }
+  ol.ev { margin:0; padding-left:20px; font-size:14px; }
+  ol.ev > li { margin-bottom:6px; }
+  .stmt { border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin-top:6px; }
+  .q h3 { font-size:18px; margin:0 0 2px; }
+  .q .why { color:var(--muted); font-size:14px; margin:0 0 8px; }
+  .opts { display:grid; gap:8px; }
+  .opt { text-align:left; padding:12px 14px; border:1px solid var(--line); border-radius:10px; background:#fff; font:inherit; font-size:17px; cursor:pointer; }
+  .opt b { display:block; }
+  .opt span { color:var(--muted); font-size:13px; }
+  .opt.on { border-color:var(--accent); background:var(--soft); box-shadow: inset 0 0 0 1px var(--accent); }
+  .opt.first { outline:2px dashed var(--muted); outline-offset:2px; }
+  .field { margin-top:12px; }
+  .field label { display:block; font-weight:600; margin-bottom:3px; }
+  input[type=text], textarea { width:100%; font:inherit; padding:9px; border:1px solid var(--line); border-radius:8px; }
+  .reveal { margin-top:14px; border-top:1px solid var(--line); padding-top:10px; }
+  .sugg { padding:6px 0; border-bottom:1px dashed var(--line); font-size:14px; }
+  .sugg .from { font-weight:600; }
+  .sugg.agree .from { color:var(--ok); }
+  .sugg.differ .from { color:#8a5a00; }
+  .actions { position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid var(--line); padding:10px 12px;
+             display:flex; gap:8px; align-items:center; justify-content:center; flex-wrap:wrap; z-index:3; }
+  .actions button { font:inherit; font-size:17px; padding:12px 18px; border-radius:10px; border:1px solid var(--line); background:#fff; }
+  .actions .primary { background:var(--accent); color:#fff; border-color:var(--accent); min-width:200px; }
+  #msg { font-size:14px; }
+  .err { color:var(--warn); }
+  .ok { color:var(--ok); }
+</style>
+</head>
+<body>
+<header>
+  <div id="sets"></div>
+  <div id="progress">Choose a set to start.</div>
+</header>
+<main>
+  <div id="banner"></div>
+  <section id="about"></section>
+  <section id="doc"><div class="meta">Choose a set above.</div></section>
+  <section id="evidence"></section>
+  <section id="questions"></section>
+</main>
+<div class="actions">
+  <button id="back" type="button">Back</button>
+  <button class="primary" id="save" type="button">Save my answer</button>
+  <button id="skip" type="button">Skip</button>
+  <span id="msg"></span>
+</div>
+<script>
+"use strict";
+// Labelling v5 (docs/20 §4, D67): whole cases in fixed, mixed batches of 10. The document comes first, then the
+// evidence, then ONE question. Human cases: the person judges first; only after the server stores that choice does it
+// return the rule and Qwen suggestions; the person then confirms or changes (a revision). Scenarios: no suggestions.
+const SETS = { human: "Human cases", scenario: "Scenarios" };
+const OPERATIONS = { search: "search", "model-answer": "model answer", export: "export", activate: "agent activation",
+                     authority: "is this the current rule" };
+const QUESTIONS = {
+  "review-evidence": {
+    title: "Did a named person review the content in substance?",
+    why: "Look at the PR reviews, the review comments and the diff. An approval or a merge alone is not a review in substance. An assigned reviewer is not a completed review.",
+    options: [["substantive", "Yes, in substance", "A named person commented on, questioned or changed the content."],
+              ["approval-only", "Only approved or merged", "An approval, a merge or a bot, with no sign that someone read the content."],
+              ["unknown", "Insufficient evidence", "The evidence does not show it either way."]],
+    texts: [["reviewed_by", "Who? (name or account)", "Required for “Yes, in substance”.", (v) => v.review === "substantive" || v.review === "approval-only"]] },
+  "instruction-safety": {
+    title: "Activation risk: what happens if an agent follows this?",
+    why: "This is an annotation, not an authorization. Never run the files.",
+    options: [["safe", "Safe", "It does what it says, with no risky actions."],
+              ["risky", "Risky", "Broad permissions, network or shell use, or unclear side effects."],
+              ["harmful", "Harmful", "Hidden instructions, data theft, sabotage or deception."],
+              ["unknown", "Insufficient evidence", "I cannot tell from the package."]],
+    texts: [] },
+  "normative-meaning": {
+    title: "What is this text?",
+    why: "As the text and its context show. A publication date is not a validity date.",
+    options: [["binding", "A binding rule", "People must follow it (a policy, a procedure, an accepted decision)."],
+              ["advice", "Advice", "A recommendation, a guide or a best practice."],
+              ["history", "History", "Replaced, obsolete, or only a record of the past."],
+              ["unknown", "Insufficient evidence", "I cannot tell."]],
+    texts: [["scope", "Scope (optional)", "Who or what does it apply to?", () => true]] },
+  "personal-data": {
+    title: "Does it identify a real person?",
+    why: "A name with context, an e-mail, a phone number, an address, an ID number. A famous name in a made-up story is not a real person's data.",
+    options: [["yes", "A real person", "It identifies, or can identify, a real person."],
+              ["synthetic", "Synthetic", "It looks personal, but it is made up (test or example data)."],
+              ["no", "None", "No personal data."],
+              ["unknown", "Insufficient evidence", "I cannot tell if the person is real."]],
+    texts: [] },
+};
+const SCENARIO = {
+  title: "What should happen?",
+  why: "Read the files, the statements, the policy, the trust and the request. Answer from the written spec, not from a tool.",
+  options: [["permit", "Permit", "The request goes ahead."], ["deny", "Deny", "The request is refused."],
+            ["escalate", "Escalate", "A person must decide."]],
+};
+const FIELD_NAMES = { review: "Review", reviewed_by: "Reviewer", origin: "Origin", activation_risk: "Activation risk",
+                      instruction: "Agent instructions", hostile: "Hostile", normative: "Meaning", scope: "Scope",
+                      acceptance: "Source status", personal_data: "Personal data" };
+
+let set = null, batches = [], bi = 0, pos = 0, current = null, values = {}, started = 0, revealed = 0, tab = 0;
+let busy = false, generation = 0;  // one save or move at a time; a stale reply never moves the cursor
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, attrs = {}, text) => { const e = document.createElement(tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (text != null) e.textContent = text; return e; };
+// The access link carries ?t=. Keep it for this tab only (some desktop browsers keep no cookie for an IP address),
+// send it as a header, and remove it from the address bar. The page itself needs no session; the /api/ calls do.
+const linkToken = new URLSearchParams(location.search).get("t");
+if (linkToken) { sessionStorage.setItem("kl5", linkToken); history.replaceState(null, "", "/"); }
+const NO_SESSION = "No session: open the link from Telegram again.";
+async function api(path, opts = {}) {
+  const headers = { ...(opts.headers || {}) }, t = sessionStorage.getItem("kl5");
+  if (t) headers["X-Label-Token"] = t;
+  const r = await fetch(path, { ...opts, headers, credentials: "same-origin" });
+  if (r.status === 401) { fail(NO_SESSION); throw new Error(NO_SESSION); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.status); return j;
+}
+function clear() { for (const id of ["banner", "about", "evidence", "questions"]) $(id).replaceChildren(); }
+function fail(message) { clear(); $("doc").replaceChildren(el("div", { class: "err" }, message)); current = null; updateButtons(); }
+function say(text, cls) { $("msg").className = cls || ""; $("msg").textContent = text; }
+
+async function loadState() {
+  const s = await api("/api/state");
+  const box = $("sets"); box.replaceChildren();
+  for (const [k, v] of Object.entries(s.sets)) {
+    const b = el("button", { type: "button", class: k === set ? "on" : "" }, `${SETS[k] || k}  ${v.done}/${v.total}`);
+    b.onclick = () => guard(() => openSet(k)); box.append(b);
+  }
+}
+const isDone = (c) => c.status === "done";
+async function openSet(s) {
+  set = s; batches = (await api(`/api/batches?set=${s}`)).batches;
+  bi = Math.max(0, batches.findIndex((b) => b.some((c) => !isDone(c))));
+  pos = Math.max(0, (batches[bi] || []).findIndex((c) => !isDone(c)));
+  await loadState(); await show();
+}
+async function refreshBatches() { batches = (await api(`/api/batches?set=${set}`)).batches; }
+
+async function show() {
+  say("");
+  const batch = batches[bi] || [];
+  if (!batch.length) { clear(); current = null; $("doc").replaceChildren(el("div", { class: "meta" }, "No cases in this set yet.")); updateButtons(); return; }
+  if (pos >= batch.length) return batchEnd();
+  current = await api(`/api/case/${encodeURIComponent(batch[pos].id)}`); started = Date.now(); revealed = Date.now(); tab = 0;
+  const c = current.case;
+  values = { ...(current.latest || {}) };
+  $("progress").textContent = `${SETS[set]} · batch ${bi + 1} of ${batches.length} · case ${pos + 1} of ${batch.length}` +
+    ` · ${batch.filter(isDone).length} done in this batch`;
+  const banner = $("banner"); banner.replaceChildren();
+  if (c.group === "instruction-safety" || c.operation === "activate") banner.append(el("div", { class: "banner danger" }, "Data only. Never run these files."));
+  if (current.hidden_chars) banner.append(el("div", { class: "banner danger" }, `${current.hidden_chars} hidden characters, shown as ⟦U+…⟧ in the text.`));
+  const about = $("about"); about.replaceChildren();
+  const line = el("div", { class: "about" }, "This case is about: "); line.append(el("b", {}, OPERATIONS[c.operation] || c.operation || "—")); about.append(line);
+  if (c.title) about.append(el("h2", { style: "margin-top:6px" }, c.title));
+  if (c.why_selected) about.append(el("div", { class: "why-sel" }, `Why it was selected: ${c.why_selected}`));
+  about.append(el("div", { class: "meta" }, [c.source, c.family, c.group, (c.questions || []).join(" ")].filter(Boolean).join(" · ")));
+  renderDoc(); renderEvidence(); render();
+  window.scrollTo(0, 0);
+}
+
+function batchEnd() {
+  clear(); current = null; updateButtons();
+  const d = $("doc"); d.replaceChildren(el("h2", {}, `Batch ${bi + 1} is finished.`));
+  const left = (batches[bi] || []).filter((c) => !isDone(c)).length;
+  if (left) d.append(el("div", { class: "meta" }, `${left} skipped case(s) in this batch are still open. Use Back to return to them.`));
+  if (bi + 1 < batches.length) {
+    const b = el("button", { type: "button", class: "opt" }, "Next batch");
+    b.onclick = () => guard(async () => { bi++; pos = 0; await show(); }); d.append(b);
+  } else d.append(el("div", { class: "meta" }, "This was the last batch."));
+  $("progress").textContent = `${SETS[set]} · batch ${bi + 1} of ${batches.length}`;
+}
+
+function renderDoc() {
+  const d = $("doc"); d.replaceChildren();
+  const files = current.files || [];
+  if (!files.length) { d.append(el("div", { class: "meta" }, "This case has no files.")); return; }
+  if (files.length > 1) {
+    const tabs = el("div", { class: "tabs" });
+    files.forEach((f, i) => {
+      const b = el("button", { type: "button", class: "tab" + (i === tab ? " on" : "") }, `${f.role ? f.role + " · " : ""}${f.path || "file " + (i + 1)}`);
+      b.onclick = () => { tab = i; renderDoc(); }; tabs.append(b);
+    });
+    d.append(tabs);
+  }
+  const f = files[tab];
+  d.append(el("h2", {}, f.path || "(no path)"));
+  const ref = f.ref ? [f.ref.repo, f.ref.commit && f.ref.commit.slice(0, 12), f.ref.path].filter(Boolean).join(" @ ") : "";
+  d.append(el("div", { class: "meta" }, [`licence: ${f.license_item || "unknown"}`, f.bytes != null ? `${f.bytes} bytes` : "", ref,
+                                        f.sha256 ? `sha256 ${f.sha256.slice(0, 16)}…` : ""].filter(Boolean).join(" · ")));
+  if (f.url && /^https?:\/\//.test(f.url)) {
+    const a = el("a", { href: f.url, target: "_blank", rel: "noopener noreferrer", class: "meta" }, f.url); d.append(a);
+  }
+  if (f.text != null) d.append(el("pre", {}, f.text));
+  if (f.note) d.append(el("div", { class: "meta" }, f.note));
+  if (f.redistribute === false) d.append(el("div", { class: "meta" }, "Local copy only: the public set keeps the reference and hash, not this text."));
+  if (isHuman() && !current.first) d.append(el("div", { class: "meta" }, "The source path and link show after your first answer."));
+}
+
+function renderValue(v) {
+  if (v == null || v === "") return el("span", { class: "meta" }, "—");
+  if (typeof v === "string") return v.includes("\n") || v.length > 240 ? el("pre", {}, v) : el("span", {}, v);
+  if (typeof v !== "object") return el("span", {}, String(v));
+  if (Array.isArray(v)) {
+    if (!v.length) return el("span", { class: "meta" }, "(none)");
+    if (v.every((x) => x == null || typeof x !== "object") && v.join(", ").length < 300) return el("span", {}, v.join(", "));
+    const ol = el("ol", { class: "ev" }); for (const x of v) { const li = el("li"); li.append(renderValue(x)); ol.append(li); } return ol;
+  }
+  const dl = el("dl");
+  for (const [k, x] of Object.entries(v)) { dl.append(el("dt", {}, k)); const dd = el("dd"); dd.append(renderValue(x)); dl.append(dd); }
+  return dl;
+}
+
+function renderEvidence() {
+  const box = $("evidence"); box.replaceChildren();
+  const c = current.case, ev = { ...(c.evidence || {}) };
+  for (const k of ["request", "policy", "trust", "evaluation_time"]) if (c[k] != null && ev[k] == null) ev[k] = c[k];
+  const order = ["request", "policy", "trust", "evaluation_time"].filter((k) => k in ev).concat(Object.keys(ev).filter((k) => !["request", "policy", "trust", "evaluation_time"].includes(k)));
+  if (order.length) box.append(el("h2", {}, "Evidence"));
+  for (const k of order) { box.append(el("h3", {}, k.replaceAll("_", " "))); box.append(renderValue(ev[k])); }
+  const st = c.statements || [];
+  if (st.length) {
+    box.append(el("h2", { style: "margin-top:14px" }, `Statements (${st.length})`));
+    for (const s of st) {
+      const card = el("div", { class: "stmt" });
+      card.append(el("div", {}, [s.kind, s.issuer && `by ${s.issuer}`, s.issued_at && `at ${s.issued_at}`].filter(Boolean).join(" · ")));
+      const rest = Object.fromEntries(Object.entries(s).filter(([k]) => !["kind", "issuer", "issued_at"].includes(k)));
+      card.append(renderValue(rest)); box.append(card);
+    }
+  }
+}
+
+const isHuman = () => current && current.case.set === "human";
+const phase = () => !current ? null : !isHuman() ? "answer" : current.first ? "reveal" : "judge";
+const spec = () => isHuman() ? QUESTIONS[current.question.group] : SCENARIO;
+const mainField = () => isHuman() ? current.question.field : "decision";
+function textFields() {
+  if (!isHuman()) return [["reason", "Reason (required)", "One or two sentences: why.", () => true, "input"],
+                          ["notices", "Expected notices (optional)", "For example: stale status, authority removed.", () => true, "input"],
+                          ["note", "Note (optional)", "", () => true, "area"]];
+  return [...spec().texts.map((t) => [...t, "input"]),
+          ["evidence_pointer", "Evidence pointer (optional)", "A line number or a short quote.", () => true, "input"],
+          ["note", "Note (optional)", "", () => true, "area"]];
+}
+
+function render() {
+  const box = $("questions"); box.replaceChildren();
+  const q = spec(), field = mainField(), first = current.first || {};
+  const div = el("div", { class: "q" });
+  div.append(el("h3", {}, q.title)); div.append(el("div", { class: "why" }, q.why));
+  const opts = el("div", { class: "opts" });
+  for (const [v, label, help] of q.options) {
+    const b = el("button", { type: "button", class: "opt" + (values[field] === v ? " on" : "") + (phase() === "reveal" && first[field] === v ? " first" : ""), "data-value": v });
+    b.append(el("b", {}, label)); if (help) b.append(el("span", {}, help));
+    b.onclick = () => { values[field] = v; render(); };
+    opts.append(b);
+  }
+  div.append(opts);
+  for (const [name, label, hint, when, kind] of textFields()) {
+    if (!when(values)) continue;
+    const f = el("div", { class: "field" }); f.append(el("label", { for: `f-${name}` }, label));
+    const input = kind === "area" ? el("textarea", { rows: "2", id: `f-${name}` }) : el("input", { type: "text", id: `f-${name}`, placeholder: hint });
+    input.value = values[name] ?? ""; input.oninput = () => { values[name] = input.value; updateButtons(); };
+    f.append(input); div.append(f);
+  }
+  box.append(div);
+  if (phase() === "reveal") box.append(renderReveal());
+  updateButtons();
+}
+
+function optionLabel(field, value) {
+  const q = spec(), hit = field === mainField() && q.options.find(([v]) => v === value);
+  return hit ? `${hit[1]} (${value})` : String(value);
+}
+function renderReveal() {
+  const r = el("div", { class: "reveal" }), field = mainField();
+  r.append(el("h3", {}, `Your first answer is saved: ${optionLabel(field, current.first[field])}`));
+  r.append(el("div", { class: "meta" }, "Now see the suggestions. Confirm your answer, or change it. Your first answer stays recorded."));
+  const items = (current.suggestions && current.suggestions.items) || [];
+  if (!items.length) r.append(el("div", { class: "sugg" }, "No suggestions for this case."));
+  for (const s of items) {
+    const main = s.field === field, cls = main ? (s.value === current.first[field] ? " agree" : " differ") : "";
+    const row = el("div", { class: "sugg" + cls });
+    row.append(el("span", { class: "from" }, `${s.from}${s.confidence ? " (" + s.confidence + ")" : ""} · ${FIELD_NAMES[s.field] || s.field}: `));
+    row.append(el("span", {}, optionLabel(s.field, s.value)));
+    if (s.evidence) row.append(el("div", { class: "meta" }, String(s.evidence)));
+    r.append(row);
+  }
+  return r;
+}
+
+function collect() {
+  const answer = {}, field = mainField();
+  if (values[field]) answer[field] = values[field];
+  for (const [name, , , when] of textFields()) if (when(values) && (values[name] ?? "").trim()) answer[name] = values[name].trim();
+  if (!answer[field]) throw new Error("Please choose an answer.");
+  if (answer.review === "substantive" && !answer.reviewed_by) throw new Error("Please write who reviewed it.");
+  if (!isHuman() && !answer.reason) throw new Error("Please write a short reason.");
+  return answer;
+}
+const same = (a, b) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort());
+
+function updateButtons() {
+  const p = phase(), save = $("save");
+  save.disabled = busy || !p;
+  save.textContent = p === "judge" ? "Save my answer" : p === "reveal" ? (current.first && (() => { try { return same(collect(), current.first); } catch (e) { return false; } })() ? "Confirm & next" : "Save change & next") : "Save & next";
+  $("back").disabled = busy || !set || (pos === 0);
+  $("skip").disabled = busy || !current;
+  for (const b of $("sets").querySelectorAll("button")) b.disabled = busy;
+}
+async function guard(fn) {
+  if (busy) return; busy = true; generation++; updateButtons();
+  try { await fn(); } catch (e) { say(e.message, "err"); } finally { busy = false; updateButtons(); }
+}
+
+$("save").onclick = async () => {
+  if (busy || !current) return;
+  let answer;
+  try { answer = collect(); } catch (e) { say(e.message, "err"); return; }
+  const p = phase(), stage = p === "judge" ? "first" : p === "reveal" ? "revision" : "answer";
+  const ms = Date.now() - (stage === "revision" ? revealed : started);
+  const gen = ++generation, id = current.case.id;
+  busy = true; updateButtons();
+  try {
+    const r = await api("/api/label", { method: "POST", headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({ id, stage, answer, ms }) });
+    if (gen !== generation || !current || id !== current.case.id) return;
+    if (stage === "first") {  // judge first, then reveal (D67)
+      current.first = answer; current.latest = answer; current.suggestions = r.suggestions; revealed = Date.now();
+      try { current.files = (await api(`/api/case/${encodeURIComponent(id)}`)).files; renderDoc(); } catch (e) { /* the refs stay hidden */ }
+      busy = false; render(); say("Saved. Now see the suggestions below.", "ok");
+      const panel = $("questions").querySelector(".reveal"); if (panel) panel.scrollIntoView({ block: "center" });
+      return;
+    }
+    await refreshBatches(); await loadState(); generation++; pos++; await show(); say("Saved", "ok");
+  } catch (e) { say(e.message, "err"); }
+  finally { busy = false; updateButtons(); }
+};
+$("skip").onclick = () => guard(async () => { pos++; await show(); });
+$("back").onclick = () => guard(async () => { if (pos > 0) pos--; await show(); });
+document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); $("save").click(); } });
+updateButtons();
+loadState().catch((e) => fail(e.message));
+</script>
+</body>
+</html>
