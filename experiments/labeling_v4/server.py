@@ -187,9 +187,13 @@ def make_handler(store: Store, token: str, page: bytes):
             sys.stderr.write(f"{self.log_date_time_string()} {self.command} {urlparse(self.path).path} -> {args[1] if len(args) > 1 else ''}\n")
 
         def authed(self) -> bool:
+            """The session cookie, or the X-Label-Token header that the page sends when a browser keeps no
+            cookie for this address (seen on a desktop browser, 2026-10-26)."""
             jar = SimpleCookie(self.headers.get("Cookie", ""))
-            got = jar[COOKIE].value if COOKIE in jar else ""
-            return bool(got) and hmac.compare_digest(got, token)
+            for got in (jar[COOKIE].value if COOKIE in jar else "", self.headers.get("X-Label-Token", "")):
+                if got and hmac.compare_digest(got, token):
+                    return True
+            return False
 
         def send(self, status, body: bytes, ctype="application/json; charset=utf-8", extra=None):
             self.send_response(status)
@@ -210,11 +214,12 @@ def make_handler(store: Store, token: str, page: bytes):
             if url.path == "/":
                 t = parse_qs(url.query).get("t", [""])[0]
                 if t and hmac.compare_digest(t, token):
-                    # Lax, not Strict: a link opened from Telegram is a cross-site navigation, and the browser would
-                    # not send a Strict cookie on the redirect to "/" (the page then asks for the link again).
-                    # Lax still blocks the cookie on cross-site POSTs, so /api/label cannot be forged from elsewhere.
+                    # The page is served directly (no redirect): a browser that drops a cookie set on a redirect
+                    # after a cross-site navigation still gets the page; the page removes the token from the
+                    # address bar. Lax (not Strict) so later navigations to "/" carry the cookie; Lax still
+                    # withholds it on cross-site POSTs, so /api/label cannot be forged from elsewhere.
                     cookie = f"{COOKIE}={token}; Max-Age={COOKIE_MAX_AGE}; Path=/; HttpOnly; SameSite=Lax"
-                    return self.send(HTTPStatus.SEE_OTHER, b"", "text/plain", {"Set-Cookie": cookie, "Location": "/"})
+                    return self.send(HTTPStatus.OK, page, "text/html; charset=utf-8", {"Set-Cookie": cookie})
                 if not self.authed():
                     return self.send(HTTPStatus.UNAUTHORIZED, b"Use the access link (.../?t=...).", "text/plain")
                 return self.send(HTTPStatus.OK, page, "text/html; charset=utf-8")
