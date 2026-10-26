@@ -134,6 +134,20 @@ def p(value, confidence, evidence):
 UNDER_TEST = "LicenseRef-under-test"
 
 
+def case_file(case_dir: Path, f: dict) -> Path | None:
+    """The copied file of a case entry, or None. Astra review #12: only `copy: true` entries, and only a relative
+    `local_path` without `..` whose resolved target (symlinks followed) is a regular file inside the case folder."""
+    local = f.get("local_path")
+    if f.get("copy") is not True or not isinstance(local, str) or not local:
+        return None
+    rel = PurePosixPath(local)
+    if rel.is_absolute() or Path(local).is_absolute() or ".." in rel.parts:
+        return None
+    folder = case_dir.resolve()
+    path = (folder / rel).resolve()
+    return path if path.is_relative_to(folder) and path.is_file() else None
+
+
 def view(case: dict, case_dir: Path, baseline: bool = False, declared_licence: bool = True) -> dict:
     """The proposer input. Copies ONLY file bytes, path, role, declared licence and `evidence` out of the case;
     every other key (statements, why_selected, questions, group, gold, copy, local_path) stays behind. `baseline`
@@ -142,8 +156,9 @@ def view(case: dict, case_dir: Path, baseline: bool = False, declared_licence: b
     files = []
     for f in case.get("files") or []:
         text = None
-        if not baseline and f.get("local_path"):
-            data = (case_dir / f["local_path"]).read_bytes()
+        path = None if baseline else case_file(case_dir, f)
+        if path:
+            data = path.read_bytes()
             text = None if b"\0" in data[:8192] else data.decode("utf-8", "replace")
         declared = f.get("license_item") if declared_licence and f.get("license_item") != UNDER_TEST else None
         files.append({"path": f.get("path") or f.get("local_path") or "", "role": f.get("role") or "main",

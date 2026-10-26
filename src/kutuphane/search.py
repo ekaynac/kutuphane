@@ -53,6 +53,7 @@ class Hit:
     text: str
     score: float
     line: int | None = None  # text files: the line the passage starts on (JSONL: the record's line)
+    instruction: bool = False  # an instruction chunk: agents need `activate` for it too
 
 
 # The pre-filter, written once and used by both rankings: current version and profile of books readable now;
@@ -165,22 +166,52 @@ class SearchChanged(gate.Denied):
     """Rights changed while the search ran, twice in a row; the caller should retry."""
 
 
-def _needs(actor: Actor, rows) -> dict:
-    """Modes each book in the result needs: read, plus activate for agents receiving instruction chunks."""
+def _needs(actor: Actor, passages) -> dict:
+    """Modes each book needs for these (book, instruction) passages: read, plus activate for agents receiving
+    instruction chunks."""
     needs = {}
-    for r in rows:
-        needs.setdefault(f"book:{r[0]}", set()).update(gate.modes_for(actor, r[9]))
+    for book, instruction in passages:
+        needs.setdefault(f"book:{book}", set()).update(gate.modes_for(actor, instruction))
     return needs
+
+
+def _modes(actor: Actor) -> list[str]:
+    return ["read", "activate"] if actor.principal.startswith("agent:") else ["read"]
+
+
+def _lost(conn, actor: Actor, needs: dict, final: authz.Allowed) -> set[str]:
+    """The books in `needs` that lack a needed mode in `final`; each loss is logged."""
+    lost = {o for o, ms in needs.items() if not ms <= set(final.decisions.get(o, {}))}
+    for obj in sorted(lost):
+        gate.log_event(conn, actor, "search", obj, "read", authz.Decision(False, "changed during search"),
+                       final.policies.get(obj), None, None)
+    return lost
+
+
+def check_query(query) -> None:
+    """The query limits, checked before anything else uses the query: embedding, the query cache, the search."""
+    if not isinstance(query, str) or not query.strip() or len(query) > MAX_QUERY_CHARS:
+        raise ValueError(f"query must be 1..{MAX_QUERY_CHARS} characters")
+
+
+def authorize(conn, actor: Actor, hits: list[Hit]) -> list[Hit]:
+    """The hits the caller may receive now, decided in ONE statement for the whole list. A pool merged from two
+    searches (retrieval, G19) has no common linearization point otherwise: rights may change between the searches
+    (Astra review #12). A passage of a book that lost a needed mode is dropped; the loss is logged."""
+    needs = _needs(actor, ((h.citation.book, h.instruction) for h in hits))
+    if not needs:
+        return []
+    lost = _lost(conn, actor, needs, authz.allowed(conn, actor.principal, actor.on_behalf_of, _modes(actor)))
+    return [h for h in hits if f"book:{h.citation.book}" not in lost]
 
 
 def search(conn, actor: Actor, query: str, k: int = DEFAULT_K, attempts: int = 2,
            vector: QueryVector | None = None, scope: Scope = Scope()) -> list[Hit]:
-    if not isinstance(query, str) or not query.strip() or len(query) > MAX_QUERY_CHARS:
-        raise ValueError(f"query must be 1..{MAX_QUERY_CHARS} characters")
+    check_query(query)
     if not 1 <= k <= MAX_K:
         raise ValueError(f"k must be 1..{MAX_K}")
     agent = actor.principal.startswith("agent:")
-    modes = ["read", "activate"] if agent else ["read"]
+    modes = _modes(actor)
     for _ in range(attempts):
         pre = authz.allowed(conn, actor.principal, actor.on_behalf_of, modes)
         read = pre.objects("read")
@@ -196,16 +227,12 @@ def search(conn, actor: Actor, query: str, k: int = DEFAULT_K, attempts: int = 2
                                       "qv": vector.literal() if vector else None,
                                       "model": vector.model if vector else None,
                                       "prefix": scope.path, "files": files}).fetchall()
-        needs = _needs(actor, rows)
+        needs = _needs(actor, ((r[0], r[9]) for r in rows))
         # One final statement for the whole result set: the request's single linearization point.
         final = authz.allowed(conn, actor.principal, actor.on_behalf_of, modes)
-        lost = {o for o, ms in needs.items() if not ms <= set(final.decisions.get(o, {}))}
-        if lost:
-            for obj in sorted(lost):
-                gate.log_event(conn, actor, "search", obj, "read", authz.Decision(False, "changed during search"),
-                               final.policies.get(obj), None, None)
+        if _lost(conn, actor, needs, final):
             continue  # search again with the rights as they are now, so revoked books never consume `k`
-        hits = [Hit(Citation(*r[:5]), r[5], r[6], r[7], r[8], float(r[10]), r[11]) for r in rows]
+        hits = [Hit(Citation(*r[:5]), r[5], r[6], r[7], r[8], float(r[10]), r[11], r[9]) for r in rows]
         for obj, ms in needs.items():
             book = obj.removeprefix("book:")
             mine = [h for h in hits if h.citation.book == book]
@@ -228,7 +255,7 @@ def open_citation(conn, actor: Actor, citation: Citation) -> Hit:
     def fetch():
         if row is None:
             raise NotFound(citation.handle)
-        return Hit(citation, row[0], row[1], row[2], row[3], 0.0, row[5])
+        return Hit(citation, row[0], row[1], row[2], row[3], 0.0, row[5], bool(row[4]))
     return gate.guard(conn, actor, f"book:{citation.book}", modes, fetch, action="cite",
                       content_id=citation.content_id, path=citation.path, profile_id=citation.profile_id,
                       items=[citation.handle])

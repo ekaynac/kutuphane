@@ -126,13 +126,19 @@ and `ask_library`):
   cannot read gives the same empty result as a book that does not exist.
 - **Answers** are in the language of the question (Turkish or English; G20) and short (about 150 words). Each
   passage goes to the answer model by its first 2,400 characters; the stored sources and the citations keep the
-  whole passage (G26). A reference can name one or more passages: `[2]`, `[2,3]`, `[2-4]` (G21). Every number is
-  checked; one unknown number refuses the answer.
+  whole passage (G26). A reference can name one or more passages: `[2]`, `[2,3]`, `[2-4]`, `[2–4]` (G21). Every
+  number is checked before a range is expanded; one unknown number or one malformed group (`[1-2-3]`) refuses the
+  answer.
 - **Two languages (G19).** When the passages found are in Turkish and in English, the answer model translates the
   question (`KUTUPHANE_ANSWER_MODEL` on `KUTUPHANE_LLMDAP_ROUTE`; `ask --model`). Only the question goes to the
-  model. A second search runs with the translation, and each passage is reranked against the question in its own
+  model. A second search runs with the translation, the merged passages are authorized again in one statement (a
+  book the caller lost meanwhile drops out), and each passage is reranked against the question in its own
   language. Without a translation, up to 2 passages in the other language from the hybrid top 8 keep a place.
 - **Recent things (G22).** A question with "recent", "latest", "son", "en yeni" and similar words ranks the 16 most
   relevant passages by relevance rank + date rank. The date is the kstd `valid_from`, else the first date or ISO week
-  in the path (`brief-2026-W40.json`), else the first date in the passage (a record date such as `classified_at`).
-- Query vectors are kept in memory per process (256 queries), so a repeated query needs no embedding call (G26).
+  in the path (`brief-2026-W40.json`), else the `classified_at` field of a JSONL record. A date elsewhere in the
+  text is never used, and a date later than tomorrow is ignored.
+- kstd `valid_from`/`valid_to` keep their time: `2026-10-27T23:59:00Z` is not current at noon that day; a date alone
+  means 00:00 UTC.
+- A question or query is at most 1,000 characters; it is checked before it is embedded. Query vectors are kept in
+  memory per process (256 queries, 4 MiB at most), so a repeated query needs no embedding call (G26).

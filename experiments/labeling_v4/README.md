@@ -14,4 +14,4 @@ python -I server.py --data ../../research/labelling-v4 --host <tailnet-ip> --por
 # open http://<ip>:8791/?t=<research/labelling-v4/token>
 ```
 
-The page uses plain HTTP only on loopback or the tailnet. The token is exchanged for an HttpOnly cookie; the page also keeps it for the tab and sends it as `X-Label-Token`. `/` is a static shell; every `/api/` route needs the cookie or the header, and a label POST must be JSON from the server's own origin. Fetched files are shown as text and never run. Tests: `python -m pytest experiments/labeling_v4/test_server.py`.
+The page uses plain HTTP only on loopback or the tailnet. The page keeps the token for the tab and sends it as `X-Label-Token`, the only credential (no cookie: a cookie is sent to every port of the host, Astra review #12). `/` is a static shell; every `/api/` route needs the header, and a label POST must be JSON from the server's own origin. Fetched files are shown as text and never run. Tests: `python -m pytest experiments/labeling_v4/test_server.py`.

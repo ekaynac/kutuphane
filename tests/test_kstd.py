@@ -318,3 +318,24 @@ def test_reopened_answers_keep_item_information(conn, okf_dir, fake):  # Astra r
     assert out["status"] == "answered" and out["citations"][0]["item"]["license"] == "CC-BY-4.0"
     again = answers.reopen(conn, Actor(U), out["id"])
     assert again["evidence"][0]["item"]["license"] == "CC-BY-4.0"
+
+
+def test_a_validity_timestamp_keeps_its_time():  # Astra review #12: valid_from later today is not current now
+    from datetime import datetime, timedelta, timezone
+
+    from kutuphane import search
+
+    def info(valid_from):
+        doc = yaml.safe_load(f"issuer: x\nitems:\n  - path: a.md\n    valid_from: {valid_from}\n")
+        return kstd.effective(doc, "a.md")
+    later = info("2026-10-27T23:59:00Z")
+    assert later["valid_from"] == "2026-10-27T23:59:00Z"
+    assert not kstd.is_current(later, datetime(2026, 10, 27, 12, 0, tzinfo=timezone.utc))
+    assert kstd.is_current(later, datetime(2026, 10, 27, 23, 59, tzinfo=timezone.utc))
+    assert info("2026-10-27T23:59:00+03:00")["valid_from"] == "2026-10-27T20:59:00Z"    # kept as UTC
+    day = info("2026-10-27")                                                           # a date alone: 00:00 UTC
+    assert day["valid_from"] == "2026-10-27" and kstd.is_current(day, datetime(2026, 10, 27, 0, 0, tzinfo=timezone.utc))
+    assert info("2026-10-27T00:00:00Z")["valid_from"] == "2026-10-27"
+    soon = (datetime.now(timezone.utc) + timedelta(minutes=5)).replace(microsecond=0)
+    upcoming = info(soon.isoformat().replace("+00:00", "Z"))
+    assert not search.Scope(current_only=True).admits({**upcoming, "origin": "human"})

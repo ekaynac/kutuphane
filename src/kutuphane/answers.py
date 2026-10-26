@@ -16,8 +16,14 @@ from . import gate, kstd, llmdap, profiles, retrieval, search
 from .gate import Actor, Denied, NotFound
 
 NOT_IN_LIBRARY = "KÜTÜPHANEDE_YOK"
-# A reference names one or more passages: [2], [2,3,5], [2, 3] or [2-4] (also with an en dash). G21.
-CITE = re.compile(r"\[(\d{1,3}(?:\s*[,\-–]\s*\d{1,3})*)\]")
+# A reference names one or more passages (G21): [2], [2,3,5], [2, 3], [2-4] or [2–4] (en dash). The grammar of the
+# text between the brackets (Astra review #12), spaces allowed around the separators:
+#   group = item *("," item)   item = n / n ("-" / "–") n   n = 1*DIGIT (ASCII)
+# Every bracket holding only digits, spaces, commas and dashes is a reference group and must follow it, except an ISO
+# date ([2026-10-26]), which names no passage.
+REFERENCE = re.compile(r"\[([0-9 ,\-–]*[0-9][0-9 ,\-–]*)\]")
+_ITEM = re.compile(r" *([0-9]+) *(?:[-–] *([0-9]+) *)?\Z")
+_ISO_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}\Z")
 # No score threshold yet: an RRF score and a reranker score are on different scales (a reranker can return negative
 # relevance). Every retrieved passage is a candidate; the model answers KÜTÜPHANEDE_YOK when they do not support an
 # answer. AT-08 sets a threshold for the configured stage from labelled data (docs/08).
@@ -46,15 +52,26 @@ SYSTEM = {
 LABELS = {"tr": ("Soru", "Pasajlar"), "en": ("Question", "Passages"), None: ("Question", "Passages")}
 
 
-def cited_numbers(body: str) -> list[int]:
-    """Every passage number the body cites, sorted, once each. A reversed range ([4-2]) yields 0, which is never a
-    passage number, so the answer is refused like any other unknown number."""
+def cited_numbers(body: str, count: int) -> list[int] | None:
+    """Every passage number the body cites, sorted, once each; None (the answer is refused) when any reference group
+    is malformed ([1-2-3]) or names a number outside 1..count, a reversed range ([4-2]) included. Both endpoints are
+    checked before a range is expanded, so [1-100000] costs nothing; nothing here raises."""
+    width = len(str(count))
     numbers = set()
-    for group in CITE.findall(body):
-        for part in group.split(","):
-            low, _, high = part.replace("–", "-").partition("-")
-            low, high = int(low), int(high or low)
-            numbers.update(range(low, high + 1) if low <= high else [0])
+    for group in REFERENCE.findall(body):
+        if _ISO_DATE.match(group):
+            continue
+        for item in group.split(","):
+            m = _ITEM.match(item)
+            if m is None:
+                return None
+            ends = [e.lstrip("0") or "0" for e in m.groups() if e is not None]
+            if any(len(e) > width for e in ends):  # too long to be a passage number; never converted
+                return None
+            low, high = int(ends[0]), int(ends[-1])
+            if not 1 <= low <= high <= count:
+                return None
+            numbers.update(range(low, high + 1))
     return sorted(numbers)
 
 
@@ -119,8 +136,8 @@ def ask(conn, bridge: llmdap.Bridge, actor: Actor, question: str, *, model: str,
                 {"role": "user", "content": f"{q_label}: {question}\n\n{p_label}:\n{passages}"}]
     body = _content(llmdap.chat(conn, bridge, actor, model=model, messages=messages,
                                 source_books=sorted({h.citation.book for h in hits}), purpose="answer"))
-    numbers = cited_numbers(body)
-    valid = len(numbers) > 0 and all(1 <= n <= len(hits) for n in numbers)  # one bad number rejects the answer
+    numbers = cited_numbers(body, len(hits))
+    valid = bool(numbers)  # one malformed group or bad number (None) rejects the answer, as does citing nothing
     status = "answered" if valid and NOT_IN_LIBRARY not in body else "not_in_library"
     cited = [sources[n - 1] for n in numbers] if status == "answered" else []
 

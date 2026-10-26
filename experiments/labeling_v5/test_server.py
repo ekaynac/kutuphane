@@ -126,11 +126,9 @@ def test_page_shell_is_public_and_the_api_is_not(srv):
     assert call(port, "GET", "/api/batches?set=human")[0] == 401
     assert call(port, "GET", "/api/case/h-000")[0] == 401
     assert call(port, "GET", "/api/state", headers={"X-Label-Token": TOKEN})[0] == 200
-    status, headers, _ = call(port, "GET", f"/?t={TOKEN}")
-    assert status == 200 and headers["Set-Cookie"].startswith(f"kl5={TOKEN};")
-    assert "HttpOnly" in headers["Set-Cookie"] and "SameSite=Lax" in headers["Set-Cookie"]
-    assert call(port, "GET", "/api/state", headers={"Cookie": f"kl5={TOKEN}"})[0] == 200
-    assert "Set-Cookie" not in call(port, "GET", "/?t=wrong-token-0000000000")[1]
+    status, headers, body = call(port, "GET", f"/?t={TOKEN}")  # the same shell, no cookie (Astra review #12)
+    assert status == 200 and body == b"<html>shell</html>" and "Set-Cookie" not in headers
+    assert call(port, "GET", "/api/state", headers={"Cookie": f"kl5={TOKEN}"})[0] == 401
     assert call(port, "GET", "/api/state", headers={"X-Label-Token": "wrong-token-0000000000"})[0] == 401
 
 

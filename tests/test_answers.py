@@ -47,7 +47,8 @@ def test_cited_answer_is_stored_with_its_passages(conn, fake, library):
     assert report["model_calls"][0]["source_books"] == ["kitap"]
 
 
-@pytest.mark.parametrize("reply", [answers.NOT_IN_LIBRARY, "Bilmiyorum ama sanırım üç yıl.", "Bkz. [9]."])
+@pytest.mark.parametrize("reply", [answers.NOT_IN_LIBRARY, "Bilmiyorum ama sanırım üç yıl.", "Bkz. [9].",
+                                   "İki yıl [1-2-3].", "İki yıl [1] [1-100000]."])  # Astra review #12: fail closed
 def test_unsupported_answers_become_not_in_library(conn, fake, library, reply):  # AT-08 mechanism
     fake.reply = reply
     result = ask(conn, fake, Actor(U))
@@ -163,9 +164,12 @@ def test_an_unknown_number_in_a_group_rejects_the_answer(conn, fake, library, ci
     assert result["status"] == "not_in_library" and result["citations"] == []
 
 
-def test_cited_numbers():  # G21
-    assert answers.cited_numbers("a [2,3,5] b [2, 3] c [7-9] d [4] e [x] f [10–11]") == [2, 3, 4, 5, 7, 8, 9, 10, 11]
-    assert answers.cited_numbers("[3-1]") == [0] and answers.cited_numbers("[2026-10-26]") == []
+def test_cited_numbers():  # G21, Astra review #12
+    assert answers.cited_numbers("a [2,3,5] b [2, 3] c [7-9] d [4] e [x] f [10–11]", 11) == [2, 3, 4, 5, 7, 8, 9, 10, 11]
+    assert answers.cited_numbers("[2026-10-26] [1]", 8) == [1] and answers.cited_numbers("no reference", 8) == []
+    for bad in ("[3-1]", "[1-2-3]", "[1] [1-100000]", "[1,]", "[,1]", "[0]", "[9]", "[1 2]", "[1--2]", "[2026]",
+                "[1-" + "9" * 5000 + "]"):                         # never converted: too long to be a passage number
+        assert answers.cited_numbers(bad, 8) is None, bad
 
 
 @pytest.mark.parametrize("question,lang,needle,label", [
