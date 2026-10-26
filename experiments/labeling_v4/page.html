@@ -1,81 +1,111 @@
 <!doctype html>
-<html lang="tr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Etiketleme v4</title>
+<title>Labelling</title>
 <style>
-  :root { --fg:#1d1d1f; --muted:#6e6e73; --line:#d2d2d7; --bg:#fbfbfd; --accent:#0a66c2; --warn:#b3261e; --ok:#1b7f3b; }
+  :root { --fg:#1d1d1f; --muted:#6e6e73; --line:#d2d2d7; --bg:#f5f5f7; --accent:#0a66c2; --soft:#e8f0fb; --warn:#b3261e; --ok:#1b7f3b; }
   * { box-sizing: border-box; }
-  body { margin:0; font:15px/1.45 system-ui, sans-serif; color:var(--fg); background:var(--bg); }
+  body { margin:0; font:16px/1.45 system-ui, sans-serif; color:var(--fg); background:var(--bg); }
   header { position:sticky; top:0; background:#fff; border-bottom:1px solid var(--line); padding:8px 12px; z-index:2; }
-  header .strata button { margin:2px 4px 2px 0; }
-  main { max-width:1100px; margin:0 auto; padding:12px; display:grid; gap:12px; }
-  @media (min-width:900px) { main { grid-template-columns: 1.2fr 1fr; } }
-  section { background:#fff; border:1px solid var(--line); border-radius:8px; padding:12px; min-width:0; }
-  h2 { font-size:15px; margin:0 0 6px; }
-  .meta { color:var(--muted); font-size:13px; word-break:break-all; }
-  pre { white-space:pre-wrap; word-break:break-word; max-height:60vh; overflow:auto; background:#f5f5f7; padding:8px;
-        border-radius:6px; font-size:12.5px; margin:8px 0 0; }
-  .hostile { color:var(--warn); font-weight:600; }
-  label.f { display:block; margin:6px 0 2px; font-weight:600; font-size:13px; }
-  select, input[type=text], textarea { width:100%; font:inherit; padding:5px 6px; border:1px solid var(--line); border-radius:6px; }
-  .row { display:grid; grid-template-columns: repeat(3, 1fr); gap:6px; }
-  .prop { font-size:12.5px; color:var(--muted); margin-top:2px; }
-  .prop.on { color:var(--accent); }
-  .prop.kept { color:var(--warn); }
-  .prop.kept button { padding:2px 8px; font-size:12.5px; }
-  .actions { display:flex; gap:8px; margin-top:12px; position:sticky; bottom:0; background:#fff; padding:8px 0; }
-  button { font:inherit; padding:7px 12px; border:1px solid var(--line); border-radius:6px; background:#fff; }
-  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  header button { margin:2px 4px 2px 0; padding:6px 10px; }
+  #progress { color:var(--muted); font-size:13px; margin-top:4px; }
+  main { max-width:760px; margin:0 auto; padding:12px; display:grid; gap:12px; padding-bottom:90px; }
+  section { background:#fff; border:1px solid var(--line); border-radius:10px; padding:14px; min-width:0; }
+  .banner { background:#fff6e5; border:1px solid #f0c36d; border-radius:8px; padding:8px 10px; font-size:14px; }
+  .danger { background:#fdecea; border-color:#f2b8b5; color:var(--warn); font-weight:600; }
+  .q { margin:0 0 16px; }
+  .q h3 { font-size:16px; margin:0 0 2px; }
+  .q .why { color:var(--muted); font-size:13px; margin:0 0 6px; }
+  .opts { display:grid; gap:6px; }
+  .opt { text-align:left; padding:9px 12px; border:1px solid var(--line); border-radius:8px; background:#fff; font:inherit; cursor:pointer; }
+  .opt b { display:block; }
+  .opt span { color:var(--muted); font-size:13px; }
+  .opt.on { border-color:var(--accent); background:var(--soft); box-shadow: inset 0 0 0 1px var(--accent); }
+  .hint { font-size:13px; color:var(--accent); margin-top:4px; }
+  .hint.disagree { color:#8a5a00; }
+  input[type=text] { width:100%; font:inherit; padding:8px; border:1px solid var(--line); border-radius:8px; }
+  details { margin-top:6px; }
+  summary { cursor:pointer; color:var(--accent); }
+  .meta { color:var(--muted); font-size:13px; word-break:break-word; }
+  h2 { font-size:16px; margin:0 0 4px; word-break:break-all; }
+  pre { white-space:pre-wrap; word-break:break-word; max-height:70vh; overflow:auto; background:#f5f5f7; padding:10px;
+        border-radius:8px; font-size:13px; margin:8px 0 0; }
+  .actions { position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid var(--line); padding:10px 12px;
+             display:flex; gap:8px; align-items:center; justify-content:center; z-index:3; }
+  .actions button { font:inherit; padding:11px 18px; border-radius:8px; border:1px solid var(--line); background:#fff; }
+  .actions .primary { background:var(--accent); color:#fff; border-color:var(--accent); min-width:180px; }
+  #msg { font-size:14px; }
   .err { color:var(--warn); }
   .ok { color:var(--ok); }
 </style>
 </head>
 <body>
 <header>
-  <div class="strata" id="strata"></div>
-  <div class="meta" id="progress"></div>
+  <div id="strata"></div>
+  <div id="progress">Choose a group to start. Start with R (radar).</div>
 </header>
 <main>
-  <section id="view"><div class="meta">Bir katman seçin.</div></section>
-  <section>
-    <form id="form" autocomplete="off"></form>
-    <div class="actions">
-      <button class="primary" id="save" type="button">Kaydet ve sonraki</button>
-      <button id="skip" type="button">Atla</button>
-      <span id="msg"></span>
-    </div>
-  </section>
+  <div id="banner"></div>
+  <section id="questions"><div class="meta">Choose a group above.</div></section>
+  <section id="doc"></section>
 </main>
+<div class="actions">
+  <button class="primary" id="save" type="button">Save &amp; next</button>
+  <button id="skip" type="button">Skip</button>
+  <span id="msg"></span>
+</div>
 <script>
 "use strict";
-const HELP = {
-  origin: "Bu metni kim yazdı? human: bir kişi · assisted: model yazdı, adı belli bir kişi içeriği inceledi · model: model yazdı (inceleme yok ya da yalnız yazım düzeltmesi) · tool: yazılım kurallarla üretti ya da kaydetti (typedoc, log, şablon) · unknown: kanıt yok",
-  personal_data: "Gerçek bir kişiyi tanıtan bilgi var mı (ad + bağlam, e-posta, IP, telefon, kimlik no)? synthetic: kişi bilgisine benziyor ama gerçek kişi yok · unknown: emin değilim (= yes sayılır)",
-  instruction: "Bir yapay zekâ ajanı bu dosyayı talimat olarak izler mi? (SKILL.md, AGENTS.md, kurallar, komutlar)",
-  activate: "Ajan bunu çalıştırabilir mi? allow · deny (zararlı ya da riskli) · escalate (bir kişi karar versin)",
-  rule: "İsteğe bağlı. Belge, kişilerin ya da ajanların uyması gereken bir kural, karar ya da prosedür içeriyorsa 'yes' seçin; kabul, yetki ve geçerlilik alanları açılır.",
-  acceptance: "Belgenin kendi durumu: taslak = pending · onaylı = accepted · eskimiş/geri çekilmiş = withdrawn",
-  mandate: "Bu kural bağlayıcı mı (uyulmak zorunda mı)?",
-  ai_use: "Belge kendisi belirtmiyorsa boş bırakın; boş, 'n' ile aynı değildir",
-  needs_split: "İsteğe bağlı. Dosyada farklı kökenli parçalar var mı (ör. yarısı kişi, yarısı model)?",
-};
-const LABELS = { rule:"Kural / karar mı?", origin:"Köken", reviewed_by:"İnceleyen kişi", software_agent:"Yazılım + sürüm",
-  personal_data:"Kişisel veri", license_item:"Öğe lisansı", acceptance:"Kabul durumu", mandate:"Bağlayıcı mı?",
-  export:"Dışa aktarma", route:"Rota", valid_from:"Geçerlilik başlangıcı", valid_to:"Geçerlilik sonu",
-  applies_to:"Kapsam (neye/kime uygulanır)", inputs:"Kaynak öğeler (id, virgülle)", instruction:"Ajan talimatı mı?",
-  activate:"Çalıştırma izni", needs_split:"Bölünmeli mi?", note:"Not" };
-let choices = {}, ids = [], pos = 0, current = null, started = 0, stratum = null;
+// Labelling v4, easy form (operator, 2026-10-26): three questions, large buttons, the document below.
+// Suggestions are preselected: an exact rule first, else Qwen, else a weaker rule. About 30 % of the items are
+// blind (no suggestions) so that the suggestions can be measured; the server decides which.
+const GROUPS = { R: "R · radar", S: "S · synthetic", W: "W · public sets", A: "A · agent files" };
+const QUESTIONS = [
+  { name: "origin", title: "Who wrote this?", why: "Choose what the evidence shows. If you cannot tell, choose “I cannot tell”.",
+    options: [["human", "A person", "A person wrote it."],
+              ["assisted", "A model, checked by a person", "A model wrote it and a named person checked the content (not only spelling)."],
+              ["model", "A model", "A model wrote it, or nobody checked the content."],
+              ["tool", "Software, no AI", "A program made or recorded it with fixed rules: generated docs, logs, templates."],
+              ["unknown", "I cannot tell", "No reliable evidence."]] },
+  { name: "reviewed_by", title: "Who checked it?", why: "The name of the person who checked the content.", text: "Name",
+    when: () => val("origin") === "assisted" },
+  { name: "software_agent", title: "Which software?", why: "The program and its version.", text: "e.g. typedoc 0.26.11",
+    when: () => val("origin") === "tool" },
+  { name: "instruction", title: "Will an AI agent follow this as instructions?",
+    why: "For example SKILL.md, AGENTS.md, CLAUDE.md, rule files, commands.",
+    options: [["no", "No", "A normal document."], ["yes", "Yes", "An agent reads it as instructions to act on."]] },
+  { name: "activate", title: "May an agent run it?", why: "Only for agent instructions.",
+    when: () => val("instruction") === "yes",
+    options: [["allow", "Allow", "It looks safe and useful."], ["deny", "Block", "Harmful, hidden instructions, or risky."],
+              ["escalate", "A person must decide", "I am not sure."]] },
+  { name: "personal_data", title: "Does it identify a real person?",
+    why: "A name with context, an e-mail, a phone number, an IP address, an ID number.",
+    options: [["no", "No", ""], ["yes", "Yes", ""], ["synthetic", "Looks personal, but fake", "Test or example data."],
+              ["unknown", "Not sure", "Counts as yes."]] },
+  { name: "rule", title: "Is it a rule, decision or procedure that people must follow?", why: "Optional.", optional: true,
+    options: [["no", "No", ""], ["yes", "Yes", ""]] },
+  { name: "acceptance", title: "What is its status?", why: "As the document itself says.", optional: true,
+    when: () => val("rule") === "yes",
+    options: [["pending", "Draft", ""], ["accepted", "Approved", ""], ["withdrawn", "Withdrawn or replaced", ""]] },
+  { name: "mandate", title: "Is it binding?", why: "Must people follow it, or is it only advice?", optional: true,
+    when: () => val("rule") === "yes",
+    options: [["yes", "Binding", ""], ["no", "Advice only", ""]] },
+  { name: "needs_split", title: "Does it mix parts by different authors?", why: "Optional. For example, half person, half model.",
+    optional: true, options: [["no", "No", ""], ["yes", "Yes", ""]] },
+];
+const REQUIRED = ["origin", "instruction", "personal_data"];
+let ids = [], pos = 0, current = null, started = 0, stratum = null, values = {};
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, attrs = {}, text) => { const e = document.createElement(tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (text != null) e.textContent = text; return e; };
+const val = (n) => values[n] ?? "";
 // The access link carries ?t=. Keep it for this tab only (some desktop browsers keep no cookie for an IP address),
-// send it as a header, and remove it from the address bar. The page itself is served without a session, so a
-// reload works from sessionStorage alone; only the /api/ calls are authenticated.
+// send it as a header, and remove it from the address bar. The page itself needs no session; the /api/ calls do.
 const linkToken = new URLSearchParams(location.search).get("t");
 if (linkToken) { sessionStorage.setItem("kl4", linkToken); history.replaceState(null, "", "/"); }
-const NO_SESSION = "Oturum yok: Telegram'daki bağlantıyı yeniden açın.";
+const NO_SESSION = "No session: open the link from Telegram again.";
 async function api(path, opts = {}) {
   const headers = { ...(opts.headers || {}) }, t = sessionStorage.getItem("kl4");
   if (t) headers["X-Label-Token"] = t;
@@ -84,156 +114,113 @@ async function api(path, opts = {}) {
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || r.status); return j;
 }
-function fail(message) { $("view").replaceChildren(el("div", { class: "err" }, message)); $("form").replaceChildren(); current = null; }
+function fail(message) { $("questions").replaceChildren(el("div", { class: "err" }, message)); $("doc").replaceChildren(); current = null; }
 
 async function loadState() {
-  const s = await api("/api/state"); choices = s.choices;
+  const s = await api("/api/state");
   const box = $("strata"); box.replaceChildren();
   for (const [k, v] of Object.entries(s.strata)) {
-    const b = el("button", { type: "button" }, `${k} ${v.done}/${v.total}`);
+    const b = el("button", { type: "button" }, `${GROUPS[k] || k}  ${v.done}/${v.total}`);
     b.onclick = () => openStratum(k).catch((e) => fail(e.message)); box.append(b);
   }
 }
 async function openStratum(s) { if (busy) return; generation++; stratum = s; ids = (await api(`/api/batch?stratum=${s}`)).ids; pos = 0; await show(); }
 
-function selectFor(name, options, value) {
-  const sel = el("select", { name });
-  for (const o of options) sel.append(el("option", { value: o }, o === "" ? "(belirtilmemiş)" : o));
-  sel.value = value ?? options[0]; return sel;
-}
-function field(form, name, input, proposal) {
-  form.append(el("label", { class: "f", for: name }, LABELS[name] || name));
-  input.id = name; form.append(input);
-  if (HELP[name]) form.append(el("div", { class: "prop" }, HELP[name]));
-  if (proposal) form.append(el("div", { class: "prop on" }, `kural: ${JSON.stringify(proposal.value)} (${proposal.confidence}) — ${proposal.evidence}`));
-  const q = current && current.llm;
-  const qv = q && (name === "activate" ? (q.hostile === "yes" ? "deny" : null) : q[name]);
-  if (qv) form.append(el("div", { class: "prop on" }, `Qwen: ${qv}${q[`${name === "activate" ? "hostile" : name}_evidence`] ? " — " + q[`${name === "activate" ? "hostile" : name}_evidence`] : ""}`));
+// The preselected value and why: an exact rule (confidence high) first, else Qwen, else a weaker rule.
+function suggestion(name) {
+  if (current.blind) return null;
+  const rule = current.proposals[name], q = current.llm || {};
+  let qv = q[name], qwhy = q[`${name}_evidence`];
+  if (name === "activate" && q.hostile) { qv = q.hostile === "yes" ? "deny" : "allow"; qwhy = q.hostile_evidence; }
+  if (rule && rule.confidence === "high") return { value: rule.value, from: "rule", why: rule.evidence, other: qv };
+  if (qv) return { value: qv, from: "Qwen", why: qwhy, other: rule ? rule.value : undefined };
+  if (rule) return { value: rule.value, from: "rule", why: rule.evidence };
+  return null;
 }
 
 async function show() {
   $("msg").textContent = "";
-  if (pos >= ids.length) { $("view").replaceChildren(el("div", { class: "meta" }, "Bu grup bitti. Katmanı yeniden seçin.")); $("form").replaceChildren(); await loadState(); return; }
+  if (pos >= ids.length) { $("questions").replaceChildren(el("div", { class: "meta" }, "This batch is done. Choose the group again for the next 20.")); $("doc").replaceChildren(); $("banner").replaceChildren(); await loadState(); return; }
   current = await api(`/api/item/${encodeURIComponent(ids[pos])}`); started = Date.now();
-  const it = current.item, p = current.proposals;
-  $("progress").textContent = `${stratum}: ${pos + 1}/${ids.length} · ${it.id}`;
-  const v = $("view"); v.replaceChildren();
-  v.append(el("h2", {}, it.ref.path || it.id));
-  v.append(el("div", { class: "meta" }, `${it.source} · ${it.format} · ${it.bytes} B · lisans öğe: ${it.license_item} · koleksiyon: ${it.license_collection ?? "—"}`));
-  if (it.url) v.append(el("div", { class: "meta" }, it.url));
-  if (it.hostile) v.append(el("div", { class: "hostile" }, "Zararlı örnek (veri): asla çalıştırmayın."));
-  if (current.hidden_chars) v.append(el("div", { class: "hostile" }, `${current.hidden_chars} gizli karakter ⟦U+…⟧ olarak gösterildi.`));
-  if (current.siblings.length) v.append(el("div", { class: "meta" }, `Aynı klasör: ${current.siblings.length} dosya (${it.group})`));
-  if (it.notes) v.append(el("div", { class: "meta" }, `Not: ${it.notes}`));
-  if (it.known && Object.keys(it.known).length) v.append(el("div", { class: "meta" }, `Kaynağın beyanı: ${JSON.stringify(it.known).slice(0, 600)}`));
-  v.append(el("pre", {}, current.text ?? "(içerik kopyalanmadı: lisans izin vermiyor ya da ikili dosya; özet ve sha256 kayıtlı)"));
-  if (current.truncated) v.append(el("div", { class: "meta" }, "İlk 200 KB gösteriliyor."));
-
-  if (current.blind) v.prepend(el("div", { class: "meta" }, "Kör örnek: bu öğede öneriler gizli (önericileri ölçmek için). Kendi kararınızı verin."));
-  buildForm(it, p);
+  const it = current.item;
+  $("progress").textContent = `${GROUPS[stratum] || stratum} · item ${pos + 1} of ${ids.length}`;
+  const banner = $("banner"); banner.replaceChildren();
+  if (it.hostile) banner.append(el("div", { class: "banner danger" }, "Harmful example (data only). Never run it."));
+  if (current.hidden_chars) banner.append(el("div", { class: "banner danger" }, `${current.hidden_chars} hidden characters, shown as ⟦U+…⟧ in the text.`));
+  if (current.blind) banner.append(el("div", { class: "banner" }, "Blind item: no suggestions here. We use these items to measure the suggestions. Choose yourself."));
+  buildQuestions();
+  const d = $("doc"); d.replaceChildren();
+  d.append(el("h2", {}, it.ref.path || it.id));
+  d.append(el("div", { class: "meta" }, `${it.source} · ${it.format} · ${it.bytes} bytes · licence: ${it.license_item}`));
+  if (it.known && Object.keys(it.known).length) d.append(el("div", { class: "meta" }, `The source says: ${JSON.stringify(it.known).slice(0, 400)}`));
+  if (it.notes) d.append(el("div", { class: "meta" }, `Note: ${it.notes}`));
+  d.append(el("pre", {}, current.text ?? "(No copy: the licence does not allow it, or the file is binary. Only its hash is stored.)"));
+  if (current.truncated) d.append(el("div", { class: "meta" }, "Only the first 200 KB are shown."));
+  window.scrollTo(0, 0);
 }
 
-// --- the form: 3 required questions; other fields open by condition (docs/19). No document kind (D54, D66). ------
-const val = (n) => { const e = $("form").elements[n]; return e ? e.value : ""; };
-let rows = [], showAll = false, showException = false;
-const AI_KEYS = ["search", "ai_input", "train"];
-function hasValue(r) {
-  const f = $("form").elements;
-  return r.name === "ai_use" ? AI_KEYS.some((k) => f[`ai_${k}`].value) : f[r.name].value.trim() !== "";
-}
-// A filled field stays visible when its condition stops holding (rule flag or origin changed, a mode closed): it is
-// saved as `kept` until the person clears it (Astra review #11), never dropped silently.
-function keptNote(r) {
-  const clear = el("button", { type: "button" }, "Temizle");
-  clear.onclick = () => {
-    const f = $("form").elements;
-    for (const n of r.name === "ai_use" ? AI_KEYS.map((k) => `ai_${k}`) : [r.name]) f[n].value = "";
-    refresh();
-  };
-  const box = el("div", { class: "prop kept" }, "Koşulu artık geçerli değil; değer korunuyor. ");
-  box.append(clear); return box;
-}
-
-function buildForm(it, p) {
-  const f = $("form"); f.replaceChildren(); rows = []; showAll = false; showException = false;
-  const pv = (k) => (p[k] ? p[k].value : undefined);
-  const blank = (name, options, value) => selectFor(name, ["", ...options], value ?? "");  // "" = not chosen yet
-  const text = (name, value = "", ph = "") => Object.assign(el("input", { type: "text", name, placeholder: ph }), { value });
-  const add = (name, input, when = () => true, proposalKey = name) => {
-    const box = el("div"); box.dataset.field = name;
-    field(box, name, input, p[proposalKey]); f.append(box);
-    const r = { name, box, when, visible: false, kept: false }; r.note = keptNote(r); box.append(r.note); rows.push(r);
-  };
-  const rule = () => val("rule") === "yes";
-
-  add("origin", blank("origin", choices.origin, pv("origin")));
-  add("reviewed_by", text("reviewed_by", pv("reviewed_by") ?? ""), () => val("origin") === "assisted");
-  add("software_agent", text("software_agent", "", "ad + sürüm, ör. typedoc 0.26.11"), () => val("origin") === "tool");
-  add("inputs", text("inputs", "", "kaynak öğe id'leri, virgülle"), () => ["model", "tool", "assisted"].includes(val("origin")) || showAll);
-  add("instruction", blank("instruction", choices.instruction, pv("instruction")));
-  add("activate", blank("activate", choices.activate.filter((x) => x !== "n/a"), pv("activate")), () => val("instruction") === "yes");
-  add("personal_data", blank("personal_data", choices.personal_data, pv("personal_data")));
-  add("rule", blank("rule", choices.rule, ""));
-  add("acceptance", blank("acceptance", choices.acceptance, pv("acceptance")), () => rule() || showAll);
-  add("mandate", blank("mandate", choices.mandate, ""), () => rule() || showAll);
-  add("valid_from", text("valid_from", "", "YYYY-MM-DD"), () => rule() || showAll);
-  add("valid_to", text("valid_to", (pv("valid_to") || "").slice(0, 10), "YYYY-MM-DD"), () => rule() || showAll);
-  add("applies_to", text("applies_to", pv("applies_to") ?? ""), () => rule() || val("instruction") === "yes" || showAll);
-  // blind: no default, so an unanswered split question stays missing rather than "no" (Astra review #11)
-  add("needs_split", blank("needs_split", choices.needs_split, current.blind ? "" : pv("needs_split") ?? "no"));
-
-  // inherited rights: one summary line; an exception opens the fields
-  const inherited = el("div", { class: "prop" }, `Devralınan: lisans ${it.license_item}${it.license_collection ? ` (koleksiyon ${it.license_collection})` : ""} · AI kullanımı: belirtilmemiş`);
-  const exc = el("button", { type: "button" }, "İstisna (lisans / AI kullanımı)");
-  exc.onclick = () => { showException = !showException; refresh(); };
-  f.append(inherited, exc);
-  add("license_item", text("license_item", pv("license") ?? it.license_item ?? ""), () => showException || showAll, "license");
-  const aiBox = el("div"); aiBox.dataset.field = "ai_use";
-  aiBox.append(el("label", { class: "f" }, "AI kullanımı (search / ai_input / train)"));
-  const row = el("div", { class: "row" }); const ai = pv("ai_use") || {};
-  for (const k of AI_KEYS) { const s = selectFor(`ai_${k}`, ["", "y", "n"], ai[k] ?? ""); s.title = k; row.append(s); }
-  aiBox.append(row, el("div", { class: "prop" }, HELP.ai_use)); f.append(aiBox);
-  const aiRow = { name: "ai_use", box: aiBox, when: () => showException || showAll, visible: false, kept: false };
-  aiRow.note = keptNote(aiRow); aiBox.append(aiRow.note); rows.push(aiRow);
-  add("export", blank("export", choices.export.filter(Boolean), ""), () => showAll);
-  add("route", blank("route", choices.route.filter(Boolean), ""), () => showAll);
-
-  const all = el("button", { type: "button" }, "Tüm alanlar");
-  all.onclick = () => { showAll = !showAll; all.textContent = showAll ? "Az alan" : "Tüm alanlar"; refresh(); };
-  const note = el("details"); note.append(el("summary", {}, "Not"), el("textarea", { name: "note", rows: "2" }));
-  f.append(all, note);
-  f.onchange = refresh; refresh();
-}
-function refresh() {
-  for (const r of rows) {
-    const on = r.when();
-    r.kept = !on && r.visible && hasValue(r);
-    r.visible = on || r.kept;
-    r.box.style.display = r.visible ? "" : "none";
-    r.note.style.display = r.kept ? "" : "none";
+function buildQuestions() {
+  values = {};
+  for (const q of QUESTIONS) {
+    const s = suggestion(q.name);
+    if (s && (!q.options || q.options.some(([v]) => v === s.value))) values[q.name] = s.value;
   }
+  render();
 }
 
-const REQUIRED = ["origin", "instruction", "personal_data"];
-// The server checks `shown` against the mode and the choices, keeps `kept`, and derives the accepted proposals.
-function collect() {
-  const f = $("form"), labels = {}, shown = ["note"], kept = [];
-  for (const r of rows) {
-    if (!r.visible) continue;
-    shown.push(r.name); if (r.kept) kept.push(r.name);
-    if (r.name === "ai_use") {
-      const ai = {}; for (const k of AI_KEYS) { const v = f.elements[`ai_${k}`].value; if (v) ai[k] = v; }
-      labels.ai_use = ai;
+function render() {
+  const box = $("questions"); box.replaceChildren();
+  for (const q of QUESTIONS) {
+    if (q.when && !q.when()) { delete values[q.name]; continue; }  // a hidden question keeps no answer
+    const div = el("div", { class: "q" });
+    div.append(el("h3", {}, q.title));
+    if (q.why) div.append(el("div", { class: "why" }, q.why));
+    if (q.options) {
+      const opts = el("div", { class: "opts" });
+      for (const [v, label, help] of q.options) {
+        const b = el("button", { type: "button", class: "opt" + (values[q.name] === v ? " on" : "") });
+        b.append(el("b", {}, label)); if (help) b.append(el("span", {}, help));
+        b.onclick = () => { values[q.name] = values[q.name] === v && q.optional ? undefined : v; render(); };
+        opts.append(b);
+      }
+      div.append(opts);
     } else {
-      const v = f.elements[r.name].value; if (v !== "") labels[r.name] = v;
+      const input = el("input", { type: "text", placeholder: q.text || "" });
+      input.value = values[q.name] ?? "";
+      input.oninput = () => { values[q.name] = input.value; };
+      div.append(input);
     }
+    const s = suggestion(q.name);
+    if (s) {
+      const differs = s.other !== undefined && s.other !== s.value;
+      div.append(el("div", { class: "hint" + (differs ? " disagree" : "") },
+        `Suggested by ${s.from}${s.why ? ": " + s.why : ""}${differs ? ` (the other suggestion says “${s.other}”)` : ""}`));
+    }
+    box.append(div);
   }
-  if (f.elements.note.value.trim()) labels.note = f.elements.note.value;
-  const missing = REQUIRED.filter((n) => !labels[n]);
-  if (missing.length) throw new Error(`Seçilmedi: ${missing.map((n) => LABELS[n] || n).join(", ")}`);
-  const mode = showAll ? "all" : showException ? "exception" : "basic";
-  return { id: current.item.id, labels, shown, kept, mode, ms: Date.now() - started };
+  const note = el("details"); note.append(el("summary", {}, "Add a note (optional)"));
+  const ta = el("textarea", { rows: "2", style: "width:100%;font:inherit" }); ta.value = values.note ?? "";
+  ta.oninput = () => { values.note = ta.value; }; note.append(ta); box.append(note);
 }
+
+function collect() {
+  const labels = {}, shown = ["note"];
+  for (const q of QUESTIONS) {
+    if (q.when && !q.when()) continue;
+    shown.push(q.name);
+    const v = (values[q.name] ?? "").trim();
+    if (v) labels[q.name] = v;
+  }
+  if ((values.note ?? "").trim()) labels.note = values.note.trim();
+  const titles = Object.fromEntries(QUESTIONS.map((q) => [q.name, q.title]));
+  const missing = REQUIRED.filter((n) => !labels[n]);
+  if (missing.length) throw new Error(`Please answer: ${missing.map((n) => titles[n]).join(" · ")}`);
+  if (labels.origin === "assisted" && !labels.reviewed_by) throw new Error("Please write who checked it.");
+  if (labels.origin === "tool" && !labels.software_agent) throw new Error("Please write which software made it.");
+  if (labels.instruction === "yes" && !labels.activate) throw new Error("Please answer: may an agent run it?");
+  return { id: current.item.id, labels, shown, kept: [], mode: "basic", ms: Date.now() - started };
+}
+
 let busy = false, generation = 0;  // one save or move at a time; a stale reply never moves the cursor
 function setBusy(on) { busy = on; for (const id of ["save", "skip"]) $(id).disabled = on; for (const b of $("strata").querySelectorAll("button")) b.disabled = on; }
 $("save").onclick = async () => {
@@ -245,7 +232,7 @@ $("save").onclick = async () => {
   try {
     await api("/api/label", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (gen !== generation || body.id !== current.item.id) return;
-    $("msg").className = "ok"; $("msg").textContent = "kaydedildi"; generation++; pos++; await show();
+    generation++; pos++; await show(); $("msg").className = "ok"; $("msg").textContent = "Saved";
   } catch (e) { $("msg").className = "err"; $("msg").textContent = e.message; }
   finally { setBusy(false); }
 };
