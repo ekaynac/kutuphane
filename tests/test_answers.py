@@ -149,6 +149,25 @@ def test_one_invalid_citation_rejects_the_answer(conn, fake, library):  # Astra 
     assert ask(conn, fake, Actor(U))["status"] == "not_in_library"
 
 
+@pytest.mark.parametrize("cite", ["[1,2]", "[1, 2]", "[1-2]", "[1–2]", "[2][1]", "[1] ve [1, 2]"])
+def test_grouped_citations_are_read_and_checked(conn, fake, library, cite):  # G21
+    fake.reply = f"Yedekler ve kayıtlar saklanır {cite}."
+    result = ask(conn, fake, Actor(U), "yedek geri yükleme kayıtlar")             # several passages
+    assert result["status"] == "answered" and [c["n"] for c in result["citations"]] == [1, 2]
+
+
+@pytest.mark.parametrize("cite", ["[1,99]", "[1-99]", "[2-1]", "[0, 1]"])
+def test_an_unknown_number_in_a_group_rejects_the_answer(conn, fake, library, cite):  # G21
+    fake.reply = f"Erişim kayıtları iki yıl saklanır [1]. Ayrıca {cite}."
+    result = ask(conn, fake, Actor(U))
+    assert result["status"] == "not_in_library" and result["citations"] == []
+
+
+def test_cited_numbers():  # G21
+    assert answers.cited_numbers("a [2,3,5] b [2, 3] c [7-9] d [4] e [x] f [10–11]") == [2, 3, 4, 5, 7, 8, 9, 10, 11]
+    assert answers.cited_numbers("[3-1]") == [0] and answers.cited_numbers("[2026-10-26]") == []
+
+
 def test_explain_starts_from_the_answer_id(conn, fake, library):  # AT-09
     fake.reply = "İki yıl [1]."
     result = ask(conn, fake, Actor(U))
