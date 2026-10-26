@@ -70,13 +70,13 @@ The page shows the inherited values and their source in one line, so a person ca
 
 **Dates are different facts (Astra point 7).** The statement issue time, the source publication date, the git commit date, the observation time and the validity window are five separate dates. Git can only *suggest* a source date.
 
-## 4. Document kind: a versioned form preset
+## 4. No document kind (D66, 2026-10-26)
 
-- A kind opens fields; it is **never a gate** and is not a standard field (D53, the K1–K8 precedent in D54).
-- A preset never hides an existing value and never removes a restriction.
-- "All fields" is always available, and mixed documents are allowed.
-- **Presets** (operator: the set is sufficient): note/reference, decision/policy, procedure/runbook, agent instruction, record/data/log.
-- **Removed** (Astra point 6): the earlier idea that only "procedure + mandate" can impose a requirement. Authority comes from acceptance + mandate + applicability for any kind.
+- **Removed.** The operator found the document-kind question confusing, and it is: D54 already removed the document categories K1–K8 as labels. A kind changes no decision (D53), so the labelling form must not ask it, and certainly not as a required field.
+- **Replaced by one optional question,** "Kural / karar mı?" (does the document state a rule, decision or procedure that people or agents must follow?). It opens acceptance, mandate, validity and scope. These fields do change behavior: authority and applicability.
+- An agent instruction opens activate and scope.
+- "All fields" is always available. A field with a value stays visible when its condition stops holding.
+- **The label form now has 3 required questions:** origin, agent instruction, personal data.
 
 ## 5. Custom tags (operator answers, D65)
 

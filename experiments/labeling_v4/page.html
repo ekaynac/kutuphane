@@ -51,21 +51,21 @@
 <script>
 "use strict";
 const HELP = {
-  origin: "human: kişi yazdı · assisted: model yazdı + adı belli kişi esastan inceledi · model: öğrenilmiş model · tool: yazılmış kurallarla çalışan yazılım / kayıt (docs/17, karar bekliyor) · unknown",
-  personal_data: "yes / no / synthetic (gerçek kişi yok; yalnız güvenilen kaynak) / unknown (= yes)",
-  ai_use: "Belirtilmemiş terimi boş bırakın; boş ≠ n",
-  acceptance: "Kaynağın kendi durumu: taslak = pending",
-  mandate: "Bu öğe bir kural olarak bağlayıcı mı?",
-  instruction: "Bir ajan bunu talimat olarak çalıştırır mı?",
-  activate: "Talimatsa: çalıştırmaya izin / ret / insana sor",
-  needs_split: "Dosya karışık kökenli mi (bölünmeli)?",
-  kind: "Yalnız formu açar (karar/prosedür → kabul, yetki, geçerlilik); hiçbir kararı değiştirmez",
+  origin: "Bu metni kim yazdı? human: bir kişi · assisted: model yazdı, adı belli bir kişi içeriği inceledi · model: model yazdı (inceleme yok ya da yalnız yazım düzeltmesi) · tool: yazılım kurallarla üretti ya da kaydetti (typedoc, log, şablon) · unknown: kanıt yok",
+  personal_data: "Gerçek bir kişiyi tanıtan bilgi var mı (ad + bağlam, e-posta, IP, telefon, kimlik no)? synthetic: kişi bilgisine benziyor ama gerçek kişi yok · unknown: emin değilim (= yes sayılır)",
+  instruction: "Bir yapay zekâ ajanı bu dosyayı talimat olarak izler mi? (SKILL.md, AGENTS.md, kurallar, komutlar)",
+  activate: "Ajan bunu çalıştırabilir mi? allow · deny (zararlı ya da riskli) · escalate (bir kişi karar versin)",
+  rule: "İsteğe bağlı. Belge, kişilerin ya da ajanların uyması gereken bir kural, karar ya da prosedür içeriyorsa 'yes' seçin; kabul, yetki ve geçerlilik alanları açılır.",
+  acceptance: "Belgenin kendi durumu: taslak = pending · onaylı = accepted · eskimiş/geri çekilmiş = withdrawn",
+  mandate: "Bu kural bağlayıcı mı (uyulmak zorunda mı)?",
+  ai_use: "Belge kendisi belirtmiyorsa boş bırakın; boş, 'n' ile aynı değildir",
+  needs_split: "İsteğe bağlı. Dosyada farklı kökenli parçalar var mı (ör. yarısı kişi, yarısı model)?",
 };
-const LABELS = { kind:"Belge türü", origin:"Köken", reviewed_by:"İnceleyen (assisted)", software_agent:"Yazılım + sürüm (tool)",
-  personal_data:"Kişisel veri", license_item:"Öğe lisansı", acceptance:"Kabul", mandate:"Yetki (mandate)",
+const LABELS = { rule:"Kural / karar mı?", origin:"Köken", reviewed_by:"İnceleyen kişi", software_agent:"Yazılım + sürüm",
+  personal_data:"Kişisel veri", license_item:"Öğe lisansı", acceptance:"Kabul durumu", mandate:"Bağlayıcı mı?",
   export:"Dışa aktarma", route:"Rota", valid_from:"Geçerlilik başlangıcı", valid_to:"Geçerlilik sonu",
-  applies_to:"Kapsam (applies_to)", inputs:"Girdiler (id, virgülle)", instruction:"Talimat mı?", activate:"Etkinleştirme",
-  needs_split:"Bölünmeli", note:"Not" };
+  applies_to:"Kapsam (neye/kime uygulanır)", inputs:"Kaynak öğeler (id, virgülle)", instruction:"Ajan talimatı mı?",
+  activate:"Çalıştırma izni", needs_split:"Bölünmeli mi?", note:"Not" };
 let choices = {}, ids = [], pos = 0, current = null, started = 0, stratum = null;
 
 const $ = (id) => document.getElementById(id);
@@ -133,17 +133,7 @@ async function show() {
   buildForm(it, p);
 }
 
-// --- the form: few fields by default; others open by condition (docs/19) -------------------------------------
-const KINDS = { note: "not / referans", decision: "karar / politika", procedure: "prosedür / runbook",
-                instruction: "ajan talimatı", record: "kayıt / veri / log" };
-function guessKind(it, p) {
-  const path = (it.ref.path || it.id).toLowerCase();
-  if (p.instruction && p.instruction.value === "yes") return "instruction";
-  if (/(^|[\/_.-])(adr|decision|karar|polic|politika)/.test(path)) return "decision";
-  if (/(runbook|procedure|prosed|how-?to|playbook)/.test(path)) return "procedure";
-  if (/\.(jsonl|ndjson|log|csv|ttl|trig|xml|json)$/.test(path)) return "record";
-  return "note";
-}
+// --- the form: 3 required questions; other fields open by condition (docs/19). No document kind (D54, D66). ------
 const val = (n) => { const e = $("form").elements[n]; return e ? e.value : ""; };
 let rows = [], showAll = false, showException = false;
 const AI_KEYS = ["search", "ai_input", "train"];
@@ -151,7 +141,7 @@ function hasValue(r) {
   const f = $("form").elements;
   return r.name === "ai_use" ? AI_KEYS.some((k) => f[`ai_${k}`].value) : f[r.name].value.trim() !== "";
 }
-// A filled field stays visible when its condition stops holding (kind or origin changed, a mode closed): it is
+// A filled field stays visible when its condition stops holding (rule flag or origin changed, a mode closed): it is
 // saved as `kept` until the person clears it (Astra review #11), never dropped silently.
 function keptNote(r) {
   const clear = el("button", { type: "button" }, "Temizle");
@@ -174,10 +164,8 @@ function buildForm(it, p) {
     field(box, name, input, p[proposalKey]); f.append(box);
     const r = { name, box, when, visible: false, kept: false }; r.note = keptNote(r); box.append(r.note); rows.push(r);
   };
-  const kind = (k) => val("kind") === k;
-  const rule = () => kind("decision") || kind("procedure");
+  const rule = () => val("rule") === "yes";
 
-  add("kind", blank("kind", Object.keys(KINDS), current.blind ? "" : guessKind(it, p)));
   add("origin", blank("origin", choices.origin, pv("origin")));
   add("reviewed_by", text("reviewed_by", pv("reviewed_by") ?? ""), () => val("origin") === "assisted");
   add("software_agent", text("software_agent", "", "ad + sürüm, ör. typedoc 0.26.11"), () => val("origin") === "tool");
@@ -185,11 +173,12 @@ function buildForm(it, p) {
   add("instruction", blank("instruction", choices.instruction, pv("instruction")));
   add("activate", blank("activate", choices.activate.filter((x) => x !== "n/a"), pv("activate")), () => val("instruction") === "yes");
   add("personal_data", blank("personal_data", choices.personal_data, pv("personal_data")));
+  add("rule", blank("rule", choices.rule, ""));
   add("acceptance", blank("acceptance", choices.acceptance, pv("acceptance")), () => rule() || showAll);
   add("mandate", blank("mandate", choices.mandate, ""), () => rule() || showAll);
   add("valid_from", text("valid_from", "", "YYYY-MM-DD"), () => rule() || showAll);
   add("valid_to", text("valid_to", (pv("valid_to") || "").slice(0, 10), "YYYY-MM-DD"), () => rule() || showAll);
-  add("applies_to", text("applies_to", pv("applies_to") ?? ""), () => rule() || kind("instruction") || showAll);
+  add("applies_to", text("applies_to", pv("applies_to") ?? ""), () => rule() || val("instruction") === "yes" || showAll);
   // blind: no default, so an unanswered split question stays missing rather than "no" (Astra review #11)
   add("needs_split", blank("needs_split", choices.needs_split, current.blind ? "" : pv("needs_split") ?? "no"));
 
@@ -225,7 +214,7 @@ function refresh() {
   }
 }
 
-const REQUIRED = ["kind", "origin", "instruction", "personal_data"];
+const REQUIRED = ["origin", "instruction", "personal_data"];
 // The server checks `shown` against the mode and the choices, keeps `kept`, and derives the accepted proposals.
 function collect() {
   const f = $("form"), labels = {}, shown = ["note"], kept = [];
