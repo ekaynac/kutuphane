@@ -29,3 +29,10 @@ def test_an_unlisted_acceptance_is_a_schema_error():
         assert "acceptance" in str(exc)
     else:
         raise AssertionError("an unlisted acceptance value must not pass")
+
+
+def test_the_prompt_holds_no_bytes_from_outside_the_case_folder(tmp_path):
+    import test_propose  # noqa: E402  (the same crafted cases as the rule proposer, Astra review #12)
+    cases, case_dir, secret = test_propose.escaping_cases(tmp_path)
+    for case in cases:
+        assert secret not in llm_propose.render(llm_propose.view(case, case_dir))

@@ -21,7 +21,7 @@ The SPDX identifiers in `spdx_ids.txt` come from https://github.com/spdx/license
 """
 import hashlib
 import re
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 from pathlib import Path
 
 import yaml
@@ -151,17 +151,31 @@ def _software_agent_ok(value) -> bool:
             and all(isinstance(value[k], str) and value[k].strip() for k in ("name", "version")))
 
 
-def _date(value):
+def instant(value) -> datetime | None:
+    """A date or timestamp as a timezone-aware datetime; a date alone, or a timestamp without a zone, is UTC (a date
+    is its 00:00 UTC). None for anything else."""
     if isinstance(value, datetime):
         return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
     if isinstance(value, date):
         return datetime(value.year, value.month, value.day, tzinfo=timezone.utc)
     if isinstance(value, str):
         try:
-            return _date(datetime.fromisoformat(value.replace("Z", "+00:00")))
+            return instant(datetime.fromisoformat(value.replace("Z", "+00:00")))
         except ValueError:
             return None
     return None
+
+
+def _bound(value) -> str | None:
+    """A validity bound as text, without losing its time (Astra review #12: `valid_from: 2026-10-27T23:59:00Z` cut to
+    its date was current at noon that day). 00:00 UTC is written as the date alone, any other time as a UTC
+    timestamp."""
+    moment = instant(value)
+    if moment is None:
+        return None
+    moment = moment.astimezone(timezone.utc)
+    return moment.date().isoformat() if moment.timetz() == time(tzinfo=timezone.utc) else \
+        moment.isoformat().replace("+00:00", "Z")
 
 
 def _rights(where: str, rights, errors: list) -> None:
@@ -195,7 +209,7 @@ def check(manifest: dict, files: dict[str, str]) -> tuple[list[str], list[str]]:
         errors.append(f"{MANIFEST}: standard must be {STANDARD!r}")
     if not (isinstance(manifest.get("issuer"), str) and manifest["issuer"].strip()):
         errors.append(f"{MANIFEST}: issuer is required (who answers for this folder)")
-    if _date(manifest.get("issued")) is None:
+    if instant(manifest.get("issued")) is None:
         errors.append(f"{MANIFEST}: issued must be a date (YYYY-MM-DD)")
     if "rights" in manifest:
         _rights(f"{MANIFEST} rights", manifest["rights"], errors)
@@ -245,9 +259,9 @@ def check(manifest: dict, files: dict[str, str]) -> tuple[list[str], list[str]]:
             errors.append(f"{where}: software_agent is only for origin tool")
         start, end = item.get("valid_from"), item.get("valid_to")
         for key, value in (("valid_from", start), ("valid_to", end)):
-            if value is not None and _date(value) is None:
+            if value is not None and instant(value) is None:
                 errors.append(f"{where}: {key} must be a date")
-        if _date(start) and _date(end) and _date(start) >= _date(end):
+        if instant(start) and instant(end) and instant(start) >= instant(end):
             errors.append(f"{where}: valid_from must be before valid_to")
         if "applies_to" in item and not (isinstance(item["applies_to"], str) and item["applies_to"].strip()):
             errors.append(f"{where}: applies_to must be a non-empty string")
@@ -284,7 +298,7 @@ def effective(manifest: dict, path: str) -> dict | None:
     item = next((i for i in manifest.get("items", []) if normalize_path(str(i["path"])) == path), None)
     base, own = manifest.get("rights", {}), (item or {}).get("rights", {})
     ai_use = base.get("ai_use", {}) | own.get("ai_use", {})  # stated terms only; allows() treats absent as n
-    start, end = _date((item or {}).get("valid_from")), _date((item or {}).get("valid_to"))
+    start, end = (item or {}).get("valid_from"), (item or {}).get("valid_to")
     return {
         "issuer": manifest["issuer"],
         "listed": item is not None,
@@ -295,8 +309,8 @@ def effective(manifest: dict, path: str) -> dict | None:
         "holder": own.get("holder", base.get("holder")),
         "ai_use": {k: _yn(v) for k, v in ai_use.items()},
         "personal_data": _pd(own.get("personal_data", base.get("personal_data", "unknown"))),
-        "valid_from": start.date().isoformat() if start else None,
-        "valid_to": end.date().isoformat() if end else None,
+        "valid_from": _bound(start),
+        "valid_to": _bound(end),
         "applies_to": (item or {}).get("applies_to"),
         "notices": list(manifest.get("notices", [])) + list((item or {}).get("notices", [])),
     }
@@ -304,7 +318,7 @@ def effective(manifest: dict, path: str) -> dict | None:
 
 def is_current(info: dict, now: datetime | None = None) -> bool:
     now = now or datetime.now(timezone.utc)
-    start, end = _date(info.get("valid_from")), _date(info.get("valid_to"))
+    start, end = instant(info.get("valid_from")), instant(info.get("valid_to"))
     return (start is None or start <= now) and (end is None or now < end)
 
 

@@ -4,9 +4,10 @@ characters made visible) and the rule proposals, and appends each label to <data
     python -I server.py --data <research/labelling-v4> --host <tailnet-ip> --port 8791
     open http://<ip>:8791/?t=<data/token>     (the token is made on the first run, mode 600)
 
-Plain HTTP only on loopback or the tailnet; the access token is exchanged for an HttpOnly cookie. "/" is a static
-page shell served to anyone; every /api/ route needs the cookie or the X-Label-Token header, and a label POST must be
-JSON from this server's own origin (Astra review #11).
+Plain HTTP only on loopback or the tailnet. "/" is a static page shell served to anyone; it keeps the ?t= token for
+the tab and sends it as the X-Label-Token header, the only credential: no cookie, since a cookie is sent to every
+port of the host (Astra review #12). Every /api/ route needs the header, and a label POST must be JSON from this
+server's own origin (Astra review #11).
 """
 import argparse
 import hashlib
@@ -21,14 +22,12 @@ import sys
 import time
 from collections import Counter, defaultdict
 from http import HTTPStatus
-from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 HERE = Path(__file__).resolve().parent
 TAILNET = ipaddress.ip_network("100.64.0.0/10")
-COOKIE, COOKIE_MAX_AGE = "kl4", 30 * 86400
 MAX_BODY, MAX_TEXT, BATCH = 64 * 1024, 200_000, 20
 STRATA = ("R", "S", "W", "A")  # labelling order (docs/16 §4)
 HIDDEN = re.compile("[\u200b\u200c\u200d\u2060\ufeff\u202a-\u202e\u2066-\u2069\u00ad]")
@@ -318,21 +317,17 @@ def make_handler(store: Store, token: str, page: bytes):
             sys.stderr.write(f"{self.log_date_time_string()} {self.command} {urlparse(self.path).path} -> {args[1] if len(args) > 1 else ''}\n")
 
         def authed(self) -> bool:
-            """The session cookie, or the X-Label-Token header that the page sends when a browser keeps no
-            cookie for this address (seen on a desktop browser, 2026-10-26)."""
-            jar = SimpleCookie(self.headers.get("Cookie", ""))
-            for got in (jar[COOKIE].value if COOKIE in jar else "", self.headers.get("X-Label-Token", "")):
-                if got and hmac.compare_digest(got, token):
-                    return True
-            return False
+            """Only the X-Label-Token header: no cookie, which every other port of this host would also receive
+            (Astra review #12)."""
+            got = self.headers.get("X-Label-Token", "")
+            return bool(got) and hmac.compare_digest(got, token)
 
-        def send(self, status, body: bytes, ctype="application/json; charset=utf-8", extra=None):
+        def send(self, status, body: bytes, ctype="application/json; charset=utf-8"):
             self.send_response(status)
             for k, v in {"Content-Type": ctype, "Content-Length": str(len(body)), "Cache-Control": "no-store",
                          "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer",
                          "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; "
-                                                    "style-src 'unsafe-inline'; connect-src 'self'",
-                         **(extra or {})}.items():
+                                                    "style-src 'unsafe-inline'; connect-src 'self'"}.items():
                 self.send_header(k, v)
             self.end_headers()
             self.wfile.write(body)
@@ -343,15 +338,9 @@ def make_handler(store: Store, token: str, page: bytes):
         def do_GET(self):
             url = urlparse(self.path)
             if url.path == "/":
-                # The page shell is static and holds no data, so it is served without authentication: a reload
-                # in a browser that keeps no cookie still runs the page, which sends its tab token from
-                # sessionStorage on every /api/ call (Astra review #11). The page removes ?t= from the address bar.
-                t = parse_qs(url.query).get("t", [""])[0]
-                if t and hmac.compare_digest(t, token):
-                    # Lax (not Strict) so later navigations to "/" carry the cookie; a label POST is also checked
-                    # for its Origin and JSON content type (SameSite ignores ports).
-                    cookie = f"{COOKIE}={token}; Max-Age={COOKIE_MAX_AGE}; Path=/; HttpOnly; SameSite=Lax"
-                    return self.send(HTTPStatus.OK, page, "text/html; charset=utf-8", {"Set-Cookie": cookie})
+                # The page shell is static and holds no data, so it is served to anyone and the same with or
+                # without ?t=: the page keeps the token in sessionStorage, sends it on every /api/ call and removes
+                # ?t= from the address bar (Astra reviews #11/#12).
                 return self.send(HTTPStatus.OK, page, "text/html; charset=utf-8")
             if not self.authed():
                 return self.json(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
@@ -369,8 +358,8 @@ def make_handler(store: Store, token: str, page: bytes):
         def do_POST(self):
             if urlparse(self.path).path != "/api/label":
                 return self.json(HTTPStatus.NOT_FOUND, {"error": "not found"})
-            # CSRF (Astra review #11): a page on another port of this host shares the SameSite cookie scope and can
-            # send a text/plain "simple" POST; only a JSON body from this server's own origin is accepted.
+            # CSRF (Astra review #11): a page on another port of this host can send a text/plain "simple" POST;
+            # only a JSON body from this server's own origin is accepted, on top of the token header.
             host = self.headers.get("Host", "")
             if self.headers.get_content_type() != "application/json" or not host or \
                     self.headers.get("Origin") != f"http://{host}":

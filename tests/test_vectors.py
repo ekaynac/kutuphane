@@ -260,6 +260,36 @@ def test_migration_014_gives_old_vectors_the_reuse_key(conn, fake, okf_dir):  # 
     assert conn.execute(keys).fetchall() == expected
 
 
+def test_migration_015_keys_a_vector_by_the_text_it_was_made_from(conn, fake, okf_dir):  # Astra review #12
+    import hashlib
+    long = "ğüş İı " * (vectors.EMBED_CHARS // 7 + 10)
+
+    def version(suffix):
+        (okf_dir / "uzun.md").write_text(long + suffix, encoding="utf-8")
+        return catalog.publish(conn, book="kitap", title="kitap", files=read_source(okf_dir), policy=LOCAL,
+                               profile=profiles.spec("whole")).content_id
+    first = version("")
+    vectors.index(conn, fake.embedder(), "kitap")
+    # Before 013 the long passage was embedded whole (not truncated); 014 still gave it the key of its prefix.
+    conn.execute("UPDATE chunk_vector SET truncated = false WHERE path = 'uzun.md'")
+    second = version("başka bir son")                                       # same prefix, another suffix
+    assert vectors.index(conn, fake.embedder(), "kitap").embedded == 0       # 014's key: the old vector was copied
+    conn.execute("DELETE FROM schema_migration WHERE name = '015_vector_input_hash_backfill.sql'")
+    assert db.migrate(conn) == ["015_vector_input_hash_backfill.sql"]
+    keys = {(c, p): (bytes(k) if k is not None else None, t, text) for c, p, k, t, text in conn.execute(
+        "SELECT v.content_id, v.path, v.input_sha256, v.truncated, c.text FROM chunk_vector v JOIN chunk c "
+        "USING (book, content_id, profile_id, path, ordinal)").fetchall()}
+    whole, truncated = keys[(first, "uzun.md")], keys[(second, "uzun.md")]
+    assert not whole[1] and whole[0] == hashlib.sha256(whole[2].encode()).digest()  # the whole text it was made from
+    assert truncated[1] and truncated[0] is None                             # perhaps a copy of it: never reused
+    assert all(k == vectors.input_sha256(text) for (c, p), (k, t, text) in keys.items() if p != "uzun.md")
+    since = len(fake.requests)
+    third = version("üçüncü son")                                             # the same prefix once more
+    assert vectors.index(conn, fake.embedder(), "kitap").embedded == 1       # embedded again, not copied
+    assert embedded_inputs(fake, since) == [vectors.embedded_text(conn.execute(
+        "SELECT text FROM chunk WHERE content_id = %s AND path = 'uzun.md'", (third,)).fetchone()[0])]
+
+
 def test_concurrent_index_calls_store_every_vector(conn, fake, okf_dir):  # G18: configurable concurrency
     publish(conn, okf_dir)
     total = len(current_texts(conn))

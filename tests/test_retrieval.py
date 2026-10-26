@@ -2,7 +2,7 @@
 a failed or malformed rerank keeps the hybrid order."""
 import pytest
 
-from kutuphane import authz, catalog, llmdap, profiles, retrieval, search
+from kutuphane import answers, authz, catalog, kstd, llmdap, profiles, retrieval, search, server
 from kutuphane.gate import Actor
 from kutuphane.policy import make_policy
 from kutuphane.source import read_source
@@ -157,13 +157,38 @@ def test_recency_questions_are_recognized(query, recent):  # G22
     assert retrieval.asks_recent(query) is recent
 
 
-def test_passage_dates():  # G22
-    from datetime import date
-    assert retrieval._first_date("data/briefs/brief-2026-W40.json") == date(2026, 9, 28)
-    assert retrieval._first_date("digests/digest_2026-W28.html") == date(2026, 7, 6)
-    assert retrieval._first_date('{"x": 1, "classified_at": "2026-08-05T09:21:18Z"}') == date(2026, 8, 5)
-    assert retrieval._first_date("v2026-13-45 and 12026-01-01, then 2026-02-03") == date(2026, 2, 3)
-    assert retrieval._first_date("no date here") is None
+def test_passage_dates_come_from_path_and_record_metadata_only(conn):  # G22, Astra review #12
+    from datetime import datetime, timezone
+    rights = kstd.Rights(conn)                                                          # no such book: no manifest
+
+    def when(path, text, line=None):
+        hit = search.Hit(search.Citation("yok", "ct", "pf", path, 0), None, 0, len(text), text, 1.0, line)
+        found = retrieval.passage_date(rights, hit)
+        return found and found.date().isoformat()
+    assert when("data/briefs/brief-2026-W40.json", "x") == "2026-09-28"
+    assert when("digests/digest_2026-W28.html", "x") == "2026-07-06"
+    assert when("v2026-13-45 and 12026-01-01, then 2026-02-03.md", "x") == "2026-02-03"
+    record = '{"x": 1, "classified_at": "2026-08-05T09:21:18Z"}\n'
+    assert retrieval.passage_date(rights, search.Hit(search.Citation("yok", "ct", "pf", "news.jsonl", 0), None, 0, 1,
+                                                     record, 1.0, 3)) == datetime(2026, 8, 5, 9, 21, 18,
+                                                                                  tzinfo=timezone.utc)
+    assert when("notes/z.md", "2099-12-31 z: model x99 entered the pilot ring.") is None   # body text: never
+    assert when("notes/z.md", record) is None                                  # a record field outside a record file
+    assert when("news.jsonl", '{"x": 1, "note": "2026-08-05"}', 3) is None      # not a known record date field
+    assert when("news.jsonl", '{"classified_at": "2099-12-31"}', 3) is None   # the future is ignored
+    assert when("brief-2099-W01.json", "x") is None
+    assert when("no date here.md", "no date here") is None
+
+
+def test_a_body_date_does_not_promote_a_passage(conn):  # Astra review #12
+    def hit(path, text):
+        return search.Hit(search.Citation("yok", "ct", "pf", path, 0), None, 0, len(text), text, 1.0)
+    ranked = [hit("a-brief-2026-W30.md", "a: model x30 entered the pilot ring."),
+              hit("z-notes.md", "2099-12-31 z: model x99 entered the pilot ring."),
+              hit("b-brief-2026-W40.md", "b: model x40 entered the pilot ring."),
+              hit("c-brief-2026-W33.md", "c: model x33 entered the pilot ring.")]
+    order = [h.citation.path[0] for h in retrieval._prefer_recent(conn, ranked, 2)]
+    assert order == ["a", "b", "z", "c"]                                   # z is undated: after every dated one
 
 
 @pytest.mark.parametrize("stages", ["reranker", "none"])
@@ -212,3 +237,69 @@ def test_no_translation_for_a_one_language_pool_or_a_bad_translation(conn, fake,
     fake.rerank_reply, fake.reply = _blind, "logs of the backup"                  # not a translation: ignored
     ranked = retrieval.retrieve(conn, Actor(U), "logs of the backup", k=4, stages=stages)
     assert ranked[-1].citation.path == "tr.md"                                   # the language reserve still holds
+
+
+def test_a_grant_change_between_the_two_searches_lets_no_passage_of_the_removed_book_through(conn, fake, tmp_path,
+                                                                                             monkeypatch):
+    # Astra review #12: rights move from book A to book B while the query is translated; the first search saw A, the
+    # second sees B. The merged pool is decided again in one statement, so A never reaches a model or the caller.
+    for book, files in (("ing", ENGLISH), ("trk", TURKISH)):
+        folder = tmp_path / book
+        folder.mkdir()
+        for name, text in files.items():
+            (folder / name).write_text(text, encoding="utf-8")
+        catalog.publish(conn, book=book, title=book, files=read_source(folder), policy=make_policy(
+            sensitivity="normal", egress="local_only", protection="standard"), profile=profiles.spec("chunked"))
+    authz.grant(conn, "book:ing", "read", U)
+    query = "logs of the backup"
+    assert {h.citation.book for h in search.search(conn, Actor(U), query, k=30)} == {"ing"}
+
+    def switch(conn, translator, actor, query, pool):
+        authz.revoke(conn, "book:ing", "read", U)
+        authz.grant(conn, "book:trk", "read", U)
+        return "Yedekler ve loglar için ne yapılır?"
+    monkeypatch.setattr(retrieval, "translate", switch)
+    fake.rerank_reply = lambda b: [{"index": i, "relevance_score": 0.5} for i in range(len(b["documents"]))]
+    ranked = retrieval.retrieve(conn, Actor(U), query, k=8, stages=retrieval.Stages(reranker=fake.reranker()))
+    assert ranked and {h.citation.book for h in ranked} == {"trk"}
+    sent = [d for p, b in fake.requests if p.endswith("/v1/rerank") for d in b["documents"]]
+    assert not any("archive is kept" in d for d in sent)                     # no passage of A went to the reranker
+    assert conn.execute("SELECT count(*) FROM access_event WHERE object = 'book:ing' AND NOT allowed "
+                        "AND reason = 'changed during search'").fetchone()[0] == 1
+
+
+def test_an_oversized_question_is_refused_before_embedding_or_the_cache(conn, fake, book, monkeypatch):
+    # Astra review #12: the 1,000-character limit holds on every path (search and ask) before the query is embedded
+    # or becomes a cache key.
+    monkeypatch.setattr(retrieval, "_vectors", retrieval._QueryCache())
+    stages = retrieval.Stages(embedder=fake.embedder())
+    long = "yedek " * 200
+    with pytest.raises(ValueError, match="1..1000"):
+        retrieval.retrieve(conn, Actor(U), long, stages=stages)
+    with pytest.raises(ValueError, match="1..1000"):
+        answers.ask(conn, fake.bridge(), Actor(U), long, model="qwen", stages=stages)
+    with pytest.raises(ValueError, match="1..1000"):
+        retrieval.query_vector(conn, fake.embedder(), Actor(U), long)
+    for op in (lambda: server.op_ask("unused", fake.bridge(), "qwen", stages, Actor(U), long),
+               lambda: server.op_search("unused", stages, Actor(U), long, 8)):
+        with pytest.raises(server.BadRequest, match="1..1000"):                   # before any database connection
+            op()
+    assert fake.hits == [] and not retrieval._vectors.entries
+
+
+def test_the_query_cache_is_bounded_in_bytes(monkeypatch):  # Astra review #12
+    cache = retrieval._QueryCache()
+    vector = search.QueryVector("bge-m3", [0.0] * 100)
+
+    def key(q):
+        return ("http://bridge", "local", "bge-m3", q)
+    size = cache.size(key("a"), vector)
+    monkeypatch.setattr(retrieval, "QUERY_CACHE_BYTES", 3 * size)
+    for q in "abcd":
+        cache.put(key(q), vector)
+    assert list(cache.entries) == [key("b"), key("c"), key("d")] and cache.bytes == 3 * size
+    assert cache.get(key("b")) == vector                                          # b is now the most recent
+    cache.put(key("e"), vector)
+    assert list(cache.entries) == [key("d"), key("b"), key("e")] and cache.bytes == 3 * size
+    cache.put(key("f"), search.QueryVector("bge-m3", [0.0] * 1000))              # larger than the budget: not kept
+    assert list(cache.entries) == [key("d"), key("b"), key("e")] and cache.bytes == 3 * size

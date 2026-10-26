@@ -68,11 +68,19 @@ def _text(text, item, for_model: bool) -> dict:
     return {"text": text}
 
 
+def _check_query(query) -> None:
+    """The query limits, before any model call or the query cache (Astra review #12: search AND ask)."""
+    try:
+        search.check_query(query)
+    except ValueError as exc:
+        raise BadRequest(str(exc)) from None
+
+
 def op_search(dsn, stages, actor: Actor, query: str, k: int, model_reader: bool = False,
               scope: search.Scope = search.Scope()) -> list[dict]:
+    _check_query(query)
+
     def go(conn):
-        if not isinstance(query, str) or not query.strip() or len(query) > search.MAX_QUERY_CHARS:
-            raise BadRequest(f"query must be 1..{search.MAX_QUERY_CHARS} characters")  # before any model call
         hits, rights, ai = retrieval.retrieve(conn, actor, query, k, stages, scope), kstd.Rights(conn), \
             _for_model(actor, model_reader)
         out = []
@@ -98,6 +106,7 @@ def op_citation(dsn, actor: Actor, handle: str, model_reader: bool = False) -> d
 def op_ask(dsn, bridge, model: str, stages, actor: Actor, question: str, scope: search.Scope = search.Scope()) -> dict:
     if not isinstance(question, str) or not question.strip():
         raise BadRequest("question is required")
+    _check_query(question)
     return _run(dsn, lambda c: answers.ask(c, bridge, actor, question, model=model, stages=stages, scope=scope))
 
 

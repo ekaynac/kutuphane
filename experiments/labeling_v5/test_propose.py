@@ -63,7 +63,7 @@ def test_auto_set_hides_the_declared_licence_and_a_missing_copy(tmp_path):
     case, case_dir = make_case(tmp_path, {})
     case["files"][0].update(license_item="unknown", copy=False, local_path=None)
     assert "license" not in propose.propose(propose.view(case, case_dir, declared_licence=False))
-    case["files"][0].update(license_item="MIT", local_path="retries.md")
+    case["files"][0].update(license_item="MIT", copy=True, local_path="retries.md")
     assert propose.propose(propose.view(case, case_dir, declared_licence=False))["license"]["value"] == "unknown"
     case["files"][0]["license_item"] = propose.UNDER_TEST
     assert propose.view(case, case_dir)["files"][0]["license_item"] is None
@@ -78,3 +78,27 @@ def test_approval_without_remarks_is_not_substantive(tmp_path):
     out = propose.propose(propose.view(case, case_dir))
     assert out["review"]["value"] == "approval-only"
     assert out["origin"]["value"] == "model"
+
+
+def escaping_cases(tmp_path: Path) -> tuple[list, Path, str]:
+    """Astra review #12: cases whose local_path points outside the case folder, or at a file that may not be copied."""
+    secret = "GOLD-SECRET acceptance=rejected"
+    (tmp_path / "pool.gold.jsonl").write_text(secret)
+    (tmp_path / "cases").mkdir()
+    case, case_dir = make_case(tmp_path / "cases", {"repo": "org/repo", "commit": "abc"}, text=secret)
+    (case_dir / "link.md").symlink_to(tmp_path / "pool.gold.jsonl")
+    variants = [{"local_path": "../../pool.gold.jsonl"}, {"local_path": "../t-1/retries.md"},
+                {"local_path": str(tmp_path / "pool.gold.jsonl")}, {"local_path": "link.md"},
+                {"local_path": "retries.md", "copy": False}, {"local_path": "retries.md", "copy": None},
+                {"local_path": "."}, {"local_path": ["retries.md"]}]
+    cases = [{**case, "files": [{**case["files"][0], **v}]} for v in variants]
+    return cases, case_dir, secret
+
+
+def test_view_reads_no_file_outside_the_case_folder_or_without_copy(tmp_path):
+    cases, case_dir, secret = escaping_cases(tmp_path)
+    for case in cases:
+        v = propose.view(case, case_dir)
+        assert v["files"][0]["text"] is None and secret not in json.dumps(v), case["files"][0]
+    ok = {**cases[0], "files": [{"copy": True, "local_path": "retries.md"}]}
+    assert propose.view(ok, case_dir)["files"][0]["text"] == secret

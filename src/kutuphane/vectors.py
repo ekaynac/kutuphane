@@ -7,7 +7,8 @@ the failed call stays on record in `model_call`.
 
 Incremental (G17): a vector records the sha256 of the text that was embedded. A new content version copies the
 vector of every passage whose embedded text is unchanged (same book, profile, model and width) and embeds only the
-others; vectors never cross a book.
+others; vectors never cross a book. A vector whose embedded text is not known for certain has no key (NULL,
+migration 015) and is never copied.
 
 Failures (G12): a failed embedding call is retried with backoff; a batch that still fails is reported and the run
 goes on with the next batch. After `give_up_after` failed batches in a row the embedder is taken as down and the
@@ -123,7 +124,7 @@ def embedded_text(text: str) -> str:
 
 
 def input_sha256(text: str) -> bytes:
-    """The reuse key of a passage: sha256 of the UTF-8 text that is sent (migration 014 computes the same in SQL)."""
+    """The reuse key of a passage: sha256 of the UTF-8 text that is sent (migration 015 computes the same in SQL)."""
     return hashlib.sha256(embedded_text(text).encode("utf-8")).digest()
 
 
