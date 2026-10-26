@@ -122,6 +122,13 @@ These are the judgments that only a person can make:
 - `stale_after` is a freshness deadline, not `valid_to`.
 - The ontology question about stale status: by default, a stale imported status removes **authority only**. A suspension needs an explicit policy (docs/11 §4 rule 6 vs §6). See question 5 in §7.
 
+**Done in `experiments/labeling_v5/`:**
+- `propose.py` (`rules-v5.0`) reads one whole case through `view()`: the file bytes, the paths, the declared licences and `case.json` `evidence`. It never reads `statements`, `why_selected`, the group or any gold file. `--baseline` (`baseline-v5.0`) is the same rules without the file bytes. `stale_after` is proposed as its own field, never as `valid_to`.
+- `llm_propose.py` (`llm-v5.0`) gets the same `view()` through the local LLMDAP `chat` route.
+- `test_propose.py`: a case with no status line in its evidence gets no acceptance proposal, even when its statements and gold say `accepted`.
+- `select_human.py` picks the human set (seed 20261026; 5 calibration + 15 disagreement/uncertainty + 10 random per group; at most 2 cases per family) and freezes it in `human/pool.selection.json`.
+- The outputs are in `research/labelling-v5/`: `proposals.<set>.jsonl`, `proposals_baseline.<set>.jsonl` and `proposals_llm.<set>.jsonl`, with `proposer_version` on each line.
+
 ## 6. Order of work
 
 ```mermaid
