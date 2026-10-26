@@ -84,7 +84,55 @@ Identity and egress (M1c) are configured by environment:
 Hybrid search (optional): `KUTUPHANE_LLMDAP_EMBED_ROUTE` (an LLMDAP `surface: "embeddings"` route, openai schema),
 `KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS`, `KUTUPHANE_EMBED_MODEL` (the route's pinned model, e.g. `bge-m3`). `ingest` and
 `approve-import` then embed the new version; `kutuphane index <book>` fills in missing vectors.
+
+- **Only changed passages are embedded (G17).** A vector records the sha256 of the text that was embedded. A new
+  version copies the vector of each passage whose embedded text, model and vector width are unchanged in the same
+  book and profile; vectors never go from one book to another. The result shows `vectors_added` and `vectors_reused`.
+- **The book is live when it is published (G12).** An embedding settings error stops `ingest`/`approve-import`
+  before the publication. When indexing fails after the publication, the command still prints the publication
+  result, adds `index_error` or `failed` (path, ordinal, error) and `not_attempted`, and exits with code 3;
+  `kutuphane index <book>` adds the missing vectors later (it also exits with code 3 while passages are missing).
+  A failed embedding call is tried 2 more times (after 5 s and 10 s); a batch that still fails is reported and
+  indexing continues. After 3 failed batches in a row the embedder is taken as down and the rest is not attempted.
+- **Indexing load (G18).** The local CPU embedder runs one request at a time, so a search waits for the index call
+  in front of it. `KUTUPHANE_INDEX_BATCH` (passages per call, default 8), `KUTUPHANE_INDEX_BATCH_CHARS` (embedded
+  characters per call, default 8,000; a longer passage goes alone) and `KUTUPHANE_INDEX_CONCURRENCY` (calls in
+  flight, default 1, at most 4) set the load; `index --batch/--batch-chars/--concurrency` override them.
+  To index at a low priority, publish first and index later with smaller calls:
+
+  ```bash
+  env -u KUTUPHANE_LLMDAP_EMBED_ROUTE kutuphane ingest <dir> --book <slug> …   # live now, full text search
+  KUTUPHANE_INDEX_BATCH=4 KUTUPHANE_INDEX_BATCH_CHARS=4000 kutuphane index <slug> # later, or at a quiet time
+  ```
+
+  Smaller calls make the wait of a search shorter; they do not make indexing faster. Keep the concurrency at 1 on
+  the CPU embedder: more calls in flight only wait in the embedder in front of the searches. `nice`/`ionice` on the
+  `kutuphane` process do not help, because the embedding work runs in the embedder container.
+
 Reranking (optional): `KUTUPHANE_LLMDAP_RERANK_ROUTE` (an LLMDAP `surface: "rerank"` route), `_RERANK_ROUTE_CLASS`,
-`KUTUPHANE_RERANK_MODEL` (e.g. `bge-reranker-v2-m3`); the top 30 hybrid hits are reordered.
+`KUTUPHANE_RERANK_MODEL` (e.g. `bge-reranker-v2-m3`); the top 30 hybrid hits are reordered. The reranker reads the
+first 1,200 characters of each passage (the target passage size; G26).
 `echo "$TOKEN" | kutuphane whoami` verifies a token; `kutuphane explain <correlation-id> --llmdap-export audit.jsonl`
 prints the unified audit.
+
+Search and answers (`kutuphane search`, `kutuphane ask`, `GET /v1/search`, `POST /v1/ask`, MCP `search_library`
+and `ask_library`):
+
+- **Scope filters (G14)** narrow the evidence before ranking: `--book <slug>` (repeatable), `--path <prefix>`
+  (`data/` = the files below `data/`), `--origin <kstd origin>` (repeatable: `human`, `assisted`, `model`, `tool`,
+  `unknown`; a book without `kstd.yaml` counts as `unknown`), `--current-only` (the kstd validity includes now).
+  HTTP: the query parameters `book`, `path`, `origin` (repeatable) and `current_only=true`; `POST /v1/ask` takes the
+  same names in its JSON body. MCP: the same tool arguments. A filter never adds a book: a book that the caller
+  cannot read gives the same empty result as a book that does not exist.
+- **Answers** are in the language of the question (Turkish or English; G20) and short (about 150 words). Each
+  passage goes to the answer model by its first 2,400 characters; the stored sources and the citations keep the
+  whole passage (G26). A reference can name one or more passages: `[2]`, `[2,3]`, `[2-4]` (G21). Every number is
+  checked; one unknown number refuses the answer.
+- **Two languages (G19).** When the passages found are in Turkish and in English, the answer model translates the
+  question (`KUTUPHANE_ANSWER_MODEL` on `KUTUPHANE_LLMDAP_ROUTE`; `ask --model`). Only the question goes to the
+  model. A second search runs with the translation, and each passage is reranked against the question in its own
+  language. Without a translation, up to 2 passages in the other language from the hybrid top 8 keep a place.
+- **Recent things (G22).** A question with "recent", "latest", "son", "en yeni" and similar words ranks the 16 most
+  relevant passages by relevance rank + date rank. The date is the kstd `valid_from`, else the first date or ISO week
+  in the path (`brief-2026-W40.json`), else the first date in the passage (a record date such as `classified_at`).
+- Query vectors are kept in memory per process (256 queries), so a repeated query needs no embedding call (G26).
