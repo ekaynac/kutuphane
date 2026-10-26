@@ -23,6 +23,8 @@
   .row { display:grid; grid-template-columns: repeat(3, 1fr); gap:6px; }
   .prop { font-size:12.5px; color:var(--muted); margin-top:2px; }
   .prop.on { color:var(--accent); }
+  .prop.kept { color:var(--warn); }
+  .prop.kept button { padding:2px 8px; font-size:12.5px; }
   .actions { display:flex; gap:8px; margin-top:12px; position:sticky; bottom:0; background:#fff; padding:8px 0; }
   button { font:inherit; padding:7px 12px; border:1px solid var(--line); border-radius:6px; background:#fff; }
   button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
@@ -64,32 +66,35 @@ const LABELS = { kind:"Belge türü", origin:"Köken", reviewed_by:"İnceleyen (
   export:"Dışa aktarma", route:"Rota", valid_from:"Geçerlilik başlangıcı", valid_to:"Geçerlilik sonu",
   applies_to:"Kapsam (applies_to)", inputs:"Girdiler (id, virgülle)", instruction:"Talimat mı?", activate:"Etkinleştirme",
   needs_split:"Bölünmeli", note:"Not" };
-let choices = {}, ids = [], pos = 0, current = null, prefilled = {}, started = 0, stratum = null;
+let choices = {}, ids = [], pos = 0, current = null, started = 0, stratum = null;
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, attrs = {}, text) => { const e = document.createElement(tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (text != null) e.textContent = text; return e; };
 // The access link carries ?t=. Keep it for this tab only (some desktop browsers keep no cookie for an IP address),
-// send it as a header, and remove it from the address bar.
+// send it as a header, and remove it from the address bar. The page itself is served without a session, so a
+// reload works from sessionStorage alone; only the /api/ calls are authenticated.
 const linkToken = new URLSearchParams(location.search).get("t");
 if (linkToken) { sessionStorage.setItem("kl4", linkToken); history.replaceState(null, "", "/"); }
+const NO_SESSION = "Oturum yok: Telegram'daki bağlantıyı yeniden açın.";
 async function api(path, opts = {}) {
   const headers = { ...(opts.headers || {}) }, t = sessionStorage.getItem("kl4");
   if (t) headers["X-Label-Token"] = t;
   const r = await fetch(path, { ...opts, headers, credentials: "same-origin" });
-  const j = await r.json();
-  if (r.status === 401) throw new Error("Oturum yok: Telegram'daki bağlantıyı yeniden açın.");
+  if (r.status === 401) { fail(NO_SESSION); throw new Error(NO_SESSION); }
+  const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || r.status); return j;
 }
+function fail(message) { $("view").replaceChildren(el("div", { class: "err" }, message)); $("form").replaceChildren(); current = null; }
 
 async function loadState() {
   const s = await api("/api/state"); choices = s.choices;
   const box = $("strata"); box.replaceChildren();
   for (const [k, v] of Object.entries(s.strata)) {
     const b = el("button", { type: "button" }, `${k} ${v.done}/${v.total}`);
-    b.onclick = () => openStratum(k); box.append(b);
+    b.onclick = () => openStratum(k).catch((e) => fail(e.message)); box.append(b);
   }
 }
-async function openStratum(s) { if (busy) return; generation++; stratum = s; ids = (await api(`/api/batch?stratum=${s}`)).ids; pos = 0; show(); }
+async function openStratum(s) { if (busy) return; generation++; stratum = s; ids = (await api(`/api/batch?stratum=${s}`)).ids; pos = 0; await show(); }
 
 function selectFor(name, options, value) {
   const sel = el("select", { name });
@@ -110,7 +115,7 @@ async function show() {
   $("msg").textContent = "";
   if (pos >= ids.length) { $("view").replaceChildren(el("div", { class: "meta" }, "Bu grup bitti. Katmanı yeniden seçin.")); $("form").replaceChildren(); await loadState(); return; }
   current = await api(`/api/item/${encodeURIComponent(ids[pos])}`); started = Date.now();
-  const it = current.item, p = current.proposals; prefilled = {};
+  const it = current.item, p = current.proposals;
   $("progress").textContent = `${stratum}: ${pos + 1}/${ids.length} · ${it.id}`;
   const v = $("view"); v.replaceChildren();
   v.append(el("h2", {}, it.ref.path || it.id));
@@ -141,6 +146,23 @@ function guessKind(it, p) {
 }
 const val = (n) => { const e = $("form").elements[n]; return e ? e.value : ""; };
 let rows = [], showAll = false, showException = false;
+const AI_KEYS = ["search", "ai_input", "train"];
+function hasValue(r) {
+  const f = $("form").elements;
+  return r.name === "ai_use" ? AI_KEYS.some((k) => f[`ai_${k}`].value) : f[r.name].value.trim() !== "";
+}
+// A filled field stays visible when its condition stops holding (kind or origin changed, a mode closed): it is
+// saved as `kept` until the person clears it (Astra review #11), never dropped silently.
+function keptNote(r) {
+  const clear = el("button", { type: "button" }, "Temizle");
+  clear.onclick = () => {
+    const f = $("form").elements;
+    for (const n of r.name === "ai_use" ? AI_KEYS.map((k) => `ai_${k}`) : [r.name]) f[n].value = "";
+    refresh();
+  };
+  const box = el("div", { class: "prop kept" }, "Koşulu artık geçerli değil; değer korunuyor. ");
+  box.append(clear); return box;
+}
 
 function buildForm(it, p) {
   const f = $("form"); f.replaceChildren(); rows = []; showAll = false; showException = false;
@@ -149,8 +171,8 @@ function buildForm(it, p) {
   const text = (name, value = "", ph = "") => Object.assign(el("input", { type: "text", name, placeholder: ph }), { value });
   const add = (name, input, when = () => true, proposalKey = name) => {
     const box = el("div"); box.dataset.field = name;
-    if (p[proposalKey] !== undefined) prefilled[name] = input.value;
-    field(box, name, input, p[proposalKey]); f.append(box); rows.push({ name, box, when });
+    field(box, name, input, p[proposalKey]); f.append(box);
+    const r = { name, box, when, visible: false, kept: false }; r.note = keptNote(r); box.append(r.note); rows.push(r);
   };
   const kind = (k) => val("kind") === k;
   const rule = () => kind("decision") || kind("procedure");
@@ -168,7 +190,8 @@ function buildForm(it, p) {
   add("valid_from", text("valid_from", "", "YYYY-MM-DD"), () => rule() || showAll);
   add("valid_to", text("valid_to", (pv("valid_to") || "").slice(0, 10), "YYYY-MM-DD"), () => rule() || showAll);
   add("applies_to", text("applies_to", pv("applies_to") ?? ""), () => rule() || kind("instruction") || showAll);
-  add("needs_split", blank("needs_split", choices.needs_split, pv("needs_split") ?? "no"));
+  // blind: no default, so an unanswered split question stays missing rather than "no" (Astra review #11)
+  add("needs_split", blank("needs_split", choices.needs_split, current.blind ? "" : pv("needs_split") ?? "no"));
 
   // inherited rights: one summary line; an exception opens the fields
   const inherited = el("div", { class: "prop" }, `Devralınan: lisans ${it.license_item}${it.license_collection ? ` (koleksiyon ${it.license_collection})` : ""} · AI kullanımı: belirtilmemiş`);
@@ -179,10 +202,10 @@ function buildForm(it, p) {
   const aiBox = el("div"); aiBox.dataset.field = "ai_use";
   aiBox.append(el("label", { class: "f" }, "AI kullanımı (search / ai_input / train)"));
   const row = el("div", { class: "row" }); const ai = pv("ai_use") || {};
-  for (const k of ["search", "ai_input", "train"]) { const s = selectFor(`ai_${k}`, ["", "y", "n"], ai[k] ?? ""); s.title = k; row.append(s); }
+  for (const k of AI_KEYS) { const s = selectFor(`ai_${k}`, ["", "y", "n"], ai[k] ?? ""); s.title = k; row.append(s); }
   aiBox.append(row, el("div", { class: "prop" }, HELP.ai_use)); f.append(aiBox);
-  if (p.ai_use) prefilled.ai_use = JSON.stringify(ai);
-  rows.push({ name: "ai_use", box: aiBox, when: () => showException || showAll });
+  const aiRow = { name: "ai_use", box: aiBox, when: () => showException || showAll, visible: false, kept: false };
+  aiRow.note = keptNote(aiRow); aiBox.append(aiRow.note); rows.push(aiRow);
   add("export", blank("export", choices.export.filter(Boolean), ""), () => showAll);
   add("route", blank("route", choices.route.filter(Boolean), ""), () => showAll);
 
@@ -192,26 +215,35 @@ function buildForm(it, p) {
   f.append(all, note);
   f.onchange = refresh; refresh();
 }
-function refresh() { for (const r of rows) r.box.style.display = r.when() ? "" : "none"; }
+function refresh() {
+  for (const r of rows) {
+    const on = r.when();
+    r.kept = !on && r.visible && hasValue(r);
+    r.visible = on || r.kept;
+    r.box.style.display = r.visible ? "" : "none";
+    r.note.style.display = r.kept ? "" : "none";
+  }
+}
 
 const REQUIRED = ["kind", "origin", "instruction", "personal_data"];
+// The server checks `shown` against the mode and the choices, keeps `kept`, and derives the accepted proposals.
 function collect() {
-  const f = $("form"), labels = {}, accepted = [], shown = [];
+  const f = $("form"), labels = {}, shown = ["note"], kept = [];
   for (const r of rows) {
-    if (r.box.style.display === "none") continue;
-    shown.push(r.name);
+    if (!r.visible) continue;
+    shown.push(r.name); if (r.kept) kept.push(r.name);
     if (r.name === "ai_use") {
-      const ai = {}; for (const k of ["search", "ai_input", "train"]) { const v = f.elements[`ai_${k}`].value; if (v) ai[k] = v; }
-      labels.ai_use = ai; if (prefilled.ai_use === JSON.stringify(ai)) accepted.push("ai_use");
+      const ai = {}; for (const k of AI_KEYS) { const v = f.elements[`ai_${k}`].value; if (v) ai[k] = v; }
+      labels.ai_use = ai;
     } else {
       const v = f.elements[r.name].value; if (v !== "") labels[r.name] = v;
-      if (r.name in prefilled && prefilled[r.name] === v && v !== "") accepted.push(r.name === "license_item" ? "license" : r.name);
     }
   }
   if (f.elements.note.value.trim()) labels.note = f.elements.note.value;
   const missing = REQUIRED.filter((n) => !labels[n]);
   if (missing.length) throw new Error(`Seçilmedi: ${missing.map((n) => LABELS[n] || n).join(", ")}`);
-  return { id: current.item.id, labels, shown, accepted_proposals: accepted, ms: Date.now() - started };
+  const mode = showAll ? "all" : showException ? "exception" : "basic";
+  return { id: current.item.id, labels, shown, kept, mode, ms: Date.now() - started };
 }
 let busy = false, generation = 0;  // one save or move at a time; a stale reply never moves the cursor
 function setBusy(on) { busy = on; for (const id of ["save", "skip"]) $(id).disabled = on; for (const b of $("strata").querySelectorAll("button")) b.disabled = on; }
@@ -228,9 +260,9 @@ $("save").onclick = async () => {
   } catch (e) { $("msg").className = "err"; $("msg").textContent = e.message; }
   finally { setBusy(false); }
 };
-$("skip").onclick = async () => { if (busy) return; setBusy(true); generation++; pos++; try { await show(); } finally { setBusy(false); } };
+$("skip").onclick = async () => { if (busy) return; setBusy(true); generation++; pos++; try { await show(); } catch (e) { $("msg").className = "err"; $("msg").textContent = e.message; } finally { setBusy(false); } };
 document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); $("save").click(); } });
-loadState().catch((e) => { $("view").replaceChildren(el("div", { class: "err" }, e.message)); });
+loadState().catch((e) => fail(e.message));
 </script>
 </body>
 </html>
