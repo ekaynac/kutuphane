@@ -24,8 +24,8 @@ Rules kept here (docs/research/2026-10-26-real-gold-sources.md §1-§2):
 - the item licence comes only from a declaration that covers the file; a repository LICENSE is `repo_license`
   (kstd §5);
 - RFC obsoletion keeps its scope ("portions of" = partial); `updates` stays a separate relation;
-- rejected = withdrawn + acceptance_reason + prior_acceptance false; a decision body is `decided_by`, never
-  inferred;
+- rejected (D68) = acceptance `rejected` + prior_acceptance false (pending -> rejected, never accepted);
+  a decision body is `decided_by`, never inferred;
 - fetched content is never executed.
 
 Usage: python3 build.py [--out DIR] [--cache DIR]
@@ -473,17 +473,18 @@ def build_peps(cases: list[Case], meta: dict):
         g["artifact_status"] = th.get("Status")
         if status in ("Final", "Accepted", "Active"):
             g["acceptance"] = "accepted"
-        elif status in ("Superseded", "Withdrawn", "Rejected"):
+        elif status == "Rejected":
+            g["acceptance"] = "rejected"
+            g["prior_acceptance"] = False
+            c.gold_source.append("acceptance: source status Rejected = kstd state rejected (D68); "
+                                 "prior_acceptance: Rejected means the PEP was never accepted (PEP 1)")
+        elif status in ("Superseded", "Withdrawn"):
             g["acceptance"] = "withdrawn"
             g["acceptance_reason"] = status.lower()
-            if status == "Rejected":
-                g["prior_acceptance"] = False
-                c.gold_source.append("prior_acceptance: Rejected means the PEP was never accepted (PEP 1)")
-            else:
-                hist = pep_status_history(n)
-                g["prior_acceptance"] = any(s in ("Accepted", "Final", "Active") for s in hist)
-                c.gold_source.append(f"prior_acceptance: Status headers of all {len(hist)} revisions in the git "
-                                     f"history ({' > '.join(dict.fromkeys(s for s in hist if s))})")
+            hist = pep_status_history(n)
+            g["prior_acceptance"] = any(s in ("Accepted", "Final", "Active") for s in hist)
+            c.gold_source.append(f"prior_acceptance: Status headers of all {len(hist)} revisions in the git "
+                                 f"history ({' > '.join(dict.fromkeys(s for s in hist if s))})")
         else:
             g["acceptance"] = "pending"
         g["superseded_by"] = [ref_for(m) for m in sup] or None
@@ -554,7 +555,7 @@ def build_peps(cases: list[Case], meta: dict):
         if status == "Rejected" and sup:
             c.notes.append("Rejected with a Superseded-By header: the successor took up the topic; this "
                            "PEP was never accepted.")
-        if status in ("Rejected", "Withdrawn", "Superseded"):
+        if status in ("Withdrawn", "Superseded"):
             c.notes.append(f"kstd has no '{status.lower()}' state; source status {status} maps to withdrawn "
                            f"with acceptance_reason={status.lower()} (history). prior_acceptance tells whether "
                            f"the source ever declared it accepted.")
@@ -900,7 +901,7 @@ def norm_handle(h) -> str:
 
 
 KEP_ACCEPT = {"implemented": "accepted", "implementable": "accepted", "provisional": "pending",
-              "deferred": "pending", "withdrawn": "withdrawn", "rejected": "withdrawn",
+              "deferred": "pending", "withdrawn": "withdrawn", "rejected": "rejected",
               "replaced": "withdrawn", "superseded": "withdrawn", "removed": "withdrawn"}
 
 
@@ -1003,18 +1004,18 @@ def build_keps(cases: list[Case], meta: dict):
         g["source_status"] = status
         g["artifact_status"] = status
         g["acceptance"] = KEP_ACCEPT.get(status)
-        if g["acceptance"] == "withdrawn":
+        if g["acceptance"] == "rejected":
+            g["prior_acceptance"] = False
+            c.gold_source.append("acceptance: KEP status rejected = kstd state rejected (D68)")
+        elif g["acceptance"] == "withdrawn":
             g["acceptance_reason"] = status
-            if status == "rejected":
-                g["prior_acceptance"] = False
-            else:
-                hist = kep_status_history(ky_path)
-                g["prior_acceptance"] = True if any(s in ("implementable", "implemented") for s in hist) else None
-                c.gold_source.append(f"prior_acceptance: status of the {len(hist)} revisions of kep.yaml in git "
-                                     f"({' > '.join(dict.fromkeys(hist)) or 'none'})")
-                if g["prior_acceptance"] is None:
-                    c.notes.append("No revision of kep.yaml shows implementable/implemented; older revisions "
-                                   "can be in a moved file, so prior_acceptance is not determined (null).")
+            hist = kep_status_history(ky_path)
+            g["prior_acceptance"] = True if any(s in ("implementable", "implemented") for s in hist) else None
+            c.gold_source.append(f"prior_acceptance: status of the {len(hist)} revisions of kep.yaml in git "
+                                 f"({' > '.join(dict.fromkeys(hist)) or 'none'})")
+            if g["prior_acceptance"] is None:
+                c.notes.append("No revision of kep.yaml shows implementable/implemented; older revisions "
+                               "can be in a moved file, so prior_acceptance is not determined (null).")
         succ = None
         declared = [s for s in as_list(ky.get("superseded-by")) if s]
         if declared:
@@ -1145,7 +1146,7 @@ def build_adrs(cases: list[Case], meta: dict):
         elif s.startswith("superseded") or s.startswith("deprecated"):
             acc = "withdrawn"
         elif s.startswith("rejected"):
-            acc = "withdrawn"
+            acc = "rejected"
         elif s.startswith("accepted") or s == "final" or s.startswith("partially implemented"):
             acc = "accepted"
         elif s.startswith("proposed"):
@@ -1178,17 +1179,17 @@ def build_adrs(cases: list[Case], meta: dict):
         g["source_status"] = status_raw
         g["artifact_status"] = status_raw
         g["acceptance"] = acc
-        if acc == "withdrawn":
-            g["acceptance_reason"] = "rejected" if s.startswith("rejected") else s.split()[0]
-            if s.startswith("rejected"):
-                g["prior_acceptance"] = False
-            else:
-                hist = adr_status_history(path)
-                g["prior_acceptance"] = True if any(h.startswith("accepted") for h in hist) else None
-                c.gold_source.append(f"prior_acceptance: Status line of the {len(hist)} revisions with one "
-                                     f"({' > '.join(dict.fromkeys(hist)) or 'none'})")
-                if g["prior_acceptance"] is None:
-                    c.notes.append("No revision says 'accepted', so prior_acceptance is not determined (null).")
+        if acc == "rejected":
+            g["prior_acceptance"] = False
+            c.gold_source.append("acceptance: MADR status rejected = kstd state rejected (D68)")
+        elif acc == "withdrawn":
+            g["acceptance_reason"] = s.split()[0]
+            hist = adr_status_history(path)
+            g["prior_acceptance"] = True if any(h.startswith("accepted") for h in hist) else None
+            c.gold_source.append(f"prior_acceptance: Status line of the {len(hist)} revisions with one "
+                                 f"({' > '.join(dict.fromkeys(hist)) or 'none'})")
+            if g["prior_acceptance"] is None:
+                c.notes.append("No revision says 'accepted', so prior_acceptance is not determined (null).")
         g["superseded_by"] = None
         if sup:
             succ = []
@@ -1204,7 +1205,7 @@ def build_adrs(cases: list[Case], meta: dict):
             g["approver"] = deciders or None
             g["approver_kind"] = "person"
             c.gold_source.append("approver: Deciders line (MADR)")
-        elif acc == "withdrawn" and s.startswith("rejected"):
+        elif acc == "rejected":
             g["approver"] = None
             g["decided_by"] = [{"name": d, "kind": "person", "source": "Deciders line"} for d in deciders] or None
             c.gold_source.append("decided_by: Deciders line (rejected decision)")
