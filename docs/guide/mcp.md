@@ -227,6 +227,10 @@ Search the books that you may read now. The results carry passage handles for `o
 The filters narrow the evidence before ranking. A filter never adds a book: a book that you cannot read gives the
 same empty result as a book that does not exist.
 
+Notes are not in `search_library` or `ask_library` (R1 operator decision, docs/24). Use `query_notes` and
+`neighbours` for notes. A journal that you may read in `book` is refused with the error
+`journal: use query_notes for <journal>; notes are not in search_library or ask_library`, not with an empty list.
+
 **Needs:** `read` on each book. An agent also needs `activate` to get instruction passages (agent files). An agent
 never gets passages of a skill that a SkillSpector scan blocks ([security.md](security.md#skill-scan-skillspector)).
 
@@ -250,8 +254,8 @@ never gets passages of a skill that a SkillSpector scan blocks ([security.md](se
 | `text` | The passage text, or `null` with `withheld` (section 4.2). |
 | `item` | The kstd item information of the file, or `null` when the version has no `kstd.yaml`. |
 
-**Errors:** `400` (query, `k` or filter not valid), `409`. When the optional embedding, translation or reranking
-route fails, the search continues without that stage. It does not fail.
+**Errors:** `400` (query, `k` or filter not valid; a journal in `book`), `409`. When the optional embedding,
+translation or reranking route fails, the search continues without that stage. It does not fail.
 
 ```json
 {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
@@ -298,6 +302,14 @@ be in a skill that a scan blocks.
 Answer a question from the library. The answer cites passages as `[n]`. When the passages do not answer the
 question, the status is `not_in_library`. The answer is in the language of the question (Turkish or English).
 
+The passages go to the model in rank order, and the model is told to base the answer on passage `[1]` when that
+passage answers the question, to put each `[n]` right after its claim, and to answer the part of a question that
+the passages answer and say what they do not show. When the question names a document (a
+file name, or a name before `§`, for example `access-policy §5.3`) or a section (`§5.3`, `section 5.3`,
+`bölüm 5.3`), the server checks the passages first: the document must be in the path of a passage, the section
+must start a line of a passage. If one is missing, the prompt says so, and the model answers `not_in_library` or
+says that the passages only refer to it.
+
 The server sends a passage to the answer model only when its kstd rights allow AI input. The answer model is
 called through LLMDAP.
 
@@ -329,8 +341,8 @@ The server decides the rights again after the model call.
 `idempotency_key` gives the same job and its current status.
 
 **Errors:** `400` (`question is required`, `background must be true or false`,
-`idempotency_key needs background: true`), `403`, `409`, `429` (open jobs), `502` (the model failed), `503` (no
-LLMDAP: the light install; also with `background: true`).
+`idempotency_key needs background: true`, a journal in `book`), `403`, `409`, `429` (open jobs), `502` (the model
+failed), `503` (no LLMDAP: the light install; also with `background: true`).
 
 ```json
 {"jsonrpc": "2.0", "id": 4, "method": "tools/call",
@@ -520,7 +532,7 @@ its sources. Read [agent-memory.md](agent-memory.md).
 | `confirmation` | Only when you asked for `human` or `assisted`: `{"url", "expires_at"}`. Show the URL to the person. On that page, the person can confirm the words with a passkey until `expires_at` (24 hours). `url` is `null` when the operator did not set `KUTUPHANE_CURATOR_URL`. Section 5.16. |
 | `candidates` | Possible duplicates: `normalized` (same text after case and white space folding), `vector` (similarity at or above `KUTUPHANE_NOTE_DUP_SIMILARITY`, default 0.90), `class` (same `class_key` in the book). At most 5 per match type. Only from books you may read. The server never merges notes. Use `link_notes` to decide. |
 | `recurrence` | The number of propose writes over the `same_as` cluster of the note. |
-| `class_count` | The number of distinct clusters with this `class_key` in the book. |
+| `class_count` | The number of distinct clusters of evidence notes (`finding`, `lesson`, `dead_end`, `test_result`) with this `class_key` in the book. A `convention` or `decision_proposal` with the key does not count: it answers the class, it does not repeat it. |
 | `guard_due` | `true` when `class_count` ≥ 2 and no approved `convention` note has this `class_key` in the book. |
 | `vector` | `stored`, `skipped:search`, `skipped:ai_input`, `skipped:no_route`, `skipped:egress`, `skipped:error` or `skipped:dimensions`. A skipped vector does not stop the write. |
 
@@ -688,7 +700,7 @@ are in `sets` in your context are nodes. An edge to an excluded node is dropped.
 | Argument | Type | Required | Default | Limits |
 |---|---|---|---|---|
 | `ref` | string | yes | — | A note reference or a passage handle. |
-| `types` | list of strings | no | all | Link types. |
+| `types` | list of strings | no | all | Link types, and `cites` (a passage root only). |
 | `depth` | integer | no | `1` | 1–2. |
 | `direction` | string | no | `both` | `out`, `in`, `both`. |
 | `sets` | list of strings | no | `["current"]` | As `query_notes`. |
@@ -706,8 +718,9 @@ are in `sets` in your context are nodes. An edge to an excluded node is dropped.
 ```
 
 `root` and each node are note items, as in `query_notes`. With a passage handle, `root` is `null` and the nodes are
-the notes linked to the passage (`about`, `derived_from`). `truncated` is `true` when `max_nodes` or the size
-limits cut the graph.
+the notes linked to the passage (`about`, `derived_from`) and the notes that cite it (edge type `cites`, after the
+links). The same gates apply to both: a node must be readable and in `sets`. `direction: out` gives no nodes for a
+passage. `truncated` is `true` when `max_nodes` or the size limits cut the graph.
 
 **Errors:** `400`, `403`, `404`, `409`.
 

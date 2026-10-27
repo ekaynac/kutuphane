@@ -186,6 +186,36 @@ def test_the_answer_follows_the_language_of_the_question(conn, fake, library, qu
     assert needle in system and answers.NOT_IN_LIBRARY in system and user.startswith(label)
 
 
+@pytest.mark.parametrize("question,absent", [
+    ("What does the access-policy §5.3 require for erişim kayıtları?", "access-policy, §5.3"),  # not in the book
+    ("What does the guide.md say about erişim kayıtları?", "guide.md"),
+    ("Bölüm 9 erişim kayıtları için ne diyor?", "§9"),
+    ("What does the veri-saklama.md say about erişim kayıtları?", None),              # in the evidence
+    ("What does the yedek-geri-yukleme §2 say about yedek kayıtlar?", None),          # "2. Son doğrulanmış …"
+])
+def test_a_named_source_is_checked_against_the_evidence(conn, fake, library, question, absent):  # G29 (pilot 2)
+    fake.reply = "x [1]."
+    ask(conn, fake, Actor(U), question)
+    system, user = (m["content"] for m in fake.last_body["messages"])
+    lang = retrieval.language(question)
+    assert ("names a specific document" if lang == "en" else "belirli bir belgeyi") in system
+    if absent:
+        assert user.endswith(answers.ABSENT[lang].format(names=absent))
+    else:
+        assert "Check: the question names" not in user and "Denetim: soru" not in user
+
+
+@pytest.mark.parametrize("lang,question,phrases", [
+    ("en", "How long are access logs kept? runbook", ("read [1] first", "not in a list at the end")),
+    ("tr", "Erişim kayıtları ne kadar saklanır?", ("önce [1]'i oku", "sonda toplu yazma")),
+])
+def test_the_prompt_asks_for_the_top_passage_and_inline_sources(conn, fake, library, lang, question, phrases):  # G30
+    fake.reply = "x [1]."
+    ask(conn, fake, Actor(U), question)
+    assert retrieval.language(question) == lang
+    assert all(p in fake.last_body["messages"][0]["content"] for p in phrases)
+
+
 @pytest.mark.parametrize("text,lang", [
     ("Which on-prem serving engines support NVFP4 on Blackwell?", "en"),
     ("Why were rings replaced with Pulse?", "en"),

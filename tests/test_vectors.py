@@ -245,6 +245,24 @@ def test_a_new_version_embeds_only_the_changed_passages(conn, fake, okf_dir):  #
     assert len(embedded_inputs(fake, since)) == len(rows)
 
 
+def test_a_new_chunker_reuses_the_vectors_of_unchanged_passages(conn, fake, okf_dir, monkeypatch):  # G27
+    body = ("Yetki gövdesi uzun bir cümledir. " * 40).strip()
+    (okf_dir / "kural.md").write_text(f"# Kural\n\n{body}\n\n## Son\n\nKısa.\n", encoding="utf-8")
+    with monkeypatch.context() as m:                                    # the cut of chunker 4: "# Kural" alone
+        m.setattr(profiles, "CHUNKER_VERSION", profiles.CHUNKER_VERSION - 1)
+        m.setattr(profiles, "_attach_bare", lambda merged: [(s, e) for s, e, _bare in merged])
+        old = publish(conn, okf_dir)
+        vectors.index(conn, fake.embedder(), "kitap")
+    since = len(fake.requests)
+    new = publish(conn, okf_dir)                                        # same bytes, new profile
+    assert new.profile_id != old.profile_id and new.content_id == old.content_id
+    result = vectors.index(conn, fake.embedder(), "kitap")
+    assert embedded_inputs(fake, since) == [f"# Kural\n\n{body}\n"]   # only the passage that got its heading
+    assert result.embedded == 1 and result.reused == len(current_texts(conn)) - 1 > 0
+    publish(conn, okf_dir, book="ikinci")
+    assert vectors.index(conn, fake.embedder(), "ikinci").reused == 0  # still never across books
+
+
 def test_migration_014_gives_old_vectors_the_reuse_key(conn, fake, okf_dir):  # G17: the radar books keep theirs
     (okf_dir / "uzun.md").write_text("ğüş İı " * (vectors.EMBED_CHARS // 7 + 10), encoding="utf-8")
     catalog.publish(conn, book="kitap", title="kitap", files=read_source(okf_dir), policy=LOCAL,
