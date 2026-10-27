@@ -26,14 +26,14 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import answers, db, feedback, gate, identity, kstd, llmdap, retrieval, search
+from . import answers, db, feedback, gate, identity, ids, kstd, llmdap, notes, retrieval, search
 from .gate import Actor
 from .ids import normalize_path
 
 # Feature modules (docs/24 §16 P0). Each may define `register_mcp(mcp, deps)` (adds its MCP tools) and
 # `http_routes(deps, endpoint) -> list[Route]` (its HTTP routes). They are called in this order, after the built-in
 # tools and routes, so the tool list and the route table stay in a fixed order.
-FEATURES: tuple = ()
+FEATURES: tuple = (notes,)
 
 log = logging.getLogger(__name__)
 ENV = {"model": "KUTUPHANE_ANSWER_MODEL", "public_url": "KUTUPHANE_PUBLIC_URL"}
@@ -174,6 +174,8 @@ ERRORS = [  # order matters: subclasses first
     (gate.Denied, 403, "forbidden"),
     (gate.NotFound, 404, "not found"),
     (llmdap.EgressError, 502, "model service unavailable or refused"),
+    (ids.IdempotencyConflict, 409, None),
+    (ids.LimitExceeded, 429, None),
     (ValueError, 400, None),  # BadRequest, query/k validation, path validation: message is safe and useful
 ]
 

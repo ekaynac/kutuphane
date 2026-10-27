@@ -35,6 +35,8 @@ def _components(chunker: str) -> dict:
 
 
 CANONICAL = ("whole", "chunked")
+JOURNAL = "journal"  # the profile of a journal's notes (docs/24 §3): no cutting; one note is one block
+NOTE_MAX_CHARS = 8000
 
 
 def spec(name: str) -> dict:
@@ -43,7 +45,10 @@ def spec(name: str) -> dict:
     if name == "chunked":
         return {"name": "chunked", "components": _components("paragraph"),
                 "settings": {"fts": FTS_CONFIG, "target_chars": TARGET_CHARS}}
-    raise ValueError(f"unknown profile {name!r} (whole, chunked)")
+    if name == JOURNAL:  # the id covers the normalizer of norm_sha256 and the FTS configuration of tsv (D26)
+        return {"name": JOURNAL, "components": {"notes": "kutuphane.notes@1", "normalizer": "nfc-casefold-ws@1"},
+                "settings": {"fts": FTS_CONFIG, "max_chars": NOTE_MAX_CHARS}}
+    raise ValueError(f"unknown profile {name!r} (whole, chunked, journal)")
 
 
 @dataclass(frozen=True)

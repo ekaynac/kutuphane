@@ -11,8 +11,8 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import (answers, audit, authz, catalog, db, devauth, gate, identity, kstd, llmdap, packages, profiles, search,
-               retrieval, signing, vectors)
+from . import (answers, audit, authz, catalog, db, devauth, gate, identity, kstd, llmdap, notes, packages, profiles,
+               search, retrieval, signing, vectors)
 from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, make_policy
 from .source import AcceptedFinding, read_source
 
@@ -281,6 +281,29 @@ def cmd_imports(conn, _args) -> int:
     return 0
 
 
+def cmd_journal_create(conn, args) -> int:
+    policy = make_policy(sensitivity=args.sensitivity, egress=args.egress, protection=args.protection)
+    _print(notes.create_journal(conn, book=args.book, title=args.title or args.book, search=args.search == "y",
+                                ai_input=args.ai_input == "y", policy=policy, by=args.by))
+    return 0
+
+
+def cmd_journal_restrict(conn, args) -> int:
+    _print(notes.restrict_journal(conn, args.book, search=args.no_search, ai_input=args.no_ai_input))
+    return 0
+
+
+def cmd_note_standing(conn, args) -> int:
+    """The curator act (docs/24 §8.2): connected with KUTUPHANE_CURATOR_DSN, the only credential that can write
+    Standing. The CLI trusts its operator and records the curator named here, who must hold `curate` now."""
+    try:
+        _print(notes.set_standing(conn, args.ref, args.value, curator=args.curator, reason=args.reason))
+    except (gate.Denied, gate.NotFound) as exc:
+        print(f"denied: {exc}", file=sys.stderr)
+        return 3
+    return 0
+
+
 def cmd_whoami(_conn, args) -> int:
     token = sys.stdin.readline().strip()  # never on the command line (shell history, process list)
     try:
@@ -436,6 +459,31 @@ def parser() -> argparse.ArgumentParser:
     ex.add_argument("--answer", action="store_true", help="the id is an answer id")
     ex.add_argument("--llmdap-export", help="JSONL from llmdap-audit-export")
     ex.set_defaults(fn=cmd_explain)
+    jr = sub.add_parser("journal", help="journals: books whose items are agent notes (docs/24)")
+    jsub = jr.add_subparsers(dest="journal_cmd", required=True)
+    jc = jsub.add_parser("create", help="create a journal (a new book); search and AI input must both be stated")
+    jc.add_argument("book")
+    jc.add_argument("--title")
+    jc.add_argument("--search", required=True, choices=("y", "n"), help="notes get full text and vectors")
+    jc.add_argument("--ai-input", required=True, choices=("y", "n"), help="note text may be sent to models")
+    jc.add_argument("--sensitivity", required=True, choices=SENSITIVITY)
+    jc.add_argument("--egress", required=True, choices=EGRESS)
+    jc.add_argument("--protection", required=True, choices=PROTECTION_M1)
+    jc.add_argument("--by", required=True, help="the administrator, e.g. user:admin")
+    jc.set_defaults(fn=cmd_journal_create)
+    jt = jsub.add_parser("restrict", help="tighten a journal (loosening needs a new journal)")
+    jt.add_argument("book")
+    jt.add_argument("--no-search", action="store_true")
+    jt.add_argument("--no-ai-input", action="store_true")
+    jt.set_defaults(fn=cmd_journal_restrict)
+    nt = sub.add_parser("note", help="notes (curation needs KUTUPHANE_CURATOR_DSN)")
+    nsub = nt.add_subparsers(dest="note_cmd", required=True)
+    ns = nsub.add_parser("standing", help="set the Standing of a note as a curator")
+    ns.add_argument("ref", help="<book>@nt_<64 hex>")
+    ns.add_argument("value", choices=notes.STANDINGS)
+    ns.add_argument("--curator", required=True, help="user:<name>, who holds curate on the book")
+    ns.add_argument("--reason", required=True)
+    ns.set_defaults(fn=cmd_note_standing, curator_db=True)
     return ap
 
 
@@ -444,7 +492,13 @@ def main(argv=None) -> int:
     try:
         if getattr(args, "no_db", False):
             return args.fn(None, args)
-        with db.connect() as conn:
+        if getattr(args, "curator_db", False) and not os.environ.get(db.CURATOR_DSN_ENV):
+            print(f"error: {db.CURATOR_DSN_ENV} is not set (the curator credential)", file=sys.stderr)
+            return 2
+        # The owner credential writes Standing and applies migrations; without it, migrate uses KUTUPHANE_DSN
+        # (a single-role development database).
+        owner = getattr(args, "curator_db", False) or args.fn is cmd_migrate
+        with db.connect(os.environ.get(db.CURATOR_DSN_ENV) if owner else None) as conn:
             return args.fn(conn, args)
     except (ValueError, OSError, RuntimeError) as exc:  # SourceError, PolicyError, AuthzError are ValueErrors
         print(f"error: {exc}", file=sys.stderr)

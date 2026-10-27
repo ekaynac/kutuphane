@@ -11,7 +11,10 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
-MODES = ("discover", "read", "use", "activate")
+# propose: write notes and links into a journal (docs/24 §4.2). curate: may be named as a curator by the CLI; only
+# user principals hold it, directly, and no delegation carries it (the database refuses both, migration 016).
+MODES = ("discover", "read", "use", "activate", "propose", "curate")
+NOT_DELEGABLE = ("curate",)
 # At most 128 characters in all, so a principal is always a valid LLMDAP chain label (x-llmdap-for-subject).
 PRINCIPAL = re.compile(r"^(user|agent|role):[a-z0-9][a-z0-9._@-]{0,121}\Z")
 OBJECT = re.compile(r"^book:[a-z0-9][a-z0-9-]{0,62}\Z")
@@ -51,6 +54,8 @@ def grant(conn, obj: str, mode: str, subject: str) -> int:
     _check(PRINCIPAL, base, "subject")
     if userset and (userset != "member" or not base.startswith("role:")):
         raise AuthzError("only role:<name>#member usersets are supported")
+    if mode == "curate" and not subject.startswith("user:"):
+        raise AuthzError("curate is held only by users, directly")
     return _insert_tuple(conn, obj, mode, subject)
 
 
@@ -89,6 +94,8 @@ def delegate(conn, *, delegator: str, delegate_to: str, obj: str, mode: str, exp
         raise AuthzError("delegation goes to an agent")
     _check(OBJECT, obj, "object")
     _mode(mode)
+    if mode in NOT_DELEGABLE:
+        raise AuthzError(f"{mode} cannot be delegated")
     if not direct(conn, delegator, obj, mode).allowed:
         raise AuthzError(f"{delegator} does not hold {mode} on {obj}")
     return conn.execute("INSERT INTO delegation (delegator, delegate, object, mode, purpose, expires_at) "

@@ -35,7 +35,8 @@ services:
     profiles: [app]
     build: .
     environment:
-      KUTUPHANE_DSN: postgresql://kutuphane:${KUTUPHANE_DB_PASSWORD}@postgres:5432/kutuphane
+      # The app role (deploy/db-roles.sql): it cannot write Standing. The owner credential never enters this container.
+      KUTUPHANE_DSN: postgresql://kutuphane_app:${KUTUPHANE_APP_DB_PASSWORD:-}@postgres:5432/kutuphane
       KUTUPHANE_PUBLIC_URL: ${KUTUPHANE_PUBLIC_URL:-}
       KUTUPHANE_OIDC_ISSUER: ${KUTUPHANE_OIDC_ISSUER:-}
       KUTUPHANE_OIDC_AUDIENCE: ${KUTUPHANE_OIDC_AUDIENCE:-kutuphane}
