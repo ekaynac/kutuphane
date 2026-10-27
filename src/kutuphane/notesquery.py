@@ -4,6 +4,12 @@ SQL only: no model call, no embedding, no reranker. Every read evaluates the mem
 (`memory_seq`, commit order, §4) and decides rights now, with the gates of `search_library`: one `authz.allowed`
 statement before, one more at the end, one rerun when a book was lost, then `SearchChanged`. One predicate,
 `current`, decides "current" for every read (§9.2).
+
+A reader that puts the text into a model (`for_model`) gets the text of a note withheld, the note itself still
+listed, when the note's `ai_input` is false or when the note depends on a skill that a scan blocks now (D71, SQL
+`note_skill_blocked`: its passage citations and `derived_from` dependencies, transitively). The final statement
+reads the blocks of every note whose text a read shows, with the rights (Astra review #15); a note blocked
+meanwhile runs the read again, as a lost book does.
 """
 import base64
 import binascii
@@ -89,6 +95,7 @@ class Note:
     path_ok: bool                # a file path in the context matches a scope glob (SQL, scope_path_re)
     origin: str
     rank: float = 0.0
+    skill_blocked: bool = False  # depends on a blocked skill (read only for model readers)
     w: int = 0
     standing: str = "pending"
     standing_seq: int | None = None
@@ -203,7 +210,8 @@ SELECT n.seq, n.book, n.id, n.kind, n.body, n.class_key, n.scope_repo, n.scope_b
        (SELECT CASE WHEN bool_or(wr.origin = 'model') THEN 'model' ELSE 'unknown' END FROM write_record wr
          WHERE wr.note_seq = n.seq AND wr.action = 'propose' AND wr.seq <= %(w)s),
        CASE WHEN %(text)s::text IS NULL THEN 0
-            ELSE ts_rank_cd(n.tsv, websearch_to_tsquery(%(cfg)s::regconfig, %(text)s::text), %(norm)s) END
+            ELSE ts_rank_cd(n.tsv, websearch_to_tsquery(%(cfg)s::regconfig, %(text)s::text), %(norm)s) END,
+       CASE WHEN %(blocks)s THEN note_skill_blocked(n.seq) ELSE false END
   FROM note n JOIN note_journal j ON j.seq = n.seq
  WHERE n.book = ANY(%(books)s::text[]) AND n.seq <= %(w)s
    AND (%(seqs)s::bigint[] IS NULL OR n.seq = ANY(%(seqs)s::bigint[]))
@@ -217,12 +225,13 @@ SELECT n.seq, n.book, n.id, n.kind, n.body, n.class_key, n.scope_repo, n.scope_b
 
 
 def _load(conn, books, w: int, ctx: Context, *, seqs=None, kinds=None, class_key=None, after=None, before=None,
-          text=None) -> list[Note]:
+          text=None, blocks: bool = False) -> list[Note]:
+    """`blocks`: read whether each note depends on a blocked skill (only model readers need it)."""
     rows = conn.execute(_NOTES, {
         "books": sorted(books), "w": w, "seqs": seqs, "kinds": kinds, "class_key": class_key, "after": after,
         "before": before, "text": text, "cfg": profiles.FTS_CONFIG, "norm": RANK_NORMALIZATION,
-        "path": ctx.path if ctx.path and not ctx.path.endswith("/") else None}).fetchall()
-    out = [Note(*r[:13], origin=r[13], rank=float(r[14]), w=w) for r in rows]
+        "path": ctx.path if ctx.path and not ctx.path.endswith("/") else None, "blocks": blocks}).fetchall()
+    out = [Note(*r[:13], origin=r[13], rank=float(r[14]), w=w, skill_blocked=r[15]) for r in rows]
     standing = notes.effective_standing(conn, [n.seq for n in out], w)
     for n in out:
         n.standing, n.standing_seq = standing[n.seq]
@@ -326,10 +335,14 @@ def _item(note: Note, is_current: bool, recurrence: int, graph: Graph, for_model
     for _, src, type_, dst, _p in graph.edges:
         if note.seq in (src, dst):
             links[type_] = links.get(type_, 0) + 1
-    withheld = for_model and not note.ai_input
+    withheld = None
+    if for_model and not note.ai_input:
+        withheld = WITHHELD
+    elif for_model and note.skill_blocked:
+        withheld = gate.SKILL_WITHHELD
     item = {"ref": note.ref, "kind": note.kind, "role": note.role, "standing": note.standing,
             "current": is_current, "origin": note.origin,
-            "text": None if withheld else note.body, "withheld": WITHHELD if withheld else None,
+            "text": None if withheld else note.body, "withheld": withheld,
             "class_key": note.class_key,
             "scope": None if note.scope_repo is None else {"repo": note.scope_repo, "branch": note.scope_branch,
                                                             "paths": list(note.scope_paths)},
@@ -451,8 +464,14 @@ def _uncursor(text: str) -> tuple[int, tuple]:
 
 # --- the gates (§11) ---------------------------------------------------------------------------------------
 
-def _read(conn, actor: Actor) -> authz.Allowed:
-    return authz.allowed(conn, actor.principal, actor.on_behalf_of, ["read"])
+def _read(conn, actor: Actor, notes=()) -> authz.Allowed:
+    """`read` on every book; `notes`: the notes whose skill blocks the same statement reads."""
+    return authz.allowed(conn, actor.principal, actor.on_behalf_of, ["read"], notes=notes)
+
+
+def _shown(delivered, for_model: bool) -> list[int]:
+    """The notes whose text a read hands to a model reader: the final statement reads their skill blocks again."""
+    return [n.seq for n in delivered if for_model and n.ai_input and not n.skill_blocked]
 
 
 def _journals(conn, objects, wanted) -> list[str]:
@@ -597,7 +616,8 @@ def query_notes(conn, actor: Actor, *, for_model: bool, book=None, sets=("curren
                 if conn.execute("SELECT 1 FROM code_repo WHERE book = %s AND slug = %s AND removed_at IS NULL",
                                 (b, repo)).fetchone():
                     revs[b] = set(coderepo.rev_list(conn, b, repo, *rng))
-        found = _load(conn, books, w, ctx, kinds=kinds, class_key=class_key, after=after, before=before, text=text)
+        found = _load(conn, books, w, ctx, kinds=kinds, class_key=class_key, after=after, before=before, text=text,
+                      blocks=for_model)
         if rng is not None:
             found = [n for n in found if n.scope_repo == repo and n.observed_commit in revs.get(n.book, ())]
         if origins is not None:
@@ -670,12 +690,12 @@ def query_notes(conn, actor: Actor, *, for_model: bool, book=None, sets=("curren
         for k, why in passed:
             if nxt is None or (last[0] != LEFT and k <= last):
                 excluded[why] += 1
-        final = _read(conn, actor)
-        if _lost(conn, actor, "query_notes", pre, final):
-            continue  # the whole query, counts included, again with the rights as they are now
-
         by_ref = {n.ref: n for n in candidates}
         items, gone = taken.get("items", []), taken.get("left", [])
+        final = _read(conn, actor, _shown([by_ref[e["ref"]] for e in items], for_model))
+        if _lost(conn, actor, "query_notes", pre, final) or final.blocked_notes:
+            continue  # the whole query, counts included, again with the rights and blocks as they are now
+
         _log(conn, actor, "query_notes", final, [by_ref[e["ref"]] for e in items + gone], w)
         return {**envelope, "items": items, "left": gone, "next_cursor": nxt, "excluded": excluded}
     raise SearchChanged("authorization changed during the query; retry")
@@ -754,7 +774,7 @@ def neighbours(conn, actor: Actor, *, for_model: bool, ref: str, types=None, dep
                                (root_book, root_id, w)).fetchone()
             if row is None:
                 raise gate.NotFound(ref)
-            loaded = _load(conn, books, w, ctx, seqs=[row[0]])
+            loaded = _load(conn, books, w, ctx, seqs=[row[0]], blocks=for_model)
             if not loaded:
                 raise gate.NotFound(ref)
             root = loaded[0]
@@ -769,7 +789,7 @@ def neighbours(conn, actor: Actor, *, for_model: bool, ref: str, types=None, dep
             links = _links(conn, frontier, passage if level == 0 else None, direction, types, w)
             fresh = sorted({s for _, src, _t, dst, _p in links for s in (src, dst) if s is not None} - set(evaluated))
             if fresh:
-                loaded = _load(conn, books, w, ctx, seqs=fresh)
+                loaded = _load(conn, books, w, ctx, seqs=fresh, blocks=for_model)
                 _citations(conn, loaded, read, targets)
                 # code statuses only for a note that can be a node: they can only drop it from the sets
                 _verify(verifier, [n for n in loaded if _placement(n, ctx, w, sets, False)[0]])
@@ -802,8 +822,8 @@ def neighbours(conn, actor: Actor, *, for_model: bool, ref: str, types=None, dep
         graph = _graph(conn, [n.seq for n in all_notes], read, w)
         recurrence, _ = _recurrence(conn, all_notes, w) if all_notes else ({}, {})
         counted = outcomes.counts(conn, [n.seq for n in all_notes], w)
-        final = _read(conn, actor)
-        if _lost(conn, actor, "neighbours", pre, final):
+        final = _read(conn, actor, _shown(all_notes, for_model))
+        if _lost(conn, actor, "neighbours", pre, final) or final.blocked_notes:
             continue
 
         refs = {n.seq: n.ref for n in all_notes}
@@ -855,7 +875,7 @@ def _links(conn, frontier, passage, direction: str, types, w: int) -> list:
 
 def open_note(conn, actor: Actor, *, for_model: bool, ref: str, repo=None, branch=None, path=None,
               commit=None, attempts: int = 2) -> dict:
-    """One note with its full text (the `ai_input` gate applies) and any Standing, `current` from the shared
+    """One note with its full text (the `ai_input` and skill-block gates apply) and any Standing, `current` from the shared
     predicate. The gates of `query_notes`: citations, link counts and the successor come from the whole read set,
     which is decided again at the end; a lost book runs it all again once, then `SearchChanged`."""
     book, note_id = notes.parse_ref(ref)
@@ -873,20 +893,20 @@ def open_note(conn, actor: Actor, *, for_model: bool, ref: str, repo=None, branc
         pre = _read(conn, actor)
         read = pre.objects("read")
         targets = _targets(conn, [book], ctx)
-        note = _load(conn, [book], w, ctx, seqs=[row[0]])[0]
+        note = _load(conn, [book], w, ctx, seqs=[row[0]], blocks=for_model)[0]
         _citations(conn, [note], read, targets)
         _verify(coderepo.Verifier(conn, targets), [note])
         graph = _graph(conn, [note.seq], read, w)
         recurrence, _ = _recurrence(conn, [note], w)
         item = _item(note, current(note, ctx, w) is None, recurrence.get(note.seq, 0), graph, for_model,
                      outcomes.counts(conn, [note.seq], w).get(note.seq, {}))
-        final = _read(conn, actor)
+        final = _read(conn, actor, _shown([note], for_model))
         if obj not in final.objects("read"):
             gate.log_event(conn, actor, "cite", obj, "read", authz.Decision(False, "no current right"),
                            final.policies.get(obj), None, None, reason="revoked before delivery: no current right")
             raise gate.Denied(f"read on {obj}: revoked before delivery")
-        if _lost(conn, actor, "cite", pre, final):
-            continue  # link counts and the successor again, with the rights as they are now
+        if _lost(conn, actor, "cite", pre, final) or final.blocked_notes:
+            continue  # link counts, the successor and the text again, with the rights and blocks as they are now
         gate.log_event(conn, actor, "cite", obj, "read", final.decisions[obj]["read"], final.policies.get(obj),
                        None, None, items=[{"ref": note.ref, "standing_seq": note.standing_seq}], memory_seq=w)
         return {"citation": note.ref, "note": item, "targets": _targets_out(targets), "watermark": w}

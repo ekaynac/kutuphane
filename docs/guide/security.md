@@ -97,11 +97,27 @@ from its own environment. It never imports, copies or ships it. Install and comm
 - recommends `DO_NOT_INSTALL`;
 - did not cover the whole skill (completeness is not `complete`);
 - failed (a crash, a timeout, output that is not a valid report, or a report of another version). A failed scan
-  blocks, so a skill cannot escape the scan when it breaks the scanner.
+  blocks, so a skill cannot escape the scan when it breaks the scanner. A report is untrusted input: a report
+  larger than 8 MiB, nested deeper than 64 levels, or with a value that cannot be stored (a NUL character, a lone
+  surrogate, NaN or infinity) is a failed scan too, and the ingest continues.
 
 The block applies to `read_document`, `kutuphane read`, `open_citation`, agent search (the passages are left out
 before ranking), and `ask_library`/`reopen_answer` for agents. It is in force in the same transaction that
-publishes the version. Each refusal is an `access_event` (`activate`, refused, "skill blocked by a scan").
+publishes the version. Each refusal is an `access_event` (`activate`, refused, "skill blocked by a scan"). The
+last rights check before a delivery and the block check are one database statement, so a change between them
+(for example, a right revoked and a block cleared in one transaction) cannot give a delivery.
+
+**The block follows the bytes.** A block belongs to the skill's files (the input digest), not to one version of
+the book. When a new version of the book has the same skill files, every block that is not cleared is copied
+to the new version (`carried_from` in `kutuphane skill show`), also when the new scan says `SAFE`, the scan
+failed before, or no scanner is configured now.
+
+**Notes derived from a blocked skill.** A note that cites a passage of a blocked skill, or that is derived
+(`derived_from`, at any depth) from such a note, is handled as a note with `ai_input: n` for model readers (agents
+and MCP callers): `query_notes`, `neighbours`, a note in `open_citation`, and the candidates of `propose_note`
+give `text: null` and `withheld: "derived from a skill blocked by a scan …"`; the note itself stays listed. The
+decision export withholds the text, the options and the choice for every reader. People who read over HTTP still
+get the text, as for `ai_input`. When a curator clears the block, the text is shown again.
 
 **What does not block.** `SAFE` and `CAUTION` give no right: an agent still needs `activate`. `not_scanned` (no
 SkillSpector configured, or a version that is not allowed) does not block; the operator can still decide otherwise.
@@ -118,8 +134,11 @@ proxy that permits only `api.osv.dev`. Without the variable, the egress follows 
 the scan.
 
 **Supply chain.** `deploy/skillspector/install.sh` installs only the pinned version, from the tag tarball with a
-known sha256, and its dependencies from the upstream lock with hash checks. SkillSpector is one layer, not proof:
-it does not read images or binaries, and attacks against it are researched.
+known sha256. It installs the dependencies from the upstream lock and the build backend (hatchling and its
+dependencies, `deploy/skillspector/build-requirements.txt`) as wheels only, with hash checks, and then builds
+SkillSpector with that backend, without build isolation. No step gets a package that has no hash. Use Python 3.12
+or 3.13: a pinned dependency (yara-python) has no wheel for 3.14, and the installer builds nothing from source.
+SkillSpector is one layer, not proof: it does not read images or binaries, and attacks against it are researched.
 
 ## Secret scan
 

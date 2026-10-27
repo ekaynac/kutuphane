@@ -197,11 +197,16 @@ re-scan it, or receive a package. SkillSpector is not part of Kütüphane. Insta
 `deploy/skillspector/skillspector.pin`) into its own environment, and tell Kütüphane where it is:
 
 ```sh
-deploy/skillspector/install.sh /opt/skillspector
+deploy/skillspector/install.sh /opt/skillspector    # Python 3.12 or 3.13 (SKILLSPECTOR_PYTHON)
 export KUTUPHANE_SKILLSPECTOR_BIN=/opt/skillspector/bin/skillspector
 ```
 
 Without `KUTUPHANE_SKILLSPECTOR_BIN`, ingest works as before, and each skill is recorded as `not_scanned`.
+
+`install.sh` installs every dependency and the build backend (`deploy/skillspector/build-requirements.txt`) as
+wheels with hash checks, then builds SkillSpector without build isolation. For a host without network, download the
+tag tarball and the wheels on another host, then set `SKILLSPECTOR_TARBALL=<tarball>` and
+`SKILLSPECTOR_WHEELS=<folder with the wheels>`.
 
 The result of a scan is a proposal to the curator (origin `tool`, `software_agent: skillspector <version>`), never
 an approval:
@@ -210,7 +215,7 @@ an approval:
 |---|---|
 | `DO_NOT_INSTALL` | blocked: no agent can activate any file of the skill |
 | coverage not `complete` (for example missing referenced files) | blocked |
-| the scan failed (a crash, a timeout, output that is not a valid report) | blocked |
+| the scan failed (a crash, a timeout, output that is not a valid report: more than 8 MiB, nested deeper than 64, a NUL, a lone surrogate, NaN) | blocked; the ingest continues |
 | `CAUTION`, `SAFE` | no block; an agent still needs its `activate` grant (`SAFE` gives no right) |
 | `not_scanned` (no tool, or a version that is not allowed) | no block |
 
@@ -228,7 +233,13 @@ kutuphane skill rescan [--book <book>]         # scan again after a SkillSpector
 - Kütüphane refuses a SkillSpector version that is not the tested one, unless `KUTUPHANE_SKILLSPECTOR_ALLOW_VERSION`
   names it. A scan with a new version marks the old results `stale`. The next ingest of that version, or
   `skill rescan`, scans again. A stale block stays until a curator clears it.
-- A skill folder with the same bytes in a new version of the book reuses the earlier scan.
+- A skill folder with the same bytes in a new version of the book reuses the earlier scan. Every block of those
+  bytes that no curator cleared is copied to the new version (`carried_from` in `skill show`; `ingest` names it on
+  stderr), whatever the new scan says. One `skill clear` lifts the block and all its copies.
+- After you upgrade to a release with migration `022_skill_block_carry.sql`, run `kutuphane skill rescan`: it
+  also copies the blocks of earlier versions to the current version of each book.
+- A note that cites a blocked skill, or that is derived from such a note, has its text withheld from model readers
+  and from the decision export (see [security.md](security.md#skill-scan-skillspector)).
 - SkillSpector runs with `--no-llm` and a minimal environment (no API keys). It sends dependency names to
   api.osv.dev; see [security.md](security.md#skill-scan-skillspector).
 - To check an installed SkillSpector: `KUTUPHANE_SKILLSPECTOR_BIN=… pytest tests/test_skillspector_contract.py`.
@@ -467,7 +478,7 @@ kutuphane decisions export <principal> --out decisions.jsonl [--book <journal>] 
 
 - `--out` must be a new file. The command creates it with mode 600.
 - Without `--book`, the export includes every journal that the principal can read.
-- The text, options and choice are present only when the note allows `ai_input` and `train` (`journal create --train y`). Otherwise the record has only references and hashes.
+- The text, options and choice are present only when the note allows `ai_input` and `train` (`journal create --train y`) and the note does not depend on a skill that a scan blocks. Otherwise the record has only references and hashes, and `withheld` gives the reason.
 
 ## 9. Code repositories
 

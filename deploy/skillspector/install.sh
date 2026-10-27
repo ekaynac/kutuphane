@@ -5,11 +5,15 @@
 #
 # - Downloads the tag tarball (or uses SKILLSPECTOR_TARBALL=<local file>, for a host without network) and refuses it
 #   unless its sha256 is the pinned one.
-# - Installs the runtime dependencies from the upstream uv.lock inside that verified tarball, with hash checks, then
-#   the project itself without dependencies. No PyPI metadata of Kütüphane names SkillSpector.
+# - Installs the runtime dependencies from the upstream uv.lock inside that verified tarball and the build backend
+#   (build-requirements.txt), wheels only, with hash checks; then builds the project with that backend, without
+#   build isolation and without dependencies. No step fetches an unhashed package. No PyPI metadata of Kütüphane
+#   names SkillSpector.
+# - SKILLSPECTOR_WHEELS=<dir>: take every wheel from that directory, not from an index (for a host without network).
 # - Copies LICENSE and THIRD_PARTY_NOTICES.md to PREFIX/share/skillspector (Apache-2.0 §4), and the upstream test
 #   fixtures safe_skill and malicious_skill to PREFIX/share/skillspector/fixtures for tests/test_skillspector_contract.py.
-# - Needs: bash, curl, sha256sum, tar, uv, Python 3.12–3.14 (SKILLSPECTOR_PYTHON, default python3.12).
+# - Needs: bash, curl, sha256sum, tar, uv, Python 3.12 or 3.13 (SKILLSPECTOR_PYTHON, default python3.12). Not 3.14:
+#   the pinned yara-python 4.5.4 has no cp314 wheel, and the installer builds no dependency from source.
 # Then set KUTUPHANE_SKILLSPECTOR_BIN=PREFIX/bin/skillspector for `kutuphane ingest`, `receive` and `skill rescan`.
 set -euo pipefail
 
@@ -18,6 +22,10 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$here/skillspector.pin"
 prefix="$(realpath -m "${1:-${SKILLSPECTOR_PREFIX:-/opt/skillspector}}")"
 python="${SKILLSPECTOR_PYTHON:-python3.12}"
+index=()
+if [ -n "${SKILLSPECTOR_WHEELS:-}" ]; then
+    index=(--no-index --find-links "$(realpath "$SKILLSPECTOR_WHEELS")")
+fi
 
 if [ -e "$prefix" ] && [ -n "$(ls -A "$prefix" 2>/dev/null)" ]; then
     echo "refused: $prefix exists and is not empty; remove it or give another PREFIX" >&2
@@ -49,12 +57,15 @@ if ! grep -qx "version = \"$SKILLSPECTOR_VERSION\"" "$src/pyproject.toml"; then
 fi
 
 # Runtime dependencies only (no dev group, no extras: the [mcp] extra conflicts with Kütüphane's mcp>=2), every
-# one pinned and hashed by the upstream lock.
+# one pinned and hashed by the upstream lock, plus the hashed build backend. --no-build: a source build would run in
+# an isolated environment that fetches unhashed build dependencies.
 uv export --project "$src" --frozen --no-dev --no-emit-project --format requirements-txt --quiet \
     --output-file "$work/requirements.txt"
 uv venv --quiet --python "$python" "$prefix"
-uv pip install --quiet --python "$prefix/bin/python" --require-hashes -r "$work/requirements.txt"
-uv pip install --quiet --python "$prefix/bin/python" --no-deps "$src"
+uv pip install --quiet --python "$prefix/bin/python" --require-hashes --no-build "${index[@]}" \
+    -r "$work/requirements.txt" -r "$here/build-requirements.txt"
+# The project itself: the verified tarball, built by the hashed hatchling in the venv.
+uv pip install --quiet --python "$prefix/bin/python" --no-build-isolation --no-deps "$src"
 
 mkdir -p "$prefix/share/skillspector/fixtures"
 cp "$src/LICENSE" "$src/THIRD_PARTY_NOTICES.md" "$prefix/share/skillspector/"

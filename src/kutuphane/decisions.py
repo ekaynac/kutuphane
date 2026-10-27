@@ -8,6 +8,9 @@ models: the context, the options offered, the choice, the actor, the outcome row
 - Passage citations and links into books that the reader may not read now are left out (as `query_notes`).
 - Both cuts use the FINAL decision of the gate (`guard_many(finish=…)`, Astra review #14): a read revoked, or a
   source journal restricted, while the records were built is applied before anything is handed out.
+- A record of a note that depends on a skill that a scan blocks (D71, SQL `note_skill_blocked`) is cut in the same
+  way, whoever exports: the export is model input. The final statement of the gate reads those blocks with the
+  rights (Astra review #15).
 """
 import hashlib
 from datetime import datetime, timezone
@@ -106,8 +109,9 @@ def _records(conn, actor: Actor, books: list[str]) -> tuple[list[dict], int]:
 def _finish(conn, final, data):
     """Inside the export transaction, right after the final read decision (Astra review #14): a reference is kept
     only when its book is readable in that decision, and the text, options and choice only when the note's
-    `ai_input` and `train` (note AND every journal of its closure, `note_journal`) still hold now; else the
-    record is cut to references and hashes."""
+    `ai_input` and `train` (note AND every journal of its closure, `note_journal`) still hold now and the note
+    depends on no blocked skill in that decision (`final.blocked_notes`); else the record is cut to references and
+    hashes."""
     records, w = data
     read = final.objects("read")
     rights = {seq: rest for seq, *rest in conn.execute(
@@ -115,12 +119,16 @@ def _finish(conn, final, data):
         "FROM note n JOIN note_journal j ON j.seq = n.seq WHERE n.seq = ANY(%s)",
         ([r["_seq"] for r in records],))}
     for r in records:
-        search, ai_input, train = rights[r.pop("_seq")]
+        seq = r.pop("_seq")
+        search, ai_input, train = rights[seq]
         r["context"]["citations"] = [ref for book, ref in r.pop("_citations") if book is None or f"book:{book}" in read]
         r["context"]["links"] = [link for book, link in r.pop("_links") if f"book:{book}" in read]
         r["ai_use"] = {"search": _yn(search), "ai_input": _yn(ai_input), "train": _yn(train)}
         if not (ai_input and train):
             r["context"]["text"], r["options"], r["choice"], r["withheld"] = None, None, None, WITHHELD
+        elif seq in final.blocked_notes:
+            r["context"]["text"], r["options"], r["choice"] = None, None, None
+            r["withheld"] = gate.SKILL_WITHHELD
     return records, w
 
 
@@ -146,6 +154,7 @@ def export(conn, actor: Actor, books: list[str] | None = None) -> tuple[list[dic
         return records, w
 
     records, w = gate.guard_many(conn, actor, {f"book:{b}": {"read"} for b in books}, work, action=ACTION,
-                                 items=items, finish=lambda final, data: _finish(conn, final, data))
+                                 items=items, finish=lambda final, data: _finish(conn, final, data),
+                                 notes_of=lambda data: [r["_seq"] for r in data[0]])
     return records, {"records": len(records), "withheld": sum(r["withheld"] is not None for r in records),
                      "books": books, "watermark": w}

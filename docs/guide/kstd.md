@@ -91,9 +91,13 @@ Validity keeps its time: `2026-10-27T23:59:00Z` is not current at noon that day.
 `escalate` > `permit`); no applicable permission means `deny`; an unknown required rights term means `deny`; a
 statement that loosens needs a trusted issuer. A statement that tightens applies at once only from the node, the
 item's own issuer, or an issuer trusted for that kind and scope. From any other issuer, it gives `escalate`
-(reason `restriction-untrusted`, notice `restricted-by:<issuer>`), never `deny`. In Kütüphane, every restriction
-comes from an admissible issuer (the `kstd.yaml` issuer, an administrator, or an authorized curator), so this rule
-does not change its behavior. `kstd/tests/decision/cases.yaml` holds the cases. Run them:
+(reason `restriction-untrusted`, notice `restricted-by:<issuer>`), never `deny`. A later statement of an issuer
+replaces its earlier one, but a loosening replaces a restriction that applies only when the issuer is trusted for
+that kind, scope and action. So an unauthorized loosening cannot turn a `deny` into a `permit`; the restriction
+stays in force. An issuer without trust can still withdraw its own tightening that never applied. In
+Kütüphane, every restriction comes from an admissible issuer (the `kstd.yaml` issuer, an administrator, or an
+authorized curator), so this rule does not change its behavior. `kstd/tests/decision/cases.yaml` holds the cases.
+Run them:
 
 ```sh
 cd kstd/reference && ../../.venv/bin/python -m pytest -q -p no:cacheprovider

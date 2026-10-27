@@ -618,7 +618,8 @@ def _candidates(conn, seq: int, draft: Draft, readable: list[str], embedder, for
         withheld = for_model and not ai
         out.append({"ref": f"{book}@{nid}", "match": match, "similarity": similarity, "kind": kind,
                     "standing": standing[n_seq][0], "text": None if withheld else body[:CANDIDATE_CHARS],
-                    "withheld": WITHHELD if withheld else None, "_standing_seq": standing[n_seq][1]})
+                    "withheld": WITHHELD if withheld else None, "_standing_seq": standing[n_seq][1],
+                    "_seq": n_seq})
     return out
 
 
@@ -688,17 +689,25 @@ def propose(conn, actor: Actor, args: dict, embedder: llmdap.Routed | None = Non
 
     def finish(final: authz.Allowed, data):
         """The receipt as the final decision allows it (§11): without read on the journal, the minimal receipt;
-        a candidate only from a book that is still readable."""
+        a candidate only from a book that is still readable; for a model reader, the text of a candidate that
+        depends on a blocked skill is withheld (D71, read by the same final statement)."""
         receipt, retry, minimal, candidates = data
         readable = final.objects("read")
         if receipt is minimal or journal not in readable:
             return minimal, retry, [], final
         kept = [c for c in candidates if f"book:{c['ref'].split('@')[0]}" in readable]
-        shown = [{k: v for k, v in c.items() if k != "_standing_seq"} for c in kept]
+        shown = [{k: v for k, v in c.items() if k not in ("_standing_seq", "_seq")}
+                 | ({"text": None, "withheld": gate.SKILL_WITHHELD} if c["_seq"] in final.blocked_notes else {})
+                 for c in kept]
         return {**receipt, "candidates": shown}, retry, kept, final
 
+    def shown_text(data) -> list[int]:
+        """The candidates whose text a model reader would get: the final statement reads their skill blocks."""
+        return [c["_seq"] for c in data[3] if c["text"] is not None] if _for_model(actor) else []
+
     receipt, retry, candidates, final = gate.guard_many(conn, actor, needs, work, action="propose",
-                                                        items={journal: [{"ref": draft.ref}]}, finish=finish)
+                                                        items={journal: [{"ref": draft.ref}]}, finish=finish,
+                                                        notes_of=shown_text)
     by_book = {}
     for c in candidates:  # each delivered candidate is on record with the Standing event in force (AT-09)
         by_book.setdefault(f"book:{c['ref'].split('@')[0]}", []).append({"ref": c["ref"],
