@@ -428,3 +428,11 @@ Ham metin: `docs/research/2026-10-27-astra-review-13-raw.md`. Dokuz bulgunun hep
 - **Karar alanları:** `decision_proposal` notu `decision: {options, choice}` taşıyabilir; kanonik gövdeye yalnız verildiğinde girer, eski notların kimliği değişmez.
 - **`train` hakkı:** dergi `train` belirtir (`journal create --train y|n`, varsayılan `n`; `journal restrict --no-train`); not `train` değeri bağımlılıklardan türer (§6.2 kuralı). Eski dergi ve notlar `train = false` alır.
 - **`kutuphane decisions export <principal> --out FILE`:** okunabilir dergilerdeki karar notlarını JSONL yazar: bağlam, seçenekler, seçim, yazan, sonuç kayıtları, `ai_use`. Metin yalnız `ai_input` ve `train` ikisi de `y` iken vardır; yoksa yalnız referans ve SHA-256. Her kitap için `action = export_decisions` erişim kaydı, `items = [{ref, standing_seq}]`.
+
+# Astra incelemesi #14 (PR #103/#104) ve düzeltmeler
+
+Ham inceleme: `docs/research/2026-10-27-astra-review-14-raw.md`.
+
+- **P1, dışa aktarma okuma geri alındıktan sonra referans tutuyordu:** `decisions export` atıfları ve bağları kayıtlar kurulurken alınan yetki görüntüsüne göre süzüyordu; son kapı yalnız dışa aktarılan dergileri yeniden karar veriyordu. Şimdi süzme `guard_many` `finish` kancasında, son okuma kararıyla yapılır. Test: `test_the_export_drops_references_whose_read_was_revoked_before_delivery`.
+- **P1, kaynak kısıtlandıktan sonra eğitim metni çıkıyordu:** etkin `ai_input` ve `train` bir kez okunuyordu. Şimdi son karardan sonra `note_journal` yeniden okunur; hakkı düşen kayıt yalnız referans ve özetlere (SHA-256) indirilir. Test: `test_the_export_withholds_text_when_a_source_loses_train_before_delivery`.
+- **P2, geri alma önceden onaylı kökü `rejected` yapıyordu:** `approved → retired → pending → rollback` köke `rejected` veriyordu (D68 ile çelişir). Şimdi bir kez onaylanmış kök `retired` olur; `rejected` yalnız hiç onaylanmamış kök içindir. Aynı kural `kutuphane note standing … rejected` için de geçerlidir: bir kez onaylanmış nota `rejected` reddedilir, ileti `retired` kullanılmasını söyler. Testler: `test_rollback_retires_a_reopened_root_that_was_approved_before`, `test_standing_refuses_rejected_for_a_note_that_was_ever_approved`.

@@ -339,3 +339,52 @@ def test_020_applies_to_a_database_with_notes(conn):  # O9
     assert "020_outcome.sql" in db.migrate(conn)
     assert row(conn, "SELECT train FROM journal") == (False,)
     assert row(conn, "SELECT id, train, options, choice FROM note") == (nid, False, None, None)
+
+
+# --- Astra review #14: the final decision of the export -------------------------------------------------------------
+
+def _after_records(monkeypatch, change):
+    """Run `change` (on another, committed session) right after the export built its records, before delivery."""
+    from kutuphane import decisions
+    built = decisions._records
+
+    def records_then_change(conn, actor, books):
+        out = built(conn, actor, books)
+        change()
+        return out
+    monkeypatch.setattr(decisions, "_records", records_then_change)
+
+
+def test_the_export_drops_references_whose_read_was_revoked_before_delivery(env, conn2, monkeypatch):  # Astra #14 P1
+    from kutuphane import decisions
+    notes.create_journal(env, book="kararlar", title="kararlar", search=True, ai_input=True, train=True,
+                         policy=CLOUD, by="user:admin")
+    allow(env, "kararlar", "read", "propose")
+    src = propose(env, mcp(), text="a source finding in the main journal")["ref"]
+    ref = decide(env, mcp(), "Cites kitap and derives from J", ["a", "b"], "a", book="kararlar",
+                 citations=[handle(env, "kitap")], links=[{"type": "derived_from", "ref": src}])["ref"]
+
+    def revoke():
+        authz.revoke(conn2, "book:kitap", "read", U)
+        authz.revoke(conn2, f"book:{J}", "read", U)
+    _after_records(monkeypatch, revoke)
+    [r], _ = decisions.export(env, mcp(), ["kararlar"])
+    assert r["ref"] == ref
+    assert r["context"]["citations"] == [] and r["context"]["links"] == []
+
+
+def test_the_export_withholds_text_when_a_source_loses_train_before_delivery(env, conn2, monkeypatch):  # #14 P2
+    from kutuphane import decisions
+    for book in ("kaynak", "kararlar"):
+        notes.create_journal(env, book=book, title=book, search=True, ai_input=True, train=True, policy=CLOUD,
+                             by="user:admin")
+        allow(env, book, "read", "propose")
+    a = propose(env, mcp(), book="kaynak", text="source A, trainable")["ref"]
+    b = propose(env, mcp(), book="kararlar", text="B from A", links=[{"type": "derived_from", "ref": a}])["ref"]
+    decide(env, mcp(), "Decision C from B", ["x", "y"], "x", book="kararlar",
+           links=[{"type": "derived_from", "ref": b}])
+    _after_records(monkeypatch, lambda: notes.restrict_journal(conn2, "kaynak", train=True))
+    records, summary = decisions.export(env, mcp(), ["kararlar"])
+    c = [r for r in records if r["options_sha256"]][0]
+    assert c["context"]["text"] is None and c["options"] is None and c["choice"] is None
+    assert c["withheld"] and c["ai_use"]["train"] == "n" and summary["withheld"] == len(records)

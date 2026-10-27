@@ -199,3 +199,30 @@ def test_train_follows_derivation_through_the_note_journal_view(env):  # §20.3,
     assert hidden["withheld"] and hidden["ai_use"]["train"] == "n"
     later = put(env, "derived from the decision", book="kararlar", links=[{"type": "derived_from", "ref": ref}])
     assert row(env, "SELECT train FROM note WHERE id = %s", later.split("@")[1]) == (False,)
+
+
+def test_rollback_retires_a_reopened_root_that_was_approved_before(env):  # Astra #14 P3, D68
+    authz.grant(env, f"book:{J}", "curate", CURATOR)
+    root = put(env, "approved once, then retired and reopened")
+    child = derived(env, "derived from the reopened root", root)
+    for value in ("approved", "retired", "pending"):
+        act(env, root, value)
+    out = notes.rollback(env, root, curator=CURATOR, reason="poisoned")
+    assert events(env, root)[-1] == ("retired", CURATOR, None, "poisoned")
+    assert [(n["ref"], n["was"], n["standing"]) for n in out["notes"]] == [
+        (root, "pending", "retired"), (child, "pending", "retired")]
+
+
+def test_standing_refuses_rejected_for_a_note_that_was_ever_approved(env, monkeypatch, capsys):  # Astra #14, D68
+    authz.grant(env, f"book:{J}", "curate", CURATOR)
+    ref = put(env, "approved once")
+    for value in ("approved", "retired", "pending"):
+        act(env, ref, value)
+    with pytest.raises(ValueError, match="use retired"):
+        act(env, ref, "rejected")
+    monkeypatch.setenv(db.CURATOR_DSN_ENV, os.environ["KUTUPHANE_TEST_DSN"])
+    assert cli.main(["note", "standing", ref, "rejected", "--curator", CURATOR, "--reason", "x"]) != 0
+    assert "use retired" in capsys.readouterr().err
+    assert [v for v, *_ in events(env, ref)] == ["approved", "retired", "pending"]
+    never = put(env, "never approved")
+    assert act(env, never, "rejected")["standing"] == "rejected"
