@@ -11,8 +11,8 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import (answers, audit, authz, catalog, db, devauth, gate, identity, kstd, llmdap, packages, profiles, search,
-               retrieval, signing, vectors)
+from . import (answers, audit, authz, catalog, coderepo, db, devauth, gate, identity, kstd, llmdap, packages, profiles,
+               search, retrieval, signing, vectors)
 from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, make_policy
 from .source import AcceptedFinding, read_source
 
@@ -126,6 +126,16 @@ def cmd_delegate(conn, args) -> int:
 
 def cmd_undelegate(conn, args) -> int:
     _print({"revoked": authz.revoke_delegation(conn, args.id)})
+    return 0
+
+
+def cmd_repo_add(conn, args) -> int:
+    _print(coderepo.add(conn, args.book, args.slug, args.git_dir, args.refs, by=args.by))
+    return 0
+
+
+def cmd_repo_remove(conn, args) -> int:
+    _print({"removed": coderepo.remove(conn, args.book, args.slug)})
     return 0
 
 
@@ -348,6 +358,20 @@ def parser() -> argparse.ArgumentParser:
     ud = sub.add_parser("undelegate", help="revoke a delegation")
     ud.add_argument("id", type=int)
     ud.set_defaults(fn=cmd_undelegate)
+    rp = sub.add_parser("repo", help="code repositories of a journal (docs/24 §10.2); Kütüphane never fetches")
+    rsub = rp.add_subparsers(dest="repo_cmd", required=True)
+    ra = rsub.add_parser("add", help="register a bare mirror inside KUTUPHANE_REPO_ROOTS for a journal")
+    ra.add_argument("book")
+    ra.add_argument("slug")
+    ra.add_argument("git_dir", help="absolute path of the bare repository (no symlink)")
+    ra.add_argument("--ref", dest="refs", action="append", required=True,
+                    help="a ref pattern whose commits can be cited, e.g. 'refs/heads/*' (repeatable, at most 10)")
+    ra.add_argument("--by", required=True, help="the administrator, e.g. user:admin")
+    ra.set_defaults(fn=cmd_repo_add)
+    rr = rsub.add_parser("remove", help="stop new scopes and citations; verification becomes unverifiable")
+    rr.add_argument("book")
+    rr.add_argument("slug")
+    rr.set_defaults(fn=cmd_repo_remove)
     rd = sub.add_parser("read", help="read a file through the authorization gate")
     rd.add_argument("principal")
     rd.add_argument("book")

@@ -115,6 +115,16 @@ first 1,200 characters of each passage (the target passage size; G26).
 `echo "$TOKEN" | kutuphane whoami` verifies a token; `kutuphane explain <correlation-id> --llmdap-export audit.jsonl`
 prints the unified audit.
 
+Code repositories of a journal (docs/24 §10): `kutuphane repo add <journal> <slug> <git_dir> --ref 'refs/heads/*'
+--by user:admin` registers a bare mirror; `kutuphane repo remove <journal> <slug>` stops its use. Kütüphane never
+fetches: keep the mirror current yourself (for example a cron `git fetch`). The mirror must be inside
+`KUTUPHANE_REPO_ROOTS` (absolute directories, `:`-separated; compose mounts `KUTUPHANE_REPO_DIR`, default
+`./deploy/repos`, read-only at `/srv/repos`), with no symlink in its path, no alternates, no `commondir`, no promisor
+pack and only plain `core.*`, `extensions.objectformat` and `remote.*` url/fetch/mirror keys in its `config`. Only
+commits that the `--ref` patterns reach can be cited. `verify_citations` (MCP) and `POST /v1/citations/verify`
+(`{"book", "citations", "at"}`, `at` = a branch name or a full commit id) report `verified`, `stale` (with
+`moved_to`), `missing` or `unverifiable` with a reason, and never return code text. The server needs git ≥ 2.45.
+
 Search and answers (`kutuphane search`, `kutuphane ask`, `GET /v1/search`, `POST /v1/ask`, MCP `search_library`
 and `ask_library`):
 
