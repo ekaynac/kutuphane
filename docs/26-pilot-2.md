@@ -153,7 +153,7 @@ Continuing `docs/15` §3 and `docs/18` §5. No code was changed in this pilot.
 
 ## 8. After the fixes
 
-Branch `fix/pilot2-gaps` ([#PRNUM](https://github.com/ekaynac/kutuphane/pull/PRNUM)). Each fix has a regression test
+Branch `fix/pilot2-gaps` ([#118](https://github.com/ekaynac/kutuphane/pull/118)). Each fix has a regression test
 that failed on `main` first. G34 and G35 are not in this branch; `kutuphane curator queue` (#117) closes G36. G37
 stays open: it needs the operator's decision.
 
