@@ -206,6 +206,10 @@ def test_an_agent_proposes_and_the_person_confirms_on_the_page(env, web, chromiu
     chromium.js("document.getElementById('claim-human').click()")
     chromium.js("document.getElementById('confirm-sign').click()")
     chromium.wait("!document.getElementById('sheet').hidden")
+    # review #17: the sheet shows the stored statement (claim, writer), not the page's own choice
+    assert chromium.js("document.getElementById('sheet-text').textContent") == (
+        "“These are my words, verbatim (I wrote or dictated them).” (human) · entered by agent:kobra-7 · "
+        "signed as user:ayse")
     chromium.js("document.getElementById('sheet-sign').click()")
     assert chromium.wait(f"{MSG}.startsWith('Confirmed') && {MSG}") == "Confirmed: origin human (entered by " \
                                                                        "agent:kobra-7)"

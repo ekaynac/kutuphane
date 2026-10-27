@@ -50,9 +50,10 @@ function asker(item) {
   return box;
 }
 
-async function sign(body, words) {
+// The sheet shows the stored statement (docs/25 §5.2), not the choice made on this page: `describe(statement)`.
+async function sign(body, describe) {
   const o = await post("/api/act/options", body);
-  $("sheet-text").textContent = `${words} · signed as ${o.statement.principal}`;
+  $("sheet-text").textContent = `${describe(o.statement)} · signed as ${o.statement.principal}`;
   const list = $("sheet-items"); list.replaceChildren();
   list.append(el("li", null, o.statement.item.ref));
   $("sheet").hidden = false;
@@ -84,8 +85,9 @@ function choices(item) {
     try {
       const picked = box.querySelector(`input[name=${name}]:checked`);
       if (!picked) throw new Error("Choose one of the two sentences first.");
-      const words = item.claims.find((c) => c.claim === picked.value).words;
-      const r = await sign({ action: "confirm", ref: item.ref, claim: picked.value, write: item.request.write }, `“${words}”`);
+      const words = (claim) => (item.claims.find((c) => c.claim === claim) || { words: claim }).words;
+      const r = await sign({ action: "confirm", ref: item.ref, claim: picked.value, write: item.request.write },
+        (s) => `“${words(s.claim)}” (${s.claim}) · entered by ${s.entered_by}`);
       if (r) { msg(`Confirmed: origin ${r.origin} (entered by ${r.entered_by})`, "ok"); await show(); }
     } catch (e) { msg(e.message, "err"); }
   };
@@ -101,7 +103,7 @@ function withdrawal(item) {
   const b = el("button", "danger", "Withdraw my confirmation"); b.type = "button"; b.id = "withdraw-sign";
   b.onclick = async () => {
     try {
-      const r = await sign({ action: "withdraw", ref: item.ref }, "Withdraw my confirmation");
+      const r = await sign({ action: "withdraw", ref: item.ref }, () => "Withdraw my confirmation");
       if (r) { msg(`Withdrawn: origin ${r.origin}`, "ok"); await show(); }
     } catch (e) { msg(e.message, "err"); }
   };

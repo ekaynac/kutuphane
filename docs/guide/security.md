@@ -74,8 +74,12 @@ The server computes the origin of a note from the authenticated write path:
 | a `user:` principal, no `act`, over HTTP | `unknown` (handled as `model`) |
 
 A writer can ask for a lower value. A claim of `human`, `assisted` or `tool` is refused with
-`origin_notice: origin-claim-refused`, and the computed value is stored. No path stores `human` today. A passkey
-confirmation bound to the note digest will give it later (D70 R3, D72).
+`origin_notice: origin-claim-refused`, and the computed value is stored. No write path stores `human`: only a person
+gives it, with a passkey `confirm` act in curator web bound to the note digest (D70 R3). The confirm page and its act
+options check the person's direct `read` on the book of the reference before they look up the note, so a person
+without it gets one refusal whatever the note's state. A live confirmation is replaced only by its confirmer: another
+person (also through a new request for the same bytes) is refused until the confirmer withdraws it (R7; a trigger of
+migration 029).
 
 ## Curation boundary
 
@@ -130,13 +134,24 @@ A model approves a note only through a delegation that a person signed. Design: 
 - **Signed and bounded.** A `delegate` passkey act of a user with direct `curate` and `read` creates it; the database
   accepts only the row of the signed statement. One journal, one evidence kind (never `decision_proposal` or
   `convention`), one decider spec (`spec_sha256`), a threshold of 0.5–1, a sample rate N of 2–100, at most 30 days.
-  It needs at least 30 shadow decisions at its threshold. The creator must hold `curate` at each use.
+  It needs at least 30 shadow decisions at its threshold (`KUTUPHANE_DELEGATION_MIN_SHADOW`, a whole number of at
+  least 1; curator web does not start with another value).
 - **The database decides each use.** The runner role (`kutuphane_decider`, `deploy/db-roles-decider.sql`) can insert
   suggestions, model call records, uses and its access record, and nothing else; it has no `INSERT` on
-  `standing_event`. A trigger refuses a use of an ended or expired delegation, under the threshold, on a note with
-  any Standing event, in a `contradicts` link, or whose text may not go to a model, and while 3 samples are open. It
-  draws the sample (1 in N, and always one after 2N unchecked uses) and writes the approval of an unsampled use with
-  `set_by` = `model:<name>@<version>`.
+  `standing_event`. It cannot set the `seq`, the time or the `sampled` flag of a use, or the `seq` or time of a
+  suggestion (column grants; triggers set them), and a suggestion comes before any Standing event of its note. A
+  trigger refuses a use of an ended or expired delegation, of a creator who no longer holds `curate`, under the
+  threshold, of a suggestion of the same transaction, on a note with any Standing event, in a `contradicts` link,
+  whose text may not go to a model or with a propose write by the runner's principal, of any note but the oldest
+  eligible one of the class (no skipping), and while 3 samples are open. It draws the sample (1 in N, and always one
+  after 2N unchecked uses) as an HMAC of the delegation and the note under a key that only the owner can read, so a
+  rollback and a retry give the same draw, and writes the approval of an unsampled use with `set_by` =
+  `model:<name>@<version>` (migrations 025, 029).
+- **What the runner reads.** The runner role has no `SELECT` on `note`. It gets note text only from
+  `decider_notes()`: undecided notes of the books where `agent:kutuphane-decider` holds `read` directly or that have
+  a live delegation, through the text gate (`ai_input` of the note and its journal, no skill block). It reads each
+  note again through the gate just before its model call. The spec digest includes the source of the runner's prompt
+  and answer code (`runner_code`), so a change to it is a new spec that no delegation matches.
 - **The end on disagreement.** A person's first decision on a sample that is not `approved` ends the delegation in
   the same transaction, on every Standing path (phone, `note standing`, `note rollback`).
 - **Local models only.** The runner refuses a spec whose route is not `local`, sends the note's `source_books` to

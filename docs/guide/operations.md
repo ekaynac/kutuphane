@@ -605,7 +605,8 @@ sentence and signs it with the passkey:
 | "These are my words, verbatim (I wrote or dictated them)." | `human` | only the person the words were entered for: the user that the agent acted for, or the user who wrote (a database key) |
 | "A model wrote or reworded this. I reviewed it in substance." | `assisted` | that person, or a curator of the book |
 
-The person also needs `read` on the book. Nothing is stored before the signature; leaving the page stores nothing.
+The person also needs `read` on the book: without it, the page and the act refuse with the same answer for every
+note, whether it exists or not. Nothing is stored before the signature; leaving the page stores nothing.
 
 - **Expiry:** a request is open for `KUTUPHANE_CONFIRM_HOURS` (24) hours after its write. Then the page refuses it.
   The same bytes proposed again open a new request. A confirmation itself does not expire.
@@ -618,6 +619,9 @@ The person also needs `read` on the book. Nothing is stored before the signature
   passkey act). Then the origin is the write-path value again; an older confirmation does not come back. A query
   with `as_of` before the withdrawal still shows the confirmation. Other people use the Standing path (reject or
   retire).
+- **A live confirmation stays:** while it is live, no other person can confirm the note, also not through a new
+  request for the same bytes. The page offers no choice; the act and the database refuse. The confirmer may confirm
+  again (the latest counts) or withdraw first.
 
 ### Model suggestions and delegated curate (D73)
 
@@ -631,6 +635,7 @@ The first decider is the local Qwen (`deploy/deciders/qwen-notes.json`) in **sha
 
 ```sh
 kutuphane decider spec deploy/deciders/qwen-notes.json        # the decider id and spec_sha256
+KUTUPHANE_CURATOR_DSN=… kutuphane grant book:adc-memory read agent:kutuphane-decider   # once per journal
 KUTUPHANE_DECIDER_DSN=… KUTUPHANE_DECIDER_LLMDAP_KEY=… KUTUPHANE_LLMDAP_URL=… KUTUPHANE_DECIDER_BOOKS=adc-memory \
   kutuphane decider run --spec deploy/deciders/qwen-notes.json --shadow
 KUTUPHANE_CURATOR_DSN=… kutuphane delegation agreement --spec deploy/deciders/qwen-notes.json --book adc-memory --kind finding
@@ -644,16 +649,25 @@ event is `approved` or `rejected`: `n`, the share approved, and the Wilson 95 % 
 `test_result`, never a rule kind) in one journal. A curator with `curate` and `read` creates it on the phone: tap
 **Delegations**, read the agreement table, choose the threshold (default 0.90), the sample rate N (default 10) and
 the days (default 14, at most 30), tap **Delegate** and sign. The page refuses it with fewer than 30 shadow decisions
-at the chosen threshold (`KUTUPHANE_DELEGATION_MIN_SHADOW`).
+at the chosen threshold (`KUTUPHANE_DELEGATION_MIN_SHADOW`, a whole number of at least 1; curator web does not start
+with another value).
 
-While a delegation is live, each `decider run` (by a timer) gives every note of its class with an `approved`
-suggestion at the threshold or more a **use**. The database then decides:
+The runner reads note text only through the database (`decider_notes()`): the journals where
+`agent:kutuphane-decider` holds `read` (the grant above) and the journals of live delegations, through the text gate.
+It reads each note again just before its model call; a note that lost `ai_input`, depends on a blocked skill or was
+decided since the list is not sent (`closed_meanwhile` in the run output). The `spec_sha256` covers the runner's
+prompt and answer code (`kutuphane decider spec` prints `runner_code`): an update that changes it is a new spec, with
+no shadow agreement and no delegation.
+
+While a delegation is live, each `decider run` (by a timer) gives the notes of its class with an `approved`
+suggestion at the threshold or more a **use**, oldest first: the database accepts a use only for the oldest such
+note (a use cannot skip a note) and only after its suggestion is committed. The database then decides:
 
 | Rule | Effect |
 |---|---|
 | the delegation ended or expired; the note has a Standing event, a `contradicts` link, or text that may not go to a model; the note was written by the runner | no use |
-| the creator no longer holds `curate` on the book | the run skips the delegation |
-| a random 1 in N use (and always one after 2N unchecked uses) | a **sample**: no event; the note stays `pending` in the normal list, with no mark |
+| the creator no longer holds `curate` on the book | no use; the run skips the delegation |
+| a 1 in N draw (and always one after 2N unchecked uses) | a **sample**: no event; the note stays `pending` in the normal list, with no mark. The draw is fixed for each note (an HMAC under a key that only the database owner reads): a retry draws the same |
 | any other use | an `approved` event with `set_by: model:<name>@<version>` and the reason `delegated: <id>` |
 | 3 samples wait for a person | no new use until a person decides one |
 | a person's first decision on a sample is not `approved` (phone, `note standing` or `note rollback`) | the delegation ends at once (`ended:disagreement`) |

@@ -167,7 +167,7 @@ def test_the_decider_role_inserts_only_uses_the_database_decides(env, dec, route
     sug = dict(env.execute("SELECT note_seq, seq FROM note_suggestion").fetchall())
     with pytest.raises(psycopg.errors.ForeignKeyViolation):  # another approver
         run(env, USE, (d, J, "finding", s.decider, s.sha256, "model:other@1", good, sug[good]), role=DEC)
-    with pytest.raises(psycopg.errors.ForeignKeyViolation):  # a rule note in a finding delegation
+    with pytest.raises(psycopg.errors.RaiseException, match="not the next note"):  # a rule note: not of the class
         run(env, USE, (d, J, "finding", s.decider, s.sha256, s.approver, rule, sug[rule]), role=DEC)
     with pytest.raises(psycopg.errors.ForeignKeyViolation):  # the suggestion of another note
         run(env, USE, (d, J, "finding", s.decider, s.sha256, s.approver, good, sug[rule]), role=DEC)
@@ -325,7 +325,8 @@ def test_a_curator_ends_a_delegation_by_act_or_cli_and_retires_its_approvals(env
                                                                               capsys):  # D9
     s = spec()
     auth = ready(env, client)
-    monkeypatch.setenv(delegation.MIN_SHADOW_ENV, "0")  # the shadow rule is under test in D1
+    monkeypatch.setenv(delegation.MIN_SHADOW_ENV, "1")  # the shadow rule is under test in D1
+    shadow_decisions(env, s, 1)
     r = sign(client, auth, {**delegate_body(s, sample_every=100)})
     assert r.status_code == 200, r.text
     by_act = r.json()["delegation"]

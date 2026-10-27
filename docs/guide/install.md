@@ -246,7 +246,11 @@ and lets a live delegation approve evidence notes through the database rules. It
 3. Check the spec: `kutuphane decider spec deploy/deciders/qwen-notes.json`. The runner refuses a spec whose
    `route_locality` is not `local`, and an answer whose reported model or revision (`answer` pointers) differs from
    the spec. If the model server changes, the reported revision changes: write a new spec version. A new spec has
-   no shadow agreement and no delegation.
+   no shadow agreement and no delegation. The `spec_sha256` also covers the runner's prompt and answer code
+   (`runner_code`), so a Kütüphane update that changes that code is a new spec too.
+4. The books for suggestions, as the owner: `kutuphane grant book:adc-memory read agent:kutuphane-decider` for each
+   journal. The runner role reads note text only through the database function `decider_notes()`, which gives the
+   text of these books and of the books of live delegations only, through the text gate.
 
 **Run** (by a timer, for example every 15 minutes):
 
@@ -256,9 +260,11 @@ KUTUPHANE_LLMDAP_URL=http://<llmdap>:8787 KUTUPHANE_DECIDER_LLMDAP_KEY=… KUTUP
   .venv/bin/kutuphane decider run --spec deploy/deciders/qwen-notes.json --shadow
 ```
 
-`KUTUPHANE_DECIDER_BOOKS` (comma-separated) lists the journals for suggestions; the books of live delegations of
-the spec are always in scope. `--shadow` writes suggestions only. `--limit` caps the model calls of one run
-(default 100). The model call holds no database lock; each suggestion and each use is a short transaction.
+`KUTUPHANE_DECIDER_BOOKS` (comma-separated) lists the journals for suggestions of this run; a journal where
+`agent:kutuphane-decider` holds no `read` gives no note. The books of live delegations of the spec are always in
+scope. `--shadow` writes suggestions only. `--limit` caps the model calls of one run (default 100). The model call
+holds no database lock; each suggestion and each use is a short transaction. Run `deploy/db-roles-decider.sql` again
+after every `kutuphane migrate`.
 
 ## Light install
 

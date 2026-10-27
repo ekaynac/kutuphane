@@ -63,6 +63,7 @@ def env(conn):
         authz.delegate(conn, delegator=U, delegate_to=A, obj=f"book:{J}", mode=mode,
                        expires_at=datetime.now(timezone.utc) + timedelta(hours=1))
     authz.grant(conn, f"book:{J}", "curate", U)
+    authz.grant(conn, f"book:{J}", "read", decider.PRINCIPAL)  # the operator's books for suggestions (029)
     yield conn
     drop_roles(conn)
 
@@ -312,8 +313,14 @@ def test_the_runner_approves_only_through_the_database(env, dec, route):  # D2
     assert_use_invariants(env, s, d)
     used = {n for _, n, *_ in uses(env, d)}
     assert used == {f for f, _ in fresh}  # under c, decided, in a contradiction, the runner's own: no use
-    assert {r["reason"].split(":")[0] for r in out["refused"]} == {f"note {pair_a} is in a contradiction",
-                                                                  f"note {pair_b} is in a contradiction"}
+    assert out["refused"] == []  # delegation_next never names them (029); a direct insert is refused (below)
+    for seq, reason in ((pair_a, "is in a contradiction"), (own, "propose write by the runner's principal")):
+        sug = env.execute("SELECT seq FROM note_suggestion WHERE note_seq = %s", (seq,)).fetchone()[0]
+        with pytest.raises(psycopg.errors.RaiseException, match=reason):
+            with dec.transaction():
+                dec.execute("INSERT INTO delegation_use (delegation, book, kind, decider, spec_sha256, approver, "
+                            "note_seq, suggestion, correlation_id) VALUES (%s, %s, 'finding', %s, %s, %s, %s, %s, "
+                            "'c')", (d, J, s.decider, s.sha256, s.approver, seq, sug))
     approvals = [u for u in uses(env, d) if not u[2]]
     assert approvals and all(u[7] == out["correlation_id"] for u in approvals)
     query = notesquery.query_notes(env, Actor(U, channel="http"), for_model=False, book=[J], sets=["current"])
@@ -414,7 +421,7 @@ def test_another_spec_revision_or_model_gives_no_use(env, dec, route):  # D8
     out = decider.run(dec, changed, route.bridge(), books=[J])
     assert len(out["suggestions"]) == 1 and out["uses"] == []  # no delegation names this spec
     use = env.execute("SELECT seq, note_seq FROM note_suggestion").fetchone()
-    with pytest.raises(psycopg.errors.ForeignKeyViolation):  # a use of another spec's suggestion: key refusal
+    with pytest.raises(psycopg.errors.RaiseException, match="not the next note"):  # another spec's suggestion
         with dec.transaction():
             dec.execute("INSERT INTO delegation_use (delegation, book, kind, decider, spec_sha256, approver, note_seq, "
                         "suggestion, correlation_id) VALUES (%s, %s, 'finding', %s, %s, %s, %s, %s, 'c')",
@@ -470,6 +477,7 @@ def test_cli_decider_run_uses_its_own_role_and_key(env, route, tmp_path, monkeyp
     assert route.requests[0][2]["authorization"] == f"Bearer {KEY}"
     assert cli.main(["decider", "spec", str(path)]) == 0
     assert json.loads(capsys.readouterr().out)["spec_sha256"] == hashlib.sha256(
-        __import__("kutuphane.ids", fromlist=["canonical"]).canonical(BASE_SPEC)).hexdigest()
+        __import__("kutuphane.ids", fromlist=["canonical"]).canonical(
+            {**BASE_SPEC, "runner_code": decider.runner_code()})).hexdigest()
     monkeypatch.delenv(decider.KEY_ENV)
     assert cli.main(["decider", "run", "--spec", str(path)]) == 2

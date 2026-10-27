@@ -124,7 +124,7 @@ kutuphane curator enroll user:ayse            # owner credential (KUTUPHANE_CURA
 | A phishing page or another tailnet node | full-host RP ID, exact origin, no `crossOrigin`, no `topOrigin`, no related origins, `__Host-` cookie (§3.2) |
 | A cloned authenticator | the signature counter: a non-zero counter that does not increase refuses the act or login (§5.4) |
 | A compromised curator web | out of the guarantee (trusted base). `verify-acts` finds an act whose signature does not verify against a stored passkey, or a statement that its effects do not match (§5.6). It cannot find a signature obtained over a misleading display. |
-| A compromised decider runner | it can choose suggestions, so it can approve evidence notes of a live delegation, within the database rules (class, threshold, fresh note, no contradiction, text gate, drawn sample, pause, forced sample). The approver of record is the decider. |
+| A compromised decider runner | it can choose suggestions, so it can approve evidence notes of a live delegation, within the database rules (class, threshold, fresh note, no contradiction, text gate, drawn sample, pause, forced sample). It cannot set the `seq`, time or `sampled` of a use or the `seq` or time of a suggestion, cannot skip a note (a use takes the oldest eligible note), cannot retry a draw (an HMAC of the delegation and the note under a key it cannot read) and reads note text only through the gated function `decider_notes()` (§4.7, security review #17). The approver of record is the decider. |
 | A hostile note text that misleads the curator | plain text only; invisible and bidirectional characters shown as visible marks; the full text before the act (§6.6) |
 | Rubber-stamping | the full text first; at most 50 items per act; a rule-role note alone; the suggestion hidden until the decision. Residual risk stays (research §4). |
 | An agent learns what the decider approves and shapes bad evidence | evidence kinds only (never a rule); the sample and the forced sample; the end at one rejected sample; the daily write limit (docs/24 §6.1). **Residual risk:** with N = 10, one bad note that passes the decider is approved at once with probability 0.9; sampling bounds the rate of bad approvals, not one approval. Approved evidence is still agent context, so an instruction-shaped finding is a prompt-injection risk (§8.4). |
@@ -583,7 +583,7 @@ CREATE TRIGGER standing_event_sample_verdict AFTER INSERT ON standing_event
 | trigger `curate_delegation_in_statement` | the row is the signed statement, field by field |
 | `delegation_end.*` | no use after it; the cause (`disagreement` with the human event, or `revoked`) |
 | `delegation_use.*` | every use; `sampled` (drawn by the database) holds the note for a person; `correlation_id` joins the runner's audit |
-| trigger `delegation_use_check` | refuses a use of an ended or expired delegation (`clock_timestamp()`), under the threshold, on a note with any Standing event, in a `contradicts` link, whose text may not go to a model, or while 3 samples are open; draws `sampled` |
+| trigger `delegation_use_check` | refuses a use of an ended or expired delegation (`clock_timestamp()`), under the threshold, on a note with any Standing event, in a `contradicts` link, whose text may not go to a model, or while 3 samples are open; draws `sampled`. Migration 029 (§4.7) makes it `SECURITY DEFINER` and adds the rest of the rules |
 | trigger `delegation_use_approve` | writes the approval of an unsampled use; the runner holds no `INSERT` on `standing_event` |
 | `standing_event.delegation_use` (+ key with `note_seq`) | a delegated approval names the use **of the same note**; `set_by` = the approver; never for a sampled use; `approved` only |
 | trigger `standing_event_sample_verdict` | the first event of a sampled note is its verdict; a person's verdict other than `approved` ends the delegation, on every path (phone, `note standing`, `note rollback`) |
@@ -620,17 +620,26 @@ CREATE POLICY standing_event_web ON standing_event FOR INSERT TO kutuphane_curat
 -- Migration 026 (trigger standing_event_retires_signed) adds: the target is in the `retires` list of the cause's act
 -- statement, and the cause event is of this transaction (§4.6).
 
--- Decider runner (D73): suggestions and uses only. The database writes the approval (025 trigger).
+-- Decider runner (D73): suggestions and uses only. The database writes the approval (025 trigger). Security review
+-- #17 (029): no SELECT on note (text only through decider_notes()), column grants without seq, at and sampled.
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM kutuphane_decider;
 GRANT USAGE ON SCHEMA public TO kutuphane_decider;
-GRANT SELECT ON note, note_journal, journal, note_link, note_citation, write_record, standing_event, book,
-    policy_version, skill_scan, skill_clearance, skill_block, curate_delegation, delegation_end, note_suggestion,
-    delegation_use, model_call, grant_tuple, delegation TO kutuphane_decider;   -- the last two: authz.direct
+GRANT SELECT ON book, policy_version, curate_delegation, delegation_end, note_suggestion, delegation_use,
+    standing_event, model_call TO kutuphane_decider;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO kutuphane_decider;
-GRANT INSERT ON note_suggestion, delegation_use, model_call, access_event TO kutuphane_decider;
+GRANT INSERT (note_seq, decider, spec_sha256, value, confidence, model_call) ON note_suggestion TO kutuphane_decider;
+GRANT INSERT (delegation, book, kind, decider, spec_sha256, approver, note_seq, suggestion, correlation_id)
+    ON delegation_use TO kutuphane_decider;
+GRANT INSERT ON model_call, access_event TO kutuphane_decider;
+GRANT EXECUTE ON FUNCTION decider_notes(text[], text, bytea, integer, integer, bigint), delegation_next(text)
+    TO kutuphane_decider;
+-- 029: the key of the sample draw is the owner's only (db-roles.sql and db-roles-curator.sql).
+REVOKE ALL ON delegation_sample_key FROM kutuphane_app;
+REVOKE ALL ON delegation_sample_key FROM kutuphane_curator_web;
 ```
 
 - The app role keeps `SELECT` on `origin_confirmation`, `origin_withdrawal` and `standing_event` (shown origin, `approved_by`).
-- The trigger functions that write (`delegation_use_approve`, `standing_event_sample_verdict`) are `SECURITY DEFINER` with a fixed `search_path`.
+- The trigger functions that write (`delegation_use_approve`, `standing_event_sample_verdict`) and, since 029, `delegation_use_check`, `decider_notes` and `delegation_next` are `SECURITY DEFINER` with a fixed `search_path`.
 - All Standing writers take the memory advisory lock before their first `nextval`.
 - The system branch of `standing_event_web` allows only `retired`, of a note that a creation `supersedes` link of the act's approved rule names. With the 026 trigger, the target must also be in the `retires` list of that act's signed statement, and the cause event must be of the same transaction (security review #16, finding 3).
 
@@ -644,6 +653,21 @@ GRANT INSERT ON note_suggestion, delegation_use, model_call, access_event TO kut
 | trigger `standing_event_retires_signed` | a system event whose cause is an act event is `retired`, its note is in the `retires` list of that act's statement, and the cause event is of this transaction. A cause without an act (the CLI, `rollback`) is not affected |
 
 The sessions that are open when 026 runs end; the two session checks are `NOT VALID` for these ended rows only.
+
+### 4.7 `029_curator_review17.sql` (security review #17)
+
+| Field or object | Behavior |
+|---|---|
+| `holds_direct(principal, object, mode)` | `authz.direct` in SQL: a tuple, or membership in a role that holds it |
+| `delegation_sample_key` | one 32-byte key from `gen_random_bytes` (pgcrypto). No login role reads it: the deploy scripts revoke it from the app and curator web roles; the decider role gets only the tables it needs |
+| trigger `note_suggestion_check` | sets `seq` (from `memory_seq`, under the memory lock) and `at`; refuses a suggestion of a note with any Standing event, so a late suggestion cannot count as shadow evidence (§8.7) |
+| `decider_notes(books, decider, spec, max_chars, limit, seq)` | `SECURITY DEFINER`: the text of the undecided notes of `books` that have no suggestion of this decider and spec, only in books where `agent:kutuphane-decider` holds `read` directly or that have a live delegation, through the text gate (`ai_input` of the note and of its journal, no skill block); `seq`: one note, again just before its model call (§8.3) |
+| `delegation_next(delegation)` | `SECURITY DEFINER`: the oldest note of the class with a committed `approved` suggestion of its decider and spec at or over the threshold, no use, no Standing event, no contradiction, through the text gate, and no propose write by the runner's principal (`agent:kutuphane-decider` or the principal of the suggestion's `model_call`) |
+| trigger `delegation_use_check` (replaced) | `SECURITY DEFINER`; takes the memory lock; sets `seq` and `at`; refuses a creator who no longer holds `curate` directly, a suggestion of the same transaction (its `xmin`, or its `at` = the transaction start for a savepoint), a propose write by the runner's principal, and any note but `delegation_next`; draws `sampled` = forced (2N) or the first 32 bits of `HMAC-SHA256(key, delegation ':' note_seq)` mod N = 0, so a rollback and a retry draw the same |
+| trigger `origin_confirmation_by_confirmer` | R7: refuses a confirmation while the latest confirmation of the note is live and by another person; also through a new request for the same bytes (§7.4) |
+| `delegation_end.act_action` (`end_delegation` when `act` is set) + keys `(act, act_action)`, `(act, ended_by)` to `curator_act` | an end by an act is the end of an `end_delegation` act of the person in `ended_by` |
+
+The decider role holds column `INSERT` grants without `seq`, `at` and `sampled` (§4.5), so it cannot set them; the triggers set them for every role. The draw needs no new secret in the environment: the key lives in the database and never leaves it.
 
 ## 5. Passkey ceremonies
 
@@ -840,7 +864,9 @@ confirm_origin(ref: str) -> {"ref", "origin", "confirmation": {"state": "open"|"
 | `human` | P = the request's `person` (the user acted for, or the user who wrote). Database key (`human_by`). A write by an agent on its own rights has no person: no `human`. |
 | `assisted` | P = the `person`, or P holds `curate` on the book (directly). Code check. |
 
-P must also hold `read` on the book. The page lists only the requests that P may confirm.
+P must also hold `read` on the book. The page lists only the requests that P may confirm. The page and the `confirm` and `withdraw` options check P's direct `read` on the book of the parsed reference before any lookup, with one refusal for every note state (security review #17).
+
+**A live confirmation stays** (R7): while the latest confirmation of the note is live, only its confirmer may confirm the note again (the latest counts). Any other person is refused until the confirmer withdraws it: the page offers no claim, the act refuses, and the trigger `origin_confirmation_by_confirmer` (§4.7) refuses the row. This also holds when another person's agent proposes the same bytes again and so opens a request whose person is that reader.
 
 ### 7.5 Expiry and a changed byte
 
@@ -865,7 +891,7 @@ shown(note, w) = c.claim                          if c exists and has no origin_
 ### 7.7 R7: withdrawal
 
 - Only the confirmer withdraws the confirmation, with a `withdraw` act (database key). `as_of` before the withdrawal still shows the confirmation.
-- Others use the Standing path (reject or retire) or ask the confirmer; this design has no `contest` act.
+- Others use the Standing path (reject or retire) or ask the confirmer; this design has no `contest` act. Another person's confirmation never replaces a live one (§7.4).
 
 ### 7.8 Implementation (slice R)
 
@@ -893,8 +919,8 @@ A delegation covers only Standing `pending → approved` of fresh notes of its c
 ### 8.2 Who creates and ends it
 
 - **Create:** a person with `curate` (direct) on the book, with a `delegate` passkey act (D56: signed). The statement holds every field; the database accepts only that row.
-- **Shadow evidence first:** the page shows the agreement of this decider and spec with the human decisions in this (book, kind) at the chosen threshold (§8.7). Creation is refused with fewer than 30 such decisions (`KUTUPHANE_DELEGATION_MIN_SHADOW`).
-- **The creator's right:** a use needs the creator to hold `curate` on the book now (`authz.direct` in the use transaction). A creator who loses it stops the delegation.
+- **Shadow evidence first:** the page shows the agreement of this decider and spec with the human decisions in this (book, kind) at the chosen threshold (§8.7). Creation is refused with fewer than 30 such decisions (`KUTUPHANE_DELEGATION_MIN_SHADOW`: a whole number, at least 1; curator web refuses to start with another value).
+- **The creator's right:** a use needs the creator to hold `curate` on the book now (`holds_direct` in the use trigger, §4.7). A creator who loses it stops the delegation.
 - **End:** a person with `curate` on the book, with an `end_delegation` act or `kutuphane delegation end <id> --curator user:… --reason …` (owner credential; ending only tightens). The database ends it on a disagreement (§8.4). An end is final; a new delegation is a new signed act.
 
 ### 8.3 The decider and the runner
@@ -906,26 +932,26 @@ A delegation covers only Standing `pending → approved` of fresh notes of its c
  "labels": {"approve": "approved", "reject": "rejected"}, "instructions": "…", "max_chars": 8000}
 ```
 
-- `spec_sha256` = SHA-256 of the canonical spec. It pins the runner version, the route and its locality, the model and its immutable revision (for Laya the pinned Hub commit; for a local Qwen the weights digest), the prompt and the label map. Another value is another spec, and no delegation matches it.
+- `spec_sha256` = SHA-256 of the canonical spec plus `runner_code`, the SHA-256 of the source of the runner's prompt and answer code (`decider.PROMPT_CODE`; `kutuphane decider spec` prints both). It pins the runner version and its prompt code, the route and its locality, the model and its immutable revision (for Laya the pinned Hub commit; for a local Qwen the weights digest), the prompt and the label map. Another value is another spec, and no delegation matches it.
 - The runner refuses a spec whose `route_locality` is not `local`, and refuses a model answer whose reported model or revision differs from the spec. **Limit:** LLMDAP reports the route's configured class and model; the route configuration and the model server are in the trusted base (§3.5).
 - `kutuphane decider run --spec FILE`, by a timer, with `KUTUPHANE_DECIDER_DSN` (role `kutuphane_decider`) and its own LLMDAP subject key. Audit principal: `agent:kutuphane-decider`.
 - **Implementation (slice D):** the spec files are `deploy/deciders/qwen-notes.json` (the first decider) and `laya-notes.json`. A spec also has `answer`: the JSON pointers of the reported model and revision in the model answer (`/model` and `/system_fingerprint` on the `chat` route; `/routing/model` and none on `laya`, whose revision the LLMDAP digest gate pins), and, for `systemone`, optional `criteria`. The runner version is `kutuphane-decider/1`. For the local Qwen, the pinned revision is the vLLM `system_fingerprint` that the route reports: the server reports no weights digest. The runner's subject key is `KUTUPHANE_DECIDER_LLMDAP_KEY`; the model answer is `{label, confidence}`, mapped by `labels`. A note longer than `max_chars` is not sent (the person decides it).
-- **Scope:** the books of the live delegations of this decider and spec, and the books that the operator lists in `KUTUPHANE_DECIDER_BOOKS` for pre-sort suggestions. No agent can extend it.
+- **Scope:** the books of the live delegations of this decider and spec, and the books that the operator lists in `KUTUPHANE_DECIDER_BOOKS` for pre-sort suggestions and grants `read` to `agent:kutuphane-decider`. No agent can extend it: the runner role has no `SELECT` on `note` and gets text only from `decider_notes()` (§4.7), which applies the grant, the live delegations and the text gate.
 - Two decider kinds, one interface:
   - **Local Qwen** through the LLMDAP `chat` route (as `experiments/labeling_v5/llm_propose.py`): a JSON answer `{value, confidence}`; a malformed answer is `abstain`, 0. **This is the first decider** (§14 Q9), in shadow mode: it writes suggestions only, and no delegation uses it until its shadow agreement (§8.7) is enough.
   - **Laya** (typed decisions, D44) through the LLMDAP `systemone` route `laya`: a class and a probability. Later, when it is trained on the decision export (#74).
   - The confidence is a score, not a calibrated probability. The threshold is set and checked against the human decisions (§8.7), so its meaning is empirical.
 - **Phase 1, suggestions** (no lock held during the model call): for each note in scope with no Standing event and no suggestion of this decider and spec:
-  1. **Text gate:** the note's `ai_input` AND `note_journal.ai_input` AND NOT `note_skill_blocked(seq)` (D71); else skip (the person decides).
+  1. **Text gate:** the note's `ai_input` AND `note_journal.ai_input` AND NOT `note_skill_blocked(seq)` (D71); else skip (the person decides). The runner checks it again for each note just before its model call, and sends the text read then (`closed_meanwhile`: a note that no longer passes).
   2. The model call through `llmdap` with `source_books` = the note's `source_books`, so a `local_only` book never goes to a cloud route. The input: kind, text, scope, the decision options and choice. Linked and cited texts are not sent.
-  3. A short transaction under the memory lock: insert the `note_suggestion` with the `model_call` id.
-- **Phase 2, uses** (a short transaction per note, under the memory lock): for each note in the class of a live delegation with a suggestion of its decider and spec, no Standing event and no use, where the creator still holds `curate` and no propose write of the note is by the runner's principal: insert a `delegation_use`. The trigger decides the rest (§4.4): it refuses, or it draws the sample and, if not sampled, writes the approval. A refusal for open samples leaves the note for the next run (it keeps its suggestion).
+  3. A short transaction under the memory lock: insert the `note_suggestion` with the `model_call` id. The database sets its `seq` and time and refuses it once the note has a Standing event.
+- **Phase 2, uses** (a short transaction per note, under the memory lock): for each live delegation, the runner inserts a `delegation_use` for the note that `delegation_next()` names: the oldest note of the class with a committed suggestion of its decider and spec at or over the threshold, no Standing event, no use, no contradiction, through the text gate, and no propose write by the runner's principal. The trigger decides the rest (§4.4, §4.7): it refuses (also any other note: a use cannot skip one), or it draws the sample and, if not sampled, writes the approval. A refusal ends the delegation's turn in the run; a refusal for open samples leaves the note for the next run (it keeps its suggestion).
 - One `access_event` per run (action `decide`, items with `standing_seq`), with the run's correlation id, which is also `delegation_use.correlation_id` and the approval's `correlation_id`.
 
 ### 8.4 Sampling and the automatic end
 
 - **A sampled use writes no Standing event.** The note stays `pending` in its normal tier and order, with nothing that marks it as a sample and no suggestion shown (§6.2). The other pending notes of the class are the ones under the threshold, rejected or abstained by the model, or not yet decided, so a sample is not visible as "the model approved this". After the decision, the receipt says that it was a check.
-- **The database draws the sample** (`gen_random_uuid()`, a strong random source) with probability 1/N, and **forces** one after 2N unsampled uses since the last human verdict on a sample. The runner cannot choose.
+- **The database draws the sample** with probability 1/N, and **forces** one after 2N unsampled uses since the last human verdict on a sample. The draw is the first 32 bits of HMAC-SHA256 of (delegation, note) under a key that only the owner reads (§4.7, security review #17): it is fixed for each note, so a runner that rolls back a sampled use and tries again gets the same draw, and it cannot know a draw before the use. The runner cannot choose the note (the oldest eligible one), the sample or the `seq` that the forced-sample count uses. **Limit:** a compromised runner still chooses each suggestion and when it writes it, so it can choose which notes become eligible; it cannot see a draw before the use, and it cannot undo one.
 - **Open samples pause the delegation:** with 3 samples that have no Standing event, the database refuses new uses. The delegation cannot run ahead of its checks.
 - **The automatic end:** the first Standing event of a sampled note is its verdict. A person's verdict other than `approved` inserts `delegation_end (cause disagreement, ended_by system, event)` in the **same** transaction, whatever path wrote it: the phone, `note standing` or `note rollback` (a trigger, §4.4). A first event by the system (a supersession or a rollback of a derived note) closes the sample with no verdict.
 - **After an end:** the queue gets a review list of every note that the ended delegation approved, newest first, with batch Retire (one act). There is no automatic retirement: the system only tightens with a cause, and a disagreement on one note is not a cause for another (§14 Q7).
