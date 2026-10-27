@@ -47,7 +47,8 @@ An error has a short JSON body. It never contains internal details.
 | `409` | `authorization changed during the request; retry` | Rights changed two times during one read. |
 | `409` | `idempotency_key reused with another request` | The same idempotency key with another request ([mcp.md](mcp.md#7-idempotency-keys)). |
 | `429` | `daily note write limit reached (<n>)` or `at most 3 open jobs per principal` | A limit ([mcp.md](mcp.md#8-rate-limits-and-other-limits)). |
-| `502` | `model service unavailable or refused` | No model route is set, or LLMDAP failed or refused the call. |
+| `502` | `model service unavailable or refused` | LLMDAP failed or refused the call. |
+| `503` | `answers are not available: this install has no model gateway (LLMDAP); search is full text only` | `POST /v1/ask` on a server without LLMDAP ([light install](install.md#light-install)). |
 | `500` | — | An unexpected failure. The server log has the details. |
 
 An unknown path gets `404` with the plain-text body `Not Found`. A known path with a method that the route does not
@@ -256,8 +257,8 @@ A retry with the same `idempotency_key` and the same request gets `200` with the
 status.
 
 **Errors:** `400` (`JSON body required`, `JSON object required`, `question is required`,
-`background must be true or false`, `idempotency_key needs background: true`), `401`, `403`, `409`, `429`, `502`.
-The server gives `502` before it reads the body when no model route is set.
+`background must be true or false`, `idempotency_key needs background: true`), `401`, `403`, `409`, `429`, `502`,
+`503`. The server gives `503` before it reads the body when it has no LLMDAP (the light install).
 
 ```sh
 curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \

@@ -6,11 +6,11 @@ Find the message or the symptom in the left column. Do the step in the right col
 
 | Message | Cause and fix |
 |---|---|
-| `server not configured: set KUTUPHANE_ANSWER_MODEL, KUTUPHANE_PUBLIC_URL` | Set both. Without LLMDAP, the answer model can be any name; no call is made. |
+| `server not configured: set KUTUPHANE_PUBLIC_URL` (or `KUTUPHANE_ANSWER_MODEL`) | Set it. The answer model is needed only with `KUTUPHANE_LLMDAP_URL`. |
 | `identity not configured: set …` | Set `KUTUPHANE_OIDC_ISSUER`, `KUTUPHANE_OIDC_AUDIENCE` and `KUTUPHANE_OIDC_JWKS`. |
 | `database needs migrations (…): run kutuphane migrate` | Run `kutuphane migrate` with the owner DSN, then apply `deploy/db-roles.sql`. |
 | `issuer '…' would be advertised as '…'` | The MCP SDK writes the issuer in another form (lowercase host, no default port, a trailing `/`). Configure the IdP and `KUTUPHANE_OIDC_ISSUER` with the form that the message shows. Tokens must carry exactly that string. |
-| `LLMDAP not configured: set …` | `KUTUPHANE_LLMDAP_URL` is set, so the other LLMDAP settings are needed: `KUTUPHANE_LLMDAP_KEY`, `KUTUPHANE_LLMDAP_ROUTE`. |
+| `LLMDAP not configured: set …` | `KUTUPHANE_LLMDAP_URL` is set, so the other LLMDAP settings are needed: `KUTUPHANE_LLMDAP_KEY`, `KUTUPHANE_LLMDAP_ROUTE`. Or an embedding or rerank route is set without LLMDAP: Core calls models only through LLMDAP, so set LLMDAP or remove the route ([light install](install.md#light-install)). |
 | `LLMDAP route not configured: set KUTUPHANE_EMBED_MODEL` (or `_RERANK_MODEL`) | An embedding or rerank route is set without its model name. Set both or neither. |
 | `KUTUPHANE_DSN is not set` | Export the DSN. The server and the CLI use it. |
 
@@ -25,7 +25,8 @@ Find the message or the symptom in the left column. Do the step in the right col
 | 409 | `idempotency_key reused with another request` | Use a new key for a new request. Use the same key only for an exact retry. |
 | 429 | `daily note write limit reached (500)` | The principal wrote too many notes, links or outcomes today. Wait, or raise `KUTUPHANE_NOTE_WRITES_PER_DAY`. |
 | 429 | `at most 3 open jobs per principal` | Wait for a job to finish, or cancel one with `job_cancel`. |
-| 502 | `model service unavailable or refused` | No model route, LLMDAP is down, LLMDAP refused the call, or the egress check refused it (`local_only` book on a `cloud` route). Run `kutuphane explain <correlation-id>`. |
+| 502 | `model service unavailable or refused` | LLMDAP is down, LLMDAP refused the call, or the egress check refused it (`local_only` book on a `cloud` route). Run `kutuphane explain <correlation-id>`. |
+| 503 | `answers are not available: this install has no model gateway (LLMDAP); search is full text only` | The server has no LLMDAP (the light install). Use `search_library` and `open_citation`, or move to the full stack. |
 | 400 | a specific message | The request is malformed. The message names the field. |
 
 MCP tools return the same messages as tool errors. An MCP 2026-07-28 client that gets `-32020` sent an `Mcp-Name`

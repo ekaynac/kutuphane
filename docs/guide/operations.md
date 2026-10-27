@@ -63,11 +63,11 @@ All `KUTUPHANE_*` variables that the code, `compose.yaml` and `deploy/` read:
 | `KUTUPHANE_OIDC_AUDIENCE` | compose: `kutuphane` | Expected token audience. Required. |
 | `KUTUPHANE_OIDC_JWKS` | compose: `/run/kutuphane/jwks.json` | Path of the JWKS file. Required. |
 | `KUTUPHANE_OIDC_JWKS_FILE` | `./deploy/jwks.json` | Compose only: the host file that is mounted as the JWKS. |
-| `KUTUPHANE_LLMDAP_URL` | compose: `http://llmdap:8787` | LLMDAP gateway URL. Without it, the server has no model bridge. |
+| `KUTUPHANE_LLMDAP_URL` | compose: `http://llmdap:8787` | LLMDAP gateway URL. Without it, the server makes no model call: full-text search only, no answers ([light install](install.md#light-install)). |
 | `KUTUPHANE_LLMDAP_KEY` | none | Core's LLMDAP subject key. |
 | `KUTUPHANE_LLMDAP_ROUTE` | none | LLMDAP route for answers and question translation. |
 | `KUTUPHANE_LLMDAP_ROUTE_CLASS` | compose: `local` | `local` or `cloud`. A `local_only` book never goes to a `cloud` route. |
-| `KUTUPHANE_ANSWER_MODEL` | none | Answer model on `KUTUPHANE_LLMDAP_ROUTE`. Required by the server. `ask --model` sets it for the CLI. |
+| `KUTUPHANE_ANSWER_MODEL` | none | Answer model on `KUTUPHANE_LLMDAP_ROUTE`. Required by the server when `KUTUPHANE_LLMDAP_URL` is set. `ask --model` sets it for the CLI. |
 | `KUTUPHANE_LLMDAP_EMBED_ROUTE` | none | LLMDAP embeddings route. Without it, search is full text only. |
 | `KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS` | compose: `local` | Route class of the embeddings route. |
 | `KUTUPHANE_EMBED_MODEL` | none | Pinned embedding model of the route, for example `BAAI/bge-m3`. |

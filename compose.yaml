@@ -12,6 +12,7 @@
 #      deploy/llmdap/bridge.env + config/keys.json; see deploy/llmdap/README.md).
 # Dev models: add `--profile dev-models` for the deterministic stand-in model server (never for measurements).
 # Real local models (D61): the overlay deploy/compose.local-models.yaml (its header has the start command).
+# No LLMDAP, no models (#76): the separate file deploy/compose.light.yaml (project `kutuphane-light`).
 name: kutuphane
 
 services:

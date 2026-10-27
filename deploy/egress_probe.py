@@ -1,8 +1,10 @@
 """AT-10 network half: run INSIDE the core container; exit 0 only if core reaches nothing but its allowed peers.
 
     docker compose --profile app exec -T core python -I - [host:port ...] < deploy/egress_probe.py
+    docker compose -f deploy/compose.light.yaml exec -T core python -I - --light < deploy/egress_probe.py
 
-Allowed: postgres and llmdap. The ingress proxy shares the `web` network with core, so core can open a connection to
+Allowed: postgres and llmdap; with `--light` (the light install, #76), postgres only, and llmdap is forbidden too.
+The ingress proxy shares the `web` network with core, so core can open a connection to
 it; that is a known peer, not a way out (`web` has no route out). It is reported, not failed. Three things are
 checked separately (Astra
 review #4), because one failed connection does not say which layer stopped it:
@@ -50,8 +52,11 @@ def target(arg: str) -> tuple[str, int]:
     return host, int(port)
 
 
-forbidden = FORBIDDEN + [target(a) for a in sys.argv[1:]]
-failures = [f"cannot reach allowed {h}:{p}" for h, p in ALLOWED if not reachable(h, p)]
+light = "--light" in sys.argv[1:]
+args = [a for a in sys.argv[1:] if a != "--light"]
+allowed, gone = (ALLOWED[:1], ALLOWED[1:]) if light else (ALLOWED, [])
+forbidden = FORBIDDEN + gone + [target(a) for a in args]
+failures = [f"cannot reach allowed {h}:{p}" for h, p in allowed if not reachable(h, p)]
 gateway = default_route()
 failures += [f"HAS a default route via {gateway}"] if gateway else []
 failures += [f"RESOLVED outside name {n}" for n in OUTSIDE_NAMES if resolves(n)]

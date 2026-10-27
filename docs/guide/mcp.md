@@ -180,7 +180,8 @@ A tool error is a result with `isError: true`. The text is
 | `idempotency_key reused with another request` | Section 7. | `409` |
 | `daily note write limit reached (<n>)` | Section 8. | `429` |
 | `at most 3 open jobs per principal` | Section 6. | `429` |
-| `model service unavailable or refused` | No model route is set, or LLMDAP failed or refused the call. | `502` |
+| `model service unavailable or refused` | LLMDAP failed or refused the call. | `502` |
+| `answers are not available: this install has no model gateway (LLMDAP); search is full text only` | `ask_library` on a server without LLMDAP ([light install](install.md#light-install)). | `503` |
 | A validation message, for example `query must be 1..1000 characters` | The input is not valid. | `400` |
 | `internal error` | An unexpected failure. The server log has the details. | `500` |
 
@@ -326,8 +327,8 @@ The server decides the rights again after the model call.
 `idempotency_key` gives the same job and its current status.
 
 **Errors:** `400` (`question is required`, `background must be true or false`,
-`idempotency_key needs background: true`), `403`, `409`, `429` (open jobs), `502` (no model route, or the model
-failed).
+`idempotency_key needs background: true`), `403`, `409`, `429` (open jobs), `502` (the model failed), `503` (no
+LLMDAP: the light install; also with `background: true`).
 
 ```json
 {"jsonrpc": "2.0", "id": 4, "method": "tools/call",
@@ -743,7 +744,7 @@ A long `ask_library` can run as a durable background job.
 | Item | Value |
 |---|---|
 | Open jobs | At most 3 `queued` or `running` jobs per principal. One more gets `429`. |
-| Workers | `KUTUPHANE_JOB_WORKERS` threads in the server process (default `1`). `0` runs no jobs. With no model route, no worker starts. |
+| Workers | `KUTUPHANE_JOB_WORKERS` threads in the server process (default `1`). `0` runs no jobs. Without LLMDAP, no worker starts. |
 | Rights | The worker runs the ask with the principal and the user acted for of the job. So the rights at run time apply. |
 | Lease | 60 seconds. The worker renews it while the job runs. |
 | Interrupted job | When a running job's lease ends (for example, the server stopped), the job becomes `failed` with `error: interrupted`. It never runs again. |
