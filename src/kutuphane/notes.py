@@ -675,14 +675,16 @@ def _candidates(conn, seq: int, draft: Draft, readable: list[str], embedder, for
 
 
 def _counts(conn, seq: int, draft: Draft) -> dict:
-    """recurrence over the note's cluster; class_count = distinct clusters with the class key in the book;
+    """recurrence over the note's cluster; class_count = distinct clusters of evidence notes (KIND_ROLE) with the
+    class key in the book, so the convention or decision that answers the class is not a repeat of it (G31);
     guard_due = class_count >= 2 and no approved convention note with that class key in the book (§7)."""
     out = {"recurrence": recurrence(conn, seq, NOW), "class_count": 0, "guard_due": False}
     if draft.class_key is None:
         return out
     rows = conn.execute("SELECT seq, kind FROM note WHERE book = %s AND class_key = %s",
                         (draft.book, draft.class_key)).fetchall()
-    out["class_count"] = len({members[0] for members in _components(conn, [s for s, _ in rows], NOW).values()})
+    evidence = [s for s, kind in rows if KIND_ROLE[kind] == "evidence"]
+    out["class_count"] = len({members[0] for members in _components(conn, evidence, NOW).values()})
     conventions = [s for s, kind in rows if kind == "convention"]
     approved = any(v == "approved" for v, _ in effective_standing(conn, conventions, NOW).values())
     out["guard_due"] = out["class_count"] >= 2 and not approved

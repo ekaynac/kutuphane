@@ -73,8 +73,10 @@ The receipt:
   `rejected`, stop proposing it.
 - `candidates` lists similar notes (`normalized`, `vector`, `class`). The server never merges them. Decide, and link
   with `link_notes` (`same_as` or `contradicts`).
-- `guard_due: true`: this class occurs in 2 or more clusters and no approved `convention` covers it. Build the test
-  or lint in your orchestrator, then propose the convention with that `class_key`.
+- `guard_due: true`: this class occurs in 2 or more clusters of evidence notes (`finding`, `lesson`, `dead_end`,
+  `test_result`) and no approved `convention` covers it. Build the test or lint in your orchestrator, then propose
+  the convention with that `class_key`. The convention and a `decision_proposal` with the key do not count in
+  `class_count`.
 - A retry with the same key returns the first receipt. The same key with another request is refused.
 - Your writes (notes, links, outcomes) count against `KUTUPHANE_NOTE_WRITES_PER_DAY` (default 500).
 - A secret in the text refuses the note. The error names the rule, never the text.
@@ -90,7 +92,9 @@ on the book of `src` and `read` on the book of `dst`.
 
 ## 4. Read memory fast (no model call)
 
-`query_notes` is the main read. It is SQL only, deterministic, and has a size limit.
+`query_notes` is the main read. It is SQL only, deterministic, and has a size limit. Notes are not in
+`search_library` or `ask_library`: those search the passages of file books only. A journal in their `book` filter
+gives the error `journal: use query_notes …`.
 
 ```json
 {"name": "query_notes", "arguments": {
@@ -122,7 +126,9 @@ HTTP: `GET /v1/notes?book=adc-memory&repo=adc&branch=main&kind=finding` (list pa
                                      "types": ["derived_from", "contradicts", "fixed_by"]}}
 ```
 
-`ref` can also be a passage handle: then `root` is null and the nodes are the notes linked to that passage.
+`ref` can also be a passage handle: then `root` is null and the nodes are the notes linked to that passage
+(`about`, `derived_from`) and the notes that cite it (edge type `cites`). You do not need an `about` link next to a
+citation.
 `open_citation` opens one note (or passage) with its full text, Standing and `current` flag.
 
 ## 6. Check code citations
@@ -259,4 +265,5 @@ For a project with customer-confidential material, ask the operator for a privat
 - Always send the code context (`repo`, `branch` or `commit`, `path`) on reads.
 - Keep the `watermark` and read with `since`.
 - Never treat a `pending` note as a rule.
-- Use `ask_library` (a model answer, slow) only when `query_notes` and `search_library` do not answer.
+- Use `ask_library` (a model answer, slow) only when `query_notes` and `search_library` do not answer. Neither
+  `search_library` nor `ask_library` reads notes.

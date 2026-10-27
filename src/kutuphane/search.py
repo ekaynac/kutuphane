@@ -155,6 +155,24 @@ def _scope_files(conn, scope: Scope, books: list[str]) -> list[str] | None:
     return out
 
 
+def _refuse_journals(conn, read: set[str], scope: Scope) -> None:
+    """G33: notes are not passages, so a journal in the book filter would give a silent empty list. A readable
+    journal named there is refused with a notice; one the caller may not read stays as a book that does not exist."""
+    named = [b for b in scope.books if f"book:{b}" in read]
+    journals = [r[0] for r in conn.execute("SELECT book FROM journal WHERE book = ANY(%s) ORDER BY book", (named,))
+                ] if named else []
+    if journals:
+        raise ValueError(f"journal: use query_notes for {', '.join(journals)}; notes are not in search_library or "
+                         "ask_library")
+
+
+def check_scope(conn, actor: Actor, scope: Scope) -> None:
+    """The journal notice before any model call (retrieval: the query embedding, the translation)."""
+    if scope.books:
+        _refuse_journals(conn, authz.allowed(conn, actor.principal, actor.on_behalf_of, _modes(actor)).objects("read"),
+                         scope)
+
+
 @dataclass(frozen=True)
 class QueryVector:
     """The query embedded through LLMDAP by `model`; compared only with chunk vectors of the same model."""
@@ -230,6 +248,7 @@ def search(conn, actor: Actor, query: str, k: int = DEFAULT_K, attempts: int = 2
     for _ in range(attempts):
         pre = authz.allowed(conn, actor.principal, actor.on_behalf_of, modes)
         read = pre.objects("read")
+        _refuse_journals(conn, read, scope)
         if scope.books:  # an intersection: the filter can only remove readable books
             read = read & {f"book:{b}" for b in scope.books}
         if not read:

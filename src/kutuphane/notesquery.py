@@ -30,6 +30,7 @@ ORDERS = ("newest", "oldest", "relevance")
 DIRECTIONS = ("out", "in", "both")
 LINK_TYPES = ("derived_from", "same_as", "about", "fixed_by", "violates", "decided_by", "supersedes", "contradicts")
 NOTE_ORIGINS = ("human", "assisted", "model", "unknown")  # the shown origin (docs/25 §7.6)
+CITES = "cites"  # neighbours of a passage: the edge from a note that cites it (G32); a citation, not a link type
 ROLES = ("rule", "evidence")
 BUDGET_TOKENS = (200, 16000)
 MAX_BYTES = (8192, 131072)
@@ -753,7 +754,7 @@ def neighbours(conn, actor: Actor, *, for_model: bool, ref: str, types=None, dep
                direction: str = "both", sets=("current",), repo=None, branch=None, path=None, commit=None,
                max_nodes: int = 50, budget_tokens: int = 2000, max_bytes: int = 32768, as_of=None,
                attempts: int = 2) -> dict:
-    types = _strings("types", types, LINK_TYPES)
+    types = _strings("types", types, LINK_TYPES + (CITES,))
     depth = _int("depth", depth, 1, 2)
     if direction not in DIRECTIONS:
         raise ValueError(f"direction must be one of {', '.join(DIRECTIONS)}")
@@ -865,14 +866,20 @@ def neighbours(conn, actor: Actor, *, for_model: bool, ref: str, types=None, dep
 
 
 def _links(conn, frontier, passage, direction: str, types, w: int) -> list:
-    """Links at w from the frontier notes (or into a passage root), in link seq order."""
+    """Links at w from the frontier notes (or into a passage root), in link seq order. Into a passage root also the
+    notes that cite it (G32), as `cites` edges after the links, in note order."""
     if passage is not None:
-        return [(r[0], r[1], r[2], None, passage.handle) for r in conn.execute(
+        key = (passage.book, passage.content_id, passage.profile_id, passage.path, passage.ordinal)
+        links = [(r[0], r[1], r[2], None, passage.handle) for r in conn.execute(
             "SELECT seq, src, type FROM note_link WHERE seq <= %s AND dst_book = %s AND dst_content_id = %s "
             "AND dst_profile_id = %s AND dst_path = %s AND dst_ordinal = %s AND type IN ('about', 'derived_from') "
             "AND (%s::text[] IS NULL OR type = ANY(%s::text[])) AND %s <> 'out' ORDER BY seq",
-            (w, passage.book, passage.content_id, passage.profile_id, passage.path, passage.ordinal, types, types,
-             direction))]
+            (w, *key, types, types, direction))]
+        if direction == "out" or (types is not None and CITES not in types):
+            return links
+        return links + [((CITES, r[0]), r[0], CITES, None, passage.handle) for r in conn.execute(
+            "SELECT DISTINCT note_seq FROM note_citation WHERE kind = 'passage' AND note_seq <= %s AND cite_book = %s "
+            "AND content_id = %s AND profile_id = %s AND path = %s AND ordinal = %s ORDER BY note_seq", (w, *key))]
     if not frontier:
         return []
     out_ = direction in ("out", "both")

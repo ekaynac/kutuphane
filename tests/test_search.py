@@ -230,6 +230,46 @@ def test_chunker_changes_are_new_profiles():  # Astra #3: behavior change => new
     assert len(profiles.split(current, one_block)) > 1                  # v1 kept this as one chunk
 
 
+SOURCE = "<!-- source: Üretici kılavuzu, bölüm 4 | url: https://example.test/kilavuz -->"
+LONG_BODY = ("Yetki gövdesi uzun bir cümledir. " * 40).strip()  # alone more than TARGET_CHARS
+HEADED = "\n\n".join([
+    SOURCE,
+    "# Kural",
+    "Kısa gövde.",
+    "## 5. Yetki",
+    LONG_BODY,
+    "---",
+    "## 6. Son",
+    "### 6.1 Alt",
+    "#41–#47 numaralı kayıtlar kapandı.",                   # text, not a heading: no space after "#"
+    "```sh\n# 1. Anahtarları yaz\n\nyapılandır\n```",       # a comment in a code fence, not a heading
+    "## Boş",
+]) + "\n"
+
+
+def test_a_heading_alone_is_not_a_passage():  # G27, G28 (pilot 2): 33 of 668 passages were a heading or `---`
+    chunks = profiles.split(profiles.spec("chunked"), read_file("kural.md", HEADED.encode()))
+    second, third = HEADED.index("## 5. Yetki"), HEADED.index("---\n")
+    first_end = HEADED.index("Kısa gövde.\n") + len("Kısa gövde.\n")
+    assert [c.text for c in chunks] == [HEADED[:first_end],                          # G28: source + rule
+                                        HEADED[second:second + len("## 5. Yetki\n\n") + len(LONG_BODY) + 1],
+                                        HEADED[third:]]                              # a last heading too
+    assert [(c.start, c.line) for c in chunks] == [(0, 1), (second, 7), (third, 11)]
+    assert all(c.text == HEADED[c.start:c.end] for c in chunks)
+
+
+def test_attaching_a_heading_changes_no_other_passage(monkeypatch):  # G27: unchanged text keeps its vector
+    heading = "## İki: yetkiler, roller ve sınırların tamamı"
+    body = ("Yetki gövdesi uzun bir cümledir. " * 36).strip()  # fits with "Ara.", not with the heading
+    text = "\n\n".join(["# Bir", "Kısa.", heading, body, "Ara.", "## Üç", "Son."]) + "\n"
+    f = read_file("bolum.md", text.encode())
+    new = [c.text for c in profiles.split(profiles.spec("chunked"), f)]
+    monkeypatch.setattr(profiles, "_attach_bare", lambda merged: [(s, e) for s, e, _bare in merged])
+    old = [c.text for c in profiles.split(profiles.spec("chunked"), f)]              # the cut without attaching
+    assert old == ["# Bir\n\nKısa.\n", heading + "\n", body + "\n\nAra.\n", "## Üç\n\nSon.\n"]
+    assert new == [old[0], old[1] + "\n" + old[2], old[3]]
+
+
 JSONL = "\n".join([
     '{"id": 1, "title": "NVFP4 Blackwell destegi", "model": "claude"}',
     '{"id": 2, "title": "Pulse halkalarin yerini aldi", "model": "qwen"}',

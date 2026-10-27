@@ -150,3 +150,55 @@ Continuing `docs/15` §3 and `docs/18` §5. No code was changed in this pilot.
    `kstd-init` (G35).
 5. Decide G37 with the operator's license question.
 6. Then run the shadow comparison with inframedic's own retrieval over MCP (`docs/15` §4).
+
+## 8. After the fixes
+
+Branch `fix/pilot2-gaps` ([#118](https://github.com/ekaynac/kutuphane/pull/118)). Each fix has a regression test
+that failed on `main` first. G34 and G35 are not in this branch; `kutuphane curator queue` (#117) closes G36. G37
+stays open: it needs the operator's decision.
+
+| Gap | Change | Test |
+|---|---|---|
+| G27 | A markdown cut that holds only headings or `---` joins the passage after it (the passage before it at the end of a file). A heading is an ATX heading outside a code fence, so `#41` and a `#` comment in a fence are text. Every other passage keeps its text, so its vector is copied: a vector is now copied from any profile of the same book. Chunker version 5. | `test_a_heading_alone_is_not_a_passage`, `test_attaching_a_heading_changes_no_other_passage`, `test_a_new_chunker_reuses_the_vectors_of_unchanged_passages` |
+| G28 | Choice: a leading source comment joins the passage after it (not item information), so the rule passage holds its source. An HTML comment alone is handled as a heading alone. | `test_a_heading_alone_is_not_a_passage` |
+| G31 | `class_count` counts clusters of evidence notes only (`finding`, `lesson`, `dead_end`, `test_result`). | `test_class_count_counts_evidence_clusters_only` |
+| G32 | `neighbours` from a passage also gives the notes that cite it (edge `cites`), with the same gates as links. Migration 028 adds an index. | `test_neighbours_of_a_passage_follow_its_citations` |
+| G33 | The guide says that notes are not in `search_library` or `ask_library`. A readable journal in the `book` filter gives the error `journal: use query_notes …`. | `test_a_journal_in_the_search_filter_gives_a_notice` |
+| G29 | Before the model call, a document (a file name or a name before `§`) and a section (`§5.3`, `section 5.3`) that the question names are checked against the passage paths and the line starts of the passages. A missing one is named in the prompt. The prompt says: answer only from the named document or section, or say that the passages only refer to it. | `test_a_named_source_is_checked_against_the_evidence` |
+| G30 | The prompt says: read passage `[1]` first and base the answer on it when it answers the question; put each `[n]` after its claim; answer the part that the passages answer. | `test_the_prompt_asks_for_the_top_passage_and_inline_sources` |
+
+**Answers (G29, G30).** The 9 questions of section 5 again, through `ask_library`'s code path on the main database,
+same book and local models, `main` and the branch on the same day. The model is not deterministic, so questions 3–6
+also ran 3 to 5 more times with each code. Counts only; the answers are in the private report.
+
+| Measure | `main` | Branch |
+|---|---|---|
+| Full runs of the 9 questions: acceptable answers (correct, or a correct `not_in_library`) | 6 of 9, 6 of 9 | 8 of 9, 7 of 9 |
+| Question 4 (a named section of a held-back document): acceptable | 0 of 5 | 5 of 5 (1 `not_in_library`, 4 "the passages only refer to it") |
+| Question 6 (a similar, other bundle): acceptable | 0 of 5 | 0 of 5 |
+| Question 5 (the top passage names the template): the answer names it | 4 of 7 | 4 of 7 |
+| Question 3: a false `not_in_library` | 3 of 7 | 3 of 7 |
+| An answer that ends with a grouped "Sources" line | 0 of 31 answers | 0 of 31 answers |
+
+- G29 is closed for a question that names the document or the section: the check finds it before the model call.
+  It stays open for a question that names a similar thing without a document name (question 6): the prompt rule
+  alone did not stop the answer about the other bundle.
+- G30: no measured effect. The template was named in 4 of 7 runs with both prompts. Question 3's false
+  `not_in_library` is the same on `main`: model variance, not this change.
+- **Pilot 1, English question 2** (`docs/18`): the evidence is the same with both codes and has no passage that
+  gives the reason. `main` answers "the passages do not state why"; the branch gives the same content (twice) or
+  `not_in_library` (twice, with an earlier prompt wording). The gap is in retrieval (G19), not in the answer step.
+
+**Re-index (not done).** No book of the main database was ingested again. A read-only comparison of the stored
+content with chunker 5:
+
+| Book | Files that change | Passages | Shorter than 50 characters | Vectors to embed (others copied) |
+|---|---|---|---|---|
+| `inframedic-canon` | 26 of 33 | 668 → 585 | 33 → 0 | 77 of 585 |
+| radar documents | 57 of 83 | 2,601 → 2,321 | 102 → 1 (a one-line file) | 481 of 2,321 |
+| radar briefs, radar news, `ornek` | 0 | the same | 0 | 0 |
+
+An ingest of any book gives a new profile id, so every passage handle changes; old handles still open. The 12
+passage citations of the journal stay on the old passages, so `neighbours` from a new handle does not find those
+notes. The longest new passage is 4,825 characters: a heading can make a passage longer than `MAX_CHUNK_CHARS`
+(4,800) by its own length.

@@ -222,6 +222,7 @@ def query_vector(conn, embedder: llmdap.Routed | None, actor: Actor, query: str)
 def retrieve(conn, actor: Actor, query: str, k: int = search.DEFAULT_K, stages: Stages = Stages(),
              scope: search.Scope = search.Scope()) -> list[search.Hit]:
     search.check_query(query)  # before the embedding call and the query cache, on every path (search and ask)
+    search.check_scope(conn, actor, scope)  # G33: a journal in the filter is refused with a notice, before any model
     vector = query_vector(conn, stages.embedder, actor, query)
     recent = asks_recent(query)
     if stages.reranker is None:

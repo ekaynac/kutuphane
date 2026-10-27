@@ -13,7 +13,8 @@ from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 from starlette.testclient import TestClient
 
 import kutuphane
-from kutuphane import authz, catalog, cli, db, gate, ids, kstd, notes, packages, profiles, server
+from kutuphane import (authz, catalog, cli, db, gate, ids, kstd, notes, notesquery, packages, profiles, retrieval,
+                       search, server)
 from kutuphane.gate import Actor
 from kutuphane.identity import Verifier
 from kutuphane.policy import make_policy
@@ -436,6 +437,48 @@ def test_class_count_and_guard_due(env):
     guard = propose(env, mcp(), kind="convention", text="use bound parameters", class_key="cwe-89")
     notes.set_standing(env, guard["ref"], "approved", curator="user:kurator", reason="the guard")
     assert propose(env, mcp(), text="fourth", class_key="cwe-89")["guard_due"] is False
+
+
+def test_class_count_counts_evidence_clusters_only(env):  # G31 (pilot 2): the rules of a class are not repeats
+    first = propose(env, mcp(), text="unknown is not down", class_key="monitor-unknown")
+    rule = propose(env, mcp(), kind="convention", text="treat unknown as not confirmed", class_key="monitor-unknown")
+    assert (rule["class_count"], rule["guard_due"]) == (1, False)
+    plan = propose(env, mcp(), kind="decision_proposal", text="page only on down", class_key="monitor-unknown")
+    assert (plan["class_count"], plan["guard_due"]) == (1, False)
+    again = propose(env, mcp(), kind="dead_end", text="restarting the agent did not help", class_key="monitor-unknown")
+    assert (again["class_count"], again["guard_due"]) == (2, True)
+    assert first["class_count"] == 1
+
+
+def test_neighbours_of_a_passage_follow_its_citations(env):  # G32 (pilot 2): a citation is an edge too
+    passage = handle(env, "kitap")
+    authz.grant(env, f"book:{J}", "curate", "user:kurator")
+    kept, open_, refused = (propose(env, mcp(), text=t, citations=[passage])["ref"] for t in ("kept", "open", "no"))
+    notes.set_standing(env, kept, "approved", curator="user:kurator", reason="r")
+    notes.set_standing(env, refused, "rejected", curator="user:kurator", reason="r")
+
+    def near(**kw):
+        out = notesquery.neighbours(env, Actor(U), for_model=False, ref=passage, **kw)
+        return [n["ref"] for n in out["nodes"]], out["edges"]
+    assert near() == ([kept], [{"src": kept, "type": "cites", "dst": passage}])
+    assert near(sets=["open"])[0] == [open_]                                        # the same gates as links
+    assert near(sets=["history"])[0] == [refused]
+    assert near(types=["cites"])[0] == [kept] and near(types=["about"]) == ([], [])
+    assert near(direction="out") == ([], [])
+    deeper = propose(env, mcp(), text="builds on kept", links=[{"type": "about", "ref": kept}])["ref"]
+    notes.set_standing(env, deeper, "approved", curator="user:kurator", reason="r")
+    assert near(depth=2)[0] == [kept, deeper]
+
+
+def test_a_journal_in_the_search_filter_gives_a_notice(env):  # G33 (pilot 2): not a silent empty list
+    propose(env, mcp(), text="Yedekler her gece alınır")
+    with pytest.raises(ValueError, match="journal: use query_notes"):
+        search.search(env, Actor(U), "yedek", scope=search.Scope.of([J]))
+    with pytest.raises(ValueError, match="journal: use query_notes"):                # ask uses the same retrieval
+        retrieval.retrieve(env, Actor(U), "yedek", scope=search.Scope.of([J, "kitap"]))
+    journal(env, "kapali")                                                           # no read: as a missing book
+    assert search.search(env, Actor(U), "yedek", scope=search.Scope.of(["kapali"])) == []
+    assert search.search(env, Actor(U), "yedek")                                     # no filter: books only
 
 
 # --- T14, T15, T16: journal permissions and rights by derivation -----------------------------------------------

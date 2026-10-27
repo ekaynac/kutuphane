@@ -6,9 +6,10 @@ to a cloud route). A query is embedded per search; if that fails, the search sti
 the failed call stays on record in `model_call`.
 
 Incremental (G17): a vector records the sha256 of the text that was embedded. A new content version copies the
-vector of every passage whose embedded text is unchanged (same book, profile, model and width) and embeds only the
-others; vectors never cross a book. A vector whose embedded text is not known for certain has no key (NULL,
-migration 015) and is never copied.
+vector of every passage whose embedded text is unchanged (same book, model and width) and embeds only the others;
+vectors never cross a book. A new profile of the same book copies them too (G27: a new chunker version re-embeds
+only the passages whose text it changed): a vector depends on the embedded text and the model only. A vector whose
+embedded text is not known for certain has no key (NULL, migration 015) and is never copied.
 
 Failures (G12): a failed embedding call is retried with backoff; a batch that still fails is reported and the run
 goes on with the next batch. After `give_up_after` failed batches in a row the embedder is taken as down and the
@@ -100,14 +101,14 @@ SELECT c.book, c.content_id, c.profile_id, c.path, c.ordinal, c.text
 """
 
 # One vector per passage of the current version whose embedded text already has a vector of this model and width
-# in the same book and profile (any earlier version).
+# in the same book (any earlier version or profile). The profiles are listed, so the reuse index stays usable.
 _REUSE = """
 INSERT INTO chunk_vector (book, content_id, profile_id, path, ordinal, model, embedding, truncated, input_sha256)
 SELECT %(book)s, %(content)s, %(profile)s, m.path, m.ordinal, %(model)s, v.embedding, m.truncated, m.sha
   FROM unnest(%(paths)s::text[], %(ordinals)s::int[], %(shas)s::bytea[], %(truncated)s::boolean[])
        AS m(path, ordinal, sha, truncated)
  CROSS JOIN LATERAL (SELECT embedding FROM chunk_vector
-                      WHERE book = %(book)s AND profile_id = %(profile)s AND model = %(model)s
+                      WHERE book = %(book)s AND profile_id = ANY(%(profiles)s::text[]) AND model = %(model)s
                         AND input_sha256 = m.sha AND vector_dims(embedding) = %(dims)s LIMIT 1) v
     ON CONFLICT DO NOTHING
 RETURNING path, ordinal
@@ -184,8 +185,9 @@ def _reuse(conn, model: str, dims: int | None, rows: list) -> set[tuple[str, int
     if not rows or dims is None:
         return set()
     book, content, profile = rows[0][:3]  # _MISSING returns the current version of one book only
+    profiles = [r[0] for r in conn.execute("SELECT DISTINCT profile_id FROM publication WHERE book = %s", (book,))]
     copied = conn.execute(_REUSE, {
-        "book": book, "content": content, "profile": profile, "model": model, "dims": dims,
+        "book": book, "content": content, "profile": profile, "profiles": profiles, "model": model, "dims": dims,
         "paths": [r[3] for r in rows], "ordinals": [r[4] for r in rows], "shas": [input_sha256(r[5]) for r in rows],
         "truncated": [len(r[5]) > EMBED_CHARS for r in rows]}).fetchall()
     return {(p, o) for p, o in copied}

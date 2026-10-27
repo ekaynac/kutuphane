@@ -28,8 +28,11 @@ to its current content, profile and policy. Old versions stay, so an old citatio
 named.
 
 **Profiles.** `chunked` (the default) cuts text into passages of about 1,200 characters at headings and blank
-lines. `whole` serves each file as one piece (at most 500,000 characters). A book that an older reader published
-keeps its old index until you ingest it again.
+lines. In markdown, a heading, a `---` line or an HTML comment alone is not a passage: it joins the passage after
+it, so a passage starts with its heading and a rule file's leading source comment (for example
+`<!-- source: … | url: … -->`) is in the passage of the rule. A `#` line in a code fence, or `#41` without a space,
+is not a heading. `whole` serves each file as one piece (at most 500,000 characters). A book that an older reader
+published keeps its old index until you ingest it again.
 
 **Passages and citation handles.** A passage is one cut piece of one file version. Its handle names the exact
 version:
@@ -106,7 +109,7 @@ scope.
 | `supersedes` | creation only | approving a `rule` successor retires the predecessor with the same scope |
 | `same_as` | creation or later; same book | duplicate clusters, `collapse`, recurrence |
 | `contradicts` | creation or later | never collapsed together |
-| `about` | creation or later | `neighbours` from a passage |
+| `about` | creation or later | `neighbours` from a passage; a citation of the passage is an edge there too (`cites`) |
 | `fixed_by` | creation or later | the `unfixed` filter |
 | `violates` | creation or later | `neighbours`, counts on the rule |
 | `decided_by` | creation or later | `neighbours` |

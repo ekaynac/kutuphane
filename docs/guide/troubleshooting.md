@@ -66,6 +66,7 @@ or `Mcp-Method` header that differs from the body. Check that your reverse proxy
 | the propose receipt has only `ref`, `status: recorded`, `origin` | The writer has `propose` but not `read` on the journal. Grant `read` to get the full receipt. |
 | `origin_notice: origin-claim-refused` | The writer asked for `human`, `assisted` or `tool`. The server stored the computed origin. This is correct. |
 | `vector: skipped:<reason>` | The note was stored without a vector. `search` or `ai_input`: the note's rights forbid it; `no_route`: no embedding route; `egress`: the egress check refused; `error`: the call failed; `dimensions`: a wrong vector width. Text search still works. |
+| `journal: use query_notes for <journal>; notes are not in search_library or ask_library` | You named a journal in the `book` filter of `search_library`, `ask_library` or `GET /v1/search`. Notes are not searched there. Use `query_notes` (`text` for full text) and `neighbours`. |
 
 ## Code citations
 

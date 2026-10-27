@@ -8,6 +8,12 @@ Searched formats (G1): markdown, PDF text layers, and the plain-text formats of 
 headings; other text at blank lines; CSV at rows (merged); JSONL gives one passage per record, and every passage of
 a text file carries the line it starts on (for JSONL: the record's line). HTML is searched by its visible text
 only: no scripts, styles, templates or comments. Quarantined files (source.py) are stored but never cut.
+
+Markdown (G27, G28): a heading is an ATX heading line (`#` to `######` and a space) outside a code fence, so
+`#41` and a shell comment in a fence are text. A cut that holds only headings, thematic breaks (`---`) or HTML
+comments (a leading source comment) is not a passage: it joins the passage after it (at the end of the file, the
+passage before it). Every other passage keeps exactly the text that the cut without this step gives, so its
+embedded text, and so its vector (vectors.py), stays the same.
 """
 import io
 import re
@@ -21,7 +27,7 @@ from .agentfiles import is_instruction
 from .source import CSV, HTML, JSONL, MARKDOWN, PDF, TEXT_TYPES, SourceFile, extracted_text
 
 READER_VERSION = 3  # 3: G1 text formats, G3 quarantine, G5 agent folders. Bump when source.py's classification changes.
-CHUNKER_VERSION = 4  # 4: lines end only at "\n" (U+2028 inside a JSONL string is not a record end). Any change bumps this.
+CHUNKER_VERSION = 5  # 5: a heading, `---` or comment alone joins the next passage; ATX headings outside fences only
 TARGET_CHARS = 1200
 FTS_CONFIG = "turkish"  # Postgres text search configuration; part of the profile id
 MAX_CHUNK_CHARS = 4 * TARGET_CHARS  # a single huge block is cut at whitespace, so nothing escapes the index
@@ -91,64 +97,101 @@ def _lines(text: str):
         yield m.start(), m.group()
 
 
-def _paragraph_spans(text: str, base: int, headings: bool) -> list[tuple[int, int]]:
-    """Blank-line separated blocks; with `headings` (markdown), a heading line always starts a new block."""
-    spans, start, end = [], None, 0
+_HEADING = re.compile(r" {0,3}#{1,6}(?:[ \t]|$)")                  # CommonMark ATX heading
+_FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
+_BREAK = re.compile(r" {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$")        # a thematic break: ---, ***, ___
+_COMMENTS = re.compile(r"(?:\s*<!--.*?-->)+\s*", re.DOTALL)
+
+
+def _paragraph_spans(text: str, base: int, headings: bool) -> list[tuple[int, int, bool, bool]]:
+    """Blank-line separated blocks as (start, end, heading, bare); with `headings` (markdown), a heading line always
+    starts a new block. `heading`: the block starts with a heading. `bare`: markdown, and the block holds only
+    headings and thematic breaks, or only HTML comments."""
+    spans, start, end, fence, marks = [], None, 0, None, True
+
+    def close(stop: int) -> None:
+        bare = headings and (marks or _COMMENTS.fullmatch(text, start, stop) is not None)
+        spans.append((base + start, base + stop, headings and heading_start, bare))
+
+    heading_start = False
     for i, line in _lines(text):
-        blank, heading = not line.strip(), headings and line.lstrip().startswith("#")
+        body = line.rstrip("\n")
+        opener = _FENCE.match(body) if headings else None
+        heading = headings and fence is None and _HEADING.match(body) is not None
+        blank = not line.strip()
         if (blank or heading) and start is not None:
-            spans.append((start, i))
+            close(i)
             start = None
         if not blank and start is None:
-            start = i
+            start, heading_start, marks = i, heading, True
+        if not blank:
+            marks = marks and fence is None and opener is None and (heading or _BREAK.match(body) is not None)
+        if opener and (fence is None or opener.group(1)[0] == fence[0] and len(opener.group(1)) >= len(fence)):
+            fence = None if fence else opener.group(1)
         end = i + len(line)
     if start is not None:
-        spans.append((start, end))
-    return [(base + s, base + e) for s, e in spans]
+        close(end)
+    return spans
 
 
-def _line_spans(text: str, base: int) -> list[tuple[int, int]]:
+def _line_spans(text: str, base: int) -> list[tuple[int, int, bool, bool]]:
     """One span per non-blank line (a CSV row, a JSONL record), line end included."""
-    return [(base + i, base + i + len(line)) for i, line in _lines(text) if line.strip()]
+    return [(base + i, base + i + len(line), False, False) for i, line in _lines(text) if line.strip()]
 
 
-def _cap(spans: list[tuple[int, int]], text: str) -> list[tuple[int, int]]:
+def _cap(spans: list[tuple[int, int, bool, bool]], text: str) -> list[tuple[int, int, bool, bool]]:
     """Cut blocks longer than MAX_CHUNK_CHARS: at the last line end in the second half of the window, else at the
     last space, else hard."""
     out = []
-    for s, e in spans:
+    for s, e, heading, bare in spans:
         while e - s > MAX_CHUNK_CHARS:
             cut = text.rfind("\n", s + MAX_CHUNK_CHARS // 2, s + MAX_CHUNK_CHARS)
             if cut < 0:
                 cut = text.rfind(" ", s + 1, s + MAX_CHUNK_CHARS)
             cut = cut + 1 if cut > s else s + MAX_CHUNK_CHARS
-            out.append((s, cut))
-            s = cut
-        out.append((s, e))
+            out.append((s, cut, heading, False))
+            s, heading = cut, False
+        out.append((s, e, heading, bare))
     return out
 
 
-def _merge(spans: list[tuple[int, int]], text: str, headings: bool) -> list[tuple[int, int]]:
-    """Greedy: join consecutive blocks up to TARGET_CHARS; with `headings`, a heading block starts a new chunk."""
+def _merge(spans: list[tuple[int, int, bool, bool]]) -> list[tuple[int, int, bool]]:
+    """Greedy: join consecutive blocks up to TARGET_CHARS; a heading block starts a new chunk. (start, end, bare):
+    a chunk is bare when all its blocks are."""
     out = []
-    for s, e in spans:
-        heading = headings and text[s:e].lstrip().startswith("#")
+    for s, e, heading, bare in spans:
         if out and not heading and e - out[-1][0] <= TARGET_CHARS:
-            out[-1] = (out[-1][0], e)
+            out[-1] = (out[-1][0], e, out[-1][2] and bare)
         else:
-            out.append((s, e))
+            out.append((s, e, bare))
+    return out
+
+
+def _attach_bare(merged: list[tuple[int, int, bool]]) -> list[tuple[int, int]]:
+    """G27, G28: a bare chunk joins the next chunk (at the end, the one before it); no other chunk changes."""
+    out, pending = [], None
+    for s, e, bare in merged:
+        start = s if pending is None else pending
+        if bare:
+            pending = start
+            continue
+        out.append((start, e))
+        pending = None
+    if pending is not None:
+        end = merged[-1][1]
+        out[-1:] = [(out[-1][0], end)] if out else [(pending, end)]
     return out
 
 
 def _cut(f: SourceFile, text: str, base: int, full: str) -> list[tuple[int, int]]:
     """Spans of one page `text` that starts at `base` in `full` (the file's extracted text)."""
     if f.media_type == JSONL:
-        return _cap(_line_spans(text, base), full)  # one record, one passage (cut only if huge)
+        return [(s, e) for s, e, _h, _b in _cap(_line_spans(text, base), full)]  # one record, one passage
     if f.media_type == CSV:
-        return _merge(_cap(_line_spans(text, base), full), full, headings=False)
+        return _attach_bare(_merge(_cap(_line_spans(text, base), full)))
     markdown = f.media_type == MARKDOWN
     skip = _frontmatter_end(text) if markdown else 0  # metadata, not passage text
-    return _merge(_cap(_paragraph_spans(text[skip:], base + skip, markdown), full), full, markdown)
+    return _attach_bare(_merge(_cap(_paragraph_spans(text[skip:], base + skip, markdown), full)))
 
 
 def split(profile: dict, f: SourceFile, skills: frozenset[str] = frozenset()) -> list[Chunk]:

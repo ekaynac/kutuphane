@@ -174,6 +174,9 @@ Search the books that you may read now. MCP: `search_library` ([mcp.md](mcp.md#5
 | `current_only` | no | `false` | `true`, `1`, `false` or `0`. |
 
 A filter never adds a book. A book that you cannot read gives the same empty result as a book that does not exist.
+Notes are not searched here (use `GET /v1/notes`): a journal that you may read in `book` gives `400`
+`journal: use query_notes for <journal>; notes are not in search_library or ask_library`. The same applies to
+`POST /v1/ask`.
 
 **Response `200`:**
 
@@ -186,7 +189,7 @@ A filter never adds a book. A book that you cannot read gives the same empty res
 `item` is the kstd item information of the file, or `null` when the version has no `kstd.yaml`.
 
 **Errors:** `400` (`k must be an integer`, `k must be 1..50`, `query must be 1..1000 characters`,
-`current_only must be true or false`, a filter not valid), `401`, `409`.
+`current_only must be true or false`, a filter not valid, a journal in `book`), `401`, `409`.
 
 ```sh
 curl -s -G -H "Authorization: Bearer $TOKEN" "$KUTUPHANE_PUBLIC_URL/v1/search" \
