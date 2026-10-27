@@ -92,7 +92,8 @@ class Note:
     w: int = 0
     standing: str = "pending"
     standing_seq: int | None = None
-    citations: list = field(default_factory=list)  # [(kind, ref, Status | None)]
+    citations: list = field(default_factory=list)  # [(kind, ref, Status | None)]; None: not verified yet
+    checks: list = field(default_factory=list)     # [(index in citations, (book, CodeCitation, stored hash))]
 
     @property
     def ref(self) -> str:
@@ -227,9 +228,13 @@ def _load(conn, books, w: int, ctx: Context, *, seqs=None, kinds=None, class_key
     return out
 
 
+NOT_CHECKED = coderepo.Status("not_checked")
+
+
 def _citations(conn, items: list[Note], read: set, targets: dict) -> None:
-    """Each note's citations in order. Passage citations into a book the caller cannot read are left out; code
-    citations get their status at the context's targets (not_checked without a target)."""
+    """Each note's citations in order. Passage citations into a book the caller cannot read are left out. A code
+    citation into a repository without a target at the request is `not_checked` (no git process runs); one with a
+    target waits in `checks` for `_verify`, which only the notes that a read may show need."""
     if not items:
         return
     by_seq = {n.seq: n for n in items}
@@ -237,7 +242,6 @@ def _citations(conn, items: list[Note], read: set, targets: dict) -> None:
         "SELECT note_seq, book, kind, cite_book, content_id, profile_id, path, ordinal, repo, commit, line_start, "
         "line_end, symbol, excerpt_sha256 FROM note_citation WHERE note_seq = ANY(%s) ORDER BY note_seq, n",
         (list(by_seq),)).fetchall()
-    code = []
     for r in rows:
         note = by_seq[r[0]]
         if r[2] == "passage":
@@ -245,12 +249,23 @@ def _citations(conn, items: list[Note], read: set, targets: dict) -> None:
                 note.citations.append(("passage", f"{r[3]}@{r[4]}/{r[5]}/{r[6]}#{r[7]}", None))
         else:
             cite = coderepo.CodeCitation(r[8], r[9], r[6], r[10], r[11], r[12])
-            note.citations.append(("code", str(cite), None))
-            code.append((note, len(note.citations) - 1, (r[1], cite, bytes(r[13]))))
-    statuses = coderepo.verify_many(conn, targets, [c for _, _, c in code]) if code else []
-    for (note, i, _), st in zip(code, statuses):
-        kind, ref, _ = note.citations[i]
-        note.citations[i] = (kind, ref, st)
+            targeted = (r[1], cite.repo) in targets
+            note.citations.append(("code", str(cite), None if targeted else NOT_CHECKED))
+            if targeted:
+                note.checks.append((len(note.citations) - 1, (r[1], cite, bytes(r[13]))))
+
+
+def _verify(verifier: coderepo.Verifier, items: list[Note]) -> None:
+    """The statuses of the waiting code citations of `items`, in batches of at most coderepo.MAX_CITATIONS, with the
+    request's one verifier (one cache)."""
+    waiting = [(n, i, c) for n in items for i, c in n.checks]
+    for n in items:
+        n.checks = []
+    for start in range(0, len(waiting), coderepo.MAX_CITATIONS):
+        batch = waiting[start:start + coderepo.MAX_CITATIONS]
+        for (note, i, _), st in zip(batch, verifier.verify([c for _, _, c in batch])):
+            kind, ref, _ = note.citations[i]
+            note.citations[i] = (kind, ref, st)
 
 
 @dataclass
@@ -302,7 +317,9 @@ def _iso(t: datetime) -> str:
 
 
 def _item(note: Note, is_current: bool, recurrence: int, graph: Graph, for_model: bool) -> dict:
-    """One note, with keys in a fixed order (deterministic bytes)."""
+    """One note, with keys in a fixed order (deterministic bytes). Its code citations must be verified."""
+    if note.checks:
+        raise ValueError("a note is shown only after _verify")
     links = {}
     for _, src, type_, dst, _p in graph.edges:
         if note.seq in (src, dst):
@@ -360,7 +377,7 @@ def _cut(envelope_bytes: int, item: dict, max_bytes: int, budget_tokens: int) ->
     budget estimate gives way only when the item's metadata alone exceeds it."""
     def total(it):
         return envelope_bytes + _size(it)
-    if item["text"] is None:  # withheld: nothing to cut
+    if item.get("text") is None:  # withheld, or a tombstone: nothing to cut
         return item
     cut = {**item, "text": "", "text_cut": True}
     limit = max_bytes if total(cut) > budget_tokens * 4 else min(max_bytes, budget_tokens * 4)
@@ -375,26 +392,42 @@ def _cut(envelope_bytes: int, item: dict, max_bytes: int, budget_tokens: int) ->
     return {**cut, "text": text[:lo]}
 
 
-def _page(envelope: dict, key: str, ordered: list, cursor_of, max_bytes: int, budget_tokens: int):
-    """Items in order while both limits hold, counting the whole serialized response. Returns (items, next
-    cursor). `envelope[key]` is the list; `envelope["next_cursor"]` the continuation."""
-    base_null = _size({**envelope, key: []})            # with next_cursor = null
-    taken, total = [], 0
-    for i, (item, sort_key) in enumerate(ordered):
-        more = i + 1 < len(ordered)
-        size = _size(item)
-        nxt = cursor_of(sort_key) if more else None
-        base = base_null if nxt is None else base_null - 4 + len(_dumps(nxt).encode())
-        new_total = total + size + (1 if taken else 0)
-        if _fits(base + new_total, max_bytes, budget_tokens):
-            taken.append(item)
-            total = new_total
+def _page(envelope: dict, entries, cursor_of, max_bytes: int, budget_tokens: int):
+    """Entries in order while both limits hold, counting the whole serialized response: `envelope` (its lists
+    empty, `next_cursor` null) plus every entry, comma and the continuation. `entries` yields (list name, entry, sort
+    key) lazily; the next entry is read ahead only on the page's boundary, where an entry fits only without a
+    continuation. Returns ({list name: entries}, next cursor, the sort key of the last entry taken)."""
+    base_null = _size(envelope)
+
+    def fits(cursor, nbytes) -> bool:
+        base = base_null if cursor is None else base_null - 4 + len(_dumps(cursor).encode())
+        return _fits(base + nbytes, max_bytes, budget_tokens)
+
+    taken, total, last = {}, 0, None
+    ahead = iter(entries)
+    current = next(ahead, None)
+    while current is not None:
+        name, entry, sort_key = current
+        new_total = total + _size(entry) + (1 if taken.get(name) else 0)
+        if fits(cursor_of(sort_key), new_total):  # fits even with a continuation after it
+            taken.setdefault(name, []).append(entry)
+            total, last, current = new_total, sort_key, next(ahead, None)
             continue
-        if not taken:  # the first item does not fit: cut its text
-            taken.append(_cut(base, item, max_bytes, budget_tokens))
-            return taken, nxt
-        return taken, cursor_of(ordered[i - 1][1])
-    return taken, None
+        if taken and not fits(None, new_total):
+            return taken, cursor_of(last), last
+        following = next(ahead, None)
+        nxt = cursor_of(sort_key) if following is not None else None
+        if nxt is None and fits(None, new_total):  # the last entry, without a continuation
+            taken.setdefault(name, []).append(entry)
+            return taken, None, sort_key
+        if not taken:  # the first entry does not fit: cut its text
+            base = base_null if nxt is None else base_null - 4 + len(_dumps(nxt).encode())
+            return {name: [_cut(base, entry, max_bytes, budget_tokens)]}, nxt, sort_key
+        return taken, cursor_of(last), last
+    return taken, None, last
+
+
+LEFT = "left"  # the sort key ("left", note seq) of a tombstone; tombstones come before the items (§9.5)
 
 
 def _cursor(w: int, sort_key) -> str:
@@ -402,10 +435,11 @@ def _cursor(w: int, sort_key) -> str:
 
 
 def _uncursor(text: str) -> tuple[int, tuple]:
+    """(w, sort key): an item's sort key, or (LEFT, seq) to continue the tombstones after `seq`."""
     try:
         value = json.loads(base64.urlsafe_b64decode(text + "=" * (-len(text) % 4)))
         if (isinstance(value, list) and len(value) in (2, 3) and all(type(v) is int for v in (value[0], value[-1]))
-                and (len(value) == 2 or isinstance(value[1], (int, float)))):
+                and (len(value) == 2 or value[1] == LEFT or type(value[1]) in (int, float))):
             return value[0], tuple(value[1:])
     except (ValueError, binascii.Error, UnicodeDecodeError):
         pass
@@ -569,58 +603,93 @@ def query_notes(conn, actor: Actor, *, for_model: bool, book=None, sets=("curren
         graph = _graph(conn, [n.seq for n in found], read, w)
         recurrence, clusters = _recurrence(conn, found, w) if found else ({}, {})
 
-        excluded = {"code": 0, "needs_context": 0}
-        chosen, left = [], []
-        changed = _changed(conn, [n.seq for n in found], since, w) if since is not None else None
+        changed = _changed(conn, [n.seq for n in found], since, w, read) if since is not None else None
         then = notes.effective_standing(conn, [n.seq for n in found], since) if since is not None else {}
+        candidates, left = [], []
         for n in found:
-            in_sets, is_current, why = _placement(n, ctx, w, sets, include_unverified)
             if unfixed and not _unfixed(n, graph):
                 continue
             if changed is not None and n.seq not in changed:
                 continue
-            if in_sets:
-                chosen.append((n, is_current))
-            elif why in excluded and (changed is None or n.seq in changed):
-                excluded[why] += 1
-            if not in_sets and since is not None and n.seq <= since and n.seq in changed.get("standing", set()) \
+            candidates.append(n)
+            if since is not None and n.seq <= since and n.seq in changed["standing"] \
                     and _set_at(then[n.seq][0], n.kind, sets) and not _set_at(n.standing, n.kind, sets):
-                left.append(n)
-        if collapse:
-            chosen = _collapse(chosen, clusters, graph)
-
+                left.append(n)  # out of the sets by Standing or Time alone: never an item too
         key = {"newest": lambda n: (-n.seq,), "oldest": lambda n: (n.seq,),
                "relevance": lambda n: (-n.rank, -n.seq)}[order]
-        chosen.sort(key=lambda c: key(c[0]))
-        if after_key is not None:
-            chosen = [c for c in chosen if key(c[0]) > after_key]
+        candidates.sort(key=key)
+        in_left = after_key is not None and after_key[0] == LEFT
+        tombstones = sorted((n for n in left if not in_left or n.seq > after_key[1]), key=lambda n: n.seq) \
+            if after_key is None or in_left else []
+        items_after = None if after_key is None or in_left else after_key
+        members = {}
+        for n in candidates:
+            members.setdefault(clusters.get(n.seq, n.seq), []).append(n)
+        verifier = coderepo.Verifier(conn, targets)
+        placed, kept, passed = {}, {}, []
+
+        def place(group):
+            """The placement of each note; its code citations are verified only when they decide it or show."""
+            fresh = [n for n in group if n.seq not in placed]
+            _verify(verifier, [n for n in fresh if _placement(n, ctx, w, sets, include_unverified)[0]])
+            placed.update({n.seq: _placement(n, ctx, w, sets, include_unverified) for n in fresh})
+
+        def entries():
+            """Tombstones (by note seq), then items in order, built and verified as the page needs them; `passed`
+            gets the sort key and the counter of each excluded note on the way."""
+            for n in tombstones:
+                yield "left", {"ref": n.ref, "standing": n.standing, "seq": n.standing_seq,
+                               "successor": _successor(n.seq, graph)}, (LEFT, n.seq)
+            for n in candidates:
+                if items_after is not None and key(n) <= items_after:
+                    continue
+                root = clusters.get(n.seq, n.seq)
+                place(members[root] if collapse else [n])
+                in_sets, is_current, why = placed[n.seq]
+                if in_sets and collapse:
+                    if root not in kept:
+                        kept[root] = _kept([m for m in members[root] if placed[m.seq][0]], graph)
+                    if n.seq not in kept[root]:
+                        continue
+                if in_sets:
+                    yield "items", _item(n, is_current, recurrence.get(n.seq, 0), graph, for_model), key(n)
+                elif why in ("code", "needs_context"):
+                    passed.append((key(n), why))
+
+        # The counts are known after the page; their upper bound is sized in, so the response never grows past it.
+        bound = len(candidates)
+        envelope = {"items": [], "left": [], "books": books, "watermark": w, "next_cursor": None,
+                    "excluded": {"code": bound, "needs_context": bound}, "targets": _targets_out(targets)}
+        taken, nxt, last = _page(envelope, entries(), lambda k: _cursor(w, k), max_bytes, budget_tokens)
+        excluded = {"code": 0, "needs_context": 0}  # the notes this page passed over (§9.1)
+        for k, why in passed:
+            if nxt is None or (last[0] != LEFT and k <= last):
+                excluded[why] += 1
         final = _read(conn, actor)
         if _lost(conn, actor, "query_notes", pre, final):
             continue  # the whole query, counts included, again with the rights as they are now
 
-        left_items = [{"ref": n.ref, "standing": n.standing, "seq": n.standing_seq, "successor": _successor(n.seq, graph)}
-                      for n in sorted(left, key=lambda n: n.seq)]
-        envelope = {"items": [], "left": left_items, "books": books, "watermark": w, "next_cursor": None,
-                    "excluded": excluded, "targets": _targets_out(targets)}
-        ordered = [(_item(n, cur, recurrence.get(n.seq, 0), graph, for_model), key(n)) for n, cur in chosen]
-        items, nxt = _page(envelope, "items", ordered, lambda k: _cursor(w, k), max_bytes, budget_tokens)
-        by_ref = {n.ref: n for n, _ in chosen}
-        _log(conn, actor, "query_notes", final, [by_ref[i["ref"]] for i in items] + left, w)
-        return {**envelope, "items": items, "next_cursor": nxt}
+        by_ref = {n.ref: n for n in candidates}
+        items, gone = taken.get("items", []), taken.get("left", [])
+        _log(conn, actor, "query_notes", final, [by_ref[e["ref"]] for e in items + gone], w)
+        return {**envelope, "items": items, "left": gone, "next_cursor": nxt, "excluded": excluded}
     raise SearchChanged("authorization changed during the query; retry")
 
 
-def _changed(conn, seqs, since: int, w: int) -> dict:
+def _changed(conn, seqs, since: int, w: int, read: set) -> dict:
     """{note seq: True} for notes with a memory event in (since, w], plus "standing": the notes with a Standing
-    event there (§9.5: written, linked, a Standing event, or a recurrence)."""
+    event there (§9.5: written, linked, a Standing event, or a recurrence). A link counts only from the authorized
+    graph: the caller may read both of its ends now."""
     if not seqs:
         return {"standing": set()}
-    p = {"s": list(seqs), "a": since, "w": w}
+    p = {"s": list(seqs), "a": since, "w": w, "b": sorted(o.removeprefix("book:") for o in read)}
     out = {r[0]: True for r in conn.execute("""
         SELECT seq FROM note WHERE seq = ANY(%(s)s) AND seq > %(a)s
         UNION SELECT note_seq FROM write_record WHERE note_seq = ANY(%(s)s) AND seq > %(a)s AND seq <= %(w)s
         UNION SELECT src FROM note_link WHERE src = ANY(%(s)s) AND seq > %(a)s AND seq <= %(w)s
+                                          AND coalesce(dst_note_book, dst_book) = ANY(%(b)s)
         UNION SELECT dst_note FROM note_link WHERE dst_note = ANY(%(s)s) AND seq > %(a)s AND seq <= %(w)s
+                                               AND src_book = ANY(%(b)s)
         UNION SELECT note_seq FROM standing_event WHERE note_seq = ANY(%(s)s) AND seq > %(a)s AND seq <= %(w)s""", p)}
     out["standing"] = {r[0] for r in conn.execute(
         "SELECT DISTINCT note_seq FROM standing_event WHERE note_seq = ANY(%(s)s) AND seq > %(a)s AND seq <= %(w)s",
@@ -628,19 +697,14 @@ def _changed(conn, seqs, since: int, w: int) -> dict:
     return out
 
 
-def _collapse(chosen: list, clusters: dict, graph: Graph) -> list:
-    """One item per book-local same_as cluster: the newest member in the sets; a member joined to a kept member
-    by a visible `contradicts` edge is never collapsed into it."""
-    contra = {frozenset((src, dst)) for _, src, t, dst, _p in graph.edges if t == "contradicts" and dst is not None}
-    kept, out = {}, []
-    for n, cur in sorted(chosen, key=lambda c: -c[0].seq):
-        root = clusters.get(n.seq, n.seq)
-        reps = kept.setdefault(root, [])
-        if reps and not any(frozenset((n.seq, r)) in contra for r in reps):
-            continue
-        reps.append(n.seq)
-        out.append((n, cur))
-    return out
+def _kept(group: list, graph: Graph) -> set:
+    """`collapse` within one book-local same_as cluster (`group`: its members in the sets): the newest member stays,
+    and so does every member that a visible `contradicts` edge joins to another member. So no two contradicting
+    members are ever collapsed together, and none of them is dropped (§9.1)."""
+    seqs = {n.seq for n in group}
+    contra = {s for _, src, t, dst, _p in graph.edges if t == "contradicts" and src in seqs and dst in seqs
+              for s in (src, dst)}
+    return ({max(seqs)} if seqs else set()) | contra
 
 
 # --- neighbours (§9.3) -------------------------------------------------------------------------------------
@@ -677,6 +741,7 @@ def neighbours(conn, actor: Actor, *, for_model: bool, ref: str, types=None, dep
             raise gate.Denied(f"read on book:{root_book}: no read right")
         books = _journals(conn, read, None)
         targets = _targets(conn, books, ctx)
+        verifier = coderepo.Verifier(conn, targets)
         root = None
         if root_id is not None:
             row = conn.execute("SELECT seq FROM note WHERE book = %s AND id = %s AND seq <= %s",
@@ -688,6 +753,7 @@ def neighbours(conn, actor: Actor, *, for_model: bool, ref: str, types=None, dep
                 raise gate.NotFound(ref)
             root = loaded[0]
             _citations(conn, [root], read, targets)
+            _verify(verifier, [root])
 
         evaluated = {root.seq: root} if root else {}
         nodes, edges, seen_links = [], [], set()
@@ -699,6 +765,8 @@ def neighbours(conn, actor: Actor, *, for_model: bool, ref: str, types=None, dep
             if fresh:
                 loaded = _load(conn, books, w, ctx, seqs=fresh)
                 _citations(conn, loaded, read, targets)
+                # code statuses only for a note that can be a node: they can only drop it from the sets
+                _verify(verifier, [n for n in loaded if _placement(n, ctx, w, sets, False)[0]])
                 evaluated.update({n.seq: n for n in loaded})
             nxt = []
             for lseq, src, type_, dst, phandle in links:
@@ -741,8 +809,9 @@ def neighbours(conn, actor: Actor, *, for_model: bool, ref: str, types=None, dep
                     "targets": _targets_out(targets), "watermark": w, "truncated": truncated}
         if root is not None and _size(envelope) > max_bytes:
             envelope["root"] = _cut(_size({**envelope, "root": None}), envelope["root"], max_bytes, budget_tokens)
-        page, _nxt = _page(envelope, "nodes", [(item(n), (0,)) for n in nodes], lambda k: None,
-                           max_bytes, budget_tokens)
+        taken, _nxt, _last = _page(envelope, [("nodes", item(n), (0,)) for n in nodes], lambda k: None,
+                                   max_bytes, budget_tokens)
+        page = taken.get("nodes", [])
         delivered = {i["ref"] for i in page}
         if len(page) < len(nodes):  # an edge to a node that did not fit is dropped too
             shown = delivered | {ref}
@@ -777,9 +846,10 @@ def _links(conn, frontier, passage, direction: str, types, w: int) -> list:
 # --- notes in open_citation (§9.4) --------------------------------------------------------------------------
 
 def open_note(conn, actor: Actor, *, for_model: bool, ref: str, repo=None, branch=None, path=None,
-              commit=None) -> dict:
+              commit=None, attempts: int = 2) -> dict:
     """One note with its full text (the `ai_input` gate applies) and any Standing, `current` from the shared
-    predicate. Decided before and again at the end (one object: the note's book)."""
+    predicate. The gates of `query_notes`: citations, link counts and the successor come from the whole read set,
+    which is decided again at the end; a lost book runs it all again once, then `SearchChanged`."""
     book, note_id = notes.parse_ref(ref)
     ctx = Context(repo, branch, path, commit)
     obj = f"book:{book}"
@@ -791,22 +861,27 @@ def open_note(conn, actor: Actor, *, for_model: bool, ref: str, repo=None, branc
     row = conn.execute("SELECT seq FROM note WHERE book = %s AND id = %s AND seq <= %s", (book, note_id, w)).fetchone()
     if row is None:
         raise gate.NotFound(ref)
-    targets = _targets(conn, [book], ctx)
-    note = _load(conn, [book], w, ctx, seqs=[row[0]])[0]
-    read = {obj}
-    _citations(conn, [note], read, targets)
-    graph = _graph(conn, [note.seq], _read(conn, actor).objects("read"), w)
-    recurrence, _ = _recurrence(conn, [note], w)
-    item = _item(note, current(note, ctx, w) is None, recurrence.get(note.seq, 0), graph, for_model)
-    final = authz.decide(conn, actor.principal, actor.on_behalf_of, obj, ["read"])
-    d = final.decisions["read"]
-    if not d.allowed:
-        gate.log_event(conn, actor, "cite", obj, "read", d, final.policy_id, None, None,
-                       reason=f"revoked before delivery: {d.reason}")
-        raise gate.Denied(f"read on {obj}: revoked before delivery")
-    gate.log_event(conn, actor, "cite", obj, "read", d, final.policy_id, None, None,
-                   items=[{"ref": note.ref, "standing_seq": note.standing_seq}], memory_seq=w)
-    return {"citation": note.ref, "note": item, "targets": _targets_out(targets), "watermark": w}
+    for _ in range(attempts):
+        pre = _read(conn, actor)
+        read = pre.objects("read")
+        targets = _targets(conn, [book], ctx)
+        note = _load(conn, [book], w, ctx, seqs=[row[0]])[0]
+        _citations(conn, [note], read, targets)
+        _verify(coderepo.Verifier(conn, targets), [note])
+        graph = _graph(conn, [note.seq], read, w)
+        recurrence, _ = _recurrence(conn, [note], w)
+        item = _item(note, current(note, ctx, w) is None, recurrence.get(note.seq, 0), graph, for_model)
+        final = _read(conn, actor)
+        if obj not in final.objects("read"):
+            gate.log_event(conn, actor, "cite", obj, "read", authz.Decision(False, "no current right"),
+                           final.policies.get(obj), None, None, reason="revoked before delivery: no current right")
+            raise gate.Denied(f"read on {obj}: revoked before delivery")
+        if _lost(conn, actor, "cite", pre, final):
+            continue  # link counts and the successor again, with the rights as they are now
+        gate.log_event(conn, actor, "cite", obj, "read", final.decisions[obj]["read"], final.policies.get(obj),
+                       None, None, items=[{"ref": note.ref, "standing_seq": note.standing_seq}], memory_seq=w)
+        return {"citation": note.ref, "note": item, "targets": _targets_out(targets), "watermark": w}
+    raise SearchChanged("authorization changed during the query; retry")
 
 
 _QUERY, _NEIGHBOURS = query_notes, neighbours

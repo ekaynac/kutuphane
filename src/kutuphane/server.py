@@ -384,8 +384,9 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
     mcp = build_mcp(dsn=dsn, verifier=verifier, bridge=bridge, model=model, public_url=public_url, stages=stages,
                     features=features)
 
-    def run_ask(conn, actor, question, scope, check) -> str:
-        return answers.ask(conn, bridge, actor, question, model=model, stages=stages, scope=scope, check=check)["id"]
+    def run_ask(conn, actor, question, scope, check, commit) -> str:
+        return answers.ask(conn, bridge, actor, question, model=model, stages=stages, scope=scope, check=check,
+                           commit=commit)["id"]
 
     workers = jobs.Workers(dsn, run_ask, _safe_error, job_workers if bridge is not None and model else 0)
 

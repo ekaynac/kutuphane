@@ -556,8 +556,10 @@ Result:
 
 - **No model call.** No embedding, no reranker. `ask_library` stays the escalation path.
 - **Deterministic.** The same request on the same memory rows, rights and targets gives the same bytes. Order: `newest` = `seq` descending; `oldest` = ascending; `relevance` = `ts_rank_cd` descending, then `seq` descending. Keys are in a fixed order. The correlation id goes in `_meta` (MCP) or a header (HTTP), not in the body, so the body can stay in a provider prompt cache.
-- **Size.** The server counts the **whole** serialized response, envelope included. `budget_tokens` is an **estimate** (UTF-8 bytes ÷ 4, rounded up); `max_bytes` is a hard limit. Items are added in order while both hold. If the first item alone does not fit, its text is cut until the whole response fits and `text_cut: true` is set (`max_bytes ≥ 8192` leaves room for one item with all its metadata: 20 citations, counts, scope). `next_cursor` (opaque: watermark + last sort key) continues at the next item and implies `as_of`.
-- **Counts over the visible graph.** `links` counts, `unfixed`, `collapse` and contradiction handling use only edges whose other end the caller may read now. `unfixed` = a finding with no `fixed_by` edge to a readable note that is `approved` or `pending`. `collapse` = one item per book-local cluster (the newest current member); two members joined by `contradicts` are never collapsed together. If the final decision loses a book, the whole query, counts included, runs again (as `search.search`).
+- **Size.** The server counts the **whole** serialized response, envelope included. `budget_tokens` is an **estimate** (UTF-8 bytes ÷ 4, rounded up); `max_bytes` is a hard limit. Entries are added in order while both hold: first the `left` tombstones (by note `seq`), then the items. If the first entry alone does not fit, its text is cut until the whole response fits and `text_cut: true` is set (`max_bytes ≥ 8192` leaves room for one item with all its metadata: 20 citations, counts, scope). `next_cursor` (opaque: watermark + the last sort key, or the last tombstone) continues at the next entry and implies `as_of`; so a client keeps its `since` watermark until `next_cursor` is null, and no removal is skipped.
+- **`excluded`** counts the notes that this page passed over (between the cursor and the page's last entry); summed over the pages, it counts the whole result.
+- **Code statuses are computed only where they matter.** A citation into a repository without a target is `not_checked` and runs no git process. With a target, only the notes that the page evaluates (in order, up to the first one that does not fit, and with `collapse` the members of their clusters) are verified, and only those that would be in the sets without the code rule (a failed check can only take a note out). The verifier runs in batches of at most 200 citations with one cache for the request, so a query over many cited notes never fails on the per-request limit.
+- **Counts over the visible graph.** `links` counts, `unfixed`, `collapse` and contradiction handling use only edges whose other end the caller may read now. `unfixed` = a finding with no `fixed_by` edge to a readable note that is `approved` or `pending`. `collapse` = one item per book-local cluster (the newest member in the sets), plus every member that a `contradicts` edge joins to another member of the cluster: two members joined by `contradicts` are never collapsed together, and none of them is dropped. If the final decision loses a book, the whole query, counts included, runs again (as `search.search`).
 - **Item `links`** gives only non-zero counts per type. The agent calls `neighbours` for the edges.
 
 ### 9.2 One "current" predicate for every read
@@ -600,7 +602,7 @@ Postgres only (two joins on `note_link`), no graph database. Order: breadth firs
 
 ### 9.4 Notes in `open_citation`
 
-`open_citation(handle)` accepts a note reference too, with the optional context. It returns one item with the full text and any Standing, and `current` from the shared predicate. It needs `read`.
+`open_citation(handle)` accepts a note reference too, with the optional context. It returns one item with the full text and any Standing, and `current` from the shared predicate. It needs `read` on the note's book; citations, link counts and the successor use the whole read set, which the final decision compares as in `query_notes` (a lost book: one rerun, then `SearchChanged`).
 
 **Notes are not in `search_library` or `ask_library` in R1** (operator decision).
 
@@ -609,8 +611,8 @@ Postgres only (two joins on `note_link`), no graph database. Order: breadth firs
 - `watermark` = the highest `memory_seq` visible to the request. The advisory lock (§4) makes `seq` order equal to commit order.
 - **`as_of = w`** evaluates every memory row with `seq ≤ w`: notes, links (so clusters), write records (so recurrence and origin), Standing events. Rights, journal restrictions, repository registrations and code targets are evaluated **now**. So a replay gives the same bytes only when those did not change; otherwise it can only lose items or change citation statuses.
 - **`since = w`** returns:
-  - `items`: notes in the requested sets now that have a memory event after `w` (written, linked, a Standing event, or a recurrence);
-  - `left`: tombstones `{ref, standing, seq, successor}` for readable notes that a Standing event after `w` moved **out** of the requested sets (retired, rejected, reopened to `pending`, superseded);
+  - `items`: notes in the requested sets now that have a memory event after `w` (written, linked, a Standing event, or a recurrence). A link counts only when the caller may read both of its ends now, so activity in a hidden book never shows;
+  - `left`: tombstones `{ref, standing, seq, successor}` for readable notes that a Standing event after `w` moved **out** of the requested sets (retired, rejected, reopened to `pending`, superseded). They are paged with the items, under the same byte limit (§9.1);
   - `books`: the books that the caller may read now. A client drops cached items of any other book.
 - **Code targets:** a `since` result is complete only for the same targets. The response gives `targets`; when a branch head moved (another commit for a `"<book>/<repo>"`), the client queries again without `since`. Git objects do not change, so for a fixed commit the statuses change only through a repository removal or a ref change (`unverifiable`), which the next full query shows.
 - `subscriptions/listen` waits for R2 (§12.1).
@@ -631,7 +633,7 @@ Postgres only (two joins on `note_link`), no graph database. Order: breadth firs
 - **Confinement checks** (Python file APIs, at `add` and at each open; a failure is `unverifiable: repo_invalid`):
   - `realpath(git_dir) == git_dir` (no symlink in the path), inside one of `KUTUPHANE_REPO_ROOTS`;
   - a **bare** repository directory: `HEAD`, `config`, `objects/` exist; `git_dir` is a directory, not a gitfile;
-  - no `commondir`, no `objects/info/alternates`, no `objects/info/http-alternates`, no `objects/pack/*.promisor`; `realpath(objects)` is inside `git_dir`;
+  - no `commondir`, no `info/grafts` (it rewrites ancestry, so it could make an unpublished commit reachable), no `objects/info/alternates`, no `objects/info/http-alternates`, no `objects/pack/*.promisor`; `realpath(objects)` is inside `git_dir`;
   - every key of `config` (read by `git config --file <git_dir>/config --null --list`, with no includes) is in an allowlist: `core.repositoryformatversion`, `core.bare`, `core.filemode`, `core.ignorecase`, `core.precomposeunicode`, `core.logallrefupdates`, `extensions.objectformat`, `remote.<name>.url`, `remote.<name>.fetch`, `remote.<name>.mirror`. Any other key (for example `extensions.partialclone`, `remote.*.promisor`, `include.*`, `includeIf.*`, `core.alternateRefsCommand`) refuses the repository.
 - **Which commits are visible:** a commit can be cited or verified only if one of the registered `refs` reaches it. Existence in the object store is not enough: a mirror can hold unreachable objects (for example a force-pushed secret).
 - The container mounts the repository roots read-only and has `git` ≥ 2.45 (`GIT_NO_LAZY_FETCH`, `cat-file -z`).
@@ -639,14 +641,14 @@ Postgres only (two joins on `note_link`), no graph database. Order: breadth firs
 ### 10.3 How it reads
 
 - **Process:** no shell; argument vectors only; `git --git-dir=<git_dir> -c safe.directory=<git_dir> -c core.fsmonitor=false …`.
-- **Environment:** built from nothing, not inherited: `PATH=/usr/bin:/bin`, `LC_ALL=C`, `HOME=/nonexistent`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_NO_REPLACE_OBJECTS=1`, `GIT_NO_LAZY_FETCH=1`, `GIT_TERMINAL_PROMPT=0`, `GIT_OPTIONAL_LOCKS=0`, `GIT_PROTOCOL_FROM_USER=0`, `GIT_ALLOW_PROTOCOL=` (empty). So `GIT_DIR`, `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES` and `GIT_COMMON_DIR` never reach git.
+- **Environment:** built from nothing, not inherited: `PATH=/usr/bin:/bin`, `LC_ALL=C`, `HOME=/nonexistent`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_NO_REPLACE_OBJECTS=1`, `GIT_GRAFT_FILE=/dev/null` (no graft is ever applied), `GIT_NO_LAZY_FETCH=1`, `GIT_TERMINAL_PROMPT=0`, `GIT_OPTIONAL_LOCKS=0`, `GIT_PROTOCOL_FROM_USER=0`, `GIT_ALLOW_PROTOCOL=` (empty). So `GIT_DIR`, `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES` and `GIT_COMMON_DIR` never reach git.
 - **Commands** (only these; hex values pass a regex first; every argument list ends options with `--end-of-options` where git accepts it):
   - commit: `rev-parse --verify --end-of-options <hex>^{commit}`;
   - reachability: `for-each-ref --format=%(objectname) -- <patterns>` (at most 50 tips), then `merge-base --is-ancestor <commit> <tip>` until one succeeds; else `unverifiable: commit_not_published` (a write is refused);
   - branch: the name passes `git check-ref-format --branch`, `refs/heads/<name>` must match a registered pattern, then `rev-parse --verify --end-of-options refs/heads/<name>^{commit}`;
   - object: `cat-file --batch-check -z` with `<commit>:<path>` and a NUL terminator on stdin (control characters are refused before, so one input is one request). The output must be `<oid> blob <size>` with `size ≤ 2 MiB`; else `unverifiable: not_a_file` or `too_large`. Then `cat-file blob <oid>` with the validated `oid`. A NUL byte in the content is `unverifiable: binary`;
   - range: `commits = "A..B"` is split into two full hex ids; both must be reachable; then `rev-list --max-count=10001 --end-of-options <B> ^<A>` (more than 10,000 → 400).
-- **Limits:** 5 s per command (`unverifiable: timeout`); 200 citations per request. Caches live for one request and use the key `(book, repo, commit, path)`.
+- **Limits:** 5 s per command (`unverifiable: timeout`); 200 citations per `verify_citations` request, and per verifier batch of a read (§9.1). Caches live for one request and use the key `(book, repo, commit, path)`.
 - **Excerpt hash:** the cited lines, CRLF → LF, trailing white space removed per line, joined with `\n`, SHA-256. The write path stores it (§6.1 step 7).
 
 ### 10.4 Statuses
@@ -676,11 +678,11 @@ All new reads use the gates of `search_library`: one `authz.allowed` statement a
 
 | Path | Modes (before **and** at the final decision) | Text gate | Standing | Model call |
 |---|---|---|---|---|
-| `propose_note` | `propose` on the journal; `read` on every cited and linked book; `read` on the journal sets the receipt level | candidate text: `ai_input` | new: `pending`; existing: unchanged | embedding only, after authorization; note `search` and `ai_input`; egress = note `source_books` |
+| `propose_note` | `propose` on the journal; `read` on every cited and linked book; `read` on the journal sets the receipt level. The final decision also decides `read` on the journal and on every candidate book: a candidate whose book was lost is dropped; without journal `read`, the receipt is the minimal one | candidate text: `ai_input` | new: `pending`; existing: unchanged | embedding only, after authorization; note `search` and `ai_input`; egress = note `source_books` |
 | `link_notes` | `propose` on the `src` book; `read` on the `dst` book | — | unchanged | none |
 | `query_notes` | `read` | `ai_input` (note AND journal) for model readers | `sets`, shared predicate | none |
 | `neighbours` | `read` on the root and every node | `ai_input` | `sets`, shared predicate | none |
-| `open_citation` (note) | `read` | `ai_input` | shown | none |
+| `open_citation` (note) | `read` on the note's book; link counts and the successor from the whole read set, compared at the end like `query_notes` (one rerun, then `SearchChanged`) | `ai_input` | shown | none |
 | `verify_citations` | `read` on the book of the repositories | no code text | — | none |
 | set Standing | CLI only, curator credential (§8.2) | — | the act | none |
 | `job_status` / `job_result` / `job_cancel` | the `reopen_answer` visibility (§12.2); `job_result` decides current rights | as `reopen_answer` | — | none |
@@ -717,7 +719,7 @@ Verified against the spec changelog (<https://modelcontextprotocol.io/specificat
 - **Idempotency:** the same rules as §6.4, scoped to `(principal, on_behalf_of)`. A retry returns the original job. The key lives as long as the job row.
 - `job_status(job_id) -> {status, created_at, started_at, finished_at, error}`; `job_result(job_id)` = `reopen_answer` of the stored answer; `job_cancel(job_id)`. HTTP: `GET /v1/jobs/{id}`, `GET /v1/jobs/{id}/result`, `POST /v1/jobs/{id}/cancel`.
 - **One visibility policy for both handles**, the one of `answers.reopen`: the same context (the same principal **and** the same `on_behalf_of`), or the user that the job was made for, calling directly. Anyone else gets "not found". `job_result` and `reopen_answer` then decide current rights on every source book in one statement, so a revoked delegation sees the status but gets no result. After the job row is deleted, the answer id stays reopenable under the same policy.
-- Workers run in the server process (`KUTUPHANE_JOB_WORKERS`, default 1). They claim with `FOR UPDATE SKIP LOCKED` and renew `lease_until`. The worker runs `answers.ask` with the job's principal and `on_behalf_of`, so a right lost before the run fails the job. At most 3 open jobs per principal.
+- Workers run in the server process (`KUTUPHANE_JOB_WORKERS`, default 1). They claim with `FOR UPDATE SKIP LOCKED` and renew `lease_until` only while the job is `running` and its lease has not ended: an ended lease is never revived. The worker runs `answers.ask` with the job's principal and `on_behalf_of`, so a right lost before the run fails the job. Before the model call and before the store, it checks that the job is running, not cancelled and under an unexpired lease. The answer's insert, the same check under the job-row lock (`FOR UPDATE`) and the `succeeded` update are one transaction: a cancel or an expiry that commits first rolls the answer back (`cancelled`, or `failed: interrupted`). At most 3 open jobs per principal.
 - Finished jobs are deleted after 7 days (with their idempotency keys). The answer and its audit rows stay.
 - **Not in R1:** `ingest`, `index`, `approve-import` over MCP or HTTP (operator decision; `approve-import` never on MCP).
 
@@ -799,7 +801,7 @@ There is **no** Standing route. New error classes: an idempotency key reused wit
 | T29 | Verifier: `verified`; `stale` with `moved_to`; `missing`; `unverifiable` for an unknown commit, an unpublished commit (only reachable from an unregistered ref) and an unknown branch. | C |
 | T30 | With a code target, a note whose citation is `stale`, `missing` or `unverifiable` (repository removed, timeout) is not current; `include_unverified` returns it with `current: false`. Two books with the same repo slug get two targets. | B, C |
 | T31 | Paths with LF, CR, NUL, `../x`, `/etc/passwd`; `--upload-pack=x` as a branch; a short commit id; `A..B` with a branch name: refused. A path `a.py\nHEAD:secret` cannot cause a second object read. | C |
-| T32 | Repository refusal at `add` and at open: a symlinked `git_dir`, a gitfile, `objects/info/alternates`, `commondir`, a `.promisor` pack, `extensions.partialclone`, `include.path` in `config`. A tree object or a blob above 2 MiB: `unverifiable`. | C |
+| T32 | Repository refusal at `add` and at open: a symlinked `git_dir`, a gitfile, `objects/info/alternates`, `commondir`, `info/grafts`, a `.promisor` pack, `extensions.partialclone`, `include.path` in `config`. A tree object or a blob above 2 MiB: `unverifiable`. | C |
 | T33 | Both protocol versions (2025-11-25 with `initialize`, 2026-07-28 without), through the deployed reverse proxy: list tools (stable order), call `search_library` (`structuredContent.result` shape) and `propose_note`; no token → 401 with the resource metadata; `Mcp-Name` different from the body → `-32020`; an internal error gives only "internal error". | D |
 | T34 | `tests/test_server.py` runs on SDK v2 with the migrated `call_tool` adapter; the error tests still check the safe messages. | D |
 | T35 | `ask_library(background=true)`: a job id at once; status and result after a server restart; an expired lease → `failed: interrupted`; cancel before run → `cancelled`; a retry with the same key → the same job id, one model call. | D |

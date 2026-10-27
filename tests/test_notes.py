@@ -387,6 +387,42 @@ def test_candidates_come_only_from_readable_searchable_books(env):  # T13
     assert logged[-1][1] == [{"ref": receipt["candidates"][0]["ref"], "standing_seq": None}]
 
 
+def test_a_candidate_book_revoked_after_selection_is_not_in_the_receipt(env, conn2, monkeypatch):  # Astra #13 (2)
+    journal(env, "baska")
+    authz.grant(env, "book:baska", "propose", U)
+    authz.grant(env, "book:baska", "read", U)
+    notes.propose(env, http(), {"book": "baska", "kind": "finding", "text": "Shared Text"})
+    real = notes._candidates
+
+    def racing(*args):  # another session revokes the candidate book after the candidates were chosen
+        out = real(*args)
+        authz.revoke(conn2, "book:baska", "read", U)
+        return out
+    monkeypatch.setattr(notes, "_candidates", racing)
+    receipt = propose(env, http(), text="shared text")
+    assert receipt["status"] == "created" and receipt["candidates"] == []
+    assert "Shared Text" not in json.dumps(receipt)
+    logged = env.execute("SELECT count(*) FROM access_event WHERE action = 'propose' AND mode = 'read' "
+                         "AND object = 'book:baska' AND items IS NOT NULL").fetchone()[0]
+    assert logged == 0
+
+
+def test_journal_read_revoked_after_the_receipt_level_gives_the_minimal_receipt(env, conn2, monkeypatch):  # #13 (2)
+    propose(env, http(), text="known before")
+    real = notes._candidates
+
+    def racing(*args):  # the journal's read is lost after the full receipt level was chosen
+        out = real(*args)
+        authz.revoke(conn2, f"book:{J}", "read", U)
+        return out
+    monkeypatch.setattr(notes, "_candidates", racing)
+    receipt = propose(env, http(), text="Known before")
+    assert receipt == {"ref": receipt["ref"], "status": "recorded", "origin": "unknown", "origin_notice": None}
+    logged = env.execute("SELECT count(*) FROM access_event WHERE action = 'propose' AND mode = 'read' "
+                         "AND items IS NOT NULL AND object = %s", (f"book:{J}",)).fetchone()[0]
+    assert logged == 0  # the candidate from the journal was never delivered
+
+
 def test_class_count_and_guard_due(env):
     first = propose(env, mcp(), text="sql built by string concatenation", class_key="cwe-89")
     assert (first["class_count"], first["guard_due"]) == (1, False)

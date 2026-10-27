@@ -244,6 +244,17 @@ def test_collapse_keeps_contradicting_members(mem):
     assert refs(q(mem, collapse=True)) == [ref(mem, c), ref(mem, a)]
 
 
+def test_collapse_never_drops_a_contradicting_member(mem):  # Astra review #13 (8)
+    a, b, c = (approved(mem, "mem", t) for t in ("x is slow", "x is SLOW", "x is fast"))
+    link(mem, a, "same_as", b)
+    link(mem, b, "same_as", c)
+    link(mem, a, "contradicts", b)  # neither older member contradicts the newest one
+    assert refs(q(mem, collapse=True)) == [ref(mem, c), ref(mem, b), ref(mem, a)]
+    d = approved(mem, "mem", "x is quick")
+    link(mem, d, "same_as", c)  # a member without a contradiction still collapses into the newest
+    assert refs(q(mem, collapse=True)) == [ref(mem, d), ref(mem, b), ref(mem, a)]
+
+
 def test_size_limits_and_cursor(mem):  # T21
     made = [approved(mem, "mem", f"note {i} " + "word " * 300) for i in range(30)]
     seen, cursor, pages = [], None, 0
@@ -268,6 +279,28 @@ def test_size_limits_and_cursor(mem):  # T21
     assert len(notesquery._dumps(cut).encode()) <= 8192 and cut["next_cursor"]
     with pytest.raises(ValueError):
         q(mem, max_bytes=100)
+
+
+def test_tombstones_are_paged_under_the_byte_limit(mem):  # Astra review #13 (9)
+    gone = [approved(mem, "mem", f"retired note {i}") for i in range(80)]
+    w0 = q(mem)["watermark"]
+    for s in gone:
+        standing(mem, s, "retired")
+    fresh = [approved(mem, "mem", f"new note {i} " + "word " * 200) for i in range(6)]
+    left, items, cursor, pages = [], [], None, 0
+    while True:
+        out = q(mem, since=w0, max_bytes=8192, cursor=cursor)
+        size = len(notesquery._dumps(out).encode())
+        assert size <= 8192 and -(-size // 4) <= 2000
+        left += refs(out, "left")
+        items += refs(out)
+        pages += 1
+        cursor = out["next_cursor"]
+        if cursor is None:
+            break
+    assert pages > 2
+    assert left == [ref(mem, s) for s in gone]                                     # every removal, once, in order
+    assert items == [ref(mem, s) for s in reversed(fresh)]
 
 
 # --- graph visibility, rights, audit ---------------------------------------------------------------------------
@@ -318,6 +351,40 @@ def test_right_revoked_during_query_reruns_and_logs(mem, monkeypatch):  # T25
     monkeypatch.setattr(notesquery, "_read", racing)
     out = q(mem)
     assert out["books"] == ["mem"] and out["items"][0]["links"] == {} and len(calls) == 4
+    lost = mem.execute("SELECT reason FROM access_event WHERE object = 'book:two' AND NOT allowed").fetchall()
+    assert lost == [("changed during query",)]
+
+
+def test_since_ignores_links_from_unreadable_books(mem):  # Astra review #13 (7)
+    journal(mem, "hidden", readers=(V,))
+    f = approved(mem, "mem", "a readable finding")
+    w0 = q(mem)["watermark"]
+    h = approved(mem, "hidden", "a note nobody here may read")
+    link(mem, h, "contradicts", f)
+    assert q(mem, since=w0)["items"] == []
+    mine = approved(mem, "mem", "a readable note")
+    link(mem, mine, "contradicts", f)
+    assert refs(q(mem, since=w0)) == [ref(mem, mine), ref(mem, f)]
+
+
+def test_open_citation_reruns_when_a_linked_book_is_lost(mem, monkeypatch):  # Astra review #13 (4)
+    journal(mem, "two")
+    p = approved(mem, "mem", "old rule", "convention")
+    s = approved(mem, "two", "new rule elsewhere", "convention", creation_links=[("supersedes", p)])
+    standing(mem, p, "retired")
+    link(mem, p, "contradicts", s)
+    assert open_note(mem, PERSON, for_model=False, ref=ref(mem, p))["note"]["successor"] == ref(mem, s)
+    real, calls = notesquery._read, []
+
+    def racing(conn, actor):
+        calls.append(1)
+        out = real(conn, actor)
+        if len(calls) == 1:
+            authz.revoke(conn, "book:two", "read", U)
+        return out
+    monkeypatch.setattr(notesquery, "_read", racing)
+    item = open_note(mem, PERSON, for_model=False, ref=ref(mem, p))["note"]
+    assert item["links"] == {} and item["successor"] is None
     lost = mem.execute("SELECT reason FROM access_event WHERE object = 'book:two' AND NOT allowed").fetchall()
     assert lost == [("changed during query",)]
 
@@ -435,6 +502,45 @@ def test_code_targets_and_commits_range(mem, repo):  # T30, T22 commits
         q(mem, repo="adc", commits="main..HEAD")
     item = open_note(mem, PERSON, for_model=False, ref=ref(mem, moved), repo="adc", branch="main")["note"]
     assert item["current"] is False and item["text"] == "b is two"
+
+
+def test_many_cited_notes_never_fail_a_query(mem, repo, monkeypatch):  # Astra review #13 (3)
+    c1, _c2, v1 = repo
+    retired = []
+    for i in range(11):
+        s = approved(mem, "mem", f"retired with citations {i}")
+        for n in range(1, 21):
+            cite(mem, s, c1, 1, 1, _excerpt(v1, 1, 1), n=n)
+        standing(mem, s, "retired")
+        retired.append(s)
+    calls = []
+    real = coderepo._git
+    monkeypatch.setattr(coderepo, "_git", lambda *a, **kw: (calls.append(a[0]), real(*a, **kw))[1])
+    assert q(mem)["items"] == []                                              # history is not requested
+    assert len(q(mem, sets=["history"], max_bytes=131072, budget_tokens=16000)["items"]) == 11
+    assert calls == []                                                        # no target: nothing to verify
+    current = []
+    for i in range(11):
+        s = approved(mem, "mem", f"current with citations {i} " + "word " * 100)
+        for n in range(1, 21):
+            cite(mem, s, c1, n % 3 + 1, n % 3 + 1, _excerpt(v1, n % 3 + 1, n % 3 + 1), n=n)
+        current.append(s)
+    verified = []
+    real_verify = coderepo._verify
+    monkeypatch.setattr(coderepo, "_verify", lambda r, book, c, *rest: (verified.append(str(c)),
+                                                                        real_verify(r, book, c, *rest))[1])
+    page = q(mem, repo="adc", commit=c1, max_bytes=8192)
+    assert 0 < len(page["items"]) < 11 and page["next_cursor"]
+    assert all(c["status"] == "verified" for i in page["items"] for c in i["citations"])
+    assert len(verified) <= 20 * (len(page["items"]) + 1)                    # the page and one note after it
+    seen, cursor = [], None
+    while True:
+        out = q(mem, repo="adc", commit=c1, max_bytes=8192, cursor=cursor)
+        seen += refs(out)
+        cursor = out["next_cursor"]
+        if cursor is None:
+            break
+    assert seen == [ref(mem, s) for s in reversed(current)]
 
 
 # --- MCP, HTTP, open_citation ---------------------------------------------------------------------------------

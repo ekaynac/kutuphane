@@ -639,26 +639,36 @@ def propose(conn, actor: Actor, args: dict, embedder: llmdap.Routed | None = Non
         if vector is not None:
             conn.execute("INSERT INTO note_vector (note_seq, model, embedding) VALUES (%s, %s, %s::vector) "
                          "ON CONFLICT DO NOTHING", (seq, vector.model, vector.literal()))
-        reads = authz.allowed(conn, actor.principal, actor.on_behalf_of, ["read"])  # the read set, decided now
-        receipt = {"ref": draft.ref, "status": "recorded", "origin": origin, "origin_notice": origin_notice}
-        if journal not in reads.decisions:
-            return receipt, again is not None, reads, []  # propose-only: nothing about existence or counts
+        reads = authz.allowed(conn, actor.principal, actor.on_behalf_of, ["read"])  # the receipt level, decided now
+        minimal = {"ref": draft.ref, "status": "recorded", "origin": origin, "origin_notice": origin_notice}
+        if journal not in reads.objects("read"):
+            return minimal, again is not None, minimal, []  # propose-only: nothing about existence or counts
         readable = sorted(o.removeprefix("book:") for o in reads.objects("read"))
         candidates = _candidates(conn, seq, draft, readable, embedder, _for_model(actor)) if allow_search else []
         receipt = {"ref": draft.ref, "status": status, "standing": effective_standing(conn, [seq], NOW)[seq][0],
-                   "origin": origin, "origin_notice": origin_notice,
-                   "candidates": [{k: v for k, v in c.items() if k != "_standing_seq"} for c in candidates],
+                   "origin": origin, "origin_notice": origin_notice, "candidates": candidates,
                    **_counts(conn, seq, draft), "vector": vector_status}
-        return receipt, again is not None, reads, candidates
+        return receipt, again is not None, minimal, candidates
 
-    receipt, retry, reads, candidates = gate.guard_many(conn, actor, needs, work, action="propose",
-                                                        items={journal: [{"ref": draft.ref}]})
+    def finish(final: authz.Allowed, data):
+        """The receipt as the final decision allows it (§11): without read on the journal, the minimal receipt;
+        a candidate only from a book that is still readable."""
+        receipt, retry, minimal, candidates = data
+        readable = final.objects("read")
+        if receipt is minimal or journal not in readable:
+            return minimal, retry, [], final
+        kept = [c for c in candidates if f"book:{c['ref'].split('@')[0]}" in readable]
+        shown = [{k: v for k, v in c.items() if k != "_standing_seq"} for c in kept]
+        return {**receipt, "candidates": shown}, retry, kept, final
+
+    receipt, retry, candidates, final = gate.guard_many(conn, actor, needs, work, action="propose",
+                                                        items={journal: [{"ref": draft.ref}]}, finish=finish)
     by_book = {}
     for c in candidates:  # each delivered candidate is on record with the Standing event in force (AT-09)
         by_book.setdefault(f"book:{c['ref'].split('@')[0]}", []).append({"ref": c["ref"],
                                                                          "standing_seq": c["_standing_seq"]})
     for obj, items in sorted(by_book.items()):
-        gate.log_event(conn, actor, "propose", obj, "read", reads.decisions[obj]["read"], reads.policies.get(obj),
+        gate.log_event(conn, actor, "propose", obj, "read", final.decisions[obj]["read"], final.policies.get(obj),
                        None, None, items=items)
     return receipt, retry
 

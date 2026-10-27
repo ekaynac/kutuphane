@@ -340,6 +340,7 @@ REFUSALS = {
     "commondir": _write("commondir", "../other.git\n"),
     "promisor": _write("objects/pack/pack-0.promisor", ""),
     "http-alternates": _write("objects/info/http-alternates", "http://example.org/objects\n"),
+    "grafts": _write("info/grafts", f"{'a' * 40} {'b' * 40}\n"),
     "partialclone": _config("extensions.partialclone", "origin"),
     "include": _config("include.path", "/tmp/evil.config"),
     "promisor-remote": _config("remote.origin.promisor", "true"),
@@ -389,6 +390,21 @@ def test_an_alternates_repository_cannot_lend_objects(conn, tmp_path, root, monk
     assert coderepo.verify_many(conn, {("j", "adc"): s1}, [("j", cite(f"adc@{s1}:key.txt:1"), None)]) == \
         [Status("unverifiable", "repo_invalid")]
     assert not any(args[0] == "cat-file" for args, _ in calls)
+
+
+def test_grafts_cannot_publish_an_unreachable_commit(conn, adc, monkeypatch):  # T32, Astra review #13 (1)
+    """`info/grafts` rewrites ancestry: `<main> <unpublished>` would make an unreachable commit an ancestor of a
+    registered tip. The file is refused at open, and the confined environment turns graft processing off."""
+    m, _c1, c2, c3 = adc
+    secret = [("j", cite(f"adc@{c3}:secret.py:1"), None)]
+    assert coderepo.verify_many(conn, {("j", "adc"): c2}, secret) == [Status("unverifiable", "commit_not_published")]
+    with open(os.path.join(m.git_dir, "info", "grafts"), "w") as f:
+        f.write(f"{c2} {c3}\n")
+    assert coderepo.verify_many(conn, {("j", "adc"): c2}, secret) == [Status("unverifiable", "repo_invalid")]
+    with pytest.raises(CitationRefused, match="grafts"):
+        coderepo.add(conn, "j", "grafted", m.git_dir, ["refs/heads/*"], by="user:admin")
+    monkeypatch.setattr(coderepo, "check_git_dir", lambda git_dir: None)  # the environment alone
+    assert coderepo.verify_many(conn, {("j", "adc"): c2}, secret) == [Status("unverifiable", "commit_not_published")]
 
 
 def test_add_checks_the_place_and_the_ref_patterns(conn, tmp_path, root, monkeypatch):
