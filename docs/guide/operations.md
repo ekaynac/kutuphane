@@ -146,7 +146,8 @@ These problems refuse the whole book:
 - a symlink, a path violation or a size violation;
 - markdown that is not UTF-8 or has invalid frontmatter;
 - a credential-like file name (`credentials.json`, `*.env`, `id_rsa`, key stores, `settings.local.json`);
-- credential-like text (keys, tokens, passwords, private key blocks).
+- credential-like text (keys, tokens, passwords, private key blocks);
+- in a `cloud_ok` book only: a personal-data finding in a file that can go to a model (see [Personal-data and fleet-data findings](#personal-data-and-fleet-data-findings)).
 
 The scan reads the original text and the extracted text. Placeholders (`${PASSWORD}`, `<your-key>`, `changeme`) and semantic constants (`token: refresh_token`) are not credentials.
 The error gives the path, the line and the rule (for example `assigned-credential` or `api-key`). It never shows the matched text.
@@ -167,6 +168,39 @@ kutuphane ingest <folder> --book <slug> --sensitivity normal --egress local_only
 - The publication records the accepted findings (`accepted_findings` in the result and in `show`). Stderr shows each one.
 - `kstd-init` and `kstd-check` scan in the same way. Give them the same `--accept-finding` values.
 - `receive` accepts nothing. The receiving installation scans again.
+
+### Personal-data and fleet-data findings
+
+`ingest`, `kstd-init` and `kstd-check` also look for personal data and fleet data. A finding is a labelling
+question, not a credential leak, so it does not refuse a `local_only` book. These rules find it:
+
+| Rule | Finds | Is not a finding |
+|---|---|---|
+| `private-ipv4` | 10/8, 172.16/12, 192.168/16, 100.64/10 (for example a tailnet) | a version (`v10.0.0.1`, `version: …`, `==10.1.0.2`), an OID, the block itself (`10.0.0.0/8`), loopback, link-local, the RFC 5737 documentation ranges, public addresses |
+| `private-ipv6` | unique local addresses (fc00::/7) | the block itself (`fd00::/8`), loopback, link-local, `2001:db8::/32` |
+| `email` | an e-mail address | `example.com`, `*.example`, `*.test`, `*.invalid`, `*.localhost`; no-reply addresses; `git@github.com:org/repo`; `icon@2x.png` |
+| `phone` | `+` and 8–15 digits, a `tel:` URI, or a number after `tel`, `phone`, `telefon`, `gsm`, `mobile`, `cep`, `fax` | a time zone (`+0300`), an amount (`+10 000 000`), digits without `+` or a phone word |
+| `listed-name` | a name of the `--deny-names` file | a name inside a longer word |
+
+The deny-list file has one name per line (customers, sites, devices). A line that starts with `#` is a comment.
+The match ignores case, and a space in a name matches any space. A name needs at least 3 characters. Keep the file
+outside the folder: it is personal data itself.
+
+```sh
+kutuphane ingest <folder> --book <slug> --sensitivity normal --egress local_only --protection standard \
+  --deny-names /secure/names.txt
+```
+
+- Stderr lists each finding: `personal-data finding (labelling, not refused): <path> line <n> (<rule>)`. The
+  matched text is never shown or stored.
+- The publication records the findings that no acceptance covers (`data_findings`: path, digest, rule, lines) in
+  the result and in `show`. `kstd.yaml` is not scanned.
+- `kstd-init` writes `personal_data: unknown` for the item of each file with a finding (see
+  [kstd.md](kstd.md#personal-data-findings)).
+- A `cloud_ok` book sends passages to cloud models. `ingest` refuses a file with a finding there, unless the file
+  never goes to a model (`ai_use.ai_input` not `y` in `kstd.yaml`). Review each finding, then accept it as above
+  (`--accept-finding '<path>@sha256:<digest>:email'`), set `ai_input: n` for the file, or use `--egress local_only`.
+  An accepted finding is in `accepted_findings`.
 
 ### Hidden paths
 
@@ -253,7 +287,7 @@ kutuphane kstd-init <folder> --issuer 'ACME <kb@acme.example>'
 kutuphane kstd-check <folder>
 ```
 
-`kstd-init` and `kstd-check` do not use the database. `kstd-init` states no `ai_use` term: until you state the terms, no file is indexed or sent to a model.
+`kstd-init` and `kstd-check` do not use the database. `kstd-init` states no `ai_use` term: until you state the terms, no file is indexed or sent to a model. On a copy, add `--source-repo <repo>` (and `--commit <rev>` if the copy is older than `HEAD`): `kstd-init` then proposes `origin: model` or `unknown` from the commit trailers ([kstd.md](kstd.md#origin-proposals-from-a-source-repository)).
 
 ### Profile versions and re-ingest
 
@@ -845,7 +879,7 @@ Disk encryption is a deployment duty at the volume level (D48). The application 
 | `approve-import` | Publish a verified package with this installation's policy. |
 | `reject-import` | Refuse a verified package (kept on record). |
 | `imports` | List received packages and their verdicts. |
-| `kstd-init` | Write a starting `kstd.yaml` for a folder (no database). |
+| `kstd-init` | Write a starting `kstd.yaml` for a folder (no database); `--source-repo` proposes each origin from git. |
 | `kstd-check` | Validate a folder's `kstd.yaml` (no database). |
 | `whoami` | Verify an access token read from stdin. |
 | `explain` | Print the unified audit for a correlation id or an answer id. |

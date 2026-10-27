@@ -24,6 +24,8 @@ The specification draft is `docs/11-standard-draft.md` (draft 0.3). This folder 
 
 ```sh
 kutuphane kstd-init <folder> --issuer "ACME <kb@acme.example>"   # writes kstd.yaml: every file with its digest
+# on a copy: --source-repo <repo> [--commit <rev>] proposes origin model|unknown from the commit trailers (never
+# human or assisted); a file with a personal-data finding gets personal_data: unknown (--deny-names <file>: names)
 # state ai_use (init writes no term: nothing is indexed or sent to a model), license and personal_data
 kutuphane kstd-check <folder>                                    # errors (exit 1) and warnings (untrusted claims)
 kutuphane ingest <folder> --book … --sensitivity … --egress … --protection …

@@ -11,6 +11,10 @@ The one exception is narrow and on record: `--accept-finding <path>@sha256:<file
 findings in exactly that file content (AcceptedFinding). A changed file has another digest, so the acceptance no
 longer applies; an acceptance that matches no finding refuses the source. Publication records what was accepted.
 
+Personal-data and fleet-data findings (datascan.py, G35) never refuse a source: each file carries its open ones
+(`data_findings`, the ones that no acceptance covers), and catalog.py records and gates them. `kstd.yaml` is
+metadata and is not scanned for them (it names its issuer).
+
 A file that is safe but cannot be extracted (a PDF without a text layer, an unreadable or encrypted PDF, a text
 file that is not UTF-8 or holds NUL bytes) is not refused: it is stored and listed, and `quarantine` says why it
 is not indexed (G3). Its quarantine ends with the version that fixes it.
@@ -28,8 +32,9 @@ from pathlib import Path, PurePosixPath
 import yaml
 from pypdf import PdfReader
 
-from . import agentfiles, secretscan
+from . import agentfiles, datascan, secretscan
 from .ids import normalize_path, sha256_hex
+from .kstd import MANIFEST
 
 MAX_FILE_BYTES = 50 * 1024 * 1024
 MAX_SOURCE_BYTES = 200 * 1024 * 1024
@@ -65,7 +70,8 @@ class SourceFile:
     media_type: str
     okf_type: str | None
     quarantine: str | None = None  # why a searchable file cannot be indexed; None: indexed normally
-    accepted: tuple[str, ...] = ()  # secretscan rules whose findings in these exact bytes an operator accepted
+    accepted: tuple[str, ...] = ()  # secretscan/datascan rules whose findings in these exact bytes an operator accepted
+    data_findings: tuple = ()  # ((where, secretscan.Finding), …): open datascan findings; where: "" or " of the …"
 
 
 @dataclass(frozen=True, order=True)
@@ -79,13 +85,16 @@ class AcceptedFinding:
     def parse(cls, spec: str) -> "AcceptedFinding":
         path, sep, rest = spec.rpartition("@sha256:")
         digest, _, rule = rest.partition(":")
-        if not sep or not path or not re.fullmatch(r"[0-9a-f]{64}", digest) or rule not in secretscan.RULES:
+        if not sep or not path or not re.fullmatch(r"[0-9a-f]{64}", digest) or rule not in RULES:
             raise SourceError(f"--accept-finding needs <path>@sha256:<64 hex digits>:<rule>, rule one of "
-                              f"{', '.join(sorted(secretscan.RULES))}")
+                              f"{', '.join(sorted(RULES))}")
         return cls(normalize_path(path), digest, rule)
 
     def __str__(self) -> str:
         return f"{self.path}@sha256:{self.sha256}:{self.rule}"
+
+
+RULES = secretscan.RULES | datascan.RULES  # the rules that --accept-finding can name
 
 
 def media_type_of(path: str) -> str:
@@ -221,8 +230,25 @@ def _credentials(path: str, sha256: str, texts: list[tuple[str, str]], accept: f
     return tuple(sorted(used))
 
 
-def read_file(rel: str, data: bytes, accept: frozenset = frozenset()) -> SourceFile:
-    """`accept`: AcceptedFinding values (ingest only; package receipt accepts nothing)."""
+def _personal_data(path: str, sha256: str, texts: list[tuple[str, str]], accept: frozenset,
+                    names) -> tuple[tuple[str, ...], tuple]:
+    """(accepted rules, open findings) of the datascan rules. A rule found in the original text is not reported
+    again from the extracted text (the lines differ); a rule found only in the extracted text says so."""
+    if path == MANIFEST:
+        return (), ()
+    acceptable = {a.rule for a in accept if (a.path, a.sha256) == (path, sha256)}
+    used, found, seen = set(), [], set()
+    for where, text in texts:
+        hits = [f for f in datascan.findings(text, names) if f.rule not in seen]
+        seen |= {f.rule for f in hits}
+        used |= {f.rule for f in hits if f.rule in acceptable}
+        found += [(where, f) for f in hits if f.rule not in acceptable]
+    return tuple(sorted(used)), tuple(found)
+
+
+def read_file(rel: str, data: bytes, accept: frozenset = frozenset(), names=None) -> SourceFile:
+    """`accept`: AcceptedFinding values (ingest only; package receipt accepts nothing). `names`: the compiled
+    deny-list of datascan.load_names, or None."""
     path = normalize_path(rel)
     if not agentfiles.admitted(tuple(path.split("/"))):
         raise SourceError(f"{path}: hidden path outside the agent folders")
@@ -254,12 +280,14 @@ def read_file(rel: str, data: bytes, accept: frozenset = frozenset()) -> SourceF
     if extracted and extracted != text:
         texts.append((" of the extracted text", extracted))
     accepted = _credentials(path, digest, texts, accept)
+    data_accepted, data_found = _personal_data(path, digest, texts, accept, names)
     if media_type in TEXT_TYPES.values():
         if text is None:
             quarantine = "not UTF-8 text"
         elif "\x00" in text:
             quarantine = "holds NUL bytes (binary, not text)"
-    return SourceFile(path, data, digest, media_type, okf_type, quarantine, accepted)
+    return SourceFile(path, data, digest, media_type, okf_type, quarantine, tuple(sorted(accepted + data_accepted)),
+                      data_found)
 
 
 def _read_regular(name: str, shown: str, dir_fd: int | None = None) -> bytes:
@@ -308,13 +336,13 @@ def _raw_files(root: Path):
                 yield rel, _read_regular(f, rel, dir_fd=dir_fd)
 
 
-def read_source(root: Path, accept=()) -> list[SourceFile]:
+def read_source(root: Path, accept=(), names=None) -> list[SourceFile]:
     """Directory: every admitted regular file below it. File: just that file. `accept`: AcceptedFinding values;
-    each must match a finding in the exact file content it names."""
+    each must match a finding in the exact file content it names. `names`: datascan.load_names, or None."""
     accept = frozenset(accept)
     files, seen, total = [], set(), 0
     for rel, data in _raw_files(root):
-        sf = read_file(rel, data, accept)
+        sf = read_file(rel, data, accept, names)
         if sf.path in seen:  # e.g. NFC and NFD spellings of one name
             raise SourceError(f"{sf.path}: two files normalize to the same path")
         seen.add(sf.path)

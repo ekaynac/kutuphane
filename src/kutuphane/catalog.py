@@ -9,6 +9,11 @@ profile), indexes it, and the quarantine of the old version no longer applies: n
 Accepted credential findings (`--accept-finding`, source.AcceptedFinding) are part of the publication record:
 [{path, sha256, rule}] for this publication, shown by `book_state`. The matched text is never recorded.
 
+Personal-data and fleet-data findings (datascan.py, G35) are a labelling question: the open ones (no acceptance)
+are recorded in the publication as `data_findings` [{path, sha256, rule, lines}] and never refuse a book here.
+Ingest refuses them only when the book policy sends passages to cloud models (check_personal_data); an accepted
+one is in `accepted_findings`, like a credential finding.
+
 Skill scans (D71, skillscan.py): the skill folders are scanned before the transaction (a subprocess must not hold
 the book lock); the records are written in it, so a block is in force as soon as the version is."""
 from dataclasses import dataclass, field
@@ -33,13 +38,45 @@ class Published:
     new_content: bool
     new_policy: bool
     quarantined: list[dict] = field(default_factory=list)  # [{path, reason}]: stored, listed, not indexed
-    accepted_findings: list[dict] = field(default_factory=list)  # [{path, sha256, rule}]: reviewed secretscan findings
+    accepted_findings: list[dict] = field(default_factory=list)  # [{path, sha256, rule}]: reviewed scan findings
+    data_findings: list[dict] = field(default_factory=list)  # [{path, sha256, rule, lines}]: open datascan findings
     skill_scans: list[dict] = field(default_factory=list)  # skillscan.summary() of the scans recorded + blocks carried
 
 
 def manifest_of(files: list[SourceFile]) -> list[dict]:
     return [{"path": f.path, "sha256": f.sha256, "size": len(f.data), "media_type": f.media_type,
              "okf_type": f.okf_type} for f in sorted(files, key=lambda f: f.path)]
+
+
+def data_findings(files: list[SourceFile]) -> list[dict]:
+    """The open datascan findings of the files, per path and rule; `text: extracted` when only the extracted text
+    (HTML's visible text, a PDF's text layer) has them. Lines and rules only, never the matched text."""
+    out = {}
+    for f in sorted(files, key=lambda f: f.path):
+        for where, finding in f.data_findings:
+            entry = out.setdefault((f.path, finding.rule), {"path": f.path, "sha256": f.sha256, "rule": finding.rule,
+                                                            "lines": []} | ({"text": "extracted"} if where else {}))
+            entry["lines"].append(finding.line)
+    return [out[k] for k in sorted(out)]
+
+
+def check_personal_data(files: list[SourceFile], policy: dict) -> None:
+    """Ingest gate (G35): a `cloud_ok` book sends passages to cloud models, so an open personal-data finding in a
+    file that can go to a model (no kstd.yaml, or `ai_use.ai_input: y`) refuses it until the operator reviews it.
+    A `local_only` book only records the findings: personal data is a labelling question there."""
+    if check_policy(policy)["egress"] != "cloud_ok":
+        return
+    manifest = kstd.validate(files)
+    refused = [f"{f.path}: personal-data findings in a cloud_ok book: "
+               + ", ".join(f"line {d.line}{where} ({d.rule})" for where, d in sorted(f.data_findings,
+                                                                                  key=lambda x: (x[1], x[0])))
+               for f in sorted(files, key=lambda f: f.path)
+               if f.data_findings and (manifest is None or kstd.allows(kstd.effective(manifest, f.path), "ai_input"))]
+    if refused:
+        example = refused[0].split(":", 1)[0]
+        raise ValueError("; ".join(refused) + f"; the passages go to cloud models: review each finding, then accept "
+                         f"it (--accept-finding {example}@sha256:<file digest>:<rule>), set ai_use.ai_input: n for "
+                         f"the file in kstd.yaml, or ingest with --egress local_only")
 
 
 def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dict, profile: dict) -> Published:
@@ -59,6 +96,7 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
                    if f.quarantine]
     accepted = [{"path": f.path, "sha256": f.sha256, "rule": rule} for f in sorted(files, key=lambda f: f.path)
                 for rule in f.accepted]
+    found = data_findings(files)
     fts = profile["settings"]["fts"]
     scans = skillscan.plan(conn, book, content_id, files)
     with conn.transaction():
@@ -93,11 +131,12 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
                                                for q in quarantined])
         conn.execute("UPDATE book SET title = %s, current_content = %s, current_profile = %s, current_policy = %s, "
                      "updated_at = now() WHERE slug = %s", (title, content_id, profile_id, policy_id, book))
-        conn.execute("INSERT INTO publication (book, content_id, profile_id, policy_id, accepted_findings) "
-                     "VALUES (%s, %s, %s, %s, %s)", (book, content_id, profile_id, policy_id, Jsonb(accepted)))
+        conn.execute("INSERT INTO publication (book, content_id, profile_id, policy_id, accepted_findings, "
+                     "data_findings) VALUES (%s, %s, %s, %s, %s, %s)",
+                     (book, content_id, profile_id, policy_id, Jsonb(accepted), Jsonb(found)))
     return Published(book, content_id, profile_id, policy_id, new_content=current[0] != content_id,
                      new_policy=current[1] != policy_id, quarantined=quarantined, accepted_findings=accepted,
-                     skill_scans=skillscan.summary(scans) + carried)
+                     data_findings=found, skill_scans=skillscan.summary(scans) + carried)
 
 
 def book_state(conn, book: str) -> dict | None:
@@ -109,10 +148,11 @@ def book_state(conn, book: str) -> dict | None:
         return None
     versions = [r[0] for r in conn.execute("SELECT id FROM content_version WHERE book = %s ORDER BY created_at",
                                            (book,))]
-    pubs = [{"content_id": c, "profile_id": pf, "policy_id": pl, "published_at": t.isoformat(), "accepted_findings": a}
-            for c, pf, pl, t, a in conn.execute("SELECT content_id, profile_id, policy_id, published_at, "
-                                                "accepted_findings FROM publication WHERE book = %s ORDER BY id",
-                                                (book,))]
+    pubs = [{"content_id": c, "profile_id": pf, "policy_id": pl, "published_at": t.isoformat(), "accepted_findings": a,
+             "data_findings": d}
+            for c, pf, pl, t, a, d in conn.execute("SELECT content_id, profile_id, policy_id, published_at, "
+                                                   "accepted_findings, data_findings FROM publication "
+                                                   "WHERE book = %s ORDER BY id", (book,))]
     quarantined = [{"path": p, "reason": r} for p, r in conn.execute(
         "SELECT path, reason FROM quarantine WHERE book = %s AND content_id = %s AND profile_id = %s ORDER BY path",
         (book, row[2], row[6]))]

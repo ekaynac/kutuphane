@@ -11,8 +11,9 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import (answers, audit, authz, catalog, coderepo, curatorqueue, db, decisions, devauth, gate, identity, kstd,
-               llmdap, noteimport, notes, packages, passkey, profiles, search, retrieval, signing, skillscan, vectors)
+from . import (answers, audit, authz, catalog, coderepo, curatorqueue, datascan, db, decisions, devauth, gate,
+               gitorigin, identity, kstd, llmdap, noteimport, notes, packages, passkey, profiles, search, retrieval,
+               signing, skillscan, vectors)
 from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, make_policy
 from .source import AcceptedFinding, read_source
 
@@ -28,12 +29,18 @@ def cmd_migrate(conn, _args) -> int:
 
 def cmd_ingest(conn, args) -> int:
     policy = make_policy(sensitivity=args.sensitivity, egress=args.egress, protection=args.protection)
-    files = read_source(Path(args.path), _accepted(args))
+    files = read_source(Path(args.path), _accepted(args), _names(args))
+    catalog.check_personal_data(files, policy)  # only a cloud_ok book refuses an open personal-data finding
     embedder, settings = _indexing()  # a configuration error stops here, before anything is published
     result = catalog.publish(conn, book=args.book, title=args.title or args.book, files=files, policy=policy,
                              profile=profiles.spec(args.profile))
     for a in result.accepted_findings:  # on record in the publication; say so where a person looks
         print(f"accepted finding (reviewed exception): {a['path']}@sha256:{a['sha256']}:{a['rule']}", file=sys.stderr)
+    for d in result.data_findings:
+        where = " of the extracted text" if d.get("text") else ""
+        for line in d["lines"]:
+            print(f"personal-data finding (labelling, not refused): {d['path']} line {line}{where} ({d['rule']})",
+                  file=sys.stderr)
     return _published_then_index(conn, result, embedder, settings)
 
 
@@ -191,26 +198,51 @@ def _accepted(args) -> list[AcceptedFinding]:
     return [AcceptedFinding.parse(spec) for spec in args.accept_finding]
 
 
-def _accept_finding_option(parser, effect: str) -> None:
+def _names(args):
+    return datascan.load_names(Path(args.deny_names)) if args.deny_names else None
+
+
+def _scan_options(parser, effect: str) -> None:
     parser.add_argument("--accept-finding", action="append", default=[], metavar="PATH@sha256:DIGEST:RULE",
-                        help="accept one reviewed credential-scan finding: that rule, in exactly that file content "
-                             f"(sha256 of the file); repeatable; a changed file needs a new review; {effect}")
+                        help="accept one reviewed credential or personal-data finding: that rule, in exactly that file "
+                             f"content (sha256 of the file); repeatable; a changed file needs a new review; {effect}")
+    parser.add_argument("--deny-names", metavar="FILE",
+                        help="a file of names (customers, sites), one per line: each match is a personal-data "
+                             "finding (listed-name); never shown, never stored")
 
 
 def cmd_kstd_init(_conn, args) -> int:
-    """Write a starting kstd.yaml that lists every file with its digest; all rights start as unknown."""
+    """Write a starting kstd.yaml that lists every file with its digest; all rights start as unknown. With
+    --source-repo, the origin of each file is proposed from the commit trailers of a local repository (G34);
+    personal-data findings propose `personal_data: unknown` for their file (G35)."""
     root = Path(args.path)
     target = root / kstd.MANIFEST
-    files = read_source(root, _accepted(args))  # the same reviewed exceptions that ingest will need
+    if args.commit and not args.source_repo:
+        raise ValueError("--commit needs --source-repo")
+    files = read_source(root, _accepted(args), _names(args))  # the same reviewed exceptions that ingest will need
+    proposals = gitorigin.propose(args.source_repo, files, args.commit or "HEAD") if args.source_repo else None
     fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)  # never overwrite a curated manifest
     with os.fdopen(fd, "w") as f:
-        f.write(kstd.init(files, args.issuer))
+        f.write(kstd.init(files, args.issuer, proposals=proposals))
+    counts, flagged = {}, 0
+    for sf in sorted(files, key=lambda f: f.path):
+        flagged += bool(sf.data_findings)
+        for where, d in sf.data_findings:
+            counts[d.rule] = counts.get(d.rule, 0) + 1
+            print(f"personal-data finding: {sf.path} line {d.line}{where} ({d.rule})", file=sys.stderr)
     print(f"wrote {target}: set the license, ai_use and personal_data, then run `kutuphane kstd-check {root}`")
+    if proposals is not None:
+        origins = [p.origin for p in proposals.items.values()]
+        print(f"origin proposals from git: model {origins.count('model')}, unknown {origins.count('unknown')} "
+              f"(at {proposals.commit}); a proposal is not authority: check each one in {kstd.MANIFEST}")
+    print("personal-data findings: " + (", ".join(f"{r} {n}" for r, n in sorted(counts.items()))
+                                        + f" ({flagged} file{'s' if flagged != 1 else ''}); their files propose "
+                                          "personal_data: unknown" if counts else "none"))
     return 0
 
 
 def cmd_kstd_check(_conn, args) -> int:
-    files = read_source(Path(args.path), _accepted(args))
+    files = read_source(Path(args.path), _accepted(args), _names(args))
     found = [f for f in files if f.path == kstd.MANIFEST]
     if not found:
         print(f"no {kstd.MANIFEST} in {args.path}", file=sys.stderr)
@@ -595,7 +627,7 @@ def parser() -> argparse.ArgumentParser:
     ing.add_argument("--egress", required=True, choices=EGRESS)
     ing.add_argument("--protection", required=True, choices=PROTECTION_M1)
     ing.add_argument("--profile", choices=("chunked", "whole"), default="chunked")
-    _accept_finding_option(ing, "recorded in the publication")
+    _scan_options(ing, "recorded in the publication")
     ing.set_defaults(fn=cmd_ingest)
     ix = sub.add_parser("index", help="give a book's current chunks a vector: copy unchanged ones, embed the rest "
                                       "(through LLMDAP)")
@@ -721,11 +753,16 @@ def parser() -> argparse.ArgumentParser:
     ki = sub.add_parser("kstd-init", help="write a starting kstd.yaml for a folder (no database)")
     ki.add_argument("path")
     ki.add_argument("--issuer", required=True, help="who answers for this folder, e.g. 'ACME <kb@acme.example>'")
-    _accept_finding_option(ki, "give the same acceptances to ingest")
+    ki.add_argument("--source-repo", metavar="REPO",
+                    help="a local git repository that the folder was copied from: propose each file's origin from "
+                         "its commit trailers (model or unknown, never human or assisted)")
+    ki.add_argument("--commit", metavar="REV", help="the commit of --source-repo that the copy was taken at "
+                                                     "(default HEAD)")
+    _scan_options(ki, "give the same acceptances to ingest")
     ki.set_defaults(fn=cmd_kstd_init, no_db=True)
     kc = sub.add_parser("kstd-check", help="validate a folder's kstd.yaml: digests, SPDX ids, terms (no database)")
     kc.add_argument("path")
-    _accept_finding_option(kc, "give the same acceptances to ingest")
+    _scan_options(kc, "give the same acceptances to ingest")
     kc.set_defaults(fn=cmd_kstd_check, no_db=True)
     sub.add_parser("whoami", help="verify an access token read from stdin").set_defaults(fn=cmd_whoami)
     ex = sub.add_parser("explain", help="unified audit for a correlation id (or, with --answer, an answer id)")

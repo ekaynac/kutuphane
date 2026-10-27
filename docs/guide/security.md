@@ -245,6 +245,15 @@ text. Placeholders (`${PASSWORD}`, `<your-key>`, `changeme`) are not credentials
 can be accepted with `--accept-finding <path>@sha256:<digest>:<rule>`. The acceptance covers exactly that file
 content and is recorded in the publication. Package receipt accepts nothing.
 
+`ingest`, `kstd-init` and `kstd-check` also look for personal data and fleet data: private IP addresses, e-mail
+addresses, phone numbers and the names of a `--deny-names` file. These findings never show the matched text and do
+not refuse a `local_only` book: they are recorded in the publication, and `kstd-init` proposes
+`personal_data: unknown`. A `cloud_ok` book refuses an open finding in a file that can go to a model
+([operations.md](operations.md#personal-data-and-fleet-data-findings)).
+
+`kstd-init --source-repo` runs git read-only on a local repository: no transport (`protocol.allow=never`), no lazy
+fetch of a partial clone, no replace refs, no fsmonitor, no signature check, and no search above the given folder.
+
 ## Git confinement
 
 Code citations read bare mirrors that an administrator registers (`kutuphane repo add`). Kütüphane never fetches.

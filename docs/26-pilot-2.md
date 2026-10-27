@@ -209,3 +209,26 @@ A check with Pilot 1 questions 1–3 (`docs/18`, one run each, after the re-inde
 same 8 passages as Pilot 1 (3 more runs: 3 answered), and question 3 did not get the advisory record. Its
 first-stage pool does not hold that record with the old or the new radar documents profile, so the re-cut is not
 the cause that the check shows.
+
+## 9. G34 and G35 (kstd-init evidence)
+
+Branch `feat/kstd-init-evidence` ([#124](https://github.com/ekaynac/kutuphane/pull/124)). Both gaps are closed for `kstd-init` and ingest. The tests use fixture
+repositories and invented texts (`tests/test_gitorigin.py`, `tests/test_datascan.py`, `tests/test_ingest.py`).
+
+| Gap | Change | Test |
+|---|---|---|
+| G34 | `kstd-init --source-repo <repo> [--commit <rev>]` reads a local repository read-only. A file matches by path (also the end of a path, for a copy of a subfolder) or by content at the commit. It gets `origin: model` with a `# proposed from git` comment when every commit of the file has a `Co-Authored-By` trailer with a known model agent, else `unknown`. The commit ids and trailer lines are comment lines of the item, so `kstd-check` and the loader read only normal values. `human`, `assisted` and `tool` are never proposed (D63/D64, R1). | `test_origins_come_from_the_trailers_and_never_human_or_assisted`, `test_the_evidence_names_the_commits_and_the_trailer_lines`, `test_a_given_commit_is_the_reference`, `test_init_writes_proposals_that_the_check_and_the_loader_accept` |
+| G35 | Rules `private-ipv4`, `private-ipv6`, `email`, `phone` and `listed-name` (`--deny-names <file>`) for `ingest`, `kstd-init` and `kstd-check`. Versions, OIDs, the private blocks themselves, loopback, link-local and documentation ranges are not findings. `kstd-init` writes `personal_data: unknown` for the item of each file with a finding (never `no`). Ingest records the open findings in the publication (`data_findings`, migration 032) and lists them; it refuses them only in a `cloud_ok` book for a file that can go to a model, until each one is accepted with `--accept-finding`. | `test_versions_documentation_ranges_and_loopback_are_not_findings`, `test_init_proposes_unknown_personal_data_for_a_file_with_findings`, `test_personal_data_findings_are_recorded_and_do_not_refuse_a_local_book`, `test_cli_lists_data_findings_and_a_cloud_book_needs_a_review` |
+
+**Smoke (2026-10-27).** `kstd-init --source-repo` on a temporary copy of the pilot copy (the pilot copy did not
+change), aggregate counts only:
+
+| Run | `model` | `unknown` | Findings |
+|---|---|---|---|
+| `HEAD` of the source repository | 30 | 3 (the content differs: the copy is older than `HEAD`) | 1 `private-ipv4` (1 file) |
+| `--commit` = the newest commit at which all 33 files match | 33 | 0 | 1 `private-ipv4` (1 file) |
+
+At that commit, 66 of 66 file commits have a model trailer, the same count as the manual script of section 6, and
+`kstd-check` gives PASS (33 files). The `private-ipv4` finding is in a canon rule file, as in the manual scan of
+section 6 (1 rule file). The smoke had no deny-list, so the customer and site names stay a `--deny-names` question
+for the operator.

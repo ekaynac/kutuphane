@@ -412,13 +412,47 @@ def _quoted(value: str) -> str:
     return yaml.safe_dump(value, default_style='"', allow_unicode=True, width=1_000_000).strip()
 
 
-def init(files: list, issuer: str, today: date | None = None) -> str:
+_LINE_BREAKS = re.compile(r"[\x00-\x1f\x7f\x85\u2028\u2029]")
+MAX_FINDING_LINES = 10
+
+
+def _comment(text: str) -> str:
+    """One comment line: a path, a reason or a trailer line can never end the comment and become YAML."""
+    return _LINE_BREAKS.sub("?", text)
+
+
+def _findings_note(found) -> str:
+    """`email (line 3); private-ipv4 (lines 4, 9)` of a file's open datascan findings ((where, Finding), …)."""
+    lines: dict[tuple[str, str], list[int]] = {}
+    for where, f in found:
+        lines.setdefault((f.rule, where), []).append(f.line)
+    parts = []
+    for (rule, where), ns in sorted(lines.items()):
+        shown = ", ".join(map(str, ns[:MAX_FINDING_LINES])) + (f", … (+{len(ns) - MAX_FINDING_LINES})"
+                                                               if len(ns) > MAX_FINDING_LINES else "")
+        parts.append(f"{rule} ({'lines' if len(ns) > 1 else 'line'} {shown}{where})")
+    return "; ".join(parts)
+
+
+def init(files: list, issuer: str, today: date | None = None, proposals=None) -> str:
     """A starting manifest for a folder: every file listed with its digest, all rights unknown, no `ai_use` term
-    stated (deny: nothing is indexed or sent to a model until the issuer states the terms, D74), origin unknown."""
+    stated (deny: nothing is indexed or sent to a model until the issuer states the terms, D74), origin unknown.
+
+    `proposals` (gitorigin.Proposals, G34): the origin proposed from a source repository, as a value with a
+    `# proposed` comment and the evidence (commit ids, trailer lines) as comment lines of the item. A file with open
+    personal-data findings (source.SourceFile.data_findings, G35) gets `personal_data: unknown` of its own, so a
+    later folder default `no` does not cover it. Only `model` or `unknown` is ever proposed, never `no`."""
     lines = [
         f"standard: {STANDARD}",
         f"issuer: {_quoted(issuer)}   # who answers for this folder",
         f"issued: {(today or date.today()).isoformat()}",
+    ]
+    if proposals is not None:
+        lines.append(_comment(f"# proposals from git: {proposals.repo} at {proposals.commit} (a proposal is not "
+                              f"authority: check each origin before you publish)"))
+        if proposals.shallow:
+            lines.append("# the repository is shallow: older commits are missing from the evidence")
+    lines += [
         "rights:                               # defaults for every item",
         "  license: unknown                    # an SPDX id, e.g. CC-BY-4.0; unknown gives no permission",
         "  holder: " + _quoted(issuer),
@@ -430,6 +464,17 @@ def init(files: list, issuer: str, today: date | None = None) -> str:
         if f.path == MANIFEST:
             continue
         lines += [f"  - path: {_quoted(f.path)}",
-                  f"    digest: sha256:{hashlib.sha256(f.data).hexdigest()}",
-                  "    origin: unknown                   # human | assisted (+ reviewed_by) | model | tool (+ software_agent) | unknown (= model)"]
+                  f"    digest: sha256:{hashlib.sha256(f.data).hexdigest()}"]
+        p = proposals.items.get(f.path) if proposals is not None else None
+        if p is None:
+            lines.append("    origin: unknown                   # human | assisted (+ reviewed_by) | model | tool "
+                         "(+ software_agent) | unknown (= model)")
+        else:
+            note = f"proposed from git: {p.reason}" if p.origin == "model" else f"git: {p.reason}"
+            lines.append(_comment(f"    origin: {p.origin:<26}# {note}"))
+            lines += [_comment(f"    #   {e}") for e in p.evidence]
+        if f.data_findings:
+            lines += ["    rights:",
+                      _comment(f"      personal_data: unknown            # proposed: personal-data findings: "
+                               f"{_findings_note(f.data_findings)}; check them")]
     return "\n".join(lines) + "\n"
