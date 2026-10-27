@@ -65,8 +65,11 @@ ENROLL = ("INSERT INTO curator_enrollment (id, principal, code_sha256, created_b
           "VALUES (%s, %s, %s, 'user:admin', clock_timestamp() + %s::interval, clock_timestamp() + %s::interval)")
 PASSKEY = ("INSERT INTO passkey (credential_id, principal, user_handle, enrollment, public_key, sign_count, "
            "backup_eligible) VALUES (%s, %s, %s, %s, 'k', 0, true)")
-SESSION = ("INSERT INTO curator_session (id_sha256, principal, login, login_challenge, expires_at) "
-           "VALUES (%s, %s, %s, %s, now() + %s::interval)")
+SESSION = ("INSERT INTO curator_session (id_sha256, principal, login, login_challenge, expires_at, enrollment, "
+           "credential_id) SELECT v.i, v.p, v.l, v.c, now() + v.t, "   # 026: the session's enrollment or passkey
+           "CASE WHEN v.l = 'enrollment' THEN (SELECT id FROM curator_enrollment WHERE principal = v.p LIMIT 1) END, "
+           "CASE WHEN v.l = 'passkey' THEN (SELECT credential_id FROM passkey WHERE principal = v.p LIMIT 1) END "
+           "FROM (VALUES (%s::bytea, %s::text, %s::text, %s::text, %s::interval)) v (i, p, l, c, t)")
 CHALLENGE = ("INSERT INTO curator_challenge (id, session, principal, action, payload, challenge, expires_at) "
              "VALUES (%s, %s, %s, %s, %s, %s, now() + %s::interval)")
 ACT = ("INSERT INTO curator_act (challenge, principal, action, credential_id, authenticator_data, client_data_json, "
@@ -150,6 +153,10 @@ def test_sessions_and_challenges_are_bounded_and_bound(db, people):
     refused(db, SESSION, (secrets.token_bytes(32), U, "passkey", login, "8 hours"), role=WEB,
             error=psycopg.errors.UniqueViolation)
     run(db, "UPDATE curator_session SET ended_at = now() WHERE id_sha256 = %s", (sm,), role=WEB)
+    for login_, column in (("passkey", "login_challenge, credential_id"), ("enrollment", "login_challenge, enrollment")):
+        refused(db, f"INSERT INTO curator_session (id_sha256, principal, login, {column}, expires_at) "  # 026
+                    "VALUES (%s, %s, %s, NULL, NULL, now() + interval '1 hour')", (secrets.token_bytes(32), U, login_),
+                role=WEB, error=psycopg.errors.CheckViolation)
 
 
 def test_an_act_is_one_use_of_its_own_challenge_by_its_own_passkey(db, people):
@@ -191,12 +198,19 @@ def test_web_system_events_are_only_the_supersession_of_its_approved_rule(db, pe
     cli = run(db, "INSERT INTO standing_event (note_seq, value, set_by, reason, correlation_id) "
                   "VALUES (%s, 'approved', %s, 'cli', 'c') RETURNING seq", (n2, U))[0]
     n9, ref9 = note(db, "a better convention", kind="convention", links=[{"type": "supersedes", "ref": ref3}])
-    c9 = challenge(db, su, U, "standing", {"items": [{"ref": ref9, "to": "approved"}], "reason": "better"})
+    retires = [{"ref": ref3, "id": ref3.split("@")[1], "was": None}]
+    c9 = challenge(db, su, U, "standing", {"items": [{"ref": ref9, "to": "approved"}], "reason": "better",
+                                           "retires": retires})
     act9 = run(db, ACT, (c9, U, "standing", b"u" * 16), role=WEB)[0]
-    ev9 = run(db, EVENT, (n9, "approved", U, "better", act9, None), role=WEB)[0]
-    refused(db, EVENT, (n2, "retired", "system", "x", None, ev9), role=WEB, match="row-level security")
-    refused(db, EVENT, (n3, "retired", "system", "x", None, cli), role=WEB, match="row-level security")
-    run(db, EVENT, (n3, "retired", "system", "superseded", None, ev9), role=WEB)
+    with db.transaction():  # the act's own transaction (026: a signed retirement is written with its cause)
+        db.execute(f"SET LOCAL ROLE {WEB}")
+        ev9 = db.execute(EVENT, (n9, "approved", U, "better", act9, None)).fetchone()[0]
+        for bad in ((n3, "approved", "system", "x", None, ev9), (n2, "retired", "system", "x", None, ev9),
+                    (n3, "retired", "system", "x", None, cli)):
+            with pytest.raises(psycopg.Error), db.transaction():
+                db.execute(EVENT, bad)
+        db.execute(EVENT, (n3, "retired", "system", "superseded", None, ev9))
+    refused(db, EVENT, (n3, "retired", "system", "again", None, ev9), role=WEB, match="not a retirement signed")
 
 
 def test_the_owner_path_is_unchanged(db):

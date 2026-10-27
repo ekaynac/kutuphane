@@ -1,14 +1,17 @@
-"""T-DEP (docs/25 §3.2, §12.2): check the deployed curator web sidecar from a device of the operator's tailnet.
+"""T-DEP (docs/25 §3.2, §12.2): check the deployed curator web sidecar on the docker host, which is on the tailnet.
 
     python3 deploy/curator_probe.py https://kutuphane-curator.<tailnet>.ts.net [--compose-project kutuphane]
 
 Checks, each printed as PASS or FAIL:
   1. HTTPS 443 answers with the curator page and the strict headers (CSP frame-ancestors 'none', nosniff,
      no-referrer); plain HTTP 80 and another port do not answer;
-  2. `tailscale funnel status` inside the sidecar container is empty (also run it again after a sidecar restart);
+  2. `tailscale funnel status --json` inside the sidecar container shows no AllowFunnel (also run it again after a
+     sidecar restart);
   3. the curator container has no published port, and Core's network cannot reach it (curator:8090 from `core`);
   4. a POST from another origin is refused (403).
-Standard library and the docker CLI only. It changes nothing.
+Standard library and the docker CLI only. It changes nothing. Checks 2 and 3 run docker on the host of the containers
+(`<project>-tailscale-1`, `-curator-1`, `-core-1`): a docker failure, a missing container or an empty Funnel status is
+FAIL, and Core "cannot reach" curator only on a DNS or connection error.
 """
 import argparse
 import http.client
@@ -40,8 +43,52 @@ def closed(host: str, port: int) -> bool:
         return True
 
 
-def docker(*args: str) -> str:
-    return subprocess.run(["docker", *args], capture_output=True, text=True, timeout=30).stdout
+UNREACHABLE = "UNREACHABLE"
+# Inside Core: only a DNS or a connection error means "cannot reach"; any other failure is not a test (exit 1).
+REACH = ("import socket, sys\n"
+         "try:\n"
+         "    socket.create_connection(('curator', 8090), timeout=3)\n"
+         "except (socket.gaierror, ConnectionError, TimeoutError) as exc:\n"
+         f"    print('{UNREACHABLE}', type(exc).__name__); sys.exit(3)\n")
+
+
+def docker(*args: str) -> subprocess.CompletedProcess:
+    try:
+        return subprocess.run(["docker", *args], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return subprocess.CompletedProcess(["docker", *args], 127, "", str(exc))
+
+
+def failed(r: subprocess.CompletedProcess) -> str:
+    return f"docker exit {r.returncode}: {(r.stderr or '').strip()[:120]}"
+
+
+def docker_checks(project: str) -> list[bool]:
+    """Checks 2 and 3. Each one fails when docker fails or cannot see its container: run the probe where they run."""
+    names = {k: f"{project}-{k}-1" for k in ("tailscale", "curator", "core")}
+    seen = {k: docker("inspect", "--type", "container", n).returncode == 0 for k, n in names.items()}
+    results = [check(f"container {n} exists", seen[k]) for k, n in names.items()]
+    if seen["tailscale"]:
+        r = docker("exec", names["tailscale"], "tailscale", "funnel", "status", "--json")
+        try:
+            status = json.loads(r.stdout) if r.returncode == 0 and r.stdout.strip() else None
+        except ValueError:
+            status = None
+        ok = isinstance(status, dict) and not status.get("AllowFunnel")
+        results.append(check("Funnel is off in the sidecar", ok,
+                             r.stdout.strip()[:120] if r.returncode == 0 and r.stdout.strip()
+                             else failed(r) if r.returncode else "empty funnel status"))
+    if seen["curator"]:
+        r = docker("port", names["curator"])
+        results.append(check("the curator container publishes no port", r.returncode == 0 and not r.stdout.strip(),
+                             r.stdout.strip() if r.returncode == 0 else failed(r)))
+    if seen["core"] and seen["curator"]:
+        r = docker("exec", names["core"], "python", "-c", REACH)
+        results.append(check("Core cannot reach curator web", r.returncode == 3 and UNREACHABLE in r.stdout,
+                             r.stdout.strip()[:120] or failed(r)))
+    return results
+
+
 
 
 def main() -> int:
@@ -62,19 +109,7 @@ def main() -> int:
     status, _, _ = https(host, "POST", "/auth/passkey/options", b"{}", {"content-type": "application/json",
                                                                        "origin": "https://evil.example"})
     results.append(check("a POST from another origin is refused", status == 403, f"status {status}"))
-    sidecar = f"{args.compose_project}-tailscale-1"
-    funnel = docker("exec", sidecar, "tailscale", "funnel", "status", "--json")
-    try:
-        on = bool(json.loads(funnel or "{}").get("AllowFunnel"))
-    except ValueError:
-        on = True
-    results.append(check("Funnel is off in the sidecar", not on, funnel.strip()[:120]))
-    ports = docker("port", f"{args.compose_project}-curator-1")
-    results.append(check("the curator container publishes no port", not ports.strip(), ports.strip()))
-    reach = subprocess.run(["docker", "exec", f"{args.compose_project}-core-1", "python", "-c",
-                            "import socket; socket.create_connection(('curator', 8090), timeout=3)"],
-                           capture_output=True, text=True, timeout=30)
-    results.append(check("Core cannot reach curator web", reach.returncode != 0))
+    results.extend(docker_checks(args.compose_project))
     return 0 if all(results) else 1
 
 

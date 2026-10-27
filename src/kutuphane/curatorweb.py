@@ -70,7 +70,7 @@ def _standing(conn, act: passkey.Act) -> dict:
     """The rows of a `standing` statement (docs/25 §5.4 step 7, §6.5)."""
     items = [{"ref": i["ref"], "to": i["to"], "was": i["was"]} for i in act.payload["items"]]
     out = curation.apply(conn, principal=act.principal, items=items, reason=act.payload["reason"], act=act.seq,
-                         need_read=True, check_was=True, integrity=True)
+                         need_read=True, check_was=True, integrity=True, retires=act.payload["retires"])
     return {"act": act.seq, "items": out}
 
 
@@ -83,6 +83,7 @@ def _standing_fields(conn, principal: str, body: dict) -> dict:
                                 reason=reason, need_read=True, integrity=True)
     return {"items": sorted(({"ref": i["ref"], "id": i["id"], "was": i["was"], "to": i["to"]} for i in prepared),
                             key=lambda i: i["ref"]),
+            "retires": curation.signed(curation.retirements(conn, prepared)),  # docs/25 §5.2: signed and shown
             "reason": reason}
 
 

@@ -107,7 +107,7 @@ kutuphane curator enroll user:ayse            # owner credential (KUTUPHANE_CURA
 - The person opens the URL on the phone. The code gives a short `enrollment` session that can only register.
 - Registration: `residentKey: required`, `userVerification: required`, `attestation: none`, the algorithms of `py_webauthn` (EdDSA, ES256, RS256), `excludeCredentials` = the person's passkeys, the person's user handle. A response without UV, or with a wrong origin, `crossOrigin` or `topOrigin`, is refused.
 - The database lets curator web insert a passkey only with an unused enrollment of the same person that is live at `clock_timestamp()` (keys + trigger). Only the owner role makes a person or an enrollment.
-- After the registration, the CLI command prints the new credential (id, created, synced or device-bound). `kutuphane curator passkeys [user:…]` lists them; `kutuphane curator revoke-passkey <id>` sets `revoked_at` (owner only). A lost phone = revoke, then enroll again. One enrollment registers one passkey.
+- After the registration, the CLI command prints the new credential (id, created, synced or device-bound). `kutuphane curator passkeys [user:…]` lists them; `kutuphane curator revoke-passkey <id>` sets `revoked_at` (owner only) and ends every session of that passkey; a session of a revoked passkey is refused in any case (§4.6). A lost phone = revoke, then enroll again. One enrollment registers one passkey. `kutuphane curator end-sessions <user>` ends every session of a person (a stolen cookie). `kutuphane curator cancel-enrollment <en_…>` cancels an unused code (a leaked code) and ends its session. An enrollment session registers only for its own code (`curator_session.enrollment`, §4.6).
 - **Limit:** with `attestation: none`, nothing proves later which authenticator registered a key. The enrollment code is entered in curator web, so this step is only as strong as the trusted base (§3.5). The operator compares the printed list with the enrollments made.
 
 ### 3.5 Trusted base, threats and answers
@@ -612,11 +612,13 @@ GRANT UPDATE (ended_at) ON curator_session TO kutuphane_curator_web;
 DROP POLICY IF EXISTS standing_event_web ON standing_event;
 CREATE POLICY standing_event_web ON standing_event FOR INSERT TO kutuphane_curator_web
     WITH CHECK (act IS NOT NULL
-                OR (set_by = 'system' AND EXISTS (       -- docs/24 §8.3: the supersession of a rule it approved
+                OR (set_by = 'system' AND value = 'retired' AND EXISTS (  -- docs/24 §8.3: a retirement its act signs
                         SELECT 1 FROM standing_event c
                           JOIN note_link l ON l.src = c.note_seq AND l.type = 'supersedes' AND l.creation
                          WHERE c.seq = standing_event.cause_seq AND c.act IS NOT NULL AND c.value = 'approved'
                            AND l.dst_note = standing_event.note_seq)));
+-- Migration 026 (trigger standing_event_retires_signed) adds: the target is in the `retires` list of the cause's act
+-- statement, and the cause event is of this transaction (§4.6).
 
 -- Decider runner (D73): suggestions and uses only. The database writes the approval (025 trigger).
 GRANT USAGE ON SCHEMA public TO kutuphane_decider;
@@ -630,6 +632,18 @@ GRANT INSERT ON note_suggestion, delegation_use, model_call, access_event TO kut
 - The app role keeps `SELECT` on `origin_confirmation`, `origin_withdrawal` and `standing_event` (shown origin, `approved_by`).
 - The trigger functions that write (`delegation_use_approve`, `standing_event_sample_verdict`) are `SECURITY DEFINER` with a fixed `search_path`.
 - All Standing writers take the memory advisory lock before their first `nextval`.
+- The system branch of `standing_event_web` allows only `retired`, of a note that a creation `supersedes` link of the act's approved rule names. With the 026 trigger, the target must also be in the `retires` list of that act's signed statement, and the cause event must be of the same transaction (security review #16, finding 3).
+
+### 4.6 `026_curator_review16.sql` (security review #16)
+
+| Field or object | Behavior |
+|---|---|
+| `curator_session.credential_id` (key with `principal` to `passkey`) | a `passkey` session names the passkey of its login (required for `login = 'passkey'`). `session()` refuses it when the passkey is revoked; `revoke-passkey` also sets `ended_at` |
+| `curator_session.enrollment` (key with `principal` to `curator_enrollment`) | an `enrollment` session names its enrollment (required for `login = 'enrollment'`); registration uses this enrollment only |
+| `curator_enrollment.cancelled_at` | set by `curator cancel-enrollment` (owner only); a cancelled enrollment opens no session and registers no passkey (`passkey_enrollment_live` checks it) |
+| trigger `standing_event_retires_signed` | a system event whose cause is an act event is `retired`, its note is in the `retires` list of that act's statement, and the cause event is of this transaction. A cause without an act (the CLI, `rollback`) is not affected |
+
+The sessions that are open when 026 runs end; the two session checks are `NOT VALID` for these ended rows only.
 
 ## 5. Passkey ceremonies
 
@@ -650,7 +664,7 @@ The statement is a JSON object. Canonical JSON gives unambiguous framing; a plai
 
 | Action | Statement (besides `v`, `action`, `rp_id`, `principal`, `nonce` (32 random bytes from the server, base64url), `expires_at`) |
 |---|---|
-| `standing` | `items: [{ref, id, was, to}]` sorted by `ref`; `reason` (the exact text) |
+| `standing` | `items: [{ref, id, was, to}]` sorted by `ref`; `retires: [{ref, id, was}]` sorted by `ref`, the approved predecessors that a rule approval retires (docs/24 §8.3), shown on the sign sheet; `reason` (the exact text) |
 | `confirm` | `item: {ref, id, write}`; `claim`; `entered_by` |
 | `withdraw` | `confirmation`; `item: {ref, id}` |
 | `delegate` | `delegation: {id, book, kind, decider, spec_sha256, min_confidence, sample_every, expires_at}` |
@@ -678,7 +692,7 @@ One transaction. It takes the memory lock **first**; every time is compared with
 4. `webauthn.verify_authentication_response(credential=…, expected_challenge=…, expected_rp_id=RP_ID, expected_origin=ORIGIN, credential_public_key=…, credential_current_sign_count=passkey.sign_count, require_user_verification=True)`: the type `webauthn.get`, the challenge, the origin, the RP ID hash, the UP and UV flags, the signature, and the counter (`py_webauthn` 3.0.1 refuses when either counter is non-zero and the new one is not higher; a passkey that always gives 0 passes).
 5. Our checks on the raw `clientDataJSON` (`py_webauthn` does not keep these fields): `crossOrigin` is absent or false; no `topOrigin`. The credential belongs to P and is not revoked; a `userHandle`, if present, equals the person's handle.
 6. `UPDATE passkey SET sign_count = <new> WHERE credential_id = … AND sign_count = <old>` (one row, or refuse).
-7. The rights of the action now, with `authz.direct` (`curate` is never delegated): `standing`, `delegate`, `end_delegation`: `curate` and `read` on each book; `confirm`: §7.4; `withdraw`: the confirmer. For each item: the note digest (§5.2) and the Standing event in force is still `was`; the action rules (§6.5, §7, §8). Insert the act, then the rows of the statement; one `access_event` (action `curate`, items `[{ref, standing_seq}]`). Commit.
+7. The rights of the action now, with `authz.direct` (`curate` is never delegated): `standing`, `delegate`, `end_delegation`: `curate` and `read` on each book; `confirm`: §7.4; `withdraw`: the confirmer. For each item: the note digest (§5.2) and the Standing event in force is still `was`; the retirements that a rule approval causes, computed again, are exactly the signed `retires` (else 409), and only these are written; the action rules (§6.5, §7, §8). Insert the act, then the rows of the statement; one `access_event` (action `curate`, items `[{ref, standing_seq}]`). Commit.
 8. The receipt: the events, and for each note its suggestion and, for a sample, "this was a check of delegation <id>" (§6.4, §8.4).
 
 A login runs steps 2–6 for its `login` challenge (`userHandle` required), then makes the session. A registration checks steps 2–3 and 5 on the attestation response with `verify_registration_response(…, require_user_verification=True)`.
@@ -694,11 +708,12 @@ A login runs steps 2–6 for its `login` challenge (`userHandle` required), then
 | enrollment code | 15 minutes, one passkey | database check (≤ 1 hour), unique key, trigger |
 | session | 8 hours, no renewal | database check |
 | Standing in force | `was` per item | step 7 |
+| retirements of a rule approval | `retires` of the statement | step 7; 026 trigger |
 | counter | must increase when non-zero, over logins and acts | steps 4, 6 |
 
 ### 5.6 Offline check of every act
 
-`kutuphane curator verify-acts [--since SEQ]` (owner credential, read only) checks, for each act: the stored statement gives the stored challenge; the assertion verifies against the stored key, origin and RP ID, with UV; and the rows that name the act are exactly the rows that its statement asks for. A mismatch is reported with the act seq. It finds rows that a compromised curator web wrote without a person's signature. It cannot find a signature that a person gave over a misleading page (§3.5).
+`kutuphane curator verify-acts [--since SEQ]` (owner credential, read only) checks, for each act: the stored statement gives the stored challenge; the assertion verifies against the stored key, origin and RP ID, with UV; and the rows that name the act are exactly the rows that its statement asks for; for `standing`, the system events caused by the act's events are exactly its `retires` (an act made before 026 has no `retires`, so a retirement it caused is reported as unsigned). A mismatch is reported with the act seq. It finds rows that a compromised curator web wrote without a person's signature. It cannot find a signature that a person gave over a misleading page (§3.5).
 
 ## 6. The curator queue (#77)
 

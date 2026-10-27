@@ -91,37 +91,62 @@ def _event(conn, seq: int, value: str, set_by: str, reason: str, correlation: st
                         (seq, value, set_by, cause, reason, correlation, act)).fetchone()[0]
 
 
-def _supersede(conn, item: dict, event: int, correlation: str) -> dict:
-    """docs/24 §8.3: the approval of a rule note retires the approved predecessors it supersedes with exactly the
-    same scope (system events, cause = its event); the curator sees the other current rules of the repository."""
+def retirements(conn, prepared: list[dict]) -> list[dict]:
+    """docs/24 §8.3: the approved predecessors with exactly the same scope that the rule approval of an act retires
+    (`[{ref, id, was, seq}]`, by ref). Curator web puts them in the signed statement (`retires`, docs/25 §5.2); a note
+    that is itself an item of the act is not one of them."""
+    items = {i["seq"] for i in prepared}
+    out = []
+    for item in prepared:
+        if item["to"] != "approved" or item["kind"] not in ROLE_RULE:
+            continue
+        for p_seq, p_id, repo, branch, paths in conn.execute(
+                "SELECT p.seq, p.id, p.scope_repo, p.scope_branch, p.scope_paths FROM note_link l "
+                "JOIN note p ON p.seq = l.dst_note WHERE l.src = %s AND l.type = 'supersedes' AND l.creation "
+                "AND p.book = %s ORDER BY p.seq", (item["seq"], item["book"])).fetchall():
+            if p_seq in items or (repo, branch, sorted(paths)) != item["scope"]:
+                continue
+            current, event = notes_.effective_standing(conn, [p_seq], notes_.NOW)[p_seq]
+            if current == "approved":
+                out.append({"ref": f"{item['book']}@{p_id}", "id": p_id, "was": event, "seq": p_seq,
+                            "by": item["ref"]})
+    return sorted(out, key=lambda r: r["ref"])
+
+
+def signed(retires: list[dict]) -> list[dict]:
+    """The form of the retirements in a statement."""
+    return [{"ref": r["ref"], "id": r["id"], "was": r["was"]} for r in retires]
+
+
+def _rules_same_repo(conn, item: dict) -> list[str]:
+    """The other current rules of the repository, which the curator sees after a rule approval."""
     book, seq = item["book"], item["seq"]
-    retired = []
-    for p_seq, p_id, repo, branch, paths in conn.execute(
-            "SELECT p.seq, p.id, p.scope_repo, p.scope_branch, p.scope_paths FROM note_link l "
-            "JOIN note p ON p.seq = l.dst_note WHERE l.src = %s AND l.type = 'supersedes' AND l.creation "
-            "AND p.book = %s ORDER BY p.seq", (seq, book)).fetchall():
-        same_scope = (repo, branch, sorted(paths)) == item["scope"]
-        if same_scope and notes_.effective_standing(conn, [p_seq], notes_.NOW)[p_seq][0] == "approved":
-            _event(conn, p_seq, "retired", "system", f"superseded by {item['ref']}", correlation, cause=event)
-            retired.append(f"{book}@{p_id}")
     rules = conn.execute("SELECT seq, id FROM note WHERE book = %s AND seq <> %s AND kind = ANY(%s) "
                          "AND scope_repo IS NOT DISTINCT FROM %s ORDER BY seq",
                          (book, seq, sorted(ROLE_RULE), item["scope"][0])).fetchall()
     standing = notes_.effective_standing(conn, [s for s, _ in rules], notes_.NOW)
-    return {"retired": retired, "rules_same_repo": [f"{book}@{i}" for s, i in rules if standing[s][0] == "approved"]}
+    return [f"{book}@{i}" for s, i in rules if standing[s][0] == "approved"]
 
 
 def apply(conn, *, principal: str, items: list[dict], reason: str, act: int | None = None, need_read: bool = False,
-          check_was: bool = False, integrity: bool = False, correlation: str | None = None) -> list[dict]:
-    """The act. The caller holds the transaction and the memory lock (`notes._lock`)."""
+          check_was: bool = False, integrity: bool = False, correlation: str | None = None,
+          retires: list[dict] | None = None) -> list[dict]:
+    """The act. The caller holds the transaction and the memory lock (`notes._lock`). `retires` is the signed list of
+    retirements (curator web): the act writes exactly these, or raises Changed when the set in force differs."""
     prepared = prepare(conn, principal=principal, items=items, reason=reason, need_read=need_read,
                        check_was=check_was, integrity=integrity)
+    planned = retirements(conn, prepared)
+    if retires is not None and signed(planned) != retires:
+        raise Changed("the notes that this approval retires changed since they were shown: reload")
     correlation = correlation or uuid.uuid4().hex
     out = []
     for item in prepared:
         event = _event(conn, item["seq"], item["to"], principal, reason, correlation, act=act)
         result = {"ref": item["ref"], "standing": item["to"], "event_seq": event}
         if item["to"] == "approved" and item["kind"] in ROLE_RULE:
-            result.update(_supersede(conn, item, event, correlation))
+            mine = [r for r in planned if r["by"] == item["ref"]]
+            for r in mine:
+                _event(conn, r["seq"], "retired", "system", f"superseded by {item['ref']}", correlation, cause=event)
+            result.update({"retired": [r["ref"] for r in mine], "rules_same_repo": _rules_same_repo(conn, item)})
         out.append(result)
     return out
