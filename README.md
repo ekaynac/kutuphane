@@ -105,6 +105,7 @@ The web UI is at `/ui/`. Reference: `docs/guide/http-api.md`.
 - `ai_input: n` text never reaches a model; a `local_only` book never reaches a cloud route; all model calls go through LLMDAP.
 - Origin comes from the write path; only a curator with a separate database credential changes Standing.
 - Secrets are refused at ingest and in notes; code citations read confined bare mirrors only.
+- Optional SkillSpector scan of skills at ingest: a `DO_NOT_INSTALL`, partial or failed scan blocks the skill for agents until a curator clears it; `SAFE` grants nothing.
 
 Details: `docs/guide/security.md`.
 

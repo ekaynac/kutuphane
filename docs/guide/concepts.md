@@ -214,6 +214,11 @@ A person reads them with `read`. An agent also needs `activate` on the book. Wit
 those passages to the agent, and `read_document` refuses them. Each delivery is logged. A note is never an agent
 instruction.
 
+**Skill scan (D71).** When SkillSpector is installed, each skill folder is scanned at ingest. The scan result is a
+proposal to the curator (origin `tool`), never an approval. A `DO_NOT_INSTALL` result, a scan that did not cover the
+whole skill, or a failed scan blocks the skill for agents, also with `activate`. Only a curator lifts the block
+(`kutuphane skill clear`). `SAFE` gives no right. See [security.md](security.md#skill-scan-skillspector).
+
 ## Outcomes and feedback
 
 - **Outcomes** (`record_outcome`): `passed`, `failed`, `reverted` or `reopened` for a task, on one exact note or

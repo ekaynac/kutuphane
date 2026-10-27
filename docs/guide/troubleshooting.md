@@ -19,7 +19,7 @@ Find the message or the symptom in the left column. Do the step in the right col
 | Status | Body | Cause and fix |
 |---|---|---|
 | 401 | `unauthenticated` | No token, an expired token, another issuer or audience, or a key that is not in the JWKS. Check the token with `echo "$TOKEN" \| kutuphane whoami`. |
-| 403 | `forbidden` | The principal has no right for this book and mode now. For an agent that acts for a person: check the delegation and the person's own right. For agent instructions: the agent needs `activate`. |
+| 403 | `forbidden` | The principal has no right for this book and mode now. For an agent that acts for a person: check the delegation and the person's own right. For agent instructions: the agent needs `activate`. If the agent has `activate`, the file can be in a skill that a scan blocks: run `kutuphane skill show <book>`. |
 | 404 | `not found` | The object does not exist, or the caller may not see it. A job of another principal is also "not found". |
 | 409 | `authorization changed during the request; retry` | Rights changed twice during one read. Send the request again. |
 | 409 | `idempotency_key reused with another request` | Use a new key for a new request. Use the same key only for an exact retry. |
@@ -44,13 +44,19 @@ or `Mcp-Method` header that differs from the body. Check that your reverse proxy
 | `ingest` or `index` exits with code 3 | The book is published, but some vectors are missing (`index_error`, `failed`, `not_attempted`). Run `kutuphane index <book>` later. |
 | search is slow while indexing | The CPU embedder serves one call at a time. Index at a quiet time with smaller batches (`KUTUPHANE_INDEX_BATCH`, `KUTUPHANE_INDEX_BATCH_CHARS`). Keep the concurrency at 1. |
 | `restricted content cannot be cloud_ok` | `--sensitivity restricted` needs `--egress local_only`. |
+| `skill blocked for agents (…): <skill-folder>` | A SkillSpector scan gave `DO_NOT_INSTALL`, did not cover the whole skill, or failed. People can still read it. Run `kutuphane skill show <book>` and read the findings. Fix the skill and ingest again, or let a curator lift the block: `kutuphane skill clear <book> <skill-folder> --curator user:<name> --reason '…'` with `KUTUPHANE_CURATOR_DSN`. |
+| `skill blocked … scan failed: timeout after 120 s` | The scan took too long. Raise `KUTUPHANE_SKILLSPECTOR_TIMEOUT`, then run `kutuphane skill rescan --book <book>`. The block stays until a curator clears it. |
+| `skill not scanned: … KUTUPHANE_SKILLSPECTOR_BIN is not set` | SkillSpector is not configured. This does not block. To scan, install it (`install.md`) and run `kutuphane skill rescan`. |
+| `skill not scanned: skillspector <version> is not the tested <version>` | The installed SkillSpector is not the pinned version. Install the pin with `deploy/skillspector/install.sh`, or allow that exact version with `KUTUPHANE_SKILLSPECTOR_ALLOW_VERSION=<version>`. |
+| `install.sh`: `refused: sha256 mismatch` | The downloaded tarball is not the pinned one. Do not install it. Use a verified copy with `SKILLSPECTOR_TARBALL=<file>`. |
 
 ## Notes and curation
 
 | Symptom | Cause and fix |
 |---|---|
-| `KUTUPHANE_CURATOR_DSN is not set (the curator credential)` | `note standing` and `note rollback` need the owner DSN. Type it at the prompt; do not store it where an agent can read it. |
+| `KUTUPHANE_CURATOR_DSN is not set (the curator credential)` | `note standing`, `note rollback` and `skill clear` need the owner DSN. Type it at the prompt; do not store it where an agent can read it. |
 | a curator is refused | The user needs `curate` on the book now: `kutuphane grant book:<journal> curate user:<name>`. |
+| `skill clear`: `no block on skill '<folder>'` | The current version has no uncleared block for that folder. Give the folder of the `SKILL.md` (`.` for the book root), as `kutuphane skill show <book>` lists it. |
 | `curate is held only by users, directly` | You cannot grant `curate` to an agent or a role. |
 | `… was approved before: rejected means never accepted (D68); use retired` | Use `retired`. |
 | `<from> -> <to> is not a Standing transition` | Allowed: `pending` → `approved`/`rejected`, `approved` → `retired`, `rejected`/`retired` → `pending`. |

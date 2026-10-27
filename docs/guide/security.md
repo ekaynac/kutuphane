@@ -14,7 +14,7 @@ This page describes what Kütüphane protects, against whom, and how. The design
 | An agent approves its own notes | an agent calls a curation tool | no MCP tool and no HTTP route changes Standing |
 | Restricted text reaches a model | `ai_input: n` text in an embedding or an answer prompt | the `ai_input` gate before every embed, rerank and answer |
 | Text leaves the machine | a `local_only` book on a cloud route | the egress check in Core, LLMDAP policy, internal networks |
-| Prompt injection in sources | a document says "ignore your instructions" | the answer prompt treats passages as source text only; agent instructions need `activate` |
+| Prompt injection in sources | a document says "ignore your instructions" | the answer prompt treats passages as source text only; agent instructions need `activate`; a skill that SkillSpector blocks is refused to agents |
 | A credential is indexed | an API key in an ingested file or a note | the secret scan refuses the book or the note |
 | A poisoned note spreads | agents derive notes from a false finding | `kutuphane note rollback` retires the whole `derived_from` closure and reports every use |
 | A git mirror is a trap | alternates, grafts or config that make git read other files or run commands | the repository confinement checks |
@@ -57,7 +57,7 @@ adds a book.
 | `ai_use.search` | not `y`: the file or note is not indexed and not in text filters |
 | `ai_use.ai_input` | not `y`: no embedding, no rerank, not in an answer prompt; model readers get `text: null` and `withheld` |
 | `ai_use.train` | not `y`: a decision export has only hashes |
-| `activate` | an agent gets agent-instruction passages only with `activate` on the book; each delivery is logged |
+| `activate` | an agent gets agent-instruction passages only with `activate` on the book; each delivery is logged. A skill that a scan blocks is refused to agents even with `activate` (see below) |
 | personal data | `export` of a file with `personal_data` not `no`/`synthetic` needs `--legal-basis` (DPV codes) |
 
 In a manifest, an absent term is "not stated" and counts as `n`. A file with no manifest follows its book policy
@@ -80,11 +80,46 @@ confirmation bound to the note digest will give it later (D70 R3, D72).
 
 - Only the database owner role can insert Standing events. The app role (`kutuphane_app`, used by the server)
   cannot (`deploy/db-roles.sql`).
-- `kutuphane note standing` and `kutuphane note rollback` need `KUTUPHANE_CURATOR_DSN`. The named curator must hold
-  `curate` on the book now. `curate` is for users only, granted directly, never delegated.
+- `kutuphane note standing`, `kutuphane note rollback` and `kutuphane skill clear` need `KUTUPHANE_CURATOR_DSN`. The
+  named curator must hold `curate` on the book now. `curate` is for users only, granted directly, never delegated.
 - The CLI trusts its operator. So the curator credential is the boundary. An agent that can read it can curate as
   any user. Keep it out of every environment that an agent can read.
 - Memory rows (`note`, `write_record`, `note_link`, `note_citation`, `outcome`) are append-only for the app role.
+- Skill scan records are append-only for the app role (it can only mark a record `stale`). The app role cannot
+  write a skill clearance, so it cannot lift a block.
+
+## Skill scan (SkillSpector)
+
+SkillSpector (D71) is an optional, external static scanner of skill folders. Kütüphane runs it as a subprocess
+from its own environment. It never imports, copies or ships it. Install and commands: [operations.md](operations.md).
+
+**What blocks `activate`.** For an agent, every file of a skill folder is refused when a scan of that folder:
+- recommends `DO_NOT_INSTALL`;
+- did not cover the whole skill (completeness is not `complete`);
+- failed (a crash, a timeout, output that is not a valid report, or a report of another version). A failed scan
+  blocks, so a skill cannot escape the scan when it breaks the scanner.
+
+The block applies to `read_document`, `kutuphane read`, `open_citation`, agent search (the passages are left out
+before ranking), and `ask_library`/`reopen_answer` for agents. It is in force in the same transaction that
+publishes the version. Each refusal is an `access_event` (`activate`, refused, "skill blocked by a scan").
+
+**What does not block.** `SAFE` and `CAUTION` give no right: an agent still needs `activate`. `not_scanned` (no
+SkillSpector configured, or a version that is not allowed) does not block; the operator can still decide otherwise.
+
+**Only a person lifts a block.** A scan is a proposal (origin `tool`), never an approval. A later scan never lifts a
+block, also when it says `SAFE`. A curator with `curate` lifts it with `kutuphane skill clear`; the clearance is
+recorded and covers only those bytes and that report.
+
+**Environment and egress.** SkillSpector runs with `--no-llm` and only `PATH`, `HOME` (an empty temporary folder)
+and `LANG`: no provider keys, no `LANGSMITH_*`, no Kütüphane variables. Its supply-chain check (SC4) sends the
+dependency names that a skill declares to `api.osv.dev`, also with `--no-llm`. To block this, set
+`KUTUPHANE_SKILLSPECTOR_PROXY=http://127.0.0.1:9` (a dead port); SC4 then uses its bundled list. To allow it, give a
+proxy that permits only `api.osv.dev`. Without the variable, the egress follows the network of the host that runs
+the scan.
+
+**Supply chain.** `deploy/skillspector/install.sh` installs only the pinned version, from the tag tarball with a
+known sha256, and its dependencies from the upstream lock with hash checks. SkillSpector is one layer, not proof:
+it does not read images or binaries, and attacks against it are researched.
 
 ## Secret scan
 
@@ -131,6 +166,7 @@ Code citations read bare mirrors that an administrator registers (`kutuphane rep
   outbound network, and each hosted call still needs an `llm:egress` grant.
 - `deploy/egress_probe.py` proves it from inside Core: no default route, outside names do not resolve, forbidden
   addresses refuse a connection.
+- SkillSpector sends dependency names to `api.osv.dev` unless you block it (see "Skill scan" above).
 
 ## Web and HTTP
 

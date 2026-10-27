@@ -9,6 +9,12 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Skill scan (SkillSpector, D71)
+
+- Optional: `deploy/skillspector/install.sh` installs the pinned SkillSpector 2.13.1 (tag tarball sha256 checked) into its own environment. With `KUTUPHANE_SKILLSPECTOR_BIN`, `ingest`, `approve-import` and `skill rescan` scan each skill folder with `--no-llm` and record the result as a curator proposal; `receive` shows it as a finding ([#109](https://github.com/ekaynac/kutuphane/pull/109)).
+- `DO_NOT_INSTALL`, a scan that does not cover the whole skill, or a failed scan blocks the skill for agents at once, also with `activate` (`read_document`, `open_citation`, search, answers). `SAFE` gives no right; `not_scanned` does not block ([#109](https://github.com/ekaynac/kutuphane/pull/109)).
+- New commands: `kutuphane skill show`, `kutuphane skill rescan`, and `kutuphane skill clear` (a curator with `curate` and `KUTUPHANE_CURATOR_DSN`; recorded). A new SkillSpector version marks old results stale. Migration `021_skill_scan.sql`: after `migrate`, apply `deploy/db-roles.sql` again ([#109](https://github.com/ekaynac/kutuphane/pull/109)).
+
 ### kstd (draft 0.3, D74)
 
 - `kutuphane kstd-init` states no `ai_use` term: until you state the terms, no file is indexed or sent to a model. It writes `standard: kstd/0.3`; a `kstd/0.2` manifest is still accepted, and `issued` is optional ([#108](https://github.com/ekaynac/kutuphane/pull/108)).

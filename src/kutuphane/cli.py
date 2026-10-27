@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import (answers, audit, authz, catalog, coderepo, db, decisions, devauth, gate, identity, kstd, llmdap, notes,
-               packages, profiles, search, retrieval, signing, vectors)
+               packages, profiles, search, retrieval, signing, skillscan, vectors)
 from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, make_policy
 from .source import AcceptedFinding, read_source
 
@@ -43,6 +43,18 @@ def _warn_quarantined(result: catalog.Published) -> None:
         print(f"quarantined (stored, not indexed): {q['path']}: {q['reason']}", file=sys.stderr)
 
 
+def _warn_skills(scans: list[dict]) -> None:
+    """A blocked skill is published but refused to agents (D71); say so where a person looks."""
+    for s in scans:
+        if s["blocking"]:
+            verdict = f"{s['recommendation']} {s['score']}, coverage {s['completeness']}" if s["status"] == "scanned" \
+                else f"scan failed: {s['reason']}"
+            print(f"skill blocked for agents ({verdict}): {s['skill_path']}; `kutuphane skill show` lists the "
+                  "findings, a curator lifts the block with `kutuphane skill clear`", file=sys.stderr)
+        elif s["status"] == "not_scanned":
+            print(f"skill not scanned: {s['skill_path']}: {s['reason']}", file=sys.stderr)
+
+
 INDEX_INCOMPLETE = 3  # exit code: the version is published (live), but some of its passages have no vector yet
 
 
@@ -64,6 +76,7 @@ def _published_then_index(conn, published: catalog.Published, embedder: llmdap.R
     """A published version is live; indexing comes after it and cannot undo it (G12). The publication result is
     always printed; an index failure is reported with it, and the exit code is then INDEX_INCOMPLETE."""
     _warn_quarantined(published)
+    _warn_skills(published.skill_scans)
     report = {}
     if embedder:
         try:
@@ -342,6 +355,38 @@ def cmd_note_rollback(conn, args) -> int:
     return 0
 
 
+def cmd_skill_show(conn, args) -> int:
+    try:
+        _print(skillscan.show(conn, args.book))
+    except LookupError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
+def cmd_skill_rescan(conn, args) -> int:
+    try:
+        scans = skillscan.rescan(conn, args.book)
+    except LookupError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    _warn_skills(scans)
+    _print(scans)
+    return 0
+
+
+def cmd_skill_clear(conn, args) -> int:
+    """The curator act (docs/24 §22): connected with KUTUPHANE_CURATOR_DSN, the only credential that can write a
+    clearance. The CLI records the curator named here, who must hold `curate` on the book now."""
+    try:
+        _print(skillscan.clear(conn, args.book, args.path, curator=args.curator, reason=args.reason))
+    except (PermissionError, LookupError) as exc:
+        print(f"denied: {exc}", file=sys.stderr)
+        return 3
+    return 0
+
+
+
 def cmd_whoami(_conn, args) -> int:
     token = sys.stdin.readline().strip()  # never on the command line (shell history, process list)
     try:
@@ -554,6 +599,21 @@ def parser() -> argparse.ArgumentParser:
     de.add_argument("--book", action="append", help="only this journal (repeatable); default: every readable one")
     de.add_argument("--on-behalf-of")
     de.set_defaults(fn=cmd_decisions_export)
+    sk = sub.add_parser("skill", help="SkillSpector scans of skill folders (D71, docs/24 §22)")
+    sksub = sk.add_subparsers(dest="skill_cmd", required=True)
+    ss = sksub.add_parser("show", help="the scan records of a book's current version: proposals, blocks, clearances")
+    ss.add_argument("book")
+    ss.set_defaults(fn=cmd_skill_show)
+    sr = sksub.add_parser("rescan", help="scan again where no fresh record of the configured tool version exists "
+                                         f"({skillscan.BIN_ENV})")
+    sr.add_argument("--book", help="only this book; default: every book")
+    sr.set_defaults(fn=cmd_skill_rescan)
+    sc = sksub.add_parser("clear", help="lift the scan block of one skill as a curator (needs KUTUPHANE_CURATOR_DSN)")
+    sc.add_argument("book")
+    sc.add_argument("path", help="the skill folder (the folder of its SKILL.md; '.' for the book root)")
+    sc.add_argument("--curator", required=True, help="user:<name>, who holds curate on the book")
+    sc.add_argument("--reason", required=True)
+    sc.set_defaults(fn=cmd_skill_clear, curator_db=True)
     return ap
 
 

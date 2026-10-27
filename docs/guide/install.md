@@ -87,8 +87,8 @@ Kütüphane uses two database roles:
 
 | Role | Used by | Can |
 |---|---|---|
-| `kutuphane` (owner) | `kutuphane migrate`, `kutuphane note standing`, `kutuphane note rollback` (`KUTUPHANE_CURATOR_DSN`) | everything |
-| `kutuphane_app` | the server and every process that an agent can reach (`KUTUPHANE_DSN`) | no Standing writes; memory rows are append-only |
+| `kutuphane` (owner) | `kutuphane migrate`, `kutuphane note standing`, `kutuphane note rollback`, `kutuphane skill clear` (`KUTUPHANE_CURATOR_DSN`) | everything |
+| `kutuphane_app` | the server and every process that an agent can reach (`KUTUPHANE_DSN`) | no Standing writes, no skill clearances; memory rows and skill scan records are append-only |
 
 Do these steps once, as the owner:
 
@@ -184,6 +184,27 @@ built. What works today:
 - The `core` service in `compose.yaml` always sets `KUTUPHANE_LLMDAP_URL` (default `http://llmdap:8787`). So in
   compose, use the full stack. Without compose, run the server on the host as in the quick start.
 
+## Optional: SkillSpector
+
+SkillSpector (NVIDIA) scans skill folders at ingest (D71). It is optional and not part of the Kütüphane package or
+image. Install it on the machine where you run `kutuphane ingest`, `receive` and `skill rescan`. You need `uv`,
+`curl` and Python 3.12–3.14.
+
+```sh
+deploy/skillspector/install.sh /opt/skillspector        # or SKILLSPECTOR_PREFIX=…; default /opt/skillspector
+export KUTUPHANE_SKILLSPECTOR_BIN=/opt/skillspector/bin/skillspector
+export KUTUPHANE_SKILLSPECTOR_PROXY=http://127.0.0.1:9  # optional: block its OSV.dev requests
+.venv/bin/python -m pytest -q tests/test_skillspector_contract.py   # the contract test of the installed version
+```
+
+- The script installs only the version in `deploy/skillspector/skillspector.pin`. It refuses a tarball whose sha256
+  is not the pinned one. On a host without network, download the tarball elsewhere and give it with
+  `SKILLSPECTOR_TARBALL=<file>`; the sha256 check still applies.
+- It refuses a folder that is not empty. It copies SkillSpector's `LICENSE` and `THIRD_PARTY_NOTICES.md` to
+  `PREFIX/share/skillspector/`.
+- The contract test checks the version, the report format and the verdicts on known samples.
+- What a scan does and blocks: [operations.md](operations.md) ("Skill scan") and [security.md](security.md).
+
 ## Reboot and restart
 
 - No service in the compose files has a `restart:` policy. After a host reboot, start the stack again with the
@@ -200,4 +221,6 @@ built. What works today:
 1. Pull or check out the new version.
 2. Run `kutuphane migrate` with the owner DSN, then apply `deploy/db-roles.sql` (step 2).
 3. Rebuild and start: `docker compose --profile app up -d --build`.
-4. Read `changelog.md` for changes that need an action, for example a re-ingest or a re-index.
+4. If you use SkillSpector and the pin changed, install the new pin into a new folder, point
+   `KUTUPHANE_SKILLSPECTOR_BIN` at it, and run `kutuphane skill rescan`.
+5. Read `changelog.md` for changes that need an action, for example a re-ingest or a re-index.
