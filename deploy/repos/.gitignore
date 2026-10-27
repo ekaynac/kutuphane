@@ -1,0 +1,3 @@
+# The default KUTUPHANE_REPO_DIR: the operator's bare mirrors (compose mounts it read-only). Never committed.
+*
+!.gitignore

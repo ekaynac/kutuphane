@@ -3,7 +3,9 @@
 - The caller is ONLY what a verified access token says (D50, AT-11): `Authorization: Bearer <jwt>`; no header can
   set or change the principal or the user acted for. Each request gets a fresh correlation id.
 - Every content path is the authorization gate the library already uses (search, citations, files, answers).
-- Errors are short and uniform (401/403/404/400/409/502); no stack traces or internals in responses.
+- Errors are short and uniform (401/403/404/400/409/429/502); no stack traces or internals in responses.
+- MCP: the SDK v2 `MCPServer`, stateless; it serves 2025-11-25 clients (with `initialize`) and 2026-07-28 clients
+  (without) from one app (docs/24 §12.1). A long `ask_library` can run as a durable job (`jobs`, §12.2).
 """
 import contextlib
 import dataclasses
@@ -13,11 +15,12 @@ import os
 import urllib.parse
 import uuid
 
+from mcp.server import CacheHint, MCPServer
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.extension import Extension
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
@@ -26,14 +29,15 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import answers, db, feedback, gate, identity, kstd, llmdap, retrieval, search
+from . import (answers, coderepo, db, feedback, gate, identity, ids, jobs, kstd, llmdap, notes, notesquery, retrieval,
+               search)
 from .gate import Actor
 from .ids import normalize_path
 
 # Feature modules (docs/24 §16 P0). Each may define `register_mcp(mcp, deps)` (adds its MCP tools) and
 # `http_routes(deps, endpoint) -> list[Route]` (its HTTP routes). They are called in this order, after the built-in
 # tools and routes, so the tool list and the route table stay in a fixed order.
-FEATURES: tuple = ()
+FEATURES: tuple = (notes, coderepo, notesquery)
 
 log = logging.getLogger(__name__)
 ENV = {"model": "KUTUPHANE_ANSWER_MODEL", "public_url": "KUTUPHANE_PUBLIC_URL"}
@@ -98,7 +102,12 @@ def op_search(dsn, stages, actor: Actor, query: str, k: int, model_reader: bool 
     return _run(dsn, go)
 
 
-def op_citation(dsn, actor: Actor, handle: str, model_reader: bool = False) -> dict:
+def op_citation(dsn, actor: Actor, handle: str, model_reader: bool = False, context: dict | None = None) -> dict:
+    """A passage handle, or a note reference with the optional context (docs/24 §9.4)."""
+    if notesquery.is_note_ref(handle):
+        return _run(dsn, lambda c: notesquery.open_note(c, actor, for_model=_for_model(actor, model_reader),
+                                                        ref=handle, **(context or {})))
+
     def go(conn):
         hit = search.open_citation(conn, actor, parse_citation(handle))
         c = hit.citation
@@ -109,11 +118,21 @@ def op_citation(dsn, actor: Actor, handle: str, model_reader: bool = False) -> d
     return _run(dsn, go)
 
 
-def op_ask(dsn, bridge, model: str, stages, actor: Actor, question: str, scope: search.Scope = search.Scope()) -> dict:
+def _check_question(question) -> None:
     if not isinstance(question, str) or not question.strip():
         raise BadRequest("question is required")
     _check_query(question)
+
+
+def op_ask(dsn, bridge, model: str, stages, actor: Actor, question: str, scope: search.Scope = search.Scope()) -> dict:
+    _check_question(question)
     return _run(dsn, lambda c: answers.ask(c, bridge, actor, question, model=model, stages=stages, scope=scope))
+
+
+def op_submit(dsn, actor: Actor, question: str, scope: search.Scope, idempotency_key) -> tuple[dict, bool]:
+    """`ask_library(background=true)`: ({job_id, status}, created) at once (docs/24 §12.2)."""
+    _check_question(question)
+    return _run(dsn, lambda c: jobs.submit(c, actor, question, scope, idempotency_key))
 
 
 def _flag(value) -> bool:
@@ -125,10 +144,26 @@ def _flag(value) -> bool:
     raise BadRequest("current_only must be true or false")
 
 
-def op_reopen(dsn, actor: Actor, answer_id: str, model_reader: bool = False) -> dict:
-    out = _run(dsn, lambda c: answers.reopen(c, actor, answer_id))
+def _shown_answer(out: dict, actor: Actor, model_reader: bool) -> dict:
     ai = _for_model(actor, model_reader)
     return {**out, "evidence": [{**e, **_text(e["text"], e["item"], ai)} for e in out["evidence"]]}
+
+
+def op_reopen(dsn, actor: Actor, answer_id: str, model_reader: bool = False) -> dict:
+    return _shown_answer(_run(dsn, lambda c: answers.reopen(c, actor, answer_id)), actor, model_reader)
+
+
+def op_job_status(dsn, actor: Actor, job_id: str) -> dict:
+    return _run(dsn, lambda c: jobs.status(c, actor, job_id))
+
+
+def op_job_result(dsn, actor: Actor, job_id: str, model_reader: bool = False) -> dict:
+    """The `reopen_answer` of the job's answer, with the same text rules for model readers."""
+    return _shown_answer(_run(dsn, lambda c: jobs.result(c, actor, job_id)), actor, model_reader)
+
+
+def op_job_cancel(dsn, actor: Actor, job_id: str) -> dict:
+    return _run(dsn, lambda c: jobs.cancel(c, actor, job_id))
 
 
 def op_file(dsn, actor: Actor, book: str, content_id: str, path: str,
@@ -174,6 +209,8 @@ ERRORS = [  # order matters: subclasses first
     (gate.Denied, 403, "forbidden"),
     (gate.NotFound, 404, "not found"),
     (llmdap.EgressError, 502, "model service unavailable or refused"),
+    (ids.IdempotencyConflict, 409, None),
+    (ids.LimitExceeded, 429, None),
     (ValueError, 400, None),  # BadRequest, query/k validation, path validation: message is safe and useful
 ]
 
@@ -184,6 +221,20 @@ def _classify(exc: Exception) -> tuple[int, str] | None:
         if isinstance(exc, kind):
             return status, message or str(exc)
     return None
+
+
+def _safe_error(exc: Exception) -> str:
+    """The short message a failed job stores: the HTTP error class text, never the exception's internals."""
+    known = _classify(exc)
+    return known[1] if known else "internal error"
+
+
+def _background(background, idempotency_key) -> bool:
+    if not isinstance(background, bool):
+        raise BadRequest("background must be true or false")
+    if idempotency_key is not None and not background:
+        raise BadRequest("idempotency_key needs background: true")
+    return background
 
 
 def _error(exc: Exception) -> Response:
@@ -242,7 +293,8 @@ class Deps:
 
 def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge | None, model: str | None,
                public_url: str, ui_dir: str | None = None,
-               stages: retrieval.Stages = retrieval.Stages(), features: tuple | None = None) -> Starlette:
+               stages: retrieval.Stages = retrieval.Stages(), features: tuple | None = None,
+               job_workers: int = jobs.DEFAULT_WORKERS) -> Starlette:
     features = FEATURES if features is None else features
     deps = Deps(dsn, bridge, model, stages)
 
@@ -273,7 +325,9 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
                                                                 False, scope)})
 
     async def h_citation(request, actor):
-        return JSONResponse(await run_in_threadpool(op_citation, dsn, actor, request.query_params.get("handle", "")))
+        q = request.query_params
+        context = {k: q[k] for k in ("repo", "branch", "path", "commit") if k in q}
+        return JSONResponse(await run_in_threadpool(op_citation, dsn, actor, q.get("handle", ""), False, context))
 
     async def h_ask(request, actor):
         if bridge is None or not model:
@@ -285,11 +339,24 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
         if not isinstance(body, dict):
             raise BadRequest("JSON object required")
         scope = search.Scope.of(body.get("book"), body.get("path"), body.get("origin"), body.get("current_only", False))
+        key = body.get("idempotency_key")
+        if _background(body.get("background", False), key):
+            job, created = await run_in_threadpool(op_submit, dsn, actor, body.get("question"), scope, key)
+            return JSONResponse({**job, "correlation_id": actor.correlation_id}, status_code=202 if created else 200)
         result = await run_in_threadpool(op_ask, dsn, bridge, model, stages, actor, body.get("question"), scope)
         return JSONResponse({**result, "correlation_id": actor.correlation_id})
 
     async def h_answer(request, actor):
         return JSONResponse(await run_in_threadpool(op_reopen, dsn, actor, request.path_params["answer_id"]))
+
+    async def h_job(request, actor):
+        return JSONResponse(await run_in_threadpool(op_job_status, dsn, actor, request.path_params["job_id"]))
+
+    async def h_job_result(request, actor):
+        return JSONResponse(await run_in_threadpool(op_job_result, dsn, actor, request.path_params["job_id"]))
+
+    async def h_job_cancel(request, actor):
+        return JSONResponse(await run_in_threadpool(op_job_cancel, dsn, actor, request.path_params["job_id"]))
 
     async def h_file(request, actor):
         p = request.path_params
@@ -317,10 +384,19 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
     mcp = build_mcp(dsn=dsn, verifier=verifier, bridge=bridge, model=model, public_url=public_url, stages=stages,
                     features=features)
 
+    def run_ask(conn, actor, question, scope, check) -> str:
+        return answers.ask(conn, bridge, actor, question, model=model, stages=stages, scope=scope, check=check)["id"]
+
+    workers = jobs.Workers(dsn, run_ask, _safe_error, job_workers if bridge is not None and model else 0)
+
     @contextlib.asynccontextmanager
     async def lifespan(_app):
         async with mcp.session_manager.run():
-            yield
+            workers.start()
+            try:
+                yield
+            finally:
+                await run_in_threadpool(workers.stop)
 
     app = Starlette(routes=[
         Route("/healthz", h_health),
@@ -330,10 +406,13 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
         Route("/v1/citation", endpoint(h_citation)),
         Route("/v1/ask", endpoint(h_ask), methods=["POST"]),
         Route("/v1/answers/{answer_id}", endpoint(h_answer)),
+        Route("/v1/jobs/{job_id}", endpoint(h_job)),
+        Route("/v1/jobs/{job_id}/result", endpoint(h_job_result)),
+        Route("/v1/jobs/{job_id}/cancel", endpoint(h_job_cancel), methods=["POST"]),
         Route("/v1/files/{book}/{content_id}/{path:path}", endpoint(h_file)),
         Route("/v1/feedback", endpoint(h_feedback), methods=["GET", "POST"]),
         *(route for f in features if hasattr(f, "http_routes") for route in f.http_routes(deps, endpoint)),
-        Mount("/", app=mcp.streamable_http_app()),  # serves /mcp and the protected-resource metadata
+        Mount("/", app=mcp_http_app(mcp, public_url)),  # serves /mcp and the protected-resource metadata
     ], lifespan=lifespan)
     app.add_middleware(SecurityHeaders)
     return app
@@ -354,7 +433,19 @@ class _Verifier:
             return None
         return AccessToken(token=token, client_id="kutuphane-mcp", scopes=[], subject=actor.principal,
                            claims={"kutuphane_principal": actor.principal,
-                                   "kutuphane_on_behalf_of": actor.on_behalf_of})
+                                   "kutuphane_on_behalf_of": actor.on_behalf_of,
+                                   "kutuphane_client_id": actor.client_id})
+
+
+class _ClientCredentials(Extension):
+    """Advertised in `server/discover` (docs/24 §12.4): headless clients get tokens by OAuth client credentials at
+    the IdP. The resource server only verifies them; it stores no client secret."""
+    identifier = "io.modelcontextprotocol/oauth-client-credentials"
+
+
+# docs/24 §12.1: the tool list is the same for every caller and changes only with a deployment.
+CACHE_HINTS = {"tools/list": CacheHint(ttl_ms=300_000, scope="public"),
+               "server/discover": CacheHint(ttl_ms=300_000, scope="public")}
 
 
 def _mcp_errors(tool):
@@ -377,18 +468,18 @@ def _mcp_actor() -> Actor:
     if token is None or not token.claims:
         raise identity.AuthenticationError("no verified token")
     return Actor(token.claims["kutuphane_principal"], token.claims["kutuphane_on_behalf_of"],
-                 correlation_id=uuid.uuid4().hex, channel="mcp")
+                 correlation_id=uuid.uuid4().hex, client_id=token.claims.get("kutuphane_client_id"), channel="mcp")
 
 
 def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_url: str,
-              stages: retrieval.Stages = retrieval.Stages(), features: tuple | None = None) -> FastMCP:
+              stages: retrieval.Stages = retrieval.Stages(), features: tuple | None = None) -> MCPServer:
+    """The MCP server. Its tools are registered in a fixed order (built-ins, then features), so `tools/list` is
+    stable. The host app mounts `mcp_http_app` of it."""
     features = FEATURES if features is None else features
-    public = urllib.parse.urlsplit(public_url)
-    security = TransportSecuritySettings(enable_dns_rebinding_protection=True, allowed_hosts=[public.netloc],
-                                         allowed_origins=[f"{public.scheme}://{public.netloc}"])
-    mcp = FastMCP("kutuphane", token_verifier=_Verifier(verifier), stateless_http=True, transport_security=security,
-                  auth=AuthSettings(issuer_url=verifier.issuer, resource_server_url=public_url,
-                                    validate_token_resource=False))  # our verifier checks `aud` itself
+    mcp = MCPServer("kutuphane", token_verifier=_Verifier(verifier), extensions=[_ClientCredentials()],
+                    cache_hints=CACHE_HINTS,
+                    auth=AuthSettings(issuer_url=verifier.issuer, resource_server_url=public_url,
+                                      validate_token_resource=False))  # our verifier checks `aud` itself
 
     @mcp.tool()
     @_mcp_errors
@@ -403,19 +494,27 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
 
     @mcp.tool()
     @_mcp_errors
-    async def open_citation(handle: str) -> dict:
-        """Open a citation handle: the exact passage of that version, if you may read it now."""
-        return await run_in_threadpool(op_citation, dsn, _mcp_actor(), handle, True)
+    async def open_citation(handle: str, repo: str | None = None, branch: str | None = None,
+                            path: str | None = None, commit: str | None = None) -> dict:
+        """Open a citation handle: the exact passage of that version, if you may read it now. A note reference
+        (book@nt_…) gives the note, with `current` in the optional context (repo, branch, path, commit)."""
+        context = {"repo": repo, "branch": branch, "path": path, "commit": commit}
+        return await run_in_threadpool(op_citation, dsn, _mcp_actor(), handle, True, context)
 
     @mcp.tool()
     @_mcp_errors
     async def ask_library(question: str, book: list[str] | None = None, path: str | None = None,
-                          origin: list[str] | None = None, current_only: bool = False) -> dict:
+                          origin: list[str] | None = None, current_only: bool = False, background: bool = False,
+                          idempotency_key: str | None = None) -> dict:
         """Answer from the library with [n] citations, or status not_in_library. The optional filters are those of
-        search_library."""
+        search_library. With `background: true` it returns {job_id, status: queued} at once: poll job_status, then
+        job_result. An `idempotency_key` (8-128 characters) makes a retried submission return the same job."""
         if bridge is None or not model:
             raise llmdap.EgressError("no model route configured")
         scope = search.Scope.of(book, path, origin, current_only)
+        if _background(background, idempotency_key):
+            job, _created = await run_in_threadpool(op_submit, dsn, _mcp_actor(), question, scope, idempotency_key)
+            return job
         return await run_in_threadpool(op_ask, dsn, bridge, model, stages, _mcp_actor(), question, scope)
 
     @mcp.tool()
@@ -442,11 +541,38 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
                                        {"book": book, "content_id": content_id, "path": path, "outcome": outcome,
                                         "tested_on": tested_on, "note": note})
 
+    @mcp.tool()
+    @_mcp_errors
+    async def job_status(job_id: str) -> dict:
+        """The state of a background ask_library job: queued, running, succeeded, failed or cancelled."""
+        return await run_in_threadpool(op_job_status, dsn, _mcp_actor(), job_id)
+
+    @mcp.tool()
+    @_mcp_errors
+    async def job_result(job_id: str) -> dict:
+        """The answer of a succeeded job, as reopen_answer shows it (current rights apply)."""
+        return await run_in_threadpool(op_job_result, dsn, _mcp_actor(), job_id, True)
+
+    @mcp.tool()
+    @_mcp_errors
+    async def job_cancel(job_id: str) -> dict:
+        """Cancel a background job: a queued job stops at once; a running one before its model call or its result."""
+        return await run_in_threadpool(op_job_cancel, dsn, _mcp_actor(), job_id)
+
     deps = Deps(dsn, bridge, model, stages)
     for f in features:
         if hasattr(f, "register_mcp"):
             f.register_mcp(mcp, deps)
     return mcp
+
+
+def mcp_http_app(mcp: MCPServer, public_url: str) -> Starlette:
+    """/mcp and the protected-resource metadata: stateless (no `Mcp-Session-Id`; both protocol eras), and only for
+    the public host and origin (DNS rebinding)."""
+    public = urllib.parse.urlsplit(public_url)
+    security = TransportSecuritySettings(enable_dns_rebinding_protection=True, allowed_hosts=[public.netloc],
+                                         allowed_origins=[f"{public.scheme}://{public.netloc}"])
+    return mcp.streamable_http_app(stateless_http=True, transport_security=security)
 
 
 def app_from_env() -> Starlette:
@@ -462,4 +588,4 @@ def app_from_env() -> Starlette:
     ui_dir = os.environ.get("KUTUPHANE_UI_DIR") or None
     return create_app(dsn=os.environ[db.DSN_ENV], verifier=identity.Verifier.from_env(), bridge=bridge,
                       model=os.environ[ENV["model"]], public_url=os.environ[ENV["public_url"]], ui_dir=ui_dir,
-                      stages=retrieval.Stages.from_env())
+                      stages=retrieval.Stages.from_env(), job_workers=jobs.workers_from_env())

@@ -2,7 +2,8 @@
 
 `dev-keys DIR` writes a private key (mode 600) and the matching JWKS; point KUTUPHANE_OIDC_JWKS at the JWKS.
 `dev-token` signs a short-lived token with the same claims an IdP would emit: `sub`, optional
-`kutuphane/principal_type: agent`, optional RFC 8693 `act` for an agent acting for the user.
+`kutuphane/principal_type: agent`, optional RFC 8693 `act` for an agent acting for the user, optional `client_id`
+(RFC 9068: the OAuth client the token was issued to).
 """
 import json
 import os
@@ -38,7 +39,7 @@ def make_keys(directory: Path) -> dict:
 
 
 def make_token(private_key: Path, *, issuer: str, audience: str, sub: str, agent: bool = False,
-               act: str | None = None) -> str:
+               act: str | None = None, client_id: str | None = None) -> str:
     _require_dev()
     now = int(time.time())
     claims = {"iss": issuer, "aud": audience, "sub": sub, "iat": now, "exp": now + TTL_SECONDS}
@@ -46,5 +47,7 @@ def make_token(private_key: Path, *, issuer: str, audience: str, sub: str, agent
         claims["kutuphane/principal_type"] = "agent"
     if act:
         claims["act"] = {"sub": act}
+    if client_id:
+        claims["client_id"] = client_id
     key = serialization.load_pem_private_key(private_key.read_bytes(), password=None)
     return jwt.encode(claims, key, algorithm="RS256", headers={"kid": KID})

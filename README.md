@@ -76,11 +76,55 @@ docker compose -f compose.yaml -f deploy/compose.local-models.yaml \
   --profile app --profile decision-models --profile local-models up -d --build
 ```
 
+Agent memory (R1, `docs/24`): a **journal** is a book whose items are notes that agents write with `propose_note`
+(MCP) or `POST /v1/notes`, and link with `link_notes` / `POST /v1/notes/links`. Writers need the `propose` mode.
+A note starts `pending`; only a curator changes its Standing, and only on the command line:
+
+```sh
+.venv/bin/kutuphane journal create adc-memory --search y --ai-input y \
+  --sensitivity normal --egress local_only --protection standard --by user:admin
+.venv/bin/kutuphane grant book:adc-memory propose agent:adc
+.venv/bin/kutuphane grant book:adc-memory curate user:ayse      # users only; never delegated
+KUTUPHANE_CURATOR_DSN=… .venv/bin/kutuphane note standing adc-memory@nt_… approved --curator user:ayse --reason "…"
+```
+
+Database roles: the server and every process an agent can reach connect as `kutuphane_app`
+(`KUTUPHANE_APP_DB_PASSWORD` in `.env`), which cannot write Standing. `KUTUPHANE_CURATOR_DSN` is the owner role
+(`kutuphane migrate`, `kutuphane note standing`); keep it out of every environment an agent can read. Create the
+app role once (`CREATE ROLE kutuphane_app LOGIN PASSWORD '…'`), then apply `deploy/db-roles.sql` as the owner
+after every `kutuphane migrate`. Without `KUTUPHANE_CURATOR_DSN`, `migrate` uses `KUTUPHANE_DSN` (one-role
+development databases). `KUTUPHANE_NOTE_WRITES_PER_DAY` (500) limits writes per principal;
+`KUTUPHANE_NOTE_DUP_SIMILARITY` (0.90) is the vector candidate threshold.
+
 Identity and egress (M1c) are configured by environment:
 `KUTUPHANE_OIDC_ISSUER`, `KUTUPHANE_OIDC_AUDIENCE`, `KUTUPHANE_OIDC_JWKS` (path to a JWKS file);
 `KUTUPHANE_LLMDAP_URL`, `KUTUPHANE_LLMDAP_KEY` (Core's LLMDAP subject key; LLMDAP runs with
 `GATEWAY_AUTH_MODE=subject-keys` and grants that subject `llm:invoke` on the routes), `KUTUPHANE_LLMDAP_ROUTE`,
 `KUTUPHANE_LLMDAP_ROUTE_CLASS` (`local` or `cloud`; local_only books never go to a cloud route).
+
+Authentication (docs/24 §12.4): the IdP issues every token; Kütüphane stores no client secret and accepts no static
+API key.
+
+- A person: an interactive login; the principal is `user:<sub>`.
+- A headless client on its own rights (an orchestrator): OAuth client credentials at the IdP (a client secret or
+  `private_key_jwt`). The IdP mapper sets `kutuphane/principal_type: agent` and `sub` = the agent name, so the
+  principal is `agent:<name>`. Grant it what it needs directly (`kutuphane grant book:<slug> read agent:<name>`).
+- A headless client for a person: an RFC 8693 token exchange at the IdP (the person's token from a one-time
+  interactive consent, the client-credentials token as the actor token). The token has `sub` = the person and
+  `act.sub` = the agent; the agent also needs a live delegation from the person, as for any agent.
+- The token's `client_id` (RFC 9068), else `azp`, is recorded as the client. It never changes rights or origin.
+  `kutuphane dev-token <sub> --client-id <id>` makes such a development token.
+
+MCP (`/mcp`) is stateless and serves 2025-11-25 clients (with `initialize`) and 2026-07-28 clients (no `initialize`;
+the reverse proxy must pass the `Mcp-Method` and `Mcp-Name` headers). `server/discover` advertises the
+`io.modelcontextprotocol/oauth-client-credentials` extension. `python3 deploy/mcp_probe.py <ingress URL>` checks both
+versions through the proxy (`KUTUPHANE_PROBE_TOKEN`; `--journal <book>` also proposes a note).
+MCP tools, in `tools/list` order: `search_library`, `open_citation`, `ask_library`, `reopen_answer`,
+`read_document`, `record_runbook_feedback`, `job_status`, `job_result`, `job_cancel`, `propose_note`, `link_notes`,
+`verify_citations`, `query_notes`, `neighbours`. `query_notes` lists notes (`sets`: `current`, `open`, `history`;
+context `repo`/`branch`/`path`/`commit`; `collapse` merges only `same_as` groups) with no model call; HTTP
+`GET /v1/notes` and `GET /v1/notes/{book}/{id}/neighbours`.
+
 Hybrid search (optional): `KUTUPHANE_LLMDAP_EMBED_ROUTE` (an LLMDAP `surface: "embeddings"` route, openai schema),
 `KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS`, `KUTUPHANE_EMBED_MODEL` (the route's pinned model, e.g. `bge-m3`). `ingest` and
 `approve-import` then embed the new version; `kutuphane index <book>` fills in missing vectors.
@@ -115,6 +159,16 @@ first 1,200 characters of each passage (the target passage size; G26).
 `echo "$TOKEN" | kutuphane whoami` verifies a token; `kutuphane explain <correlation-id> --llmdap-export audit.jsonl`
 prints the unified audit.
 
+Code repositories of a journal (docs/24 §10): `kutuphane repo add <journal> <slug> <git_dir> --ref 'refs/heads/*'
+--by user:admin` registers a bare mirror; `kutuphane repo remove <journal> <slug>` stops its use. Kütüphane never
+fetches: keep the mirror current yourself (for example a cron `git fetch`). The mirror must be inside
+`KUTUPHANE_REPO_ROOTS` (absolute directories, `:`-separated; compose mounts `KUTUPHANE_REPO_DIR`, default
+`./deploy/repos`, read-only at `/srv/repos`), with no symlink in its path, no alternates, no `commondir`, no promisor
+pack and only plain `core.*`, `extensions.objectformat` and `remote.*` url/fetch/mirror keys in its `config`. Only
+commits that the `--ref` patterns reach can be cited. `verify_citations` (MCP) and `POST /v1/citations/verify`
+(`{"book", "citations", "at"}`, `at` = a branch name or a full commit id) report `verified`, `stale` (with
+`moved_to`), `missing` or `unverifiable` with a reason, and never return code text. The server needs git ≥ 2.45.
+
 Search and answers (`kutuphane search`, `kutuphane ask`, `GET /v1/search`, `POST /v1/ask`, MCP `search_library`
 and `ask_library`):
 
@@ -129,6 +183,15 @@ and `ask_library`):
   whole passage (G26). A reference can name one or more passages: `[2]`, `[2,3]`, `[2-4]`, `[2–4]` (G21). Every
   number is checked before a range is expanded; one unknown number or one malformed group (`[1-2-3]`) refuses the
   answer.
+- **Background answers (docs/24 §12.2).** `ask_library(…, background: true)` and `POST /v1/ask` with
+  `"background": true` (202) return `{job_id, status: "queued"}` at once. Then `job_status` / `GET /v1/jobs/{id}`,
+  `job_result` / `GET /v1/jobs/{id}/result` (the stored answer, as `reopen_answer` shows it, with current rights) and
+  `job_cancel` / `POST /v1/jobs/{id}/cancel`. An `idempotency_key` (8–128 characters of `A-Z a-z 0-9 . _ : -`) makes a
+  retried submission return the same job (200); the same key with another request is refused (409). Only the same
+  principal acting for the same user, or that user directly, sees a job; anyone else gets 404. At most 3 open jobs
+  per principal (429). The server runs `KUTUPHANE_JOB_WORKERS` workers (default 1; 0 runs none). A job whose worker
+  stopped is `failed: interrupted` when its lease ends and never runs again. Finished jobs are deleted after 7 days;
+  their answers stay.
 - **Two languages (G19).** When the passages found are in Turkish and in English, the answer model translates the
   question (`KUTUPHANE_ANSWER_MODEL` on `KUTUPHANE_LLMDAP_ROUTE`; `ask --model`). Only the question goes to the
   model. A second search runs with the translation, the merged passages are authorized again in one statement (a
