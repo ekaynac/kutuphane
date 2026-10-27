@@ -305,9 +305,10 @@ def _lock(conn) -> None:
 
 
 def _check_limit(conn, actor: Actor) -> None:
-    """One daily budget per principal for every memory write: proposes, links and outcomes (§6.1, §21.1)."""
+    """One daily budget per principal for every memory write over MCP and HTTP: proposes, links and outcomes (§6.1,
+    §21.1). The operator's CLI import (§23) is not counted."""
     limit = int(os.environ.get(WRITES_ENV) or WRITES_DEFAULT)
-    count = conn.execute("SELECT (SELECT count(*) FROM write_record WHERE principal = %(p)s "
+    count = conn.execute("SELECT (SELECT count(*) FROM write_record WHERE principal = %(p)s AND channel <> 'cli' "
                          "                                     AND at > now() - interval '1 day') "
                          "     + (SELECT count(*) FROM outcome WHERE principal = %(p)s "
                          "                                     AND at > now() - interval '1 day')",
@@ -403,11 +404,14 @@ def item_info(conn, note_seq: int) -> dict:
 def create_journal(conn, *, book: str, title: str, search: bool, ai_input: bool, policy: dict, by: str,
                    train: bool = False) -> dict:
     """A journal is a new book with no content version and the `journal` profile; `search` and `ai_input` are both
-    stated (missing = deny, docs/22 §3). `train` (§21.3) is false unless stated: missing = deny."""
+    stated (missing = deny, docs/22 §3). `train` (§21.3) is false unless stated: missing = deny. A `restricted`
+    journal never leaves the installation (§23), so it never allows `train`."""
     if not BOOK.match(book):
         raise ValueError("book must be a book slug")
     _principal("creator", by)
     policy = check_policy(policy)
+    if train and policy["sensitivity"] == "restricted":
+        raise ValueError("a restricted journal cannot allow train: its notes are never exported")
     profile = profiles.spec(profiles.JOURNAL)
     policy_id, profile_id = ids.policy_id(policy), ids.profile_id(profile)
     with conn.transaction():
@@ -566,6 +570,16 @@ def _insert_parts(conn, draft: Draft, seq: int, write_seq: int, found: dict, exc
                       excerpts[n]))
     for kind, t in draft.links:
         _insert_link(conn, seq, draft.book, kind, t, found, creation=True, write_seq=write_seq)
+
+
+def _existing_link(conn, src: int, kind: str, target, found: dict) -> bool:
+    if target[0] == "note":
+        return conn.execute("SELECT 1 FROM note_link WHERE src = %s AND type = %s AND dst_note = %s",
+                            (src, kind, found[(target[1], target[2])][0])).fetchone() is not None
+    c = target[1]
+    return conn.execute("SELECT 1 FROM note_link WHERE src = %s AND type = %s AND dst_book = %s "
+                        "AND dst_content_id = %s AND dst_profile_id = %s AND dst_path = %s AND dst_ordinal = %s",
+                        (src, kind, c.book, c.content_id, c.profile_id, c.path, c.ordinal)).fetchone() is not None
 
 
 def _insert_link(conn, src: int, src_book: str, kind: str, target, found: dict, *, creation: bool,
@@ -745,17 +759,9 @@ def link(conn, actor: Actor, src: str, kind: str, dst: str) -> tuple[dict, bool]
         _lock(conn)
         found = _notes(conn, [("note", src_book, src_id)] + ([target] if target[0] == "note" else []))
         src_seq = found[(src_book, src_id)][0]
-        if target[0] == "note":
-            existing = conn.execute("SELECT seq FROM note_link WHERE src = %s AND type = %s AND dst_note = %s",
-                                    (src_seq, kind, found[(target[1], target[2])][0])).fetchone()
-        else:
-            c = target[1]
-            _passages_exist(conn, [c])
-            existing = conn.execute("SELECT seq FROM note_link WHERE src = %s AND type = %s AND dst_book = %s "
-                                    "AND dst_content_id = %s AND dst_profile_id = %s AND dst_path = %s "
-                                    "AND dst_ordinal = %s",
-                                    (src_seq, kind, c.book, c.content_id, c.profile_id, c.path, c.ordinal)).fetchone()
-        if existing:
+        if target[0] == "passage":
+            _passages_exist(conn, [target[1]])
+        if _existing_link(conn, src_seq, kind, target, found):
             return {**result, "status": "existing"}, False
         if target[0] == "note" and found[(target[1], target[2])][0] == src_seq:
             raise ValueError("a note cannot link to itself")

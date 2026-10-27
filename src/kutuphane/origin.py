@@ -1,8 +1,9 @@
 """Origin from the write path (D70; docs/24 §5). The server computes it; a client can only ask for a lower value.
 
 R2: an agent path (an `agent:` principal, a user acted for, or the MCP channel) is `model`. R4/R6: anything else (a
-`user:` principal without `act`, over HTTP) is `unknown` in R1. R1 never stores `human`: a token is not a person's
-act on exact bytes; `human` comes only from the later R3 passkey confirmation. `unknown` is handled as `model`.
+`user:` principal without `act`, over HTTP or the CLI import of docs/24 §23) is `unknown` in R1. R1 never stores
+`human`: a token is not a person's act on exact bytes; `human` comes only from the later R3 passkey confirmation.
+`unknown` is handled as `model`.
 """
 from .gate import Actor
 from .kstd import ORIGINS
@@ -12,7 +13,8 @@ STORED = ("model", "unknown")  # lowest first: the shown origin of a note is the
 
 
 def computed(actor: Actor) -> str:
-    direct_user = actor.principal.startswith("user:") and actor.on_behalf_of is None and actor.channel == "http"
+    direct_user = actor.principal.startswith("user:") and actor.on_behalf_of is None \
+        and actor.channel in ("http", "cli")
     return "unknown" if direct_user else "model"
 
 

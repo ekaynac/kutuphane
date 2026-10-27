@@ -46,7 +46,7 @@ Every book has a policy with three mandatory axes (`src/kutuphane/policy.py`):
 
 | Axis | Values | Effect |
 |---|---|---|
-| `sensitivity` | `normal`, `restricted` | `restricted` cannot be `cloud_ok` |
+| `sensitivity` | `normal`, `restricted` | `restricted` cannot be `cloud_ok`. A `restricted` book is never in a package. A note with a `restricted` book in its sources is never in the decision export. A `restricted` journal cannot allow `train`. |
 | `egress` | `local_only`, `cloud_ok` | content of a `local_only` book never goes to a `cloud` model route |
 | `protection` | `standard` | the only value today |
 

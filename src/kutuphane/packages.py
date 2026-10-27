@@ -53,6 +53,8 @@ def export(conn, book: str, key, legal_basis: str | None = None) -> bytes:
         raise PackageError(f"no such book: {book}")
     if state["content_id"] is None:  # a journal (docs/24 §14): its notes are not exported in R1
         raise PackageError(f"{book} has no content version to export")
+    if state["policy"]["sensitivity"] == "restricted":  # docs/09 §1: Sensitivity owns export
+        raise PackageError(f"{book} is restricted: restricted content never leaves this installation in a package")
     rights = kstd.Rights(conn)
     infos = {e["path"]: info for e in state["files"]
              if (info := rights.info(book, state["content_id"], e["path"])) is not None}

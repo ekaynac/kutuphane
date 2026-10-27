@@ -11,6 +11,8 @@ models: the context, the options offered, the choice, the actor, the outcome row
 - A record of a note that depends on a skill that a scan blocks (D71, SQL `note_skill_blocked`) is cut in the same
   way, whoever exports: the export is model input. The final statement of the gate reads those blocks with the
   rights (Astra review #15).
+- A note with a `restricted` book in its `source_books` (book policy now) is left out: Sensitivity owns export
+  (docs/09 §1, docs/24 §23). The summary counts them (`restricted`).
 """
 import hashlib
 from datetime import datetime, timezone
@@ -23,7 +25,9 @@ WITHHELD = "rights do not allow AI training (ai_input and train)"
 
 _DECISIONS = """
 SELECT n.seq, n.book, n.id, n.body, n.class_key, n.scope_repo, n.scope_branch, n.scope_paths, n.observed_commit,
-       n.written_at, n.options, n.choice, n.search AND j.search, n.ai_input AND j.ai_input, n.train AND j.train
+       n.written_at, n.options, n.choice, n.search AND j.search, n.ai_input AND j.ai_input, n.train AND j.train,
+       EXISTS (SELECT 1 FROM book b JOIN policy_version p ON p.id = b.current_policy
+                WHERE b.slug = ANY(n.source_books) AND p.doc->>'sensitivity' = 'restricted')
   FROM note n JOIN note_journal j ON j.seq = n.seq
  WHERE n.book = ANY(%s) AND n.kind = 'decision_proposal' AND n.seq <= %s
  ORDER BY n.book, n.seq
@@ -71,9 +75,10 @@ def _context_refs(conn, seqs: list[int], w: int) -> tuple[dict, dict]:
     return citations, links
 
 
-def _records(conn, actor: Actor, books: list[str]) -> tuple[list[dict], int]:
+def _records(conn, actor: Actor, books: list[str]) -> tuple[list[dict], int, int]:
     w = notesquery.watermark(conn)
-    rows = conn.execute(_DECISIONS, (books, w)).fetchall()
+    found = conn.execute(_DECISIONS, (books, w)).fetchall()
+    rows = [r[:-1] for r in found if not r[-1]]
     seqs = [r[0] for r in rows]
     standing = notes.effective_standing(conn, seqs, w)
     writers = {s: rest for s, *rest in conn.execute(
@@ -103,7 +108,7 @@ def _records(conn, actor: Actor, books: list[str]) -> tuple[list[dict], int]:
             "withheld": None if shown else WITHHELD,
             "_standing_seq": standing[seq][1], "_seq": seq,
             "_citations": citations.get(seq, []), "_links": links.get(seq, [])})
-    return records, w
+    return records, w, len(found) - len(rows)
 
 
 def _finish(conn, final, data):
@@ -112,7 +117,7 @@ def _finish(conn, final, data):
     `ai_input` and `train` (note AND every journal of its closure, `note_journal`) still hold now and the note
     depends on no blocked skill in that decision (`final.blocked_notes`); else the record is cut to references and
     hashes."""
-    records, w = data
+    records, w, restricted = data
     read = final.objects("read")
     rights = {seq: rest for seq, *rest in conn.execute(
         "SELECT n.seq, n.search AND j.search, n.ai_input AND j.ai_input, n.train AND j.train "
@@ -129,7 +134,7 @@ def _finish(conn, final, data):
         elif seq in final.blocked_notes:
             r["context"]["text"], r["options"], r["choice"] = None, None, None
             r["withheld"] = gate.SKILL_WITHHELD
-    return records, w
+    return records, w, restricted
 
 
 def export(conn, actor: Actor, books: list[str] | None = None) -> tuple[list[dict], dict]:
@@ -144,17 +149,19 @@ def export(conn, actor: Actor, books: list[str] | None = None) -> tuple[list[dic
                 raise ValueError("book must be a book slug")
         books = sorted(set(books))
     if not books:
-        return [], {"records": 0, "withheld": 0, "books": [], "watermark": notesquery.watermark(conn)}
+        return [], {"records": 0, "withheld": 0, "restricted": 0, "books": [],
+                    "watermark": notesquery.watermark(conn)}
     items = {f"book:{b}": [] for b in books}  # filled by the work, logged by guard_many after the final decision
 
     def work():
-        records, w = _records(conn, actor, books)
+        records, w, restricted = _records(conn, actor, books)
         for r in records:
             items[f"book:{r['book']}"].append({"ref": r["ref"], "standing_seq": r.pop("_standing_seq")})
-        return records, w
+        return records, w, restricted
 
-    records, w = gate.guard_many(conn, actor, {f"book:{b}": {"read"} for b in books}, work, action=ACTION,
-                                 items=items, finish=lambda final, data: _finish(conn, final, data),
-                                 notes_of=lambda data: [r["_seq"] for r in data[0]])
+    records, w, restricted = gate.guard_many(conn, actor, {f"book:{b}": {"read"} for b in books}, work,
+                                             action=ACTION, items=items,
+                                             finish=lambda final, data: _finish(conn, final, data),
+                                             notes_of=lambda data: [r["_seq"] for r in data[0]])
     return records, {"records": len(records), "withheld": sum(r["withheld"] is not None for r in records),
-                     "books": books, "watermark": w}
+                     "restricted": restricted, "books": books, "watermark": w}

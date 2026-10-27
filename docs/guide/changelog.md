@@ -9,6 +9,16 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Bulk import and private journals (#75)
+
+- New command `kutuphane note import <journal> <file.jsonl> --by <principal>`: it imports the records of an orchestrator's local memory (for example nöbetçi-mcp) as `pending` notes, in one transaction. A record keeps its claimed Standing, origin and original timestamps as provenance only; origin follows D70 (`--by agent:` gives `model`, `--by user:` gives `unknown`). Links between records resolve by record id. The same record id again is a no-op. The format is in [agent-memory.md](agent-memory.md), section 11. Migration `027_note_import.sql`: after `migrate`, apply `deploy/db-roles.sql` again.
+- The import is CLI only (no MCP tool or HTTP route). It does not count against the importer's daily write limit for MCP and HTTP.
+- Private journals: a journal with `--sensitivity restricted --egress local_only` keeps customer-confidential project memory in the installation ([operations.md](operations.md), section 6).
+- `kutuphane export` now refuses a book with `sensitivity: restricted` (docs/09: Sensitivity owns export).
+- `ingest` and `approve-import` into a journal slug are refused. Before, they could give a journal a content version and another policy.
+- The decision export leaves out each note with a `restricted` book in its sources; the summary counts them in `restricted`.
+- `journal create --train y` is refused for a `restricted` journal.
+
 ### Light install (#76)
 
 - New: `deploy/compose.light.yaml` starts Postgres, Core and the ingress proxy with no LLMDAP and no model server; only open source parts. Search is full text only. Steps and what is lost (answers, vectors, rerank, the model audit): [install.md](install.md#light-install) ([#111](https://github.com/ekaynac/kutuphane/pull/111)).

@@ -65,6 +65,9 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
         conn.execute("INSERT INTO book (slug, title) VALUES (%s, %s) ON CONFLICT (slug) DO NOTHING", (book, title))
         current = conn.execute("SELECT current_content, current_policy FROM book WHERE slug = %s FOR UPDATE",
                                (book,)).fetchone()
+        if conn.execute("SELECT 1 FROM journal WHERE book = %s", (book,)).fetchone():
+            # docs/24 §3, §23: a journal holds notes only; a content version would replace its profile and policy
+            raise ValueError(f"{book} is a journal: it has notes, never a published content version")
         for f in files:
             conn.execute("INSERT INTO blob (sha256, data) VALUES (%s, %s) ON CONFLICT DO NOTHING", (f.sha256, f.data))
         conn.execute("INSERT INTO content_version (book, id, manifest) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
