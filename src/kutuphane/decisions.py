@@ -6,6 +6,8 @@ models: the context, the options offered, the choice, the actor, the outcome row
 - A record holds the text, the options and the choice only when the note's `ai_input` and `train` (note AND journal
   now) are both true. Else it holds references and SHA-256 hashes only. The hashes are always present.
 - Passage citations and links into books that the reader may not read now are left out (as `query_notes`).
+- Both cuts use the FINAL decision of the gate (`guard_many(finish=…)`, Astra review #14): a read revoked, or a
+  source journal restricted, while the records were built is applied before anything is handed out.
 """
 import hashlib
 from datetime import datetime, timezone
@@ -44,31 +46,30 @@ def _by_note(rows) -> dict:
     return out
 
 
-def _context_refs(conn, seqs: list[int], read: set, w: int) -> tuple[dict, dict]:
-    """({seq: citation refs in order}, {seq: [{type, ref}] creation links}) without unreadable books."""
+def _context_refs(conn, seqs: list[int], w: int) -> tuple[dict, dict]:
+    """({seq: [(book, citation ref)]}, {seq: [(book, {type, ref})]} creation links), in order. The book is None for
+    a code citation (the note's own repositories). The read filter runs in `_finish`, on the final decision."""
     citations = {}
     for seq, kind, book, content_id, profile_id, path, ordinal, repo, commit, start, end, symbol in conn.execute(
             "SELECT note_seq, kind, cite_book, content_id, profile_id, path, ordinal, repo, commit, line_start, "
             "line_end, symbol FROM note_citation WHERE note_seq = ANY(%s) ORDER BY note_seq, n", (seqs,)):
-        if kind == "code":  # the note's own repositories: no other book
-            citations.setdefault(seq, []).append(str(coderepo.CodeCitation(repo, commit, path, start, end, symbol)))
-        elif f"book:{book}" in read:
-            citations.setdefault(seq, []).append(f"{book}@{content_id}/{profile_id}/{path}#{ordinal}")
+        if kind == "code":
+            citations.setdefault(seq, []).append(
+                (None, str(coderepo.CodeCitation(repo, commit, path, start, end, symbol))))
+        else:
+            citations.setdefault(seq, []).append((book, f"{book}@{content_id}/{profile_id}/{path}#{ordinal}"))
     links = {}
     for src, type_, n_book, n_id, p_book, p_ct, p_pf, p_path, p_ord in conn.execute(
             "SELECT l.src, l.type, d.book, d.id, l.dst_book, l.dst_content_id, l.dst_profile_id, l.dst_path, "
             "l.dst_ordinal FROM note_link l LEFT JOIN note d ON d.seq = l.dst_note "
             "WHERE l.src = ANY(%s) AND l.creation AND l.seq <= %s ORDER BY l.src, l.type, l.seq", (seqs, w)):
-        book = n_book or p_book
-        if f"book:{book}" in read:
-            ref = f"{n_book}@{n_id}" if n_book else f"{p_book}@{p_ct}/{p_pf}/{p_path}#{p_ord}"
-            links.setdefault(src, []).append({"type": type_, "ref": ref})
+        ref = f"{n_book}@{n_id}" if n_book else f"{p_book}@{p_ct}/{p_pf}/{p_path}#{p_ord}"
+        links.setdefault(src, []).append((n_book or p_book, {"type": type_, "ref": ref}))
     return citations, links
 
 
 def _records(conn, actor: Actor, books: list[str]) -> tuple[list[dict], int]:
     w = notesquery.watermark(conn)
-    read = authz.allowed(conn, actor.principal, actor.on_behalf_of, ["read"]).objects("read")
     rows = conn.execute(_DECISIONS, (books, w)).fetchall()
     seqs = [r[0] for r in rows]
     standing = notes.effective_standing(conn, seqs, w)
@@ -78,7 +79,7 @@ def _records(conn, actor: Actor, books: list[str]) -> tuple[list[dict], int]:
     outcomes = _by_note(conn.execute(
         "SELECT note_seq, task_ref, result, at, principal, on_behalf_of, origin FROM outcome "
         "WHERE note_seq = ANY(%s) AND seq <= %s ORDER BY seq", (seqs, w)))
-    citations, links = _context_refs(conn, seqs, read, w)
+    citations, links = _context_refs(conn, seqs, w)
     records = []
     for (seq, book, note_id, body, class_key, repo, branch, paths, commit, written_at, options, choice, search,
          ai_input, train) in rows:
@@ -88,7 +89,7 @@ def _records(conn, actor: Actor, books: list[str]) -> tuple[list[dict], int]:
             "ref": f"{book}@{note_id}", "book": book, "written_at": _iso(written_at), "standing": standing[seq][0],
             "context": {"text": body if shown else None, "text_sha256": _sha(body), "class_key": class_key,
                         "scope": None if repo is None else {"repo": repo, "branch": branch, "paths": list(paths)},
-                        "commit": commit, "citations": citations.get(seq, []), "links": links.get(seq, [])},
+                        "commit": commit, "citations": [], "links": []},
             "options": list(options) if shown and options else None, "choice": choice if shown else None,
             "options_sha256": [_sha(o) for o in options] if options else None,
             "choice_sha256": _sha(choice) if choice else None,
@@ -97,7 +98,29 @@ def _records(conn, actor: Actor, books: list[str]) -> tuple[list[dict], int]:
                           "origin": o} for t, r, at, p, b, o in outcomes.get(seq, [])],
             "ai_use": {"search": _yn(search), "ai_input": _yn(ai_input), "train": _yn(train)},
             "withheld": None if shown else WITHHELD,
-            "_standing_seq": standing[seq][1]})
+            "_standing_seq": standing[seq][1], "_seq": seq,
+            "_citations": citations.get(seq, []), "_links": links.get(seq, [])})
+    return records, w
+
+
+def _finish(conn, final, data):
+    """Inside the export transaction, right after the final read decision (Astra review #14): a reference is kept
+    only when its book is readable in that decision, and the text, options and choice only when the note's
+    `ai_input` and `train` (note AND every journal of its closure, `note_journal`) still hold now; else the
+    record is cut to references and hashes."""
+    records, w = data
+    read = final.objects("read")
+    rights = {seq: rest for seq, *rest in conn.execute(
+        "SELECT n.seq, n.search AND j.search, n.ai_input AND j.ai_input, n.train AND j.train "
+        "FROM note n JOIN note_journal j ON j.seq = n.seq WHERE n.seq = ANY(%s)",
+        ([r["_seq"] for r in records],))}
+    for r in records:
+        search, ai_input, train = rights[r.pop("_seq")]
+        r["context"]["citations"] = [ref for book, ref in r.pop("_citations") if book is None or f"book:{book}" in read]
+        r["context"]["links"] = [link for book, link in r.pop("_links") if f"book:{book}" in read]
+        r["ai_use"] = {"search": _yn(search), "ai_input": _yn(ai_input), "train": _yn(train)}
+        if not (ai_input and train):
+            r["context"]["text"], r["options"], r["choice"], r["withheld"] = None, None, None, WITHHELD
     return records, w
 
 
@@ -123,6 +146,6 @@ def export(conn, actor: Actor, books: list[str] | None = None) -> tuple[list[dic
         return records, w
 
     records, w = gate.guard_many(conn, actor, {f"book:{b}": {"read"} for b in books}, work, action=ACTION,
-                                 items=items)
+                                 items=items, finish=lambda final, data: _finish(conn, final, data))
     return records, {"records": len(records), "withheld": sum(r["withheld"] is not None for r in records),
                      "books": books, "watermark": w}

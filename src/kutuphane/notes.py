@@ -800,6 +800,8 @@ def set_standing(conn, ref: str, value: str, *, curator: str, reason: str) -> di
         current = effective_standing(conn, [seq], NOW)[seq][0]
         if (current, value) not in TRANSITIONS:
             raise ValueError(f"{current} -> {value} is not a Standing transition")
+        if value == "rejected" and _ever_approved(conn, seq):
+            raise ValueError(f"{ref} was approved before: rejected means never accepted (D68); use retired")
         correlation = uuid.uuid4().hex
         event = _event(conn, seq, value, curator, reason, correlation)
         out = {"ref": ref, "standing": value, "event_seq": event}
@@ -826,7 +828,17 @@ def set_standing(conn, ref: str, value: str, *, curator: str, reason: str) -> di
 # --- rollback along derived_from (CLI only, §20) -------------------------------------------------------------
 
 # The root keeps D68: a note that was never accepted is rejected; an out note gets one more event with its value.
+# A root that was ever approved (also one reopened to pending since) is retired, never rejected.
 ROOT_MOVE = {"approved": "retired", "pending": "rejected", "rejected": "rejected", "retired": "retired"}
+
+
+def _ever_approved(conn, seq: int) -> bool:
+    return conn.execute("SELECT EXISTS (SELECT 1 FROM standing_event WHERE note_seq = %s AND value = 'approved')",
+                        (seq,)).fetchone()[0]
+
+
+def _root_move(conn, seq: int, current: str) -> str:
+    return "retired" if _ever_approved(conn, seq) else ROOT_MOVE[current]
 
 _CLOSURE = """
 WITH RECURSIVE c(seq) AS (
@@ -860,13 +872,14 @@ def rollback(conn, ref: str, *, curator: str, reason: str) -> dict:
         closure = conn.execute(_CLOSURE, (root,)).fetchall()  # creation links point back: the root is first
         was = effective_standing(conn, [s for s, _ in closure], NOW)
         correlation = uuid.uuid4().hex
-        event = _event(conn, root, ROOT_MOVE[was[root][0]], curator, reason, correlation)
+        root_after = _root_move(conn, root, was[root][0])
+        event = _event(conn, root, root_after, curator, reason, correlation)
         writers = _writers(conn, [s for s, _ in closure])
         out = []
         for seq, note_ref in closure:
             before = was[seq][0]
             if seq == root:
-                after, moved = ROOT_MOVE[before], event
+                after, moved = root_after, event
             elif before in ("approved", "pending"):
                 after = "retired"
                 moved = _event(conn, seq, after, "system", f"derived from {ref}", correlation, cause=event)
