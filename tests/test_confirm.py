@@ -339,8 +339,8 @@ def _signed(conn, principal, action, payload) -> int:
     cred, sid, cid = secrets.token_bytes(16), secrets.token_bytes(32), "ch_" + secrets.token_hex(16)
     conn.execute("INSERT INTO passkey (credential_id, principal, user_handle, enrollment, public_key, sign_count, "
                  "backup_eligible) VALUES (%s, %s, %s, %s, 'k', 0, true)", (cred, principal, handle, eid))
-    conn.execute("INSERT INTO curator_session (id_sha256, principal, login, expires_at) VALUES "
-                 "(%s, %s, 'enrollment', now() + interval '1 hour')", (sid, principal))
+    conn.execute("INSERT INTO curator_session (id_sha256, principal, login, enrollment, expires_at) VALUES "
+                 "(%s, %s, 'enrollment', %s, now() + interval '1 hour')", (sid, principal, eid))
     conn.execute("INSERT INTO curator_challenge (id, session, principal, action, payload, challenge, expires_at) "
                  "VALUES (%s, %s, %s, %s, %s, %s, now() + interval '5 minutes')",
                  (cid, sid, principal, action, Jsonb(payload), secrets.token_bytes(32)))

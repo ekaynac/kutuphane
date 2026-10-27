@@ -297,6 +297,28 @@ def test_readers_see_the_approver_and_the_report_lists_every_use(env, dec, route
     assert report["signed"]["principal"] == U and report["coverage"]["approved"] == len(delegated)
 
 
+def test_a_delegated_approval_passes_the_026_retirement_trigger(env, dec, route):  # 025 × 026 (review #16)
+    """A delegated approval has no cause: trigger standing_event_retires_signed lets it through. It retires nothing,
+    also when the note supersedes an approved note, and curator web cannot hang a retirement on it (no act)."""
+    assert env.execute("SELECT 1 FROM pg_trigger WHERE tgname = 'standing_event_retires_signed'").fetchone()
+    s = spec()
+    signed_delegation(env, s, sample_every=100)
+    _, old = note(env, "The cache holds 10 entries")
+    notes.set_standing(env, old, "approved", curator=U, reason="checked")
+    new_seq, _ = note(env, "The cache holds 12 entries", links=[{"type": "supersedes", "ref": old}])
+    decider.run(dec, s, route.bridge())
+    event = env.execute("SELECT seq, value, set_by FROM standing_event WHERE note_seq = %s", (new_seq,)).fetchone()
+    if event is None:  # the 1-in-100 sample: no event to check
+        pytest.skip("the database drew a sample")
+    assert event[1:] == ("approved", s.approver)
+    old_seq = env.execute("SELECT seq FROM note WHERE book || '@' || id = %s", (old,)).fetchone()[0]
+    assert env.execute("SELECT value FROM standing_event WHERE note_seq = %s ORDER BY seq DESC LIMIT 1",
+                       (old_seq,)).fetchone()[0] == "approved"  # nothing retired
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):  # RLS: a retirement needs a signed act's cause
+        run(env, "INSERT INTO standing_event (note_seq, value, set_by, reason, correlation_id, cause_seq) "
+                 "VALUES (%s, 'retired', 'system', 'x', 'c', %s)", (old_seq, event[0]), role=WEB)
+
+
 # --- D9: the end by a curator, and the creator's right --------------------------------------------------------------
 
 def test_a_curator_ends_a_delegation_by_act_or_cli_and_retires_its_approvals(env, dec, route, client, monkeypatch,

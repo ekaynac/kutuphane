@@ -144,8 +144,8 @@ def _person(conn, principal: str) -> tuple[bytes, bytes]:
                  (enrollment, principal, secrets.token_bytes(32)))
     conn.execute("INSERT INTO passkey (credential_id, principal, user_handle, enrollment, public_key, sign_count, "
                  "backup_eligible) VALUES (%s, %s, %s, %s, 'k', 0, true)", (cred, principal, handle, enrollment))
-    conn.execute("INSERT INTO curator_session (id_sha256, principal, login, expires_at) "
-                 "VALUES (%s, %s, 'enrollment', now() + interval '1 hour')", (session, principal))
+    conn.execute("INSERT INTO curator_session (id_sha256, principal, login, enrollment, expires_at) "
+                 "VALUES (%s, %s, 'enrollment', %s, now() + interval '1 hour')", (session, principal, enrollment))
     return cred, session
 
 
