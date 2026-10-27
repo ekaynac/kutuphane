@@ -1,4 +1,4 @@
-"""kstd reference decision rule (draft 0.2, docs/11 §4–§5). Small and deterministic: the same case gives the same
+"""kstd reference decision rule (draft 0.3, docs/11 §4–§5). Small and deterministic: the same case gives the same
 result and the same reasons. It exists to make the conformance cases precise, not to be fast.
 
 A case has: `now`, `node` (this node's issuer id), `policy_version`, `trust`, `precedence`, `statements`, `policy`,
@@ -18,12 +18,14 @@ def ts(value) -> datetime:
 
 def trusted(case, issuer, kind, scope, action) -> dict | None:
     """Rule 4: the node itself is trusted. Another issuer only for an explicit kind × scope × action, with an
-    expiry that has not passed."""
+    expiry that has not passed. `action=None` asks for trust in kind × scope for any action (restriction
+    admissibility)."""
     if issuer == case["node"]:
         return {"issuer": issuer}
     now = ts(case["now"])
     for t in case.get("trust", []):
-        if (t["issuer"] == issuer and kind in t["kinds"] and scope in t["scopes"] and action in t.get("actions", [])
+        if (t["issuer"] == issuer and kind in t["kinds"] and scope in t["scopes"]
+                and (action is None or action in t.get("actions", []))
                 and "expires" in t and ts(t["expires"]) > now):
             return t
     return None
@@ -59,15 +61,32 @@ def acceptance_of(case, item_id, scope, action, reasons, notices) -> str:
     return next(iter(values.values()))
 
 
-def handling_of(case, item_id, scope, action, prop) -> str:
-    """Rule 4: a tightening counts from any issuer; a looser value only from a trusted one; the strictest wins.
-    With no counted value the strictest value applies (unconfirmed handling, §5)."""
-    order, counted = STRICT[prop], []
-    for issuer, s in latest_per_issuer([s for s in about(case, item_id, "handling") if prop in s["body"]]).items():
+def handling_of(case, src, action, prop) -> tuple[str, list]:
+    """Rule 4. A looser value counts only from an issuer trusted for handling × scope × action. A tightening counts
+    from the node, the item's own issuer, or an issuer trusted for handling × scope (any action); the strictest
+    counted value wins, and with no counted value the strictest value applies (unconfirmed handling, §5).
+    Returns the value and the issuers of tightenings that do not count (only when the value is not already the
+    strictest): they escalate, they never deny."""
+    order, counted, untrusted, scope = STRICT[prop], [], [], src["body"]["scope"]
+    for issuer, s in latest_per_issuer([s for s in about(case, src["id"], "handling") if prop in s["body"]]).items():
         value = s["body"][prop]
-        if value == order[-1] or trusted(case, issuer, "handling", scope, action):
+        tightens = value == order[-1]
+        if trusted(case, issuer, "handling", scope, action) or (
+                tightens and (issuer == src["issuer"] or trusted(case, issuer, "handling", scope, None))):
             counted.append(value)
-    return max(counted, key=order.index) if counted else order[-1]
+        elif tightens:
+            untrusted.append(issuer)
+    value = max(counted, key=order.index) if counted else order[-1]
+    return value, ([] if value == order[-1] else untrusted)
+
+
+def restrict(results, reasons, notices, handling, strictest, reason) -> None:
+    """Rule 4: a counted strictest value denies; a tightening that does not count escalates and names its issuer."""
+    if any(value == strictest for value, _ in handling):
+        results.append("deny"); reasons.append(reason)
+    elif any(untrusted for _, untrusted in handling):
+        results.append("escalate"); reasons.append("restriction-untrusted")
+        notices.extend(f"restricted-by:{issuer}" for _, untrusted in handling for issuer in untrusted)
 
 
 def statements_after(case, item_id, moment) -> bool:
@@ -189,12 +208,12 @@ def decide(case: dict) -> dict:
         if (discloses and personal_data_of(case, src, action) not in ("no", "synthetic")
                 and not req.get("legal_basis")):
             results.append("deny"); reasons.append(f"{tag}personal-data-basis-missing")
-    if action == "forward" and "restricted" in {handling_of(case, s["id"], s["body"]["scope"], action, "export")
-                                                for s in sources}:
-        results.append("deny"); reasons.append("handling-restricted")
-    if to_cloud and "local_only" in {
-            handling_of(case, s["id"], s["body"]["scope"], action, "route") for s in sources}:
-        results.append("deny"); reasons.append("route-local-only")
+    if action == "forward":
+        restrict(results, reasons, notices, [handling_of(case, s, action, "export") for s in sources],
+                 "restricted", "handling-restricted")
+    if to_cloud:
+        restrict(results, reasons, notices, [handling_of(case, s, action, "route") for s in sources],
+                 "local_only", "route-local-only")
     prior = req.get("prior_permit")  # rule 7: a permit is bound to exact versions and has an expiry
     if prior and (prior["item_version"] != item["id"] or prior["policy_version"] != case.get("policy_version")
                   or statements_after(case, item["id"], ts(prior["issued_at"])) or ts(prior["expires"]) <= now):

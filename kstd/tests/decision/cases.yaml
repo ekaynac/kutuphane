@@ -1,4 +1,4 @@
-# kstd decision rule — conformance cases (draft 0.2, docs/11 §4–§5).
+# kstd decision rule — conformance cases (draft 0.3, docs/11 §4–§5).
 # Each case: the inputs and the expected {result, authority, reasons, notices}.
 # A conforming implementation MUST return the same result, authority, reasons and notices for every case.
 
@@ -132,15 +132,89 @@ cases:
               legal_basis: "eu-gdpr:A6-1-b"}
     expect: {result: permit, authority: evidence, reasons: [], notices: []}
 
-  # --- rule 4: tightening applies at once; loosening needs trust for kind x scope x action, with an expiry ---
-  - name: an untrusted tightening of handling applies at once
+  # --- rule 4: a loosening needs trust for kind x scope x action, with an expiry; a tightening counts only ---------
+  # --- from the node, the item's own issuer, or an issuer trusted for kind x scope (restriction admissibility) ----
+  - name: an untrusted tightening of handling does not deny; it escalates and is recorded
     rule: [4]
     <<: *base
     statements:
       - *stmts
       - [{kind: handling, about: i-own, issuer: node:stranger, issued_at: 2026-10-20T00:00:00Z, body: {export: restricted}}]
     request: {actor: user:ayse, action: forward, item: i-own, want: evidence, context: {}, destination: node:partner}
+    expect: {result: escalate, authority: evidence, reasons: [restriction-untrusted], notices: ["restricted-by:node:stranger"]}
+
+  - name: an untrusted route restriction escalates a cloud request
+    rule: [4]
+    <<: *base
+    statements:
+      - *stmts
+      - [{kind: handling, about: i-own, issuer: node:stranger, issued_at: 2026-10-20T00:00:00Z, body: {route: local_only}}]
+    request: {actor: user:ayse, action: infer, item: i-own, want: evidence, context: {}, destination: "cloud:llm.example.net"}
+    expect: {result: escalate, authority: evidence, reasons: [restriction-untrusted], notices: ["restricted-by:node:stranger"]}
+
+  - name: an untrusted tightening changes nothing for a request that it does not restrict
+    rule: [4]
+    <<: *base
+    statements:
+      - *stmts
+      - [{kind: handling, about: i-own, issuer: node:stranger, issued_at: 2026-10-20T00:00:00Z,
+          body: {export: restricted, route: local_only}}]
+    request: {actor: user:ayse, action: infer, item: i-own, want: evidence, context: {}, destination: local}
+    expect: {result: permit, authority: evidence, reasons: [], notices: []}
+
+  - name: a tightening from an issuer trusted for the kind and scope applies for every action
+    rule: [4]
+    <<: *base
+    trust:
+      - {issuer: node:partner, kinds: [acceptance, mandate, status], scopes: [book:ops],
+         actions: [read, infer, derive, forward, activate], expires: 2027-06-01T00:00:00Z}
+      - {issuer: node:partner, kinds: [handling], scopes: [book:ops], actions: [read], expires: 2027-06-01T00:00:00Z}
+    statements:
+      - *stmts
+      - [{kind: handling, about: i-own, issuer: node:partner, issued_at: 2026-10-20T00:00:00Z, body: {export: restricted}}]
+    request: {actor: user:ayse, action: forward, item: i-own, want: evidence, context: {}, destination: node:partner}
     expect: {result: deny, authority: evidence, reasons: [handling-restricted], notices: []}
+
+  - name: a tightening from an issuer whose trust has expired escalates
+    rule: [4]
+    <<: *base
+    trust:
+      - {issuer: node:partner, kinds: [acceptance, mandate, status], scopes: [book:ops],
+         actions: [read, infer, derive, forward, activate], expires: 2027-06-01T00:00:00Z}
+      - {issuer: node:partner, kinds: [handling], scopes: [book:ops], actions: [forward], expires: 2026-10-01T00:00:00Z}
+    statements:
+      - *stmts
+      - [{kind: handling, about: i-own, issuer: node:partner, issued_at: 2026-10-20T00:00:00Z, body: {export: restricted}}]
+    request: {actor: user:ayse, action: forward, item: i-own, want: evidence, context: {}, destination: node:partner}
+    expect: {result: escalate, authority: evidence, reasons: [restriction-untrusted], notices: ["restricted-by:node:partner"]}
+
+  - name: the item's own issuer can restrict its item without a trust entry
+    rule: [4]
+    <<: *base
+    statements:
+      - *stmts
+      - [{id: i-ven, kind: item, issuer: node:vendor, issued_at: 2026-10-01T00:00:00Z,
+          body: {scope: book:ops, origin: human, rights: {license: CC-BY-4.0, ai_use: {ai_input: y}, personal_data: "no"},
+                 applicability: {}}},
+         {kind: acceptance, about: i-ven, issuer: node:acme, issued_at: 2026-10-02T00:00:00Z, body: {value: accepted}},
+         {kind: handling, about: i-ven, issuer: node:acme, issued_at: 2026-10-02T00:00:00Z, body: {export: normal, route: cloud_ok}},
+         {kind: handling, about: i-ven, issuer: node:vendor, issued_at: 2026-10-20T00:00:00Z, body: {route: local_only}}]
+    request: {actor: user:ayse, action: infer, item: i-ven, want: evidence, context: {}, destination: cloud}
+    expect: {result: deny, authority: evidence, reasons: [route-local-only], notices: []}
+
+  - name: an untrusted tightening of an input escalates the use of the derived item
+    rule: [4]
+    <<: *base
+    statements:
+      - *stmts
+      - [{id: i-sum2, kind: item, issuer: node:acme, issued_at: 2026-10-05T00:00:00Z,
+          body: {scope: book:ops, origin: model, inputs: [i-own],
+                 rights: {license: CC-BY-4.0, ai_use: {ai_input: y}, personal_data: "no"}, applicability: {}}},
+         {kind: acceptance, about: i-sum2, issuer: node:acme, issued_at: 2026-10-06T00:00:00Z, body: {value: accepted}},
+         {kind: handling, about: i-sum2, issuer: node:acme, issued_at: 2026-10-06T00:00:00Z, body: {export: normal}},
+         {kind: handling, about: i-own, issuer: node:stranger, issued_at: 2026-10-20T00:00:00Z, body: {export: restricted}}]
+    request: {actor: user:ayse, action: forward, item: i-sum2, want: evidence, context: {}, destination: node:partner}
+    expect: {result: escalate, authority: evidence, reasons: [restriction-untrusted], notices: ["restricted-by:node:stranger"]}
 
   - name: an untrusted loosening of handling is ignored
     rule: [4]

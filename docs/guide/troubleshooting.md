@@ -36,7 +36,9 @@ or `Mcp-Method` header that differs from the body. Check that your reverse proxy
 | Symptom | Cause and fix |
 |---|---|
 | ingest refused: a path, line and rule such as `api-key` | The secret scan found a credential. Remove it. If it is a reviewed false positive, add `--accept-finding <path>@sha256:<sha256sum of the file>:<rule>`. |
-| ingest refused: `kstd.yaml` | The manifest is invalid. Run `kutuphane kstd-check <folder>` to see the errors. |
+| ingest refused: `kstd.yaml` | The manifest has an error. Run `kutuphane kstd-check <folder>` to see the errors. A warning does not refuse the book. |
+| a notice such as `kstd.yaml <path>: origin 'assisted' not trusted` | The claim has no evidence, so the file counts as origin `unknown`. Add `reviewed_by` (for `assisted`) or `software_agent: {name, version}` (for `tool`), or remove the unknown field. |
+| no file is searched after `kstd-init` | `kstd-init` states no `ai_use` term, so every term counts as `n`. Set `ai_use` in `kstd.yaml`. |
 | a file is in `quarantined` | It cannot be extracted (a PDF without a text layer, an encrypted PDF, text that is not UTF-8). It is stored and listed, not searched. Fix the file and ingest again. |
 | a file is not found by search | Its `ai_use.search` is not `y`, it is a format that is not searched, or it is under a hidden path. See `operations.md`. |
 | `ingest` or `index` exits with code 3 | The book is published, but some vectors are missing (`index_error`, `failed`, `not_attempted`). Run `kutuphane index <book>` later. |

@@ -468,7 +468,9 @@ def test_rights_follow_derivation(env, okf_dir, tmp_path, fake):  # T16
     restricted = tmp_path / "gizli"
     restricted.mkdir()
     (restricted / "not.md").write_text("# Gizli\n\nYedekler her gece alınır.\n", encoding="utf-8")
-    (restricted / kstd.MANIFEST).write_text(kstd.init(read_source(restricted), "ACME <kb@acme.example>"))
+    stated = kstd.init(read_source(restricted), "ACME <kb@acme.example>").replace(  # init states no term (D74)
+        "# ai_use: {search: y|n, ai_input: y|n, train: y|n}", "ai_use: {search: y, ai_input: n, train: n}")
+    (restricted / kstd.MANIFEST).write_text(stated)
     catalog.publish(env, book="gizli", title="gizli", files=read_source(restricted), policy=CLOUD,
                     profile=profiles.spec("chunked"))
     allow(env, "gizli", "read")

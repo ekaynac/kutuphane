@@ -166,7 +166,7 @@ These are proposals only. `docs/11` and `kstd/reference/decide.py` do not change
 
 - **Gap:** docs/11 §2 has a closed list of statement kinds. `handling` is not in the list, but §5 defines the handling property, and `decide.py` and `kstd/tests/decision/cases.yaml` use `kind: handling`. The scenarios also use `kind: tag` (docs/19 §5.1).
 - **Proposal:**
-  1. Add `handling` to the closed list. Body: `export`, `route`. Effect: rule 4 (a tightening applies from any issuer; a loosening only from a trusted issuer).
+  1. Add `handling` to the closed list. Body: `export`, `route`. Effect: rule 4 (a loosening only from a trusted issuer; since draft 0.3 a tightening only from an admissible issuer, otherwise `escalate`).
   2. Do not add a general `tag` kind. A **discovery tag** stays outside the core (a profile). It cannot change a decision ("A field outside this standard MUST NOT change a decision").
   3. An **access tag** is a governed facet, the same as handling (docs/19 §5.1). Put it in the `handling` body as `access: [concept]`. The same rule 4 applies: adding a restrictive tag is a tightening; a removal is a loosening.
   4. A statement with `state: proposed` (an agent proposal) has no effect until a trusted issuer confirms it.
@@ -251,7 +251,7 @@ These are proposals only. `docs/11` and `kstd/reference/decide.py` do not change
 
 - **Gap:** sc-core-11 and sc-core-12. Do content labels change a decision, or only the activation-risk annotation?
 - **Proposal:**
-  1. A content label is a statement about one exact digest. A label from any issuer that **tightens** (`hostile`) applies at once (rule 4). Only a trusted issuer can remove it.
+  1. A content label is a statement about one exact digest. A label that **tightens** (`hostile`) applies at once from an admissible issuer (rule 4; draft 0.3: otherwise `escalate`). Only a trusted issuer can remove it.
   2. A `hostile` label gives `deny` for `activate`, and `escalate` for `infer` when the actor is an agent. For a person who reads the item, it is a notice only.
   3. A `quoted-attack` label (text that quotes an attack to warn against it) changes no decision. It is a notice.
   4. Delivery to a model always passes the content as typed data (docs/11 §3 deliver), with or without a label.

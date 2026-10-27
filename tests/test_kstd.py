@@ -51,24 +51,17 @@ def chunk_paths(conn) -> set:
     return {p for (p,) in conn.execute("SELECT DISTINCT path FROM chunk WHERE book = 'kitap'")}
 
 
-@pytest.mark.parametrize("change,needle", [
+@pytest.mark.parametrize("change,needle", [  # only an unreadable manifest or a wrong digest or term blocks (docs/11 §7)
     (lambda m: m["items"][0].update(digest="sha256:" + "0" * 64), "digest does not match"),
     (lambda m: m["rights"].update(license="CC-BY-4.0 WITH Classpath-exception-2.0"), "not an SPDX expression"),
     (lambda m: m["rights"].update(license="Not-A-License"), "not an SPDX expression"),
-    (lambda m: m["rights"]["ai_use"].update(train="maybe"), "ai_use takes only"),
-    (lambda m: m.update(owner="x"), "unknown field 'owner'"),
+    (lambda m: m["rights"]["ai_use"].update(train="maybe"), "ai_use terms take y or n"),
     (lambda m: m["items"].append({"path": "missing.md", "digest": "sha256:" + "1" * 64}), "no such file"),
     (lambda m: m["items"][0].update(valid_to="2025-01-01"), "valid_from must be before valid_to"),
     (lambda m: m.update(standard="kstd/9"), "standard must be"),
-    (lambda m: m["items"][1].update(origin="assisted"), "assisted needs reviewed_by"),
-    (lambda m: m["items"][0].update(reviewed_by="Ayşe"), "only for origin assisted"),
-    (lambda m: m["items"][1].update(origin="tool"), "tool needs software_agent"),
-    (lambda m: m["items"][1].update(origin="tool", software_agent={"name": "typedoc"}), "tool needs software_agent"),
-    (lambda m: m["items"][1].update(origin="tool", software_agent={"name": "typedoc", "version": 1.1}),
-     "tool needs software_agent"),
-    (lambda m: m["items"][1].update(origin="tool", software_agent={"name": "typedoc", "version": False}),
-     "tool needs software_agent"),
-    (lambda m: m["items"][0].update(software_agent={"name": "typedoc", "version": "0.26"}), "only for origin tool"),
+    (lambda m: m.pop("issuer"), "issuer is required"),
+    (lambda m: m.update(issued="yesterday"), "issued must be a date"),
+    (lambda m: m["items"][1].update(origin="humann"), "origin must be one of"),
 ])
 def test_an_invalid_manifest_blocks_publication(conn, okf_dir, change, needle):  # fail closed
     write_manifest(okf_dir)
@@ -78,6 +71,51 @@ def test_an_invalid_manifest_blocks_publication(conn, okf_dir, change, needle): 
     with pytest.raises(kstd.KstdError, match=needle):
         publish(conn, okf_dir)
     assert catalog.book_state(conn, "kitap") is None
+
+
+POLICY_FILE = "politika/veri-saklama.md"
+
+
+@pytest.mark.parametrize("change,origin,notice", [  # D74, docs/22 §3: a bad claim is untrusted, not a blocked folder
+    (lambda m: m.update(owner="x"), "model", "unknown field 'owner' ignored"),
+    (lambda m: m["items"][1].update(licence="MIT"), "model", "unknown field 'licence' ignored"),
+    (lambda m: m["rights"]["ai_use"].update(embed="y"), "model", "unknown field 'embed' ignored"),
+    (lambda m: m["items"][1].update(origin="assisted"), "unknown", "origin 'assisted' not trusted"),
+    (lambda m: m["items"][1].update(origin="tool"), "unknown", "origin 'tool' not trusted"),
+    (lambda m: m["items"][1].update(origin="tool", software_agent={"name": "typedoc"}), "unknown",
+     "origin 'tool' not trusted"),
+    (lambda m: m["items"][1].update(origin="tool", software_agent={"name": "typedoc", "version": 1.1}), "unknown",
+     "origin 'tool' not trusted"),
+    (lambda m: m["items"][1].update(reviewed_by="Ayşe"), "model", "reviewed_by ignored"),
+    (lambda m: m["items"][1].update(software_agent={"name": "typedoc", "version": "0.26"}), "model",
+     "software_agent ignored"),
+])
+def test_an_untrusted_claim_publishes_with_a_notice(conn, okf_dir, tmp_path, change, origin, notice):
+    write_manifest(okf_dir)
+    doc = yaml.safe_load((okf_dir / kstd.MANIFEST).read_text())
+    change(doc)
+    (okf_dir / kstd.MANIFEST).write_text(yaml.safe_dump(doc, allow_unicode=True))
+    files = read_source(okf_dir)
+    errors, warnings = kstd.check(kstd.parse((okf_dir / kstd.MANIFEST).read_bytes()), {f.path: f.sha256 for f in files})
+    assert errors == [] and any(notice in w for w in warnings)
+    publish(conn, okf_dir)
+    info = kstd.Rights(conn).info("kitap", catalog.book_state(conn, "kitap")["content_id"], POLICY_FILE)
+    assert info["origin"] == origin and info["reviewed_by"] is None and info["software_agent"] is None
+    assert any(notice in n for n in info["notices"]) and set(info["ai_use"]) <= set(kstd.AI_USE)
+    assert info["license"] == "CC-BY-4.0"                       # an unknown field never replaces a stated value
+    signing.generate(tmp_path / "a.key")
+    manifest = read_package(packages.export(conn, "kitap", signing.load_private(tmp_path / "a.key")))
+    assert POLICY_FILE in manifest["ai_generated"] and POLICY_FILE not in manifest["reviewed"]
+    assert POLICY_FILE not in manifest["tool_made"]
+
+
+def test_the_envelope_is_version_subject_issuer(okf_dir):  # D74: `issued` is optional; 0.2 manifests still read
+    write_manifest(okf_dir)
+    doc = yaml.safe_load((okf_dir / kstd.MANIFEST).read_text())
+    del doc["issued"]
+    files = {f.path: f.sha256 for f in read_source(okf_dir)}
+    assert kstd.check(doc, files)[0] == []
+    assert kstd.check({**doc, "standard": "kstd/0.3"}, files)[0] == []
 
 
 def test_valid_manifest_with_extensions_and_compound_license_publishes(conn, okf_dir):
@@ -226,13 +264,16 @@ def test_absent_ai_use_is_reported_as_not_stated_but_denies(okf_dir):  # D60: th
     assert kstd.allows(info, "train") is False and kstd.allows(info, "search") is True
 
 
-def test_init_writes_a_manifest_that_passes_the_check(okf_dir):
+def test_init_writes_a_manifest_that_passes_the_check_and_denies_until_edited(okf_dir):  # D74: starts "not stated"
     files = read_source(okf_dir)
     text = kstd.init(files, "ACME <kb@acme.example>")
+    assert text.startswith(f"standard: {kstd.STANDARD}\n") and kstd.STANDARD == "kstd/0.3"
     errors, warnings = kstd.check(kstd.parse(text.encode()), {f.path: f.sha256 for f in files})
     assert errors == [] and any("no default license" in w for w in warnings)
+    assert any("no default ai_use" in w for w in warnings)
     info = kstd.effective(kstd.parse(text.encode()), "index.md")
-    assert info["license"] == "unknown" and info["personal_data"] == "unknown" and info["ai_use"]["ai_input"] == "n"
+    assert info["license"] == "unknown" and info["personal_data"] == "unknown" and info["ai_use"] == {}
+    assert not kstd.allows(info, "search") and not kstd.allows(info, "ai_input")
 
 
 def test_init_keeps_turkish_names_readable_and_long_paths_on_one_line(okf_dir):  # pilot radar
