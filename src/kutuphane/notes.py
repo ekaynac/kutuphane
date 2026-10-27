@@ -8,8 +8,9 @@ candidates, idempotency, Standing and supersession.
   `ai_input` are the AND of the journal and every dependency; `source_books` is the union, for the egress check.
 - No repository access and no model call happens before the pre-decision (§6.1 step 5). The writes run inside
   `gate.guard_many`: a right lost before the final decision rolls everything back.
-- Standing has its own append-only event table. Curation is CLI-only (`set_standing`, `rollback`), through the owner
-  database credential; no MCP tool and no HTTP route changes Standing (§8.2, §20).
+- Standing has its own append-only event table. Curation is the CLI (`set_standing`, `rollback`), through the owner
+  database credential, or a passkey act in curator web (docs/25; `curation.apply` holds the rules of both); no MCP
+  tool and no HTTP route of Core changes Standing (§8.2, §20).
 - Every memory write takes the advisory lock MEMORY_LOCK before its first `nextval('memory_seq')`, so `seq` order is
   commit order (§4).
 """
@@ -399,6 +400,41 @@ def item_info(conn, note_seq: int) -> dict:
     return {"origin": origins.lowest(row[2]), "ai_use": {"search": yn[row[0]], "ai_input": yn[row[1]]}}
 
 
+_CANONICAL_PARTS = """
+SELECT n.kind, n.body, n.class_key, n.scope_repo, n.scope_branch, n.scope_paths, n.observed_commit, n.options,
+       n.choice,
+       ARRAY(SELECT CASE c.kind
+                      WHEN 'passage' THEN c.cite_book || '@' || c.content_id || '/' || c.profile_id || '/' || c.path
+                                          || '#' || c.ordinal
+                      ELSE c.repo || '@' || c.commit || ':' || c.path || ':' || c.line_start || '-' || c.line_end
+                           || coalesce('#' || c.symbol, '') END
+               FROM note_citation c WHERE c.note_seq = n.seq ORDER BY c.n),
+       ARRAY(SELECT jsonb_build_object('type', l.type, 'target', CASE WHEN l.dst_note IS NOT NULL
+                 THEN l.dst_note_book || '@' || d.id
+                 ELSE l.dst_book || '@' || l.dst_content_id || '/' || l.dst_profile_id || '/' || l.dst_path || '#'
+                      || l.dst_ordinal END)
+               FROM note_link l LEFT JOIN note d ON d.seq = l.dst_note WHERE l.src = n.seq AND l.creation)
+  FROM note n WHERE n.seq = %s
+"""
+
+
+def canonical_of(conn, note_seq: int) -> tuple[str, dict]:
+    """(id, body) computed again from every stored part of a note: what a person sees and signs (docs/25 §5.2). The
+    app role can add citations and creation links to a stored note, so the stored id alone does not prove the bytes;
+    a caller compares this id with the stored one."""
+    row = conn.execute(_CANONICAL_PARTS, (note_seq,)).fetchone()
+    if row is None:
+        raise NotFound(f"no such note: {note_seq}")
+    kind, text, class_key, repo, branch, paths, commit, options, choice, cited, links = row
+    body = {"v": 1, "kind": kind, "text": text, "class_key": class_key,
+            "scope": None if repo is None else {"repo": repo, "branch": branch, "paths": list(paths)},
+            "commit": commit, "citations": list(cited),
+            "links": sorted(links, key=lambda link: (link["type"], link["target"]))}
+    if options is not None:
+        body["decision"] = {"options": list(options), "choice": choice}
+    return "nt_" + ids.sha256_hex(ids.canonical(body)), body
+
+
 # --- journals (CLI) ------------------------------------------------------------------------------------------
 
 def create_journal(conn, *, book: str, title: str, search: bool, ai_input: bool, policy: dict, by: str,
@@ -774,7 +810,7 @@ def link(conn, actor: Actor, src: str, kind: str, dst: str) -> tuple[dict, bool]
                            items={f"book:{src_book}": [{"ref": result["src"]}]})
 
 
-# --- Standing (CLI only, §8) ---------------------------------------------------------------------------------
+# --- Standing (the CLI here; curator web through curation.apply, docs/25) -------------------------------------
 
 def _curation(curator, reason) -> None:
     if not _principal("curator", curator).startswith("user:"):
@@ -801,43 +837,15 @@ def _event(conn, note_seq: int, value: str, set_by: str, reason: str, correlatio
 
 
 def set_standing(conn, ref: str, value: str, *, curator: str, reason: str) -> dict:
-    """The curator act. The caller connects with the owner credential (KUTUPHANE_CURATOR_DSN): the app role cannot
-    write Standing. Approving a `rule` note retires the approved predecessors it supersedes with exactly the same
-    scope, in the same transaction (§8.3)."""
-    book, _ = parse_ref(ref)
+    """The curator act on the CLI. The caller connects with the owner credential (KUTUPHANE_CURATOR_DSN): the app role
+    cannot write Standing. Approving a `rule` note retires the approved predecessors it supersedes with exactly the
+    same scope, in the same transaction (§8.3). The rules are those of curation.apply, shared with curator web."""
+    from . import curation  # curation imports this module
     if value not in STANDINGS:
         raise ValueError(f"standing must be one of {', '.join(STANDINGS)}")
-    _curation(curator, reason)
     with conn.transaction():
         _lock(conn)
-        note = _curated(conn, ref, curator, "seq, kind, scope_repo, scope_branch, scope_paths")
-        seq, kind = note[0], note[1]
-        current = effective_standing(conn, [seq], NOW)[seq][0]
-        if (current, value) not in TRANSITIONS:
-            raise ValueError(f"{current} -> {value} is not a Standing transition")
-        if value == "rejected" and _ever_approved(conn, seq):
-            raise ValueError(f"{ref} was approved before: rejected means never accepted (D68); use retired")
-        correlation = uuid.uuid4().hex
-        event = _event(conn, seq, value, curator, reason, correlation)
-        out = {"ref": ref, "standing": value, "event_seq": event}
-        if value != "approved" or KIND_ROLE[kind] != "rule":
-            return out
-        retired = []
-        for p_seq, p_id, repo, branch, paths in conn.execute(
-                "SELECT p.seq, p.id, p.scope_repo, p.scope_branch, p.scope_paths FROM note_link l "
-                "JOIN note p ON p.seq = l.dst_note WHERE l.src = %s AND l.type = 'supersedes' AND l.creation "
-                "AND p.book = %s ORDER BY p.seq", (seq, book)).fetchall():
-            same_scope = (repo, branch, sorted(paths)) == (note[2], note[3], sorted(note[4]))
-            if same_scope and effective_standing(conn, [p_seq], NOW)[p_seq][0] == "approved":
-                _event(conn, p_seq, "retired", "system", f"superseded by {ref}", correlation, cause=event)
-                retired.append(f"{book}@{p_id}")
-        rules = conn.execute("SELECT seq, id FROM note WHERE book = %s AND seq <> %s AND kind = ANY(%s) "
-                             "AND scope_repo IS NOT DISTINCT FROM %s ORDER BY seq",
-                             (book, seq, [k for k, r in KIND_ROLE.items() if r == "rule"], note[2])).fetchall()
-        standing = effective_standing(conn, [s for s, _ in rules], NOW)
-        # docs/09 §2.1: the curator sees the other current rules for the same repository and decides
-        return {**out, "retired": retired,
-                "rules_same_repo": [f"{book}@{i}" for s, i in rules if standing[s][0] == "approved"]}
+        return curation.apply(conn, principal=curator, items=[{"ref": ref, "to": value}], reason=reason)[0]
 
 
 # --- rollback along derived_from (CLI only, §20) -------------------------------------------------------------

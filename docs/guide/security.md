@@ -10,8 +10,9 @@ This page describes what Kütüphane protects, against whom, and how. The design
 |---|---|---|
 | An agent reads a book that it may not read | a search that returns passages, ranks or counts of other books | the gate decides `read` before the query and again before delivery |
 | A right is revoked during a request | a delegation ends while an answer runs | the final decision runs again at the delivery point; a lost book refuses or reruns |
-| An agent passes as a person | an agent writes "accepted by Ayşe" | origin from the write path (D70); Standing only by the curator credential |
-| An agent approves its own notes | an agent calls a curation tool | no MCP tool and no HTTP route changes Standing |
+| An agent passes as a person | an agent writes "accepted by Ayşe" | origin from the write path (D70); Standing only by the curator credential or a person's passkey act |
+| An agent approves its own notes | an agent calls a curation tool | no MCP tool and no HTTP route of Core changes Standing; curator web takes no token and needs a passkey with user verification for each act |
+| A phishing page asks for a passkey signature | another tailnet node, another port, an iframe | the RP ID is the full host name, the origin is compared exactly, cross-origin and framed ceremonies are refused |
 | Restricted text reaches a model | `ai_input: n` text in an embedding or an answer prompt | the `ai_input` gate before every embed, rerank and answer |
 | Text leaves the machine | a `local_only` book on a cloud route | the egress check in Core, LLMDAP policy, internal networks |
 | Prompt injection in sources | a document says "ignore your instructions" | the answer prompt treats passages as source text only; agent instructions need `activate`; a skill that SkillSpector blocks is refused to agents |
@@ -78,15 +79,43 @@ confirmation bound to the note digest will give it later (D70 R3, D72).
 
 ## Curation boundary
 
-- Only the database owner role can insert Standing events. The app role (`kutuphane_app`, used by the server)
-  cannot (`deploy/db-roles.sql`).
-- `kutuphane note standing`, `kutuphane note rollback` and `kutuphane skill clear` need `KUTUPHANE_CURATOR_DSN`. The
-  named curator must hold `curate` on the book now. `curate` is for users only, granted directly, never delegated.
+- Only the database owner role, and the curator web role for a signed act, can insert Standing events. The app role
+  (`kutuphane_app`, used by the server) cannot (`deploy/db-roles.sql`).
+- `kutuphane note standing`, `kutuphane note rollback`, `kutuphane skill clear` and `kutuphane curator …` need
+  `KUTUPHANE_CURATOR_DSN`. The named curator must hold `curate` on the book now. `curate` is for users only,
+  granted directly, never delegated.
 - The CLI trusts its operator. So the curator credential is the boundary. An agent that can read it can curate as
   any user. Keep it out of every environment that an agent can read.
 - Memory rows (`note`, `write_record`, `note_link`, `note_citation`, `outcome`) are append-only for the app role.
 - Skill scan records are append-only for the app role (it can only mark a record `stale`). The app role cannot
   write a skill clearance, so it cannot lift a block.
+
+## Curator web and passkeys (D72)
+
+Curator web (`kutuphane curator web`) is the phone page of the curator. Design: `../25-curator-queue-passkey-design.md`.
+
+- **Its own process, role and host.** It runs as `kutuphane_curator_web` (`deploy/db-roles-curator.sql`), in its own
+  container on its own internal networks; Core cannot reach it. It has no MCP, takes no bearer token and serves no
+  book file. A Tailscale sidecar gives it its own host name with HTTPS; Funnel stays off.
+- **Enrollment.** Only the owner credential makes a curator and a one-time code (`kutuphane curator enroll`, 15
+  minutes, one passkey). Registration needs user verification. The curator web role cannot make a person or an
+  enrollment, and cannot revoke or un-revoke a passkey.
+- **The act.** Each decision is a WebAuthn assertion with user verification over a stored statement: the challenge
+  is `SHA-256("kutuphane/curator-act/v1\n" ‖ canonical JSON)` of the action, the note references and digests, the
+  Standing in force, the new values, the reason, a fresh 32-byte nonce and the expiry (5 minutes). One act per
+  challenge, in the same session. The database accepts a Standing event of the web role only as an item of its
+  act's statement, with `set_by` = the signer (migration 023: keys, a trigger and row-level security).
+- **Checks of every ceremony.** The exact origin and the full-host RP ID; user verification; no `crossOrigin` and no
+  `topOrigin`; the signature counter must increase when it is not 0. The note digest is computed again from all its
+  stored parts before a person sees or signs it. Rights and the Standing in force are decided again in the act
+  transaction.
+- **Session.** A passkey login gives a `__Host-` cookie (`Secure`, `HttpOnly`, `SameSite=Strict`), 8 hours, no
+  renewal. A session shows the pending notes; only an act changes anything. Every state-changing request needs this
+  origin and JSON.
+- **Trusted base and limits.** Curator web is in the trusted base, as the CLI host is: the authenticator does not
+  show the statement, so the page that shows it also chooses what the person signs. `kutuphane curator verify-acts`
+  finds rows that no stored passkey signed; it cannot find a signature given over a misleading page. A passkey
+  proves who confirmed, not that the person read the text.
 
 ## Skill scan (SkillSpector)
 

@@ -12,6 +12,7 @@ dependencies = [
     "mcp>=2.3,<3",
     "starlette>=1.0,<2",
     "uvicorn>=0.30,<1",
+    "webauthn==3.0.1",  # py_webauthn (BSD-3-Clause): curator web passkeys (docs/25 §5.1)
 ]
 
 [project.optional-dependencies]
@@ -28,7 +29,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-kutuphane = ["migrations/*.sql", "spdx_ids.txt"]
+kutuphane = ["migrations/*.sql", "spdx_ids.txt", "curator_ui/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

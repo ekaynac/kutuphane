@@ -104,7 +104,7 @@ The web UI is at `/ui/`. Reference: `docs/guide/http-api.md`.
 - The IdP issues every token; the issuer is compared exactly; there are no static API keys.
 - One gate decides every read before the work and again at delivery; every decision is audited.
 - `ai_input: n` text never reaches a model; a `local_only` book never reaches a cloud route; all model calls go through LLMDAP.
-- Origin comes from the write path; only a curator with a separate database credential changes Standing.
+- Origin comes from the write path; only a curator changes Standing: with a separate database credential on the CLI, or on the phone with a passkey act that signs the exact notes and reason (curator web, D72).
 - Secrets are refused at ingest and in notes; code citations read confined bare mirrors only.
 - Optional SkillSpector scan of skills at ingest: a `DO_NOT_INSTALL`, partial or failed scan blocks the skill for agents until a curator clears it; `SAFE` grants nothing.
 
@@ -129,8 +129,9 @@ Design and decisions: `docs/01-direction-decisions.md`, `docs/23-vision-v1.md`, 
 
 Version 0.1.0, under active development; interfaces can change. Built: file books with kstd L0, hybrid search,
 answers with citations, signed packages, agent memory R1 (notes, fast reads, code citations, MCP 2026-07-28,
-headless auth), R2 rollback, outcomes, decision export, bulk import and private journals, and a light install
-without LLMDAP (#76). Open: the curator queue (#77), delegated curate (#78) and MCP Skills (#80). See
+headless auth), R2 rollback, outcomes, decision export, bulk import and private journals, a light install
+without LLMDAP (#76), and curator web with passkey acts (D72, `docs/25` slice P). Open: the risk-ordered curator
+queue (#77, slice Q), the "my words" confirmation (D70 R3), delegated curate (#78) and MCP Skills (#80). See
 `docs/guide/changelog.md`.
 
 ## Licence

@@ -9,6 +9,15 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Curator web with passkeys (D72, docs/25 slice P)
+
+- New: curator web, the phone page of the curator. A curator approves or rejects pending notes and signs each decision with a passkey (WebAuthn, user verification required). The passkey signs the exact statement: the notes and their digests, the Standing in force, the new values and the reason. Install: [install.md](install.md#curator-web); use: [operations.md](operations.md), section 7. The CLI path (`note standing`) stays and works as before ([#115](https://github.com/ekaynac/kutuphane/pull/115)).
+- New commands: `kutuphane curator enroll|passkeys|revoke-passkey|verify-acts|web` ([#115](https://github.com/ekaynac/kutuphane/pull/115)).
+- Migration `023_curator_passkey.sql` (persons, enrollments, passkeys, sessions, challenges, acts; `standing_event.act`). After `migrate`, apply `deploy/db-roles.sql` again; with curator web, also the new `deploy/db-roles-curator.sql` (the role `kutuphane_curator_web`) ([#115](https://github.com/ekaynac/kutuphane/pull/115)).
+- New overlay `deploy/compose.curator.yaml`: the curator container and a Tailscale sidecar with its own tailnet host name (HTTPS, never Funnel). `deploy/curator_probe.py` checks a deployment ([#115](https://github.com/ekaynac/kutuphane/pull/115)).
+- New dependency: `webauthn` 3.0.1 (py_webauthn, BSD-3-Clause) ([#115](https://github.com/ekaynac/kutuphane/pull/115)).
+- Design: `docs/25-curator-queue-passkey-design.md`, the curator queue, passkey acts, the "my words" confirmation and delegated curate ([#113](https://github.com/ekaynac/kutuphane/pull/113)).
+
 ### Bulk import and private journals (#75)
 
 - New command `kutuphane note import <journal> <file.jsonl> --by <principal>`: it imports the records of an orchestrator's local memory (for example nöbetçi-mcp) as `pending` notes, in one transaction. A record keeps its claimed Standing, origin and original timestamps as provenance only; origin follows D70 (`--by agent:` gives `model`, `--by user:` gives `unknown`). Links between records resolve by record id. The same record id again is a no-op. The format is in [agent-memory.md](agent-memory.md), section 11. Migration `027_note_import.sql`: after `migrate`, apply `deploy/db-roles.sql` again ([#112](https://github.com/ekaynac/kutuphane/pull/112)).

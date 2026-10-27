@@ -83,12 +83,13 @@ The full list of settings is in `operations.md`.
 
 ### 2. Database roles
 
-Kütüphane uses two database roles:
+Kütüphane uses these database roles:
 
 | Role | Used by | Can |
 |---|---|---|
-| `kutuphane` (owner) | `kutuphane migrate`, `kutuphane note standing`, `kutuphane note rollback`, `kutuphane skill clear` (`KUTUPHANE_CURATOR_DSN`) | everything |
-| `kutuphane_app` | the server and every process that an agent can reach (`KUTUPHANE_DSN`) | no Standing writes, no skill clearances; memory rows and skill scan records are append-only |
+| `kutuphane` (owner) | `kutuphane migrate`, `kutuphane note standing`, `kutuphane note rollback`, `kutuphane skill clear`, `kutuphane curator …` (`KUTUPHANE_CURATOR_DSN`) | everything |
+| `kutuphane_app` | the server and every process that an agent can reach (`KUTUPHANE_DSN`) | no Standing writes, no skill clearances, no curation tables; memory rows and skill scan records are append-only |
+| `kutuphane_curator_web` | curator web only (`KUTUPHANE_CURATOR_WEB_DSN`; optional, see [Curator web](#curator-web)) | Standing events that are items of a signed passkey act; no enrollment, no revocation |
 
 Do these steps once, as the owner:
 
@@ -105,10 +106,13 @@ Do these steps after every upgrade:
 export KUTUPHANE_CURATOR_DSN="postgresql://kutuphane:${KUTUPHANE_DB_PASSWORD}@127.0.0.1:55432/kutuphane"
 .venv/bin/kutuphane migrate
 docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 < deploy/db-roles.sql
+# only with curator web:
+docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 < deploy/db-roles-curator.sql
 ```
 
 `migrate` uses `KUTUPHANE_CURATOR_DSN`; without it, it uses `KUTUPHANE_DSN`. New tables need their grants, so
-apply `deploy/db-roles.sql` after every `migrate`. The server refuses to start while a migration is pending.
+apply `deploy/db-roles.sql` (and `deploy/db-roles-curator.sql` when you run curator web) after every `migrate`. The
+server refuses to start while a migration is pending.
 
 Keep `KUTUPHANE_CURATOR_DSN` out of every environment that an agent can read: not in the Core container, not in an
 orchestrator container, not in a shell profile that an agent session gets. Type it at the prompt or read it from a
@@ -171,6 +175,50 @@ book.
 **Hosted decision model.** `deploy/compose.hosted.yaml` gives LLMDAP an outbound network for one hosted route. Every
 hosted call needs an `llm:egress` grant in `policy.csv`. Core's own routes stay `local` unless you set a
 `*_ROUTE_CLASS` to `cloud`. A `local_only` book never goes to a `cloud` route.
+
+## Curator web
+
+Curator web is the phone page of the curator (docs/25, D72): the curator approves or rejects pending notes and
+signs each decision with a passkey. It is optional; the CLI path stays. It runs as its own container with its own
+database role, and a Tailscale sidecar gives it its own tailnet host name with HTTPS (WebAuthn needs a secure
+context). Core cannot reach it, and it cannot reach Core.
+
+**Once:**
+
+1. In the Tailscale admin console: MagicDNS and HTTPS certificates on. In the ACL, a tag `tag:kutuphane-curator`,
+   and a rule that lets only the operator's devices reach `tag:kutuphane-curator:443`. Never turn on Funnel for it.
+2. A tagged, non-reusable auth key for `tag:kutuphane-curator`, in `deploy/tailscale/authkey` (mode 600; it is not
+   in git).
+3. The database role, as the owner:
+   ```sh
+   docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 \
+     -c "CREATE ROLE kutuphane_curator_web LOGIN PASSWORD '${KUTUPHANE_CURATOR_WEB_DB_PASSWORD}'"
+   docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 < deploy/db-roles-curator.sql
+   ```
+4. In `.env`: `KUTUPHANE_CURATOR_WEB_DB_PASSWORD`, `KUTUPHANE_WEBAUTHN_RP_ID=kutuphane-curator.<tailnet>.ts.net`
+   and `KUTUPHANE_WEBAUTHN_ORIGIN=https://kutuphane-curator.<tailnet>.ts.net`. Passkeys belong to this host name:
+   if it changes, every curator enrolls again.
+
+**Start and check:**
+
+```sh
+docker compose -f compose.yaml -f deploy/compose.curator.yaml --profile curator up -d --build
+python3 deploy/curator_probe.py https://kutuphane-curator.<tailnet>.ts.net    # from a device of the operator
+```
+
+`curator_probe.py` checks that only HTTPS 443 answers with the strict headers, that Funnel is off in the sidecar,
+that the curator container publishes no port, that Core cannot reach it, and that a POST from another origin is
+refused. Run it again after a restart of the sidecar. The overlay also attaches Postgres to the internal network
+`curator-db`; the next `up` recreates the Postgres container for that (the data volume stays).
+
+**Development on one machine** (no Tailscale): WebAuthn treats `http://localhost` as a secure context.
+
+```sh
+export KUTUPHANE_WEBAUTHN_RP_ID=localhost KUTUPHANE_WEBAUTHN_ORIGIN=http://localhost:8090
+KUTUPHANE_CURATOR_WEB_DSN=… .venv/bin/kutuphane curator web --port 8090
+```
+
+Enrollment and use: [operations.md](operations.md), section 7.
 
 ## Light install
 
