@@ -26,6 +26,15 @@ For the terms, read [concepts.md](concepts.md).
 - kstd: the origin-details profile gets two optional fields for `human`, `entered_by` and `confirmed_by` (docs/11 0.3). A signed package lists such files in a new list `human_confirmed` (only when there is one, so other packages are unchanged).
 - Migration `024_origin_confirmation.sql` (`origin_confirmation`, `origin_withdrawal`; `write_record.person` and `confirmable`). After `migrate`, apply `deploy/db-roles.sql` and, with curator web, `deploy/db-roles-curator.sql` again. New setting for Core: `KUTUPHANE_CURATOR_URL` ([install.md](install.md#curator-web)).
 
+### Model suggestions and delegated curate (D73, #78, docs/25 slice D)
+
+- New: the decider runner. `kutuphane decider run --spec FILE` asks a local model through LLMDAP for a suggestion (`approved`, `rejected` or `abstain`, and a confidence) on each undecided note. The first decider is the local Qwen (`deploy/deciders/qwen-notes.json`) in shadow mode (`--shadow`: suggestions only). A suggestion never changes Standing and is never shown before a person decides. Install: [install.md](install.md#decider-runner); use: [operations.md](operations.md), section 7.
+- New: delegated curate. A curator signs a `delegate` act on the phone: one decider spec may approve fresh notes of one evidence kind in one journal for at most 30 days, after at least 30 shadow decisions at the chosen threshold. The database checks each use, holds 1 in N uses (and always one after 2N) for a person, pauses at 3 open samples, writes the approval with `set_by: model:<name>@<version>`, and ends the delegation when a person rejects a sample on any path (phone, `note standing`, `note rollback`).
+- New item key `approved_by` in `query_notes`, `neighbours` and `open_citation` (MCP and HTTP): `user:…` or `model:…` for an approved note, else `null`.
+- New commands: `kutuphane decider run|spec`, `kutuphane delegation list|report|agreement|end`. Curator web: the **Delegations** view, the `delegate` and `end_delegation` acts, and `GET /api/delegations`, `GET /api/delegations/{id}`.
+- Migration `025_curate_delegation.sql` (suggestions, delegations, ends, uses; `standing_event.delegation_use`; `set_by` may be `model:…` only for a delegated approval). After `migrate`, apply `deploy/db-roles.sql` and `deploy/db-roles-curator.sql` again; with the runner, also the new `deploy/db-roles-decider.sql` (the role `kutuphane_decider`).
+- `llmdap.chat` takes request options (the runner sends `temperature: 0`); new `llmdap.systemone` for typed-decision routes (Laya, `deploy/deciders/laya-notes.json`).
+
 ### Curator web with passkeys (D72, docs/25 slice P)
 
 - New: curator web, the phone page of the curator. A curator approves or rejects pending notes and signs each decision with a passkey (WebAuthn, user verification required). The passkey signs the exact statement: the notes and their digests, the Standing in force, the new values and the reason. Install: [install.md](install.md#curator-web); use: [operations.md](operations.md), section 7. The CLI path (`note standing`) stays and works as before ([#115](https://github.com/ekaynac/kutuphane/pull/115)).

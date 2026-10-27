@@ -122,6 +122,32 @@ Curator web (`kutuphane curator web`) is the phone page of the curator. Design: 
   finds rows that no stored passkey signed; it cannot find a signature given over a misleading page. A passkey
   proves who confirmed, not that the person read the text.
 
+## Delegated curate (D73)
+
+A model approves a note only through a delegation that a person signed. Design: `../25-curator-queue-passkey-design.md`
+§8.
+
+- **Signed and bounded.** A `delegate` passkey act of a user with direct `curate` and `read` creates it; the database
+  accepts only the row of the signed statement. One journal, one evidence kind (never `decision_proposal` or
+  `convention`), one decider spec (`spec_sha256`), a threshold of 0.5–1, a sample rate N of 2–100, at most 30 days.
+  It needs at least 30 shadow decisions at its threshold. The creator must hold `curate` at each use.
+- **The database decides each use.** The runner role (`kutuphane_decider`, `deploy/db-roles-decider.sql`) can insert
+  suggestions, model call records, uses and its access record, and nothing else; it has no `INSERT` on
+  `standing_event`. A trigger refuses a use of an ended or expired delegation, under the threshold, on a note with
+  any Standing event, in a `contradicts` link, or whose text may not go to a model, and while 3 samples are open. It
+  draws the sample (1 in N, and always one after 2N unchecked uses) and writes the approval of an unsampled use with
+  `set_by` = `model:<name>@<version>`.
+- **The end on disagreement.** A person's first decision on a sample that is not `approved` ends the delegation in
+  the same transaction, on every Standing path (phone, `note standing`, `note rollback`).
+- **Local models only.** The runner refuses a spec whose route is not `local`, sends the note's `source_books` to
+  the egress check, never sends a note whose `ai_input` is off or that depends on a blocked skill, and refuses an
+  answer whose reported model or revision is not the spec's. It holds no database lock during a model call.
+- **Limits.** Sampling bounds the rate of bad approvals, not each one: with N = 10, one bad note that the model
+  approves is approved at once with probability 0.9. Approved evidence goes into agents' context, so an
+  instruction-shaped finding that passes the model is a prompt-injection risk. LLMDAP reports the route's model; the
+  route configuration, the model server and the spec files are in the trusted base. Readers that want human
+  approvals only can filter on `approved_by`.
+
 ## Skill scan (SkillSpector)
 
 SkillSpector (D71) is an optional, external static scanner of skill folders. Kütüphane runs it as a subprocess

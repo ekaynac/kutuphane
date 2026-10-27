@@ -409,3 +409,10 @@ def verify_acts(conn, cfg: Config, since: int = 0) -> dict:
         elif not check(conn, seq, payload):
             problems.append({"act": seq, "problem": "effects"})
     return {"acts": len(rows), "problems": problems}
+
+
+# docs/25 §8 (slice D): the effects of the delegation acts. Imported here, at the end, because delegation.py does not
+# import this module and verify_acts reads EFFECTS only when it runs.
+from . import delegation  # noqa: E402
+
+EFFECTS.update({"delegate": delegation.delegate_effects, "end_delegation": delegation.end_effects})

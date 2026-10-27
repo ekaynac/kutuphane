@@ -29,3 +29,10 @@ button.danger { color:var(--warn); border-color:var(--warn); }
 .err { color:var(--warn); }
 .ok { color:var(--ok); }
 label.choice { display:block; padding:12px; border:1px solid var(--line); border-radius:8px; margin:8px 0; font-size:16px; }
+/* D73 delegations (delegation.js) */
+table.agreement { border-collapse:collapse; font-size:14px; margin:8px 0; }
+table.agreement th, table.agreement td { border-bottom:1px solid var(--line); padding:4px 8px; text-align:right; }
+table.agreement tr.short td { color:var(--muted); }
+.field { font-size:14px; color:var(--muted); }
+.field input { width:5.5em; font:inherit; padding:6px; border:1px solid var(--line); border-radius:8px; }
+#nav-delegations { margin-top:4px; }

@@ -177,6 +177,11 @@ KUTUPHANE_CURATOR_DSN=… kutuphane note standing adc-memory@nt_… approved --c
 Find the open notes with `query_notes` and `sets: ["open"]`. When a curator approves a `rule` note with a
 `supersedes` link to an approved note with the same scope, the system retires the old note.
 
+A person can also let a local model approve fresh evidence notes of one kind in one journal, for at most 30 days, with
+a signed delegation (D73, [operations.md](operations.md), section 7). Every approved item has `approved_by`: the
+curator (`user:…`) or the model (`model:<name>@<version>`). If your orchestrator trusts only human approvals, keep
+the items whose `approved_by` starts with `user:`.
+
 ## 10. Rollback of a poisoned note
 
 When a note was wrong and agents built on it:

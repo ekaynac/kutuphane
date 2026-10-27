@@ -476,6 +476,66 @@ def cmd_curator_web(_conn, args) -> int:
     return 0
 
 
+def cmd_decider_run(_conn, args) -> int:
+    """docs/25 §8.3: one run of the decider runner with its own role (KUTUPHANE_DECIDER_DSN) and LLMDAP subject key.
+    Shadow mode writes suggestions only (the first decider, §14 Q9)."""
+    from . import decider
+    spec = decider.load_spec(args.spec)
+    bridge = decider.bridge_of(spec)
+    dsn = os.environ.get(decider.DSN_ENV)
+    if not dsn:
+        print(f"error: {decider.DSN_ENV} is not set (the kutuphane_decider role)", file=sys.stderr)
+        return 2
+    with db.connect(dsn) as conn:
+        _print(decider.run(conn, spec, bridge, books=decider.books_from_env(), shadow=args.shadow,
+                           limit=args.limit))
+    return 0
+
+
+def cmd_decider_spec(_conn, args) -> int:
+    """The decider id and spec digest that a `delegate` act names."""
+    from . import decider
+    spec = decider.load_spec(args.spec)
+    _print({"decider": spec.decider, "approver": spec.approver, "spec_sha256": spec.sha256.hex()})
+    return 0
+
+
+def cmd_delegation_list(conn, args) -> int:
+    from . import delegation
+    _print(delegation.list_(conn, [args.book] if args.book else None))
+    return 0
+
+
+def cmd_delegation_report(conn, args) -> int:
+    from . import delegation
+    try:
+        _print(delegation.report(conn, args.id))
+    except gate.NotFound as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
+def cmd_delegation_agreement(conn, args) -> int:
+    from . import decider, delegation
+    spec = decider.load_spec(args.spec)
+    _print({"decider": spec.decider, "spec_sha256": spec.sha256.hex(), "book": args.book, "kind": args.kind,
+            "min_shadow": delegation.min_shadow(),
+            "agreement": delegation.agreement(conn, spec.decider, spec.sha256, args.book, args.kind)})
+    return 0
+
+
+def cmd_delegation_end(conn, args) -> int:
+    """docs/25 §8.2: a curator ends a delegation (owner credential; ending only tightens). An end is final."""
+    from . import delegation
+    try:
+        _print(delegation.end(conn, args.id, curator=args.curator, reason=args.reason))
+    except (gate.Denied, gate.NotFound) as exc:
+        print(f"denied: {exc}", file=sys.stderr)
+        return 3
+    return 0
+
+
 def cmd_whoami(_conn, args) -> int:
     token = sys.stdin.readline().strip()  # never on the command line (shell history, process list)
     try:
@@ -734,6 +794,35 @@ def parser() -> argparse.ArgumentParser:
     cw.add_argument("--host", default="127.0.0.1")
     cw.add_argument("--port", type=int, default=8090)
     cw.set_defaults(fn=cmd_curator_web, no_db=True)
+    dr = sub.add_parser("decider", help="the decider runner: model suggestions and delegated uses (docs/25 §8.3)")
+    drsub = dr.add_subparsers(dest="decider_cmd", required=True)
+    drr = drsub.add_parser("run", help="one run (KUTUPHANE_DECIDER_DSN, KUTUPHANE_DECIDER_LLMDAP_KEY, "
+                                       "KUTUPHANE_DECIDER_BOOKS)")
+    drr.add_argument("--spec", required=True, help="the decider spec file (deploy/deciders/*.json)")
+    drr.add_argument("--shadow", action="store_true", help="suggestions only: no delegated use")
+    drr.add_argument("--limit", type=int, default=100, help="at most this many model calls")
+    drr.set_defaults(fn=cmd_decider_run, no_db=True)
+    drs = drsub.add_parser("spec", help="check a spec; print its decider id and spec_sha256")
+    drs.add_argument("spec")
+    drs.set_defaults(fn=cmd_decider_spec, no_db=True)
+    dg = sub.add_parser("delegation", help="D73 delegated curate (docs/25 §8; needs KUTUPHANE_CURATOR_DSN)")
+    dgsub = dg.add_subparsers(dest="delegation_cmd", required=True)
+    dgl = dgsub.add_parser("list", help="every delegation with its state and use counts")
+    dgl.add_argument("--book")
+    dgl.set_defaults(fn=cmd_delegation_list, curator_db=True)
+    dgr = dgsub.add_parser("report", help="the act, the end, every use with its model call; agreement, outcomes")
+    dgr.add_argument("id")
+    dgr.set_defaults(fn=cmd_delegation_report, curator_db=True)
+    dga = dgsub.add_parser("agreement", help="the shadow agreement of a decider spec in one (book, kind)")
+    dga.add_argument("--spec", required=True)
+    dga.add_argument("--book", required=True)
+    dga.add_argument("--kind", required=True)
+    dga.set_defaults(fn=cmd_delegation_agreement, curator_db=True)
+    dge = dgsub.add_parser("end", help="end a delegation as a curator (final)")
+    dge.add_argument("id")
+    dge.add_argument("--curator", required=True, help="user:<name>, who holds curate on the book")
+    dge.add_argument("--reason", required=True)
+    dge.set_defaults(fn=cmd_delegation_end, curator_db=True)
     return ap
 
 
