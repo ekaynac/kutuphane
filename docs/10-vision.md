@@ -1,3 +1,5 @@
+> **Superseded for positioning by `docs/23-vision-v1.md` (D69, 2026-10-27).** This document stays as the history of the standard work.
+
 # Vision — an open knowledge management standard
 
 **Status:** DRAFT 0.2, 2026-10-20 (D55). **Changed by D59 (2026-10-22):** proposing a standard alone is too big. First we find and understand the existing work (`docs/13-landscape.md`). Then we join those communities and contribute. kstd becomes a profile of existing standards, and we propose new parts only where a gap exists. §1 must be read with this change.
