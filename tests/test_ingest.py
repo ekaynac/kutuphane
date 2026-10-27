@@ -259,6 +259,81 @@ def test_cli_accept_finding(conn, okf_dir, monkeypatch, capsys):  # Astra #9: on
     assert json.loads(capsys.readouterr().out)["publications"][-1]["accepted_findings"] == expected
 
 
+PERSONAL_DOC = "# Nöbet\n\nNöbetçi: ops@site-a.net\n\nAğ geçidi 10.20.30.40, telefon: +90 532 123 45 67\n"
+
+
+def _ingest_args(path, egress="local_only"):
+    return ["ingest", str(path), "--book", "kitap", "--sensitivity", "normal", "--egress", egress,
+            "--protection", "standard"]
+
+
+def test_personal_data_findings_are_recorded_and_do_not_refuse_a_local_book(conn, okf_dir):  # G35
+    (okf_dir / "nobet.md").write_text(PERSONAL_DOC, encoding="utf-8")
+    files = read_source(okf_dir)
+    digest = hashlib.sha256((okf_dir / "nobet.md").read_bytes()).hexdigest()
+    r = catalog.publish(conn, book="kitap", title="kitap", files=files, policy=POLICY, profile=catalog.whole_profile())
+    record = [{"path": "nobet.md", "sha256": digest, "rule": rule, "lines": lines}
+              for rule, lines in (("email", [3]), ("phone", [5]), ("private-ipv4", [5]))]
+    assert r.data_findings == record and r.accepted_findings == []
+    assert catalog.book_state(conn, "kitap")["publications"][-1]["data_findings"] == record
+    assert "ops@site-a.net" not in str(record)
+
+
+def test_a_data_finding_in_the_extracted_text_says_so():
+    f = read_file("sayfa.html", b"<h1>Ekip</h1>\n<p>ops&#64;site-a.net</p>\n")
+    assert [(finding.rule, where) for where, finding in f.data_findings] == [("email", " of the extracted text")]
+
+
+def test_cli_lists_data_findings_and_a_cloud_book_needs_a_review(conn, okf_dir, monkeypatch, capsys):  # G35
+    import json
+    from kutuphane import cli, llmdap
+    monkeypatch.setenv(db.DSN_ENV, os.environ["KUTUPHANE_TEST_DSN"])
+    monkeypatch.delenv(llmdap.EMBED_ENV["route"], raising=False)
+    (okf_dir / "nobet.md").write_text(PERSONAL_DOC, encoding="utf-8")
+    digest = hashlib.sha256((okf_dir / "nobet.md").read_bytes()).hexdigest()
+    assert cli.main(_ingest_args(okf_dir)) == 0                       # local_only: a labelling question
+    out = capsys.readouterr()
+    assert "personal-data finding (labelling, not refused): nobet.md line 3 (email)" in out.err
+    assert "ops@site-a.net" not in out.err + out.out and "10.20.30.40" not in out.err + out.out
+    assert [d["rule"] for d in json.loads(out.out)["data_findings"]] == ["email", "phone", "private-ipv4"]
+
+    cloud = _ingest_args(okf_dir, "cloud_ok")                         # the book policy sends passages to the cloud
+    assert cli.main(cloud) == 2
+    err = capsys.readouterr().err
+    assert "nobet.md: personal-data findings in a cloud_ok book: line 3 (email), line 5 (phone), line 5 " \
+           "(private-ipv4)" in err and "--accept-finding nobet.md@sha256:<file digest>:<rule>" in err
+    accepts = [a for rule in ("email", "phone", "private-ipv4")
+               for a in ("--accept-finding", f"nobet.md@sha256:{digest}:{rule}")]
+    assert cli.main([*cloud, *accepts]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["data_findings"] == [] and [a["rule"] for a in result["accepted_findings"]] == [
+        "email", "phone", "private-ipv4"]
+
+
+def test_a_cloud_book_takes_a_file_with_findings_that_never_goes_to_a_model(conn, okf_dir, monkeypatch):  # G35
+    import yaml
+    from kutuphane import cli, kstd, llmdap
+    monkeypatch.setenv(db.DSN_ENV, os.environ["KUTUPHANE_TEST_DSN"])
+    monkeypatch.delenv(llmdap.EMBED_ENV["route"], raising=False)
+    (okf_dir / "nobet.md").write_text(PERSONAL_DOC, encoding="utf-8")
+    doc = yaml.safe_load(kstd.init(read_source(okf_dir), "ACME <kb@acme.example>"))
+    doc["rights"]["ai_use"] = {"search": "y", "ai_input": "y", "train": "n"}
+    next(i for i in doc["items"] if i["path"] == "nobet.md")["rights"]["ai_use"] = {"ai_input": "n"}
+    (okf_dir / kstd.MANIFEST).write_text(yaml.safe_dump(doc, allow_unicode=True))
+    assert cli.main(_ingest_args(okf_dir, "cloud_ok")) == 0
+
+
+def test_a_data_finding_is_accepted_like_a_credential_finding(okf_dir):
+    (okf_dir / "nobet.md").write_text(PERSONAL_DOC, encoding="utf-8")
+    data = (okf_dir / "nobet.md").read_bytes()
+    files = read_source(okf_dir, [_accept("nobet.md", data, "email")])
+    f = next(f for f in files if f.path == "nobet.md")
+    assert f.accepted == ("email",) and sorted({finding.rule for _, finding in f.data_findings}) == [
+        "phone", "private-ipv4"]
+    with pytest.raises(SourceError, match="matches no finding"):
+        read_source(okf_dir, [_accept("nobet.md", data, "listed-name")])
+
+
 def test_symlinked_directory_is_rejected(okf_dir, tmp_path):
     outside = tmp_path / "outside"
     outside.mkdir()

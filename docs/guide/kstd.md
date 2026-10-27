@@ -49,14 +49,72 @@ kutuphane kstd-check <folder>                                    # errors (exit 
 kutuphane ingest <folder> --book <slug> --sensitivity normal --egress local_only --protection standard
 ```
 
-`kstd-init` and `kstd-check` need no database. Both run the same secret scan as `ingest` and take the same
-`--accept-finding` values.
+`kstd-init` and `kstd-check` need no database. Both run the same secret scan and the same personal-data scan as
+`ingest`, and take the same `--accept-finding` and `--deny-names` values.
 
 `kstd-init` writes safe starting values: `license: unknown`, `personal_data: unknown`, and `origin: unknown` for
 each file. It states **no `ai_use` term**: the line `# ai_use: {search: y|n, ai_input: y|n, train: y|n}` is only a
 comment. Until you state the terms, no file is indexed and no file is sent to a model, and `kstd-check` warns
 "no default ai_use". If you remove the `#` and keep `y|n`, `kstd-check` gives an error: select `y` or `n`. Change
 the values to the true values before you ingest.
+
+### Origin proposals from a source repository
+
+Run `kstd-init` on a copy of the folder. A copy has no git history, so give the repository that it came from:
+
+```sh
+kutuphane kstd-init <copy> --issuer "ACME <kb@acme.example>" --source-repo <repo> [--commit <rev>]
+```
+
+- **Match.** A file of the copy matches a file in the tree of the commit (default `HEAD`): the same path, the
+  same end of a path (a copy of a subfolder), or the same content at another path. If the path matches and the
+  content is different, git has no evidence for the change: the file stays `unknown`. If the copy was taken at an
+  older commit, give that commit with `--commit`.
+- **History.** The commits that changed the matched path, back to the commit that added it. Renames are followed.
+  Merge commits are not counted.
+- **Proposal.** `model` when every one of these commits has a `Co-Authored-By` trailer with a known model agent
+  (for example `Claude … <noreply@anthropic.com>`, GitHub Copilot, Cursor Agent, aider, Codex, Gemini). Else
+  `unknown`. A person's name alone (`Claude Monet`) is not a model.
+- **Never proposed:** `human`, because a person's commit does not prove that a person wrote the words; `assisted`,
+  because it needs a named reviewer; `tool`, because it needs a `software_agent`. `model` and `unknown` are handled
+  the same way, so a wrong proposal gives no permission.
+
+The proposal is a value with a comment, and the evidence is comment lines of the item. `kstd-check` and ingest read
+it as a normal value; the comments are for you:
+
+```yaml
+# proposals from git: /src/handbook at 1223ca71ff9c… (a proposal is not authority: check each origin before you publish)
+items:
+  - path: "rules/backup.md"
+    digest: sha256:…
+    origin: model                     # proposed from git: 2 of 2 commits name a model; rules/backup.md at 1223ca71ff9c (same path and content)
+    #   e0d712a9591d Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+    #   cc290e35fe49 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+  - path: "notes/site.md"
+    digest: sha256:…
+    origin: unknown                   # git: 1 of 2 commits name a model; notes/site.md at 1223ca71ff9c (same path and content)
+    #   5b1f0c2d9e8a no model trailer
+    #   9a7e6d5c4b3a Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+```
+
+`kstd-init` prints the counts (`origin proposals from git: model 30, unknown 3`). It reads only a local
+repository and does not change it: no fetch (also not for a partial clone), no hooks, no signature check.
+
+### Personal-data findings
+
+`kstd-init` lists each personal-data or fleet-data finding on stderr (path, line and rule, never the matched
+text), and writes `personal_data: unknown` for the item of that file, with the findings as a comment:
+
+```yaml
+  - path: "notes/site.md"
+    …
+    rights:
+      personal_data: unknown            # proposed: personal-data findings: email (line 3); private-ipv4 (line 4); check them
+```
+
+So a folder default `personal_data: no` does not cover that file. Set the true value after you check the file. A
+finding never proposes `no`. The rules and the `--deny-names` file are in
+[operations.md](operations.md#personal-data-and-fleet-data-findings).
 
 ## Validation
 
