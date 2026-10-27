@@ -354,6 +354,112 @@ cases:
     request: {actor: user:ayse, action: forward, item: i-syn2, want: evidence, context: {}, destination: node:partner}
     expect: {result: deny, authority: evidence, reasons: [personal-data-basis-missing], notices: []}
 
+  # --- §5 search terms: a search needs `search: y`; a local embedding search does not need `ai_input` ---------
+  - name: a search finds an item that allows search and reserves AI input
+    rule: [3]
+    <<: *base
+    statements:
+      - *stmts
+      - [{id: i-disc, kind: item, issuer: node:acme, issued_at: 2026-10-01T00:00:00Z,
+          body: {scope: book:ops, origin: human, rights: {license: CC-BY-4.0, ai_use: {search: y, ai_input: n}, personal_data: "no"},
+                 applicability: {}}},
+         {kind: acceptance, about: i-disc, issuer: node:acme, issued_at: 2026-10-02T00:00:00Z, body: {value: accepted}}]
+    request: {actor: user:ayse, operation: search, action: read, item: i-disc, want: evidence, context: {}}
+    expect: {result: permit, authority: evidence, reasons: [], notices: []}
+
+  - name: a search does not find an item whose search term is absent (absent counts as n)
+    rule: [3]
+    <<: *base
+    statements:
+      - *stmts
+      - [{id: i-disc, kind: item, issuer: node:acme, issued_at: 2026-10-01T00:00:00Z,
+          body: {scope: book:ops, origin: human, rights: {license: CC-BY-4.0, ai_use: {ai_input: n}, personal_data: "no"},
+                 applicability: {}}},
+         {kind: acceptance, about: i-disc, issuer: node:acme, issued_at: 2026-10-02T00:00:00Z, body: {value: accepted}}]
+    request: {actor: user:ayse, operation: search, action: read, item: i-disc, want: evidence, context: {}}
+    expect: {result: deny, authority: evidence, reasons: [rights-reserved:search], notices: []}
+
+  - name: a person who opens an item reads it without a search term
+    rule: [3]
+    <<: *base
+    statements:
+      - *stmts
+      - [{id: i-disc, kind: item, issuer: node:acme, issued_at: 2026-10-01T00:00:00Z,
+          body: {scope: book:ops, origin: human, rights: {license: CC-BY-4.0, ai_use: {ai_input: n}, personal_data: "no"},
+                 applicability: {}}},
+         {kind: acceptance, about: i-disc, issuer: node:acme, issued_at: 2026-10-02T00:00:00Z, body: {value: accepted}}]
+    request: {actor: user:ayse, action: read, item: i-disc, want: evidence, context: {}}
+    expect: {result: permit, authority: evidence, reasons: [], notices: []}
+
+  - name: a search does not find a summary of an input that reserves search
+    rule: [3]
+    <<: *base
+    statements:
+      - *stmts
+      - [{id: i-sum, kind: item, issuer: node:acme, issued_at: 2026-10-05T00:00:00Z,
+          body: {scope: book:ops, origin: model, inputs: [i-own, i-imp],
+                 rights: {license: CC-BY-4.0, ai_use: {search: y}, personal_data: "no"}, applicability: {}}},
+         {kind: acceptance, about: i-sum, issuer: node:acme, issued_at: 2026-10-06T00:00:00Z, body: {value: accepted}}]
+    request: {actor: user:ayse, operation: search, action: read, item: i-sum, want: evidence, context: {}}
+    expect: {result: deny, authority: evidence, reasons: [input-rights-reserved:search], notices: []}
+
+  # --- §5 personal data in a model answer: an `infer` to a model outside the node needs a legal basis ----------
+  - name: synthetic data from a trusted vendor goes to a cloud model without a legal basis
+    rule: [3]
+    <<: *base
+    trust:
+      - {issuer: node:partner, kinds: [acceptance, mandate, handling, status, hold], scopes: [book:ops],
+         actions: [read, infer, derive, forward, activate], expires: 2027-06-01T00:00:00Z, max_status_age_days: 30}
+      - {issuer: node:vendor, kinds: [item], scopes: [book:ops], actions: [infer], expires: 2027-06-01T00:00:00Z}
+    statements: &tix
+      - *stmts
+      - [{id: i-tix, kind: item, issuer: node:vendor, issued_at: 2026-10-01T00:00:00Z,
+          body: {scope: book:ops, origin: model, rights: {license: CC-BY-4.0, ai_use: {ai_input: y}, personal_data: synthetic},
+                 applicability: {}}},
+         {kind: acceptance, about: i-tix, issuer: node:acme, issued_at: 2026-10-02T00:00:00Z, body: {value: accepted}},
+         {kind: handling, about: i-tix, issuer: node:acme, issued_at: 2026-10-02T00:00:00Z, body: {route: cloud_ok}}]
+    request: {actor: user:ayse, action: infer, item: i-tix, want: evidence, context: {}, destination: cloud}
+    expect: {result: permit, authority: evidence, reasons: [], notices: []}
+
+  - name: synthetic data from an untrusted vendor needs a legal basis before it goes to a cloud model
+    rule: [3, 4]
+    <<: *base
+    statements: *tix
+    request: {actor: user:ayse, action: infer, item: i-tix, want: evidence, context: {}, destination: cloud}
+    expect: {result: deny, authority: evidence, reasons: [personal-data-basis-missing], notices: []}
+
+  - name: a recorded legal basis lets personal data go to a cloud model
+    rule: [3]
+    <<: *base
+    statements: *tix
+    request: {actor: user:ayse, action: infer, item: i-tix, want: evidence, context: {}, destination: cloud,
+              legal_basis: [eu-gdpr:A6-1-f]}
+    expect: {result: permit, authority: evidence, reasons: [], notices: []}
+
+  - name: a model in the node needs no legal basis for personal data
+    rule: [3]
+    <<: *base
+    statements: *tix
+    request: {actor: user:ayse, action: infer, item: i-tix, want: evidence, context: {}}
+    expect: {result: permit, authority: evidence, reasons: [], notices: []}
+
+  - name: a cloud model answer from a summary of personal data needs a legal basis
+    rule: [3]
+    <<: *base
+    statements:
+      - *stmts
+      - [{id: i-tix, kind: item, issuer: node:acme, issued_at: 2026-10-01T00:00:00Z,
+          body: {scope: book:ops, origin: human, rights: {license: CC-BY-4.0, ai_use: {ai_input: y}, personal_data: "yes"},
+                 applicability: {}}},
+         {id: i-sum, kind: item, issuer: node:acme, issued_at: 2026-10-05T00:00:00Z,
+          body: {scope: book:ops, origin: model, inputs: [i-tix],
+                 rights: {license: CC-BY-4.0, ai_use: {ai_input: y}, personal_data: "no"}, applicability: {}}},
+         {kind: acceptance, about: i-sum, issuer: node:acme, issued_at: 2026-10-06T00:00:00Z, body: {value: accepted}},
+         {kind: handling, about: i-sum, issuer: node:acme, issued_at: 2026-10-06T00:00:00Z, body: {route: cloud_ok}},
+         {kind: handling, about: i-tix, issuer: node:acme, issued_at: 2026-10-06T00:00:00Z, body: {route: cloud_ok}}]
+    request: {actor: user:ayse, action: infer, item: i-sum, want: evidence, context: {}, destination: cloud}
+    expect: {result: deny, authority: evidence, reasons: [input-personal-data-basis-missing], notices: []}
+
   # --- §3 derive / §5 inputs: a derived item carries the rights of its recorded inputs ----------------------
   - name: a summary of inputs that allow AI input can be sent to a model
     rule: [3]
@@ -492,3 +598,30 @@ cases:
     statements: *loc_lineage
     request: {actor: user:ayse, action: infer, item: i-der2, want: evidence, context: {}, destination: cloud}
     expect: {result: deny, authority: evidence, reasons: [route-local-only], notices: []}
+
+  - name: a named cloud host is a cloud destination, so the local-only route applies
+    rule: [4]
+    <<: *base
+    statements: *loc_lineage
+    request: {actor: user:ayse, action: infer, item: i-der2, want: evidence, context: {},
+              destination: "cloud:llm.example.net"}
+    expect: {result: deny, authority: evidence, reasons: [route-local-only], notices: []}
+
+  - name: a local destination keeps a local-only item in the node
+    rule: [4]
+    <<: *base
+    statements: *loc_lineage
+    request: {actor: user:ayse, action: infer, item: i-der2, want: evidence, context: {}, destination: local}
+    expect: {result: permit, authority: evidence, reasons: [], notices: []}
+
+  - name: personal data goes to a local model without a legal basis
+    rule: [3]
+    <<: *base
+    statements:
+      - *stmts
+      - [{id: i-pd, kind: item, issuer: node:acme, issued_at: 2026-10-01T00:00:00Z,
+          body: {scope: book:ops, origin: human, rights: {license: CC-BY-4.0, ai_use: {ai_input: y}, personal_data: "yes"},
+                 applicability: {}}},
+         {kind: acceptance, about: i-pd, issuer: node:acme, issued_at: 2026-10-02T00:00:00Z, body: {value: accepted}}]
+    request: {actor: user:ayse, action: infer, item: i-pd, want: evidence, context: {}, destination: local}
+    expect: {result: permit, authority: evidence, reasons: [], notices: []}
