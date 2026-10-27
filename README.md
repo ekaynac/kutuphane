@@ -81,6 +81,25 @@ Identity and egress (M1c) are configured by environment:
 `KUTUPHANE_LLMDAP_URL`, `KUTUPHANE_LLMDAP_KEY` (Core's LLMDAP subject key; LLMDAP runs with
 `GATEWAY_AUTH_MODE=subject-keys` and grants that subject `llm:invoke` on the routes), `KUTUPHANE_LLMDAP_ROUTE`,
 `KUTUPHANE_LLMDAP_ROUTE_CLASS` (`local` or `cloud`; local_only books never go to a cloud route).
+
+Authentication (docs/24 §12.4): the IdP issues every token; Kütüphane stores no client secret and accepts no static
+API key.
+
+- A person: an interactive login; the principal is `user:<sub>`.
+- A headless client on its own rights (an orchestrator): OAuth client credentials at the IdP (a client secret or
+  `private_key_jwt`). The IdP mapper sets `kutuphane/principal_type: agent` and `sub` = the agent name, so the
+  principal is `agent:<name>`. Grant it what it needs directly (`kutuphane grant book:<slug> read agent:<name>`).
+- A headless client for a person: an RFC 8693 token exchange at the IdP (the person's token from a one-time
+  interactive consent, the client-credentials token as the actor token). The token has `sub` = the person and
+  `act.sub` = the agent; the agent also needs a live delegation from the person, as for any agent.
+- The token's `client_id` (RFC 9068), else `azp`, is recorded as the client. It never changes rights or origin.
+  `kutuphane dev-token <sub> --client-id <id>` makes such a development token.
+
+MCP (`/mcp`) is stateless and serves 2025-11-25 clients (with `initialize`) and 2026-07-28 clients (no `initialize`;
+the reverse proxy must pass the `Mcp-Method` and `Mcp-Name` headers). `server/discover` advertises the
+`io.modelcontextprotocol/oauth-client-credentials` extension. `python3 deploy/mcp_probe.py <ingress URL>` checks both
+versions through the proxy (`KUTUPHANE_PROBE_TOKEN`; `--journal <book>` also proposes a note).
+
 Hybrid search (optional): `KUTUPHANE_LLMDAP_EMBED_ROUTE` (an LLMDAP `surface: "embeddings"` route, openai schema),
 `KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS`, `KUTUPHANE_EMBED_MODEL` (the route's pinned model, e.g. `bge-m3`). `ingest` and
 `approve-import` then embed the new version; `kutuphane index <book>` fills in missing vectors.
@@ -129,6 +148,15 @@ and `ask_library`):
   whole passage (G26). A reference can name one or more passages: `[2]`, `[2,3]`, `[2-4]`, `[2–4]` (G21). Every
   number is checked before a range is expanded; one unknown number or one malformed group (`[1-2-3]`) refuses the
   answer.
+- **Background answers (docs/24 §12.2).** `ask_library(…, background: true)` and `POST /v1/ask` with
+  `"background": true` (202) return `{job_id, status: "queued"}` at once. Then `job_status` / `GET /v1/jobs/{id}`,
+  `job_result` / `GET /v1/jobs/{id}/result` (the stored answer, as `reopen_answer` shows it, with current rights) and
+  `job_cancel` / `POST /v1/jobs/{id}/cancel`. An `idempotency_key` (8–128 characters of `A-Z a-z 0-9 . _ : -`) makes a
+  retried submission return the same job (200); the same key with another request is refused (409). Only the same
+  principal acting for the same user, or that user directly, sees a job; anyone else gets 404. At most 3 open jobs
+  per principal (429). The server runs `KUTUPHANE_JOB_WORKERS` workers (default 1; 0 runs none). A job whose worker
+  stopped is `failed: interrupted` when its lease ends and never runs again. Finished jobs are deleted after 7 days;
+  their answers stay.
 - **Two languages (G19).** When the passages found are in Turkish and in English, the answer model translates the
   question (`KUTUPHANE_ANSWER_MODEL` on `KUTUPHANE_LLMDAP_ROUTE`; `ask --model`). Only the question goes to the
   model. A second search runs with the translation, the merged passages are authorized again in one statement (a

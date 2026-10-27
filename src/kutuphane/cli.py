@@ -223,7 +223,7 @@ def cmd_dev_keys(_conn, args) -> int:
 
 def cmd_dev_token(_conn, args) -> int:
     print(devauth.make_token(Path(args.private_key), issuer=args.issuer, audience=args.audience, sub=args.sub,
-                             agent=args.agent, act=args.act))
+                             agent=args.agent, act=args.act, client_id=args.client_id))
     return 0
 
 
@@ -384,6 +384,7 @@ def parser() -> argparse.ArgumentParser:
     dt.add_argument("--audience", default="kutuphane")
     dt.add_argument("--agent", action="store_true", help="the subject is an agent")
     dt.add_argument("--act", help="agent acting for the user `sub` (RFC 8693)")
+    dt.add_argument("--client-id", help="the OAuth client the token is issued to (recorded only)")
     dt.set_defaults(fn=cmd_dev_token, no_db=True)
     kg = sub.add_parser("keygen", help="create this installation's Ed25519 package signing key")
     kg.add_argument("private_key")

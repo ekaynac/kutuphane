@@ -106,14 +106,23 @@ def test_ask_and_reopen_over_http(app_env, keys, fake):
         assert client.post("/v1/ask", content=b"{", headers=h).status_code == 400
 
 
+class ToolFailed(Exception):
+    pass
+
+
 def call_tool(mcp, actor_claims: dict, name: str, args: dict):
+    """SDK v2 (docs/24 §12.1): `call_tool` gives a `CallToolResult`. The adapter returns (content blocks, structured
+    content) and raises with the message text when the result is an error."""
     from mcp.server.auth.provider import AccessToken
     access = AccessToken(token="t", client_id="test", scopes=[], claims=actor_claims)
     reset = auth_context_var.set(AuthenticatedUser(access))
     try:
-        return asyncio.run(mcp.call_tool(name, args))
+        result = asyncio.run(mcp.call_tool(name, args))
     finally:
         auth_context_var.reset(reset)
+    if result.is_error:
+        raise ToolFailed(" ".join(c.text for c in result.content if c.type == "text"))
+    return result.content, result.structured_content
 
 
 def test_mcp_agent_and_http_user_see_the_same_evidence(app_env, keys, verifier, conn):  # AT-03
@@ -126,7 +135,7 @@ def test_mcp_agent_and_http_user_see_the_same_evidence(app_env, keys, verifier, 
     mcp = server.build_mcp(dsn=dsn, verifier=verifier, bridge=None, model=None, public_url=PUBLIC)
     tokens = asyncio.run(server._Verifier(verifier).verify_token(token(keys, act={"sub": "kobra-7"})))
     out = call_tool(mcp, tokens.claims, "search_library", {"query": "kayıtlar saklanır"})
-    _content, structured = out                                    # FastMCP returns (content blocks, structured)
+    _content, structured = out
     agent_results = structured["result"]
     assert [r["citation"] for r in agent_results] == [r["citation"] for r in human]
 
@@ -341,3 +350,152 @@ def test_feature_hooks_add_tools_and_routes_with_the_server_gate(app_env, keys, 
         assert failed["isError"] and "forbidden" in failed["content"][0]["text"]
         assert "INTERNAL_DETAIL" not in json.dumps(failed)                        # the uniform MCP errors
     assert seen == [("http", dsn), ("mcp", dsn)]
+
+
+# --- docs/24 §12.1, T33/T37: both protocol eras on one app ------------------------------------------------------
+
+MODERN, LEGACY = "2026-07-28", "2025-11-25"
+TOOLS = ["search_library", "open_citation", "ask_library", "reopen_answer", "read_document",
+         "record_runbook_feedback", "job_status", "job_result", "job_cancel"]
+
+
+def _message(r) -> dict:
+    if r.headers.get("content-type", "").startswith("text/event-stream"):
+        return json.loads([ln[5:] for ln in r.text.splitlines() if ln.startswith("data:")][-1])
+    return r.json()
+
+
+def mcp_rpc(client, auth: dict, method: str, params: dict | None = None, *, version: str, meta: dict | None = None,
+            headers: dict | None = None):
+    """One request through /mcp as a client of that protocol version: a 2025-11-25 client first does `initialize`
+    (stateless: every request stands alone); a 2026-07-28 client sends the per-request `_meta` envelope and the
+    `Mcp-Method`/`Mcp-Name` headers. Returns (HTTP status, JSON-RPC message)."""
+    params = dict(params or {})
+    if version == MODERN:
+        params["_meta"] = {"io.modelcontextprotocol/protocolVersion": MODERN,
+                           "io.modelcontextprotocol/clientCapabilities": {}, **(meta or {})}
+        era = {"MCP-Protocol-Version": MODERN, "Mcp-Method": method,
+               **({"Mcp-Name": params["name"]} if "name" in params else {})}
+    else:
+        init = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {"protocolVersion": LEGACY, "capabilities": {},
+                           "clientInfo": (meta or {}).get("io.modelcontextprotocol/clientInfo",
+                                                          {"name": "t", "version": "0"})}}
+        r = client.post("/mcp", json=init, headers={**MCP_HEADERS, **auth})
+        if r.status_code != 200:
+            return r.status_code, None
+        assert _message(r)["result"]["protocolVersion"] == LEGACY
+        era = {"MCP-Protocol-Version": LEGACY}
+    r = client.post("/mcp", json={"jsonrpc": "2.0", "id": 2, "method": method, "params": params},
+                    headers={**MCP_HEADERS, **era, **auth, **(headers or {})})
+    return r.status_code, (_message(r) if r.content else None)
+
+
+@pytest.mark.parametrize("version", [LEGACY, MODERN])
+def test_both_protocol_versions_list_and_call_tools(app_env, keys, conn, monkeypatch, version):  # T33, bare-dict note
+    from datetime import datetime, timedelta, timezone
+    app, _, _ = app_env
+    authz.delegate(conn, delegator=U, delegate_to=A, obj="book:kitap", mode="read",
+                   expires_at=datetime.now(timezone.utc) + timedelta(hours=1))
+    agent = bearer(keys, act={"sub": "kobra-7"})
+    with TestClient(app, base_url=PUBLIC) as client:
+        listed = [mcp_rpc(client, agent, "tools/list", version=version)[1]["result"]["tools"] for _ in range(2)]
+        assert [t["name"] for t in listed[0]] == TOOLS and listed[0] == listed[1]       # stable order
+        status, found = mcp_rpc(client, agent, "tools/call", {"name": "search_library",
+                                                              "arguments": {"query": "kayıtlar saklanır"}},
+                                version=version)
+        found = found["result"]
+        hits = found["structuredContent"]["result"]                                     # a list: {"result": [...]}
+        assert status == 200 and hits and set(found["structuredContent"]) == {"result"}
+        assert [c["text"] for c in found["content"]] == [json.dumps(h, indent=2, ensure_ascii=False) for h in hits]
+        status, opened = mcp_rpc(client, agent, "tools/call", {"name": "open_citation",
+                                                               "arguments": {"handle": hits[0]["citation"]}},
+                                 version=version)
+        opened = opened["result"]                                                       # a dict: JSON text only
+        assert "structuredContent" not in opened and len(opened["content"]) == 1
+        cited = json.loads(opened["content"][0]["text"])
+        assert opened["content"][0]["text"] == json.dumps(cited, indent=2, ensure_ascii=False)
+        assert cited["citation"] == hits[0]["citation"]
+
+        def broken(*_a, **_k):
+            raise RuntimeError("INTERNAL_MARKER /internal/path")
+        monkeypatch.setattr(server, "op_search", broken)
+        _, failed = mcp_rpc(client, agent, "tools/call", {"name": "search_library", "arguments": {"query": "x"}},
+                            version=version)
+        assert failed["result"]["isError"] and "internal error" in failed["result"]["content"][0]["text"]
+        assert "INTERNAL_MARKER" not in json.dumps(failed)
+
+
+@pytest.mark.parametrize("version", [LEGACY, MODERN])
+def test_no_token_gives_401_with_resource_metadata(app_env, version):  # T33
+    app, _, _ = app_env
+    with TestClient(app, base_url=PUBLIC) as client:
+        status, _ = mcp_rpc(client, {}, "tools/list", version=version)
+        assert status == 401
+        r = client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, headers=MCP_HEADERS)
+        assert 'resource_metadata="http://kutuphane.test/.well-known/oauth-protected-resource' \
+            in r.headers["www-authenticate"]
+
+
+def test_mcp_name_header_must_match_the_body(app_env, keys):  # T33: -32020
+    app, _, _ = app_env
+    with TestClient(app, base_url=PUBLIC) as client:
+        status, msg = mcp_rpc(client, bearer(keys), "tools/call", {"name": "job_status",
+                                                                   "arguments": {"job_id": "jb_" + "0" * 32}},
+                              version=MODERN, headers={"Mcp-Name": "search_library"})
+        assert status == 400 and msg["error"]["code"] == -32020
+        status, msg = mcp_rpc(client, bearer(keys), "tools/call", {"name": "job_status",
+                                                                   "arguments": {"job_id": "jb_" + "0" * 32}},
+                              version=MODERN)
+        assert status == 200 and "not found" in msg["result"]["content"][0]["text"]
+
+
+def test_discover_advertises_client_credentials_and_cache_hints(app_env, keys):  # docs/24 §12.1, §12.4
+    app, _, _ = app_env
+    with TestClient(app, base_url=PUBLIC) as client:
+        _, found = mcp_rpc(client, bearer(keys), "server/discover", version=MODERN)
+        assert "io.modelcontextprotocol/oauth-client-credentials" in found["result"]["capabilities"]["extensions"]
+        _, listed = mcp_rpc(client, bearer(keys), "tools/list", version=MODERN)
+        assert listed["result"]["cacheScope"] == "public" and listed["result"]["ttlMs"] > 0
+
+
+def _client_probe():
+    """A feature tool and route that show what the server took from the token."""
+    import types
+
+    from starlette.routing import Route
+
+    def who(actor):
+        return {"principal": actor.principal, "on_behalf_of": actor.on_behalf_of, "client_id": actor.client_id}
+
+    def register_mcp(mcp, deps):
+        @mcp.tool()
+        @deps.mcp_errors
+        async def probe_client() -> dict:
+            """Who is calling."""
+            return who(deps.mcp_actor())
+
+    def http_routes(deps, endpoint):
+        async def h_probe(_request, actor):
+            return server.JSONResponse(who(actor))
+        return [Route("/v1/probe-client", endpoint(h_probe))]
+
+    return types.SimpleNamespace(register_mcp=register_mcp, http_routes=http_routes)
+
+
+@pytest.mark.parametrize("version", [LEGACY, MODERN])
+def test_client_id_comes_from_the_token_and_client_info_changes_nothing(app_env, keys, verifier, version):  # T37
+    _app, _, dsn = app_env
+    app = server.create_app(dsn=dsn, verifier=verifier, bridge=None, model=None, public_url=PUBLIC,
+                            features=(_client_probe(),))
+    exchanged = bearer(keys, act={"sub": "adc"}, client_id="adc-orchestrator")
+    machine = bearer(keys, sub="adc", azp="adc-orchestrator", **{"kutuphane/principal_type": "agent"})
+    claimed = {"io.modelcontextprotocol/clientInfo": {"name": "kutuphane-ui", "version": "1"}}
+    with TestClient(app, base_url=PUBLIC) as client:
+        for auth, expected in [(exchanged, {"principal": "agent:adc", "on_behalf_of": U}),
+                               (machine, {"principal": "agent:adc", "on_behalf_of": None})]:
+            expected = {**expected, "client_id": "adc-orchestrator"}
+            assert client.get("/v1/probe-client", headers=auth).json() == expected
+            _, out = mcp_rpc(client, auth, "tools/call", {"name": "probe_client", "arguments": {}},
+                             version=version, meta=claimed)
+            assert json.loads(out["result"]["content"][0]["text"]) == expected

@@ -1,6 +1,7 @@
 """AT-11 (Core side; the LLMDAP side waits for #223): only verified token claims decide who is calling."""
 import json
 import time
+from pathlib import Path
 
 import jwt
 import pytest
@@ -124,3 +125,32 @@ def test_hmac_with_public_key_is_rejected(verifier, keys):  # algorithm confusio
 def test_missing_or_future_time_claims(verifier, keys, bad):
     with pytest.raises(AuthenticationError):
         verifier.verify(token(keys, **bad))
+
+
+def test_client_credentials_token_is_an_agent_with_its_client(verifier, keys):  # docs/24 T37, §12.4
+    actor = verifier.verify(token(keys, sub="adc", client_id="adc-orchestrator", azp="other",
+                                  **{"kutuphane/principal_type": "agent"}))
+    assert (actor.principal, actor.on_behalf_of, actor.client_id) == ("agent:adc", None, "adc-orchestrator")
+
+
+def test_token_exchange_token_acts_for_the_user_and_keeps_azp(verifier, keys):  # T37: RFC 8693, `azp` fallback
+    actor = verifier.verify(token(keys, act={"sub": "adc"}, azp="adc-orchestrator"))
+    assert (actor.principal, actor.on_behalf_of, actor.client_id) == ("agent:adc", "user:ayse", "adc-orchestrator")
+    assert verifier.verify(token(keys)).client_id is None
+
+
+@pytest.mark.parametrize("bad", [dict(client_id=7), dict(client_id=""), dict(azp=["a"])])
+def test_malformed_client_id_is_refused(verifier, keys, bad):
+    with pytest.raises(AuthenticationError):
+        verifier.verify(token(keys, **bad))
+
+
+def test_dev_token_carries_client_id(monkeypatch, tmp_path):
+    from kutuphane import devauth
+    monkeypatch.setenv("KUTUPHANE_DEV", "1")
+    paths = devauth.make_keys(tmp_path / "keys")
+    dev = Verifier.from_files(ISS, AUD, Path(paths["jwks"]))
+    raw = devauth.make_token(Path(paths["private_key"]), issuer=ISS, audience=AUD, sub="adc", agent=True,
+                             client_id="adc-orchestrator")
+    actor = dev.verify(raw)
+    assert (actor.principal, actor.client_id) == ("agent:adc", "adc-orchestrator")

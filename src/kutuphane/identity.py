@@ -6,6 +6,10 @@
   IdP is configured to emit it.
 - Delegation travels as the RFC 8693 actor claim: `sub` = user, `act.sub` = agent. One level only; nested
   `act` is refused. A token never grants anything by itself: the agent still needs a live delegation (authz).
+- Headless clients (docs/24 §12.4): OAuth client credentials at the IdP, whose mapper sets the principal type
+  `agent` and `sub` = the agent name; on-behalf-of work is an RFC 8693 token exchange (`act`), as above.
+- The client is the claim `client_id` (RFC 9068), else `azp`. It is recorded only: it never changes rights or
+  origin (docs/24 §5.1).
 """
 import json
 import os
@@ -77,13 +81,22 @@ def _principal(kind: str, name) -> str:
     return principal
 
 
+def _client_id(claims: dict) -> str | None:
+    value = claims.get("client_id", claims.get("azp"))
+    if value is not None and not (isinstance(value, str) and value):
+        raise AuthenticationError("client_id must be a non-empty string")
+    return value
+
+
 def actor_from_claims(claims: dict) -> Actor:
+    client_id = _client_id(claims)
     act = claims.get("act")
     if act is not None:
         if not isinstance(act, dict) or "act" in act:
             raise AuthenticationError("only one level of delegation (act) is accepted")
-        return Actor(_principal("agent", act.get("sub")), on_behalf_of=_principal("user", claims["sub"]))
+        return Actor(_principal("agent", act.get("sub")), on_behalf_of=_principal("user", claims["sub"]),
+                     client_id=client_id)
     kind = claims.get(TYPE_CLAIM, "user")
     if kind not in ("user", "agent"):
         raise AuthenticationError(f"{TYPE_CLAIM} must be user or agent")
-    return Actor(_principal(kind, claims["sub"]))
+    return Actor(_principal(kind, claims["sub"]), client_id=client_id)
