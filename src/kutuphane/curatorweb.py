@@ -21,7 +21,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import authz, curation, db, gate, notes, passkey
+from . import authz, curation, db, delegation, gate, notes, passkey
 from .server import SecurityHeaders
 
 COOKIE = "__Host-kc"
@@ -87,6 +87,9 @@ def _standing_fields(conn, principal: str, body: dict) -> dict:
 
 
 FIELDS = {"standing": _standing_fields}
+# docs/25 §8 (slice D): a `delegate` act creates one delegation; an `end_delegation` act ends one.
+HANDLERS.update({"delegate": delegation.apply_delegate, "end_delegation": delegation.apply_end})
+FIELDS.update({"delegate": delegation.delegate_fields, "end_delegation": delegation.end_fields})
 
 
 def create_app(*, dsn: str, cfg: passkey.Config, ui_dir: Path = UI_DIR) -> Starlette:
@@ -243,6 +246,31 @@ def create_app(*, dsn: str, cfg: passkey.Config, ui_dir: Path = UI_DIR) -> Starl
                 raise Refused(403, "refused by the database") from None
             raise
 
+    # --- delegations (docs/25 §8; slice D) ------------------------------------------------------------------------
+    def curated_books(conn, principal: str) -> list[str]:
+        rights = authz.allowed(conn, principal, None, ["curate", "read"])
+        return sorted(o.removeprefix("book:") for o in rights.objects("curate") & rights.objects("read"))
+
+    def delegations(conn, request, _raw):
+        """The delegations of the person's books, and the shadow agreement of each decider spec per evidence class:
+        what the person sees before signing a `delegate` act (§8.2)."""
+        _, principal, _ = session_of(conn, request)
+        books = curated_books(conn, principal)
+        return JSONResponse({"books": books, "kinds": list(delegation.EVIDENCE_KINDS), "defaults": delegation.DEFAULTS,
+                             "max_days": delegation.MAX_DAYS, "delegations": delegation.list_(conn, books),
+                             "shadow": delegation.shadow_classes(conn, books)})
+
+    def delegation_view(conn, request, _raw):
+        """One delegation: the report (§8.6) and the review list of the notes it approved (§8.4)."""
+        _, principal, _ = session_of(conn, request)
+        out = delegation.report(conn, request.path_params["id"])
+        if out["delegation"]["book"] not in curated_books(conn, principal):
+            raise gate.NotFound(f"no such delegation: {request.path_params['id']}")
+        out["review"] = delegation.review_list(conn, request.path_params["id"])
+        _log(conn, principal, "curate_view", True, f"delegation {request.path_params['id']}",
+             [{"ref": r["ref"], "standing_seq": r["was"]} for r in out["review"]])
+        return JSONResponse(out)
+
     routes = [
         Route("/", page), Route("/enroll", page),
         Route("/api/enroll/session", answer(enroll_session), methods=["POST"]),
@@ -255,6 +283,8 @@ def create_app(*, dsn: str, cfg: passkey.Config, ui_dir: Path = UI_DIR) -> Starl
         Route("/api/pending", answer(pending)),
         Route("/api/act/options", answer(act_options), methods=["POST"]),
         Route("/api/act", answer(act), methods=["POST"]),
+        Route("/api/delegations", answer(delegations)),
+        Route("/api/delegations/{id}", answer(delegation_view)),
         Mount("/static", StaticFiles(directory=ui_dir)),
     ]
     app = Starlette(routes=routes)

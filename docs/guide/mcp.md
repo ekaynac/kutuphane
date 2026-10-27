@@ -654,6 +654,9 @@ The sets:
 ```
 
 - A retired item has `successor`: the note that supersedes it, or `null`.
+- `approved_by` (after `standing`): for an approved item, who approved it: a curator (`user:…`) or a model through a
+  signed delegation (`model:<name>@<version>`, D73); `null` for other items. `neighbours` and `open_citation` items
+  have it too.
 - An item that alone does not fit the limits has its text cut and `text_cut: true`.
 - `left` holds tombstones `{ref, standing, seq, successor}` for notes that a Standing change after `since` moved
   out of the sets.

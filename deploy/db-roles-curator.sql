@@ -21,3 +21,5 @@ CREATE POLICY standing_event_web ON standing_event FOR INSERT TO kutuphane_curat
                           JOIN note_link l ON l.src = c.note_seq AND l.type = 'supersedes' AND l.creation
                          WHERE c.seq = standing_event.cause_seq AND c.act IS NOT NULL AND c.value = 'approved'
                            AND l.dst_note = standing_event.note_seq)));
+-- docs/25 §4.5 (025): a `delegate` act inserts its delegation, an `end_delegation` act its end (statement trigger, keys).
+GRANT INSERT ON curate_delegation, delegation_end TO kutuphane_curator_web;

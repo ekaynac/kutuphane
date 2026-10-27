@@ -101,6 +101,7 @@ class Note:
     standing_seq: int | None = None
     citations: list = field(default_factory=list)  # [(kind, ref, Status | None)]; None: not verified yet
     checks: list = field(default_factory=list)     # [(index in citations, (book, CodeCitation, stored hash))]
+    approved_by: str | None = None  # docs/25 §8.5: set_by of the latest event at w (shown only when it approves)
 
     @property
     def ref(self) -> str:
@@ -211,7 +212,8 @@ SELECT n.seq, n.book, n.id, n.kind, n.body, n.class_key, n.scope_repo, n.scope_b
          WHERE wr.note_seq = n.seq AND wr.action = 'propose' AND wr.seq <= %(w)s),
        CASE WHEN %(text)s::text IS NULL THEN 0
             ELSE ts_rank_cd(n.tsv, websearch_to_tsquery(%(cfg)s::regconfig, %(text)s::text), %(norm)s) END,
-       CASE WHEN %(blocks)s THEN note_skill_blocked(n.seq) ELSE false END
+       CASE WHEN %(blocks)s THEN note_skill_blocked(n.seq) ELSE false END,
+       (SELECT e.set_by FROM standing_event e WHERE e.note_seq = n.seq AND e.seq <= %(w)s ORDER BY e.seq DESC LIMIT 1)
   FROM note n JOIN note_journal j ON j.seq = n.seq
  WHERE n.book = ANY(%(books)s::text[]) AND n.seq <= %(w)s
    AND (%(seqs)s::bigint[] IS NULL OR n.seq = ANY(%(seqs)s::bigint[]))
@@ -231,7 +233,7 @@ def _load(conn, books, w: int, ctx: Context, *, seqs=None, kinds=None, class_key
         "books": sorted(books), "w": w, "seqs": seqs, "kinds": kinds, "class_key": class_key, "after": after,
         "before": before, "text": text, "cfg": profiles.FTS_CONFIG, "norm": RANK_NORMALIZATION,
         "path": ctx.path if ctx.path and not ctx.path.endswith("/") else None, "blocks": blocks}).fetchall()
-    out = [Note(*r[:13], origin=r[13], rank=float(r[14]), w=w, skill_blocked=r[15]) for r in rows]
+    out = [Note(*r[:13], origin=r[13], rank=float(r[14]), w=w, skill_blocked=r[15], approved_by=r[16]) for r in rows]
     standing = notes.effective_standing(conn, [n.seq for n in out], w)
     for n in out:
         n.standing, n.standing_seq = standing[n.seq]
@@ -341,6 +343,7 @@ def _item(note: Note, is_current: bool, recurrence: int, graph: Graph, for_model
     elif for_model and note.skill_blocked:
         withheld = gate.SKILL_WITHHELD
     item = {"ref": note.ref, "kind": note.kind, "role": note.role, "standing": note.standing,
+            "approved_by": note.approved_by if note.standing == "approved" else None,
             "current": is_current, "origin": note.origin,
             "text": None if withheld else note.body, "withheld": withheld,
             "class_key": note.class_key,

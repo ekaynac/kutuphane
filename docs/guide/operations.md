@@ -537,6 +537,58 @@ every stored act again, offline: the statement gives the challenge, the signatur
 against the stored passkey, and the Standing events of the act are exactly the items of its statement. It exits 1
 and lists the act when a check fails.
 
+### Model suggestions and delegated curate (D73)
+
+A **decider** is a local model behind LLMDAP with a pinned spec file (`deploy/deciders/*.json`): the model, its
+revision, the route, the prompt and the label map. `kutuphane decider run` gives each undecided note in its books one
+**suggestion** (`approved`, `rejected` or `abstain`, and a confidence). A suggestion never changes Standing, and the
+phone page never shows it before a person decides the note. Install the runner first:
+[install.md](install.md#decider-runner).
+
+The first decider is the local Qwen (`deploy/deciders/qwen-notes.json`) in **shadow mode**: suggestions only.
+
+```sh
+kutuphane decider spec deploy/deciders/qwen-notes.json        # the decider id and spec_sha256
+KUTUPHANE_DECIDER_DSN=… KUTUPHANE_DECIDER_LLMDAP_KEY=… KUTUPHANE_LLMDAP_URL=… KUTUPHANE_DECIDER_BOOKS=adc-memory \
+  kutuphane decider run --spec deploy/deciders/qwen-notes.json --shadow
+KUTUPHANE_CURATOR_DSN=… kutuphane delegation agreement --spec deploy/deciders/qwen-notes.json --book adc-memory --kind finding
+```
+
+`delegation agreement` shows the **shadow agreement**: for each threshold (0.5–0.95), the notes with a suggestion
+`approved` at that confidence or more, written before the first human Standing event of the note, whose first human
+event is `approved` or `rejected`: `n`, the share approved, and the Wilson 95 % lower bound.
+
+**A delegation** lets the decider approve fresh notes of one evidence kind (`finding`, `lesson`, `dead_end` or
+`test_result`, never a rule kind) in one journal. A curator with `curate` and `read` creates it on the phone: tap
+**Delegations**, read the agreement table, choose the threshold (default 0.90), the sample rate N (default 10) and
+the days (default 14, at most 30), tap **Delegate** and sign. The page refuses it with fewer than 30 shadow decisions
+at the chosen threshold (`KUTUPHANE_DELEGATION_MIN_SHADOW`).
+
+While a delegation is live, each `decider run` (by a timer) gives every note of its class with an `approved`
+suggestion at the threshold or more a **use**. The database then decides:
+
+| Rule | Effect |
+|---|---|
+| the delegation ended or expired; the note has a Standing event, a `contradicts` link, or text that may not go to a model; the note was written by the runner | no use |
+| the creator no longer holds `curate` on the book | the run skips the delegation |
+| a random 1 in N use (and always one after 2N unchecked uses) | a **sample**: no event; the note stays `pending` in the normal list, with no mark |
+| any other use | an `approved` event with `set_by: model:<name>@<version>` and the reason `delegated: <id>` |
+| 3 samples wait for a person | no new use until a person decides one |
+| a person's first decision on a sample is not `approved` (phone, `note standing` or `note rollback`) | the delegation ends at once (`ended:disagreement`) |
+
+Readers see the approver: `query_notes`, `neighbours` and `open_citation` give `approved_by` (`user:…` or
+`model:…`) for an approved note.
+
+```sh
+KUTUPHANE_CURATOR_DSN=… kutuphane delegation list [--book adc-memory]      # state and use counts
+KUTUPHANE_CURATOR_DSN=… kutuphane delegation report cd_<32 hex>            # every use, its model call, agreement
+KUTUPHANE_CURATOR_DSN=… kutuphane delegation end cd_<32 hex> --curator user:ayse --reason '…'
+```
+
+An end is final; a new delegation is a new signed act. On the phone, **Details** shows the checks (agreed,
+disagreed, open, closed with no verdict) and the notes that the delegation approved, newest first. After an end,
+**Retire** retires them in one act (at most 50 at a time). Nothing is retired automatically.
+
 ## 8. Outcomes and decision export
 
 Agents record outcomes with `record_outcome` (MCP) or `POST /v1/outcomes`. There is no CLI command for this. Read [mcp.md](mcp.md) and [http-api.md](http-api.md).
