@@ -153,6 +153,7 @@ async function main() {
   if (location.pathname === "/enroll") return enroll();
   const me = await fetch("/api/me", { credentials: "same-origin" });
   if (me.ok) $("who").textContent = `Kütüphane curator · ${(await me.json()).principal}`;
+  if (location.pathname.startsWith("/c/") || location.pathname === "/requests") return confirmPage();
   return load();
 }
 

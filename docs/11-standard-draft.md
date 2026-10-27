@@ -101,7 +101,7 @@ Each profile is required only by the operations in its row. A node that does not
 | **Personal data** | `personal_data`, legal basis (DPV codes) | `forward`; `infer` to a cloud destination; export | `unknown` counts as `yes`: `deny` without a legal basis (`personal-data-basis-missing`) | **moved** from the core |
 | **Handling** | `export`, `route` | `forward`; a cloud destination | the strictest value (`restricted`, `local_only`) | **moved** from the core |
 | **Lineage** | `inputs` | `derive`; every use of a derived item | a recorded input that is not known: `deny` (`input-unknown`) | **moved** from the core |
-| **Origin details** | `reviewed_by` (for `assisted`), `software_agent: {name, version}` (for `tool`) | a claim of `assisted` or `tool` (the export marks, §5.3) | the claim is not trusted: the origin counts as `unknown`, with a notice (§7) | **moved** from the core; in 0.2 a missing value blocked publication |
+| **Origin details** | `reviewed_by` (for `assisted`), `software_agent: {name, version}` (for `tool`); optional for `human`: `entered_by` (who entered the words, for example an agent) and `confirmed_by` (the person who confirmed them as their own words, docs/25 §7.6) | a claim of `assisted` or `tool` (the export marks, §5.3); a `human` claim never needs `entered_by` or `confirmed_by` | the claim is not trusted: the origin counts as `unknown`, with a notice (§7); a missing `entered_by` or `confirmed_by` changes nothing | **moved** from the core; in 0.2 a missing value blocked publication; `entered_by` and `confirmed_by` added (D70 R3) |
 | **Rule authority** | acceptance, mandate, applicability (conditions, exclusions, valid time) | ordinary use (acceptance); a request for rule authority (all three) | `pending` (not in the ordinary view); evidence only; `escalate` when authority is needed | **moved** from the core |
 | **Activation** | an `activate` permission in a scope | an agent runs the item as an instruction or a skill | read only | **moved** from the core |
 | **Tags** | discovery tags and access tags from a controlled list (docs/19 §5) | a policy that names an access tag | a discovery tag changes no decision; an access tag is a restriction (rule 4) | new as a profile (0.2 removed labels from the core) |
@@ -177,6 +177,8 @@ items:
   - path: procedures/pressure-test.md
     digest: sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08   # core envelope: subject
     origin: human                        # human | assisted | model | tool | unknown (= model)
+    entered_by: "agent:kobra-7"          # optional (origin details): who entered the words
+    confirmed_by: "user:ayse"            # optional (origin details): the person who confirmed them as hers
     valid_from: 2026-01-01
     applies_to: "Plant 3, line A"
   - path: notes/weekly-summary.md
@@ -219,7 +221,10 @@ Five different things have different licenses:
   - `license`, `holder` and `ai_use.train` → the license profile (`derive`, `forward`, `train`);
   - personal data and legal basis → the personal-data profile (`forward`, cloud `infer`, export);
   - handling → the handling profile; `inputs` → the lineage profile;
-  - `reviewed_by` and `software_agent` → the origin-details profile;
+  - `reviewed_by` and `software_agent` → the origin-details profile; this profile also gets two optional fields
+    for `human`, `entered_by` and `confirmed_by` (D70 R3, `docs/25` §7.6), so the provenance that justifies a
+    confirmed `human` travels with the item. Data for another origin is ignored with a notice, as for
+    `reviewed_by`;
   - acceptance, mandate and applicability → the rule-authority profile;
   - activation → the activation profile;
   - status, trust per source, use records and erasure → the federation profile.

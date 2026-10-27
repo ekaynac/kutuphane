@@ -21,3 +21,5 @@ CREATE POLICY standing_event_web ON standing_event FOR INSERT TO kutuphane_curat
                           JOIN note_link l ON l.src = c.note_seq AND l.type = 'supersedes' AND l.creation
                          WHERE c.seq = standing_event.cause_seq AND c.act IS NOT NULL AND c.value = 'approved'
                            AND l.dst_note = standing_event.note_seq)));
+-- docs/25 §4.5 (024): a confirmation or a withdrawal is the row of a signed confirm or withdraw act (keys, trigger).
+GRANT INSERT ON origin_confirmation, origin_withdrawal TO kutuphane_curator_web;

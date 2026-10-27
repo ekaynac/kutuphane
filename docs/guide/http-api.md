@@ -109,12 +109,13 @@ The ingress proxy (`deploy/nginx.conf`) accepts a body of at most 1 MiB (`413` a
 | `POST` | `/v1/citations/verify` | bearer | Check code citations. | `200` |
 | `GET` | `/v1/notes` | bearer | List notes with filters. | `200` |
 | `GET` | `/v1/notes/{book}/{id}/neighbours` | bearer | The notes linked to a note. | `200` |
+| `GET` | `/v1/notes/{book}/{id}/confirmation` | bearer | The "my words" confirmation state of a note and its page URL. | `200` |
 | `POST` | `/v1/outcomes` | bearer | Record how a note or passage worked in a task. | `201`, `200` |
 | `POST` | `/mcp` | bearer | The MCP endpoint ([mcp.md](mcp.md)). | `200` |
 | `GET` | `/.well-known/oauth-protected-resource` | none | OAuth protected-resource metadata (RFC 9728). | `200` |
 
-No route changes Standing. No route ingests, indexes or approves an import. These are command-line actions
-([operations.md](operations.md)).
+No route changes Standing or origin. No route ingests, indexes or approves an import. These are command-line
+actions ([operations.md](operations.md)), and curator web acts with a passkey (Standing and the origin confirmation).
 
 ## 3. Health and identity
 
@@ -426,7 +427,8 @@ Write a note into a journal. MCP: `propose_note`.
 ([mcp.md](mcp.md#510-propose_note)).
 
 Over HTTP, the server computes the origin from the token: a person (`user:…` without `act`) gets `unknown`; an agent
-path gets `model`.
+path gets `model`. A refused `human` or `assisted` request gives the key `confirmation` (`{"url", "expires_at"}`):
+the person confirms on that curator web page with a passkey ([mcp.md](mcp.md#516-confirm_origin)).
 
 **Errors:** `400` (`JSON body required`, `fields: …`, validation, `text refused: credential-like content (…)`, a
 code citation refused), `401`, `403`, `404`, `409`, `429`.
@@ -466,7 +468,7 @@ List notes in the journals that you may read. No model call. MCP: `query_notes`
 | `sets` | `current` | Repeat for more: `current`, `open`, `history`. |
 | `kind` | none | Repeat for more. |
 | `role` | none | Repeat for more: `rule`, `evidence`. |
-| `origin` | none | Repeat for more: `model`, `unknown`. |
+| `origin` | none | Repeat for more: `human`, `assisted`, `model`, `unknown` (the shown origin). |
 | `class_key` | none | |
 | `repo`, `branch`, `path`, `commit` | none | The context. |
 | `commits` | none | `A..B`. Needs `repo`. |
@@ -515,6 +517,20 @@ the header `X-Correlation-Id`.
 ```sh
 curl -s -G -H "Authorization: Bearer $TOKEN" \
   "$KUTUPHANE_PUBLIC_URL/v1/notes/adc-memory/nt_3f…/neighbours" -d depth=2 -d direction=out
+```
+
+### 9.5 `GET /v1/notes/{book}/{id}/confirmation`
+
+The "my words" confirmation of the note `{book}@{id}` (D70 R3). MCP: `confirm_origin`
+([mcp.md](mcp.md#516-confirm_origin)). It needs `read` on the book and writes nothing.
+
+**Response `200`:** `{"ref", "origin", "confirmation": {"state", "url"?, "expires_at"?, "claim"?, "entered_by"?,
+"confirmed_by"?}}`. `state` is `open`, `confirmed`, `expired` or `none`.
+
+**Errors:** `400`, `401`, `403`, `404`.
+
+```sh
+curl -s -H "Authorization: Bearer $TOKEN" "$KUTUPHANE_PUBLIC_URL/v1/notes/adc-memory/nt_3f…/confirmation"
 ```
 
 ## 10. Code citations

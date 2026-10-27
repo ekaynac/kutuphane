@@ -28,3 +28,4 @@ button.danger { color:var(--warn); border-color:var(--warn); }
            text-align:center; z-index:3; min-height:44px; }
 .err { color:var(--warn); }
 .ok { color:var(--ok); }
+label.choice { display:block; padding:12px; border:1px solid var(--line); border-radius:8px; margin:8px 0; font-size:16px; }

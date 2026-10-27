@@ -62,7 +62,13 @@ The receipt:
  "candidates": [], "recurrence": 1, "class_count": 0, "guard_due": false, "vector": "stored"}
 ```
 
-- Every note starts `pending`. Origin is `model` on every agent path. You cannot claim `human`.
+- Every note starts `pending`. Origin is `model` on every agent path. You cannot claim `human`: a token is not a
+  person's act. When the person dictated the words, propose with `origin: "human"` (or `"assisted"` when you
+  reworded them). The receipt then has `origin_notice: "origin-claim-refused"` and
+  `confirmation: {"url", "expires_at"}`. Give the URL to the person, or call `confirm_origin` (a 2026-07-28 client
+  shows the URL itself). Only the person can confirm, in curator web with a passkey, within 24 hours. Then the note
+  shows `origin: human` with `entered_by` (you) and `confirmed_by` (the person). Change one byte and it is another
+  note with origin `model` ([mcp.md](mcp.md#516-confirm_origin)).
 - `status: existing` means the same bytes were already there. Its `standing` is the real value. If it is
   `rejected`, stop proposing it.
 - `candidates` lists similar notes (`normalized`, `vector`, `class`). The server never merges them. Decide, and link

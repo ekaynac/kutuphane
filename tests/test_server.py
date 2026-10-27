@@ -415,7 +415,7 @@ MODERN, LEGACY = "2026-07-28", "2025-11-25"
 TOOLS = ["search_library", "open_citation", "ask_library", "reopen_answer", "read_document",
          "record_runbook_feedback", "job_status", "job_result", "job_cancel",
          "propose_note", "link_notes", "verify_citations", "query_notes", "neighbours",
-         "record_outcome"]  # then FEATURES, in order
+         "record_outcome", "confirm_origin"]  # then FEATURES, in order
 
 
 def _message(r) -> dict:

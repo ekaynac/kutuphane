@@ -21,7 +21,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import authz, curation, db, gate, notes, passkey
+from . import authz, confirm, curation, db, gate, notes, passkey
 from .server import SecurityHeaders
 
 COOKIE = "__Host-kc"
@@ -87,6 +87,8 @@ def _standing_fields(conn, principal: str, body: dict) -> dict:
 
 
 FIELDS = {"standing": _standing_fields}
+HANDLERS.update(confirm=confirm.confirm_act, withdraw=confirm.withdraw_act)       # slice R (docs/25 §7)
+FIELDS.update(confirm=confirm.confirm_fields, withdraw=confirm.withdraw_fields)
 
 
 def create_app(*, dsn: str, cfg: passkey.Config, ui_dir: Path = UI_DIR) -> Starlette:
@@ -188,6 +190,22 @@ def create_app(*, dsn: str, cfg: passkey.Config, ui_dir: Path = UI_DIR) -> Starl
     def me(conn, request, _raw):
         return JSONResponse({"principal": session_of(conn, request)[1]})
 
+    # --- R3 "my words" requests (docs/25 §7.3, §7.4): the text first; nothing is stored before the act ------------
+    def requests(conn, request, _raw):
+        _, principal, _ = session_of(conn, request)
+        items = confirm.requests_for(conn, principal)
+        _log(conn, principal, "confirm_view", True, "confirmation requests",
+             [{"ref": i["ref"], "write": i["request"]["write"]} for i in items])
+        return JSONResponse({"items": items})
+
+    def request_page(conn, request, _raw):
+        _, principal, _ = session_of(conn, request)
+        p = request.path_params
+        item = confirm.page(conn, principal, f"{p['book']}@{p['id']}")
+        _log(conn, principal, "confirm_view", True, "confirmation page",
+             [{"ref": item["ref"], "write": (item["request"] or {}).get("write")}])
+        return JSONResponse(item)
+
     # --- the pending notes (slice Q replaces the order with the risk order of §6.2) -------------------------------
     def pending(conn, request, _raw):
         _, principal, _ = session_of(conn, request)
@@ -245,6 +263,8 @@ def create_app(*, dsn: str, cfg: passkey.Config, ui_dir: Path = UI_DIR) -> Starl
 
     routes = [
         Route("/", page), Route("/enroll", page),
+        Route("/c/{book}/{id}", page), Route("/requests", page),
+        Route("/api/requests", answer(requests)), Route("/api/requests/{book}/{id}", answer(request_page)),
         Route("/api/enroll/session", answer(enroll_session), methods=["POST"]),
         Route("/api/enroll/options", answer(enroll_options), methods=["POST"]),
         Route("/api/enroll", answer(enroll_register), methods=["POST"]),

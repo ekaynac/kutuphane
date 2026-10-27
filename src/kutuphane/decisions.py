@@ -18,6 +18,7 @@ import hashlib
 from datetime import datetime, timezone
 
 from . import authz, coderepo, gate, notes, notesquery
+from . import origin as origins
 from .gate import Actor
 
 ACTION = "export_decisions"
@@ -82,8 +83,9 @@ def _records(conn, actor: Actor, books: list[str]) -> tuple[list[dict], int, int
     seqs = [r[0] for r in rows]
     standing = notes.effective_standing(conn, seqs, w)
     writers = {s: rest for s, *rest in conn.execute(
-        "SELECT note_seq, principal, on_behalf_of, client_id, origin FROM write_record "
+        "SELECT note_seq, principal, on_behalf_of, client_id FROM write_record "
         "WHERE note_seq = ANY(%s) AND creates", (seqs,))}
+    origin_at = origins.shown(conn, seqs, w)  # docs/25 §7.6: a live R3 confirmation, else the write path
     outcomes = _by_note(conn.execute(
         "SELECT note_seq, task_ref, result, at, principal, on_behalf_of, origin FROM outcome "
         "WHERE note_seq = ANY(%s) AND seq <= %s ORDER BY seq", (seqs, w)))
@@ -92,7 +94,8 @@ def _records(conn, actor: Actor, books: list[str]) -> tuple[list[dict], int, int
     for (seq, book, note_id, body, class_key, repo, branch, paths, commit, written_at, options, choice, search,
          ai_input, train) in rows:
         shown = ai_input and train
-        principal, behalf, client_id, origin = writers[seq]
+        principal, behalf, client_id = writers[seq]
+        origin, entered_by, confirmed_by = origin_at[seq]
         records.append({
             "ref": f"{book}@{note_id}", "book": book, "written_at": _iso(written_at), "standing": standing[seq][0],
             "context": {"text": body if shown else None, "text_sha256": _sha(body), "class_key": class_key,
@@ -101,7 +104,8 @@ def _records(conn, actor: Actor, books: list[str]) -> tuple[list[dict], int, int
             "options": list(options) if shown and options else None, "choice": choice if shown else None,
             "options_sha256": [_sha(o) for o in options] if options else None,
             "choice_sha256": _sha(choice) if choice else None,
-            "actor": {"principal": principal, "on_behalf_of": behalf, "client_id": client_id, "origin": origin},
+            "actor": {"principal": principal, "on_behalf_of": behalf, "client_id": client_id, "origin": origin,
+                      **({"entered_by": entered_by, "confirmed_by": confirmed_by} if confirmed_by else {})},
             "outcomes": [{"task_ref": t, "result": r, "at": _iso(at), "principal": p, "on_behalf_of": b,
                           "origin": o} for t, r, at, p, b, o in outcomes.get(seq, [])],
             "ai_use": {"search": _yn(search), "ai_input": _yn(ai_input), "train": _yn(train)},
