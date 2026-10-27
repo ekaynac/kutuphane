@@ -588,9 +588,9 @@ CREATE TRIGGER standing_event_sample_verdict AFTER INSERT ON standing_event
 | `standing_event.delegation_use` (+ key with `note_seq`) | a delegated approval names the use **of the same note**; `set_by` = the approver; never for a sampled use; `approved` only |
 | trigger `standing_event_sample_verdict` | the first event of a sampled note is its verdict; a person's verdict other than `approved` ends the delegation, on every path (phone, `note standing`, `note rollback`) |
 
-### 4.5 Database roles (`deploy/db-roles.sql`)
+### 4.5 Database roles (`deploy/db-roles.sql`, `deploy/db-roles-curator.sql`)
 
-The operator creates the two new login roles once (`kutuphane_curator_web`, `kutuphane_decider`), as for `kutuphane_app`. After every `migrate`:
+The operator creates the two new login roles once (`kutuphane_curator_web`, `kutuphane_decider`), as for `kutuphane_app`. After every `migrate`, the grants below. **Implementation (slice P):** the app-role revokes are in `deploy/db-roles.sql`; the curator web grants are in a separate file, `deploy/db-roles-curator.sql`, so an installation without curator web (and every test that applies `db-roles.sql` for the app role only) needs no curator role. Slice D adds the decider grants in the same way.
 
 ```sql
 -- docs/25 §4.5: the additions to deploy/db-roles.sql (the two login roles are made once by the operator).

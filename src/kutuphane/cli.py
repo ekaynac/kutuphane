@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import (answers, audit, authz, catalog, coderepo, db, decisions, devauth, gate, identity, kstd, llmdap,
-               noteimport, notes, packages, profiles, search, retrieval, signing, skillscan, vectors)
+               noteimport, notes, packages, passkey, profiles, search, retrieval, signing, skillscan, vectors)
 from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, make_policy
 from .source import AcceptedFinding, read_source
 
@@ -401,6 +401,52 @@ def cmd_skill_clear(conn, args) -> int:
     return 0
 
 
+def cmd_curator_enroll(conn, args) -> int:
+    """docs/25 §3.4: a one-time code (15 minutes, one passkey) for a person, as a URL fragment of curator web. The
+    owner credential is the root of trust: only it makes a person and an enrollment."""
+    cfg = passkey.Config.from_env()
+    eid, code = passkey.enroll(conn, args.principal, created_by=os.environ.get("USER") or "operator")
+    expires = conn.execute("SELECT expires_at FROM curator_enrollment WHERE id = %s", (eid,)).fetchone()[0]
+    _print({"enrollment": eid, "principal": args.principal, "url": f"{cfg.origin}/enroll#{code}",
+            "expires_at": expires.isoformat(),
+            "next": "open the URL on the person's phone; then check `kutuphane curator passkeys`"})
+    return 0
+
+
+def cmd_curator_passkeys(conn, args) -> int:
+    rows = conn.execute(
+        "SELECT p.credential_id, p.principal, p.backup_eligible, p.created_at, p.revoked_at, max(a.at) "
+        "FROM passkey p LEFT JOIN curator_act a ON a.credential_id = p.credential_id "
+        "WHERE %(p)s::text IS NULL OR p.principal = %(p)s GROUP BY p.credential_id ORDER BY p.created_at",
+        {"p": args.principal}).fetchall()
+    _print([{"id": passkey.b64u(bytes(c)), "principal": p, "synced": be, "created_at": ca.isoformat(),
+             "revoked_at": ra.isoformat() if ra else None, "last_act": la.isoformat() if la else None}
+            for c, p, be, ca, ra, la in rows])
+    return 0
+
+
+def cmd_curator_revoke_passkey(conn, args) -> int:
+    done = conn.execute("UPDATE passkey SET revoked_at = clock_timestamp() WHERE credential_id = %s "
+                        "AND revoked_at IS NULL RETURNING principal", (passkey.unb64u(args.id),)).fetchone()
+    if done is None:
+        print("error: no live passkey with this id", file=sys.stderr)
+        return 2
+    _print({"revoked": args.id, "principal": done[0]})
+    return 0
+
+
+def cmd_curator_verify_acts(conn, args) -> int:
+    """docs/25 §5.6: every stored act again, offline. Exit 1 when a problem is found."""
+    out = passkey.verify_acts(conn, passkey.Config.from_env(), since=args.since)
+    _print(out)
+    return 1 if out["problems"] else 0
+
+
+def cmd_curator_web(_conn, args) -> int:
+    import uvicorn
+    uvicorn.run("kutuphane.curatorweb:app_from_env", factory=True, host=args.host, port=args.port)
+    return 0
+
 
 def cmd_whoami(_conn, args) -> int:
     token = sys.stdin.readline().strip()  # never on the command line (shell history, process list)
@@ -635,6 +681,24 @@ def parser() -> argparse.ArgumentParser:
     sc.add_argument("--curator", required=True, help="user:<name>, who holds curate on the book")
     sc.add_argument("--reason", required=True)
     sc.set_defaults(fn=cmd_skill_clear, curator_db=True)
+    cu = sub.add_parser("curator", help="curator web: passkeys and acts (docs/25; needs KUTUPHANE_CURATOR_DSN)")
+    cusub = cu.add_subparsers(dest="curator_cmd", required=True)
+    ce = cusub.add_parser("enroll", help="a one-time enrollment URL (15 minutes, one passkey) for a person")
+    ce.add_argument("principal", help="user:<name>")
+    ce.set_defaults(fn=cmd_curator_enroll, curator_db=True)
+    cp = cusub.add_parser("passkeys", help="the registered passkeys (synced or device-bound, last act)")
+    cp.add_argument("principal", nargs="?")
+    cp.set_defaults(fn=cmd_curator_passkeys, curator_db=True)
+    cr = cusub.add_parser("revoke-passkey", help="a revoked passkey signs nothing (a lost phone: revoke, then enroll)")
+    cr.add_argument("id", help="the passkey id from `curator passkeys`")
+    cr.set_defaults(fn=cmd_curator_revoke_passkey, curator_db=True)
+    cv = cusub.add_parser("verify-acts", help="check every stored act again: statement, signature with UV, effects")
+    cv.add_argument("--since", type=int, default=0, help="only acts with a higher seq")
+    cv.set_defaults(fn=cmd_curator_verify_acts, curator_db=True)
+    cw = cusub.add_parser("web", help="serve curator web (KUTUPHANE_CURATOR_WEB_DSN, KUTUPHANE_WEBAUTHN_*)")
+    cw.add_argument("--host", default="127.0.0.1")
+    cw.add_argument("--port", type=int, default=8090)
+    cw.set_defaults(fn=cmd_curator_web, no_db=True)
     return ap
 
 

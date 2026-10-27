@@ -466,10 +466,11 @@ kutuphane note import nobetci-memory nobetci.jsonl --by user:ayse
 - There is no MCP tool and no HTTP route for the import. An agent writes one note at a time with `propose_note`.
 - The command prints a report: `created`, `existing` (the same bytes were already a note), `unchanged`, `links` and one item for each record. Exit code 3: no right, or the book is not a journal; 2: the file is refused.
 
-## 7. Curation by CLI
+## 7. Curation
 
-A note starts `pending`. Only a curator changes its Standing, and only on the command line.
-Both commands need `KUTUPHANE_CURATOR_DSN`. The curator needs `curate` on the book.
+A note starts `pending`. Only a curator changes its Standing: on the command line, or on the phone with a passkey
+(curator web, below). The curator needs `curate` on the book (and `read` on the phone).
+The CLI commands need `KUTUPHANE_CURATOR_DSN`.
 The same credential and right lift a skill scan block: `kutuphane skill clear` (section 2, "Skill scan").
 
 ```sh
@@ -502,6 +503,39 @@ Rollback prints:
 | `exports` | Exports that held the notes, in the same form as `deliveries`. |
 
 Use this report to tell the users and agents that used the notes.
+
+### On the phone (curator web, D72)
+
+Install it first: [install.md](install.md#curator-web). Then, for each curator:
+
+```sh
+KUTUPHANE_CURATOR_DSN=… kutuphane curator enroll user:ayse
+```
+
+The command prints a one-time URL (valid 15 minutes, for one passkey). Give it to Ayşe on a private channel. She
+opens it on her phone (with the Tailscale app on), taps **Create passkey** and confirms with her face, fingerprint or
+PIN. Then she taps **Sign in with passkey**.
+
+The page shows each pending note of the books where she holds `curate` and `read`: the text first (hidden Unicode
+characters are shown as marks such as `⟦U+202E⟧`), then the kind, the scope and who wrote it. She picks a reason,
+taps **Approve** or **Reject**, reads the statement, and taps **Sign with passkey**. The passkey signs that exact
+statement: the note, its digest, the Standing in force, the new value and the reason. If another curator acted on
+the note in between, the page says so and reloads.
+
+Rules of one act: 1–50 notes, one reason, at most one rule-role note (`decision_proposal`, `convention`) approved,
+never two notes joined by `contradicts` approved together. The transitions are the ones in the table above. iPhone
+and iCloud passkeys are synced; that is allowed, and each act records it.
+
+```sh
+KUTUPHANE_CURATOR_DSN=… kutuphane curator passkeys [user:ayse]     # the passkeys: synced or not, last act
+KUTUPHANE_CURATOR_DSN=… kutuphane curator revoke-passkey <id>      # a lost phone: revoke, then enroll again
+KUTUPHANE_CURATOR_DSN=… KUTUPHANE_WEBAUTHN_RP_ID=… KUTUPHANE_WEBAUTHN_ORIGIN=… kutuphane curator verify-acts
+```
+
+After each enrollment, check `curator passkeys`: one new passkey per enrollment that you made. `verify-acts` checks
+every stored act again, offline: the statement gives the challenge, the signature verifies with user verification
+against the stored passkey, and the Standing events of the act are exactly the items of its statement. It exits 1
+and lists the act when a check fails.
 
 ## 8. Outcomes and decision export
 
@@ -660,5 +694,10 @@ Disk encryption is a deployment duty at the volume level (D48). The application 
 | `skill show` | Show the SkillSpector scans of a book's current version, the blocks and the clearances. |
 | `skill rescan` | Scan skills again where no fresh result of the configured SkillSpector version exists. |
 | `skill clear` | Lift the scan block of one skill as a curator (`KUTUPHANE_CURATOR_DSN`). |
+| `curator enroll` | Print a one-time enrollment URL (15 minutes, one passkey) for a curator (`KUTUPHANE_CURATOR_DSN`). |
+| `curator passkeys` | List the registered passkeys: synced or not, last act. |
+| `curator revoke-passkey` | Revoke a passkey; it signs nothing more. |
+| `curator verify-acts` | Check every stored phone act again: statement, signature with user verification, effects. |
+| `curator web` | Serve curator web (`KUTUPHANE_CURATOR_WEB_DSN`, `KUTUPHANE_WEBAUTHN_RP_ID`, `KUTUPHANE_WEBAUTHN_ORIGIN`). |
 
 For problems, read [troubleshooting.md](troubleshooting.md).

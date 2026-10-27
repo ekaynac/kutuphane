@@ -1,0 +1,30 @@
+/* Curator web (docs/25 §6.6): the style of the labelling v5 page. The document first; large buttons. */
+:root { --fg:#1d1d1f; --muted:#6e6e73; --line:#d2d2d7; --bg:#f5f5f7; --accent:#0a66c2; --soft:#e8f0fb; --warn:#b3261e; --ok:#1b7f3b; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin:0; font:16px/1.45 system-ui, sans-serif; color:var(--fg); background:var(--bg); }
+header { position:sticky; top:0; background:#fff; border-bottom:1px solid var(--line); padding:8px 12px; z-index:2; }
+#progress { color:var(--muted); font-size:13px; margin-top:2px; }
+main { max-width:860px; margin:0 auto; padding:12px; display:grid; gap:12px; padding-bottom:100px; }
+section, .card { background:#fff; border:1px solid var(--line); border-radius:10px; padding:14px; min-width:0; }
+.card pre { white-space:pre-wrap; word-break:break-word; background:#f5f5f7; padding:10px; border-radius:8px;
+            font:15px/1.45 system-ui, sans-serif; margin:0 0 8px; }
+.card .mark { color:var(--warn); font-weight:600; }
+.card.integrity { border-color:var(--warn); }
+.meta { color:var(--muted); font-size:13px; word-break:break-word; }
+.chips { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
+.chip { padding:6px 10px; border:1px solid var(--line); border-radius:8px; background:#fff; font:inherit; font-size:14px; }
+.chip.on { border-color:var(--accent); background:var(--soft); }
+input[type=text] { width:100%; font:inherit; padding:9px; border:1px solid var(--line); border-radius:8px; }
+.choices { display:flex; gap:8px; margin-top:10px; }
+button { font:inherit; font-size:17px; padding:12px 18px; border-radius:10px; border:1px solid var(--line); background:#fff; }
+button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+button.danger { color:var(--warn); border-color:var(--warn); }
+.sheet { position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:2px solid var(--accent); padding:14px;
+         z-index:4; max-height:80vh; overflow:auto; }
+.sheet h2 { font-size:18px; margin:0 0 6px; }
+.sheet-actions { display:flex; gap:8px; justify-content:flex-end; }
+.actions { position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid var(--line); padding:10px 12px;
+           text-align:center; z-index:3; min-height:44px; }
+.err { color:var(--warn); }
+.ok { color:var(--ok); }

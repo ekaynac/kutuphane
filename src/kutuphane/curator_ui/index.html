@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kütüphane curator</title>
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/core.js" defer></script>
+</head>
+<body>
+<header>
+  <div id="who">Kütüphane curator</div>
+  <div id="progress"></div>
+</header>
+<main>
+  <section id="start" hidden>
+    <p id="start-text"></p>
+    <button id="start-button" class="primary" type="button"></button>
+  </section>
+  <div id="cards"></div>
+</main>
+<div id="sheet" class="sheet" hidden>
+  <h2>Sign this decision</h2>
+  <p id="sheet-text"></p>
+  <ol id="sheet-items"></ol>
+  <p class="meta">Your passkey asks for your face, fingerprint or PIN. It signs exactly this statement.</p>
+  <div class="sheet-actions">
+    <button id="sheet-cancel" type="button">Cancel</button>
+    <button id="sheet-sign" class="primary" type="button">Sign with passkey</button>
+  </div>
+</div>
+<div class="actions"><span id="msg"></span></div>
+</body>
+</html>
