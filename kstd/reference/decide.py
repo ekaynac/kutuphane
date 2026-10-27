@@ -171,16 +171,20 @@ def decide(case: dict) -> dict:
     if missing:
         results.append("deny"); reasons.append("input-unknown")
     sources = [item] + ancestors
+    # §5 personal data: `forward`, and `infer` to a model outside the node (a `destination`), need a legal basis.
+    discloses = action == "forward" or (action == "infer" and "destination" in req)
     for src in sources:
         tag, src_rights = ("" if src is item else "input-"), src["body"].get("rights", {})
         if action in ("derive", "train", "forward") and src_rights.get("license", "unknown") == "unknown":
             results.append("deny"); reasons.append(f"{tag}rights-unknown")  # rule 3
         ai_use = src_rights.get("ai_use", {})
+        if req.get("operation") == "search" and ai_use.get("search") != "y":  # an embedding search needs no ai_input
+            results.append("deny"); reasons.append(f"{tag}rights-reserved:search")
         if action == "train" and ai_use.get("train") != "y":
             results.append("deny"); reasons.append(f"{tag}rights-reserved:train")
         if action == "infer" and ai_use.get("ai_input") != "y":
             results.append("deny"); reasons.append(f"{tag}rights-reserved:ai_input")
-        if (action == "forward" and personal_data_of(case, src, action) not in ("no", "synthetic")
+        if (discloses and personal_data_of(case, src, action) not in ("no", "synthetic")
                 and not req.get("legal_basis")):
             results.append("deny"); reasons.append(f"{tag}personal-data-basis-missing")
     if action == "forward" and "restricted" in {handling_of(case, s["id"], s["body"]["scope"], action, "export")

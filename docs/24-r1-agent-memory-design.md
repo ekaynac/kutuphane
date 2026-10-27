@@ -866,3 +866,16 @@ Decisions on the review: no `human` origin in R1 (#2); `same_as` and clusters in
 | 20 | SDK test break | Adapter migration, the list wrapper kept on purpose, boundary tests for both versions through the proxy (§12.1, T33, T34). |
 | 21 | token budget | `budget_tokens` is an estimate over the whole response; `max_bytes` is a hard limit (§9.1, T21). |
 | 22 | distinctions without behavior | `standing_event` (no facet column), `ask_job` (no kind column); `rejected` kept with its D68 behavior (§4, §8.2). |
+
+## 19. kstd reference: search terms and personal data for `infer` (docs/21 §6.5, §6.6)
+
+`kstd/reference/decide.py` had two gaps. The change is in the reference rule, its conformance cases and `docs/11` §5. Kütüphane already applies the search term (`kstd/README.md`, L0 table).
+
+| Request | New check (item and every recorded input) | Reason when it fails |
+|---|---|---|
+| `operation: search` (action `read`) | `ai_use.search` is `y`; absent counts as `n`. `ai_input` is not necessary: a search with a local embedding model only selects items and links to them. | `rights-reserved:search` (`input-rights-reserved:search`) |
+| `action: infer` with a `destination` | the personal-data check of `forward`: `yes` or `unknown` needs `legal_basis`; `synthetic` counts only from an issuer trusted for `item` statements. The licence check of `forward` does not apply. | `personal-data-basis-missing` (`input-…`) |
+
+- Each field changes one behavior. `operation` is the request field of the scenario cases. A `destination` names a location outside the node; an `infer` without a `destination` runs in the node and needs no legal basis.
+- A plain `read` (a person opens an item) does not check `search`.
+- Tests: the cases under "§5 search terms" and "§5 personal data in a model answer" in `kstd/tests/decision/cases.yaml`.

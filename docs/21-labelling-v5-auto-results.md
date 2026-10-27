@@ -160,7 +160,7 @@ These are not fixed in v5.2. They are for v5.3, after the human set:
 
 ## 6. Open points in draft 0.2
 
-These are proposals only. `docs/11` and `kstd/reference/decide.py` do not change: the operator answers the scenario forms first (`research/labelling-v5/scenario/core/sc-core-NN.desired.md`). Each point gives the proposed rule, the reason, and the scenario that tests it. The points come from `scenario/core.README.md` ("Points that the specification may not decide") and from the auto set.
+These are proposals only. `docs/11` and `kstd/reference/decide.py` do not change: the operator answers the scenario forms first (`research/labelling-v5/scenario/core/sc-core-NN.desired.md`). Each point gives the proposed rule, the reason, and the scenario that tests it. The points come from `scenario/core.README.md` ("Points that the specification may not decide") and from the auto set. **Exception (2026-10-27):** §6.5 and §6.6 close known gaps of `decide.py`; they are now in `docs/11` §5, `decide.py` and the conformance cases (`docs/24` §19).
 
 ### 6.1 Statement kinds: `handling` and `tag`
 
@@ -213,13 +213,13 @@ These are proposals only. `docs/11` and `kstd/reference/decide.py` do not change
 - **Proposal:** **No.** A search that computes embeddings in a node-controlled location, only to select items and to show them to a person with a link, needs `ai_use.search` only. It does not need `ai_input`.
   - The vectors are a derivative (§3 derive). They inherit the handling of the item, and they never leave the node.
   - When the search result goes to a generative model (a model answer, RAG), the action is `infer`. Then `ai_input` is necessary.
-  - The reference `decide.py` does not check `ai_use.search` for `read` today. A conformance case is necessary for "search absent = n".
+  - Applied (2026-10-27): `decide.py` checks `ai_use.search` for a request with `operation: search`; absent = `n` (conformance cases "§5 search terms").
 - **Why:** the AIPREF vocabulary (`draft-ietf-aipref-vocab-08` §4.2–4.3, https://datatracker.ietf.org/doc/html/draft-ietf-aipref-vocab-08) defines "AI Use" as input to a **generative** AI model, and "Search" as the selection of assets that directs users to their location. An embedding model such as bge-m3 is not generative. Also, a lexical search and a vector search are the same user action. The decision must not change with an implementation detail.
 - **Scenario:** sc-core-05. Base (`search: y`, `ai_input: n`): `permit`. Consequential (`search` absent): `deny`, because an absent term counts as `n`. Irrelevant: the renamed file changes nothing. Also Q19 and Q3.
 
 ### 6.6 Is a model answer through a cloud processor a `forward` of personal data?
 
-- **Gap:** sc-core-10: synthetic support tickets from a trusted vendor go to `cloud:llm.example.net`. docs/11 §5 requires a legal basis for personal data only for `forward`. `decide.py` checks personal data only for `forward`, so the base and the consequential variant give the same result today.
+- **Gap:** sc-core-10: synthetic support tickets from a trusted vendor go to `cloud:llm.example.net`. docs/11 §5 required a legal basis for personal data only for `forward`. `decide.py` checked personal data only for `forward`, so the base and the consequential variant gave the same result. Applied (2026-10-27): an `infer` with a `destination` gets the personal-data check (conformance cases "§5 personal data in a model answer").
 - **Proposal:** **Yes, for personal data.** An `infer` whose `destination` is outside the node-controlled locations also gets the personal-data check of `forward`:
   - `yes` or `unknown` needs a recorded legal basis;
   - `synthetic` counts only from an issuer that is trusted for `item` statements in the scope; from any other issuer it counts as `unknown`.
