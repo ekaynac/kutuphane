@@ -24,3 +24,5 @@ REVOKE SELECT ON curator_person, curator_enrollment, curator_session, curator_ch
 REVOKE INSERT, UPDATE, DELETE ON origin_confirmation, origin_withdrawal FROM kutuphane_app;
 -- docs/25 §4.5 (025): no write on the decider and delegation tables (the decider role and curator web write them).
 REVOKE INSERT, UPDATE, DELETE ON note_suggestion, curate_delegation, delegation_use, delegation_end FROM kutuphane_app;
+-- Security review #17 (029): the key of the sample draw is the owner's only.
+REVOKE ALL ON delegation_sample_key FROM kutuphane_app;

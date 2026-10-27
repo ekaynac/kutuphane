@@ -27,3 +27,5 @@ CREATE POLICY standing_event_web ON standing_event FOR INSERT TO kutuphane_curat
 GRANT INSERT ON origin_confirmation, origin_withdrawal TO kutuphane_curator_web;
 -- docs/25 §4.5 (025): a `delegate` act inserts its delegation, an `end_delegation` act its end (statement trigger, keys).
 GRANT INSERT ON curate_delegation, delegation_end TO kutuphane_curator_web;
+-- Security review #17 (029): the key of the sample draw is the owner's only.
+REVOKE ALL ON delegation_sample_key FROM kutuphane_curator_web;

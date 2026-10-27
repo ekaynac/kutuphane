@@ -324,6 +324,7 @@ def app_from_env() -> Starlette:
     if not dsn:
         raise RuntimeError(f"curator web not configured: set {DSN_ENV} (the kutuphane_curator_web role)")
     cfg = passkey.Config.from_env()
+    delegation.min_shadow()  # a bad KUTUPHANE_DELEGATION_MIN_SHADOW stops the start, not a delegate act
     with db.connect(dsn) as conn:
         waiting = db.pending(conn)
     if waiting:

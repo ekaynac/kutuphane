@@ -210,11 +210,21 @@ def http_routes(deps, endpoint) -> list:
 
 # --- curator web: the requests, the page, the confirm and withdraw acts -------------------------------------------
 
-def _note(conn, ref) -> tuple[str, str, int]:
+def _note(conn, principal: str, ref) -> tuple[str, str, int]:
+    """The note of `ref` for `principal`: `read` directly on the book of the parsed ref first, so a person without it
+    gets one refusal whether the note exists, has a request or has a confirmation (security review #17)."""
     if not isinstance(ref, str):
         raise ValueError("ref must be a note reference (book@nt_…)")
+    book, _ = notes.parse_ref(ref)
+    if not authz.direct(conn, principal, f"book:{book}", "read").allowed:
+        raise gate.Denied(f"{principal} does not hold read on book:{book}")
     book, note_id, row = curation._note(conn, ref)
     return book, note_id, row[0]
+
+
+def _replaces_another(live, principal: str) -> bool:
+    """R7: a live confirmation by another person stays until its confirmer withdraws it."""
+    return live is not None and live[3] != principal
 
 
 def _page_item(conn, principal: str, book: str, note_id: str, seq: int, request: Request | None) -> dict:
@@ -235,7 +245,7 @@ def _page_item(conn, principal: str, book: str, note_id: str, seq: int, request:
             "origin": shown[0], "entered_by": shown[1], "confirmed_by": shown[2],
             "request": request.out() if request else None,
             "claims": [{"claim": c, "words": WORDS[c]} for c in claims_for(conn, principal, request, book)]
-            if request and request.open and whole else [],
+            if request and request.open and whole and not _replaces_another(live, principal) else [],
             "withdraw": live[0] if live and live[3] == principal else None}
 
 
@@ -255,9 +265,7 @@ def requests_for(conn, principal: str) -> list[dict]:
 def page(conn, principal: str, ref: str) -> dict:
     """One note for the confirmation page: who asks, the full text and canonical fields after the digest check, the
     claims this person may give now, and whether this person may withdraw the live confirmation."""
-    book, note_id, seq = _note(conn, ref)
-    if not authz.direct(conn, principal, f"book:{book}", "read").allowed:
-        raise gate.Denied(f"{principal} does not hold read on book:{book}")
+    book, note_id, seq = _note(conn, principal, ref)
     found = requests_of(conn, seq)
     request = next((r for r in found if r.open), found[0] if found else None)
     return _page_item(conn, principal, book, note_id, seq, request)
@@ -275,6 +283,8 @@ def _open_request(conn, principal: str, seq: int, book: str, claim, write=None) 
     if request is None:
         raise ValueError(f"request-expired: the request is open {hours()} hours after its write; propose the same "
                          "bytes again for a new one")
+    if _replaces_another(_live(conn, seq), principal):
+        raise gate.Denied("this note has a live confirmation by another person: only that person withdraws it (R7)")
     allowed = claims_for(conn, principal, request, book)
     if claim not in allowed:
         raise gate.Denied(f"{principal} may not confirm {claim} for this note"
@@ -284,7 +294,7 @@ def _open_request(conn, principal: str, seq: int, book: str, claim, write=None) 
 
 def confirm_fields(conn, principal: str, body: dict) -> dict:
     """The `confirm` statement (docs/25 §5.2): item {ref, id, write}, claim, entered_by. Nothing is stored here."""
-    book, note_id, seq = _note(conn, body.get("ref"))
+    book, note_id, seq = _note(conn, principal, body.get("ref"))
     curation.check_integrity(conn, seq, note_id)
     request = _open_request(conn, principal, seq, book, body.get("claim"), body.get("write"))
     return {"item": {"ref": f"{book}@{note_id}", "id": note_id, "write": request.write},
@@ -295,7 +305,7 @@ def confirm_act(conn, act) -> dict:
     """The row of a verified `confirm` act (docs/25 §5.4 step 7), in the act's transaction under the memory lock:
     the digest, the open request and the right are decided again now; the database checks the statement."""
     p = act.payload
-    book, note_id, seq = _note(conn, p["item"]["ref"])
+    book, note_id, seq = _note(conn, act.principal, p["item"]["ref"])
     if note_id != p["item"]["id"]:
         raise curation.IntegrityRefused("note-integrity: the statement names another note id")
     curation.check_integrity(conn, seq, note_id)
@@ -312,7 +322,7 @@ def confirm_act(conn, act) -> dict:
 
 def withdraw_fields(conn, principal: str, body: dict) -> dict:
     """The `withdraw` statement: the live confirmation of the note and the note; only its confirmer (R7)."""
-    book, note_id, seq = _note(conn, body.get("ref"))
+    book, note_id, seq = _note(conn, principal, body.get("ref"))
     live = _live(conn, seq)
     if live is None:
         raise ValueError("this note has no live confirmation")
@@ -323,7 +333,7 @@ def withdraw_fields(conn, principal: str, body: dict) -> dict:
 
 def withdraw_act(conn, act) -> dict:
     p = act.payload
-    book, note_id, seq = _note(conn, p["item"]["ref"])
+    book, note_id, seq = _note(conn, act.principal, p["item"]["ref"])
     live = _live(conn, seq)
     if note_id != p["item"]["id"] or live is None or live[0] != p["confirmation"]:
         raise curation.Changed("the confirmation changed since it was shown: reload")

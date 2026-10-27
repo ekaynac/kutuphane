@@ -31,7 +31,15 @@ SPEC = re.compile(r"^[0-9a-f]{64}\Z")
 
 
 def min_shadow() -> int:
-    return int(os.environ.get(MIN_SHADOW_ENV) or MIN_SHADOW_DEFAULT)
+    """The shadow decisions a delegation needs (§8.2): a whole number, at least 1. Curator web checks it at start."""
+    raw = os.environ.get(MIN_SHADOW_ENV) or str(MIN_SHADOW_DEFAULT)
+    try:
+        value = int(raw)
+    except ValueError:
+        raise RuntimeError(f"{MIN_SHADOW_ENV} must be a whole number") from None
+    if value < 1:
+        raise RuntimeError(f"{MIN_SHADOW_ENV} must be at least 1")
+    return value
 
 
 def _rights(conn, principal: str, book: str, modes=("curate", "read")) -> None:

@@ -519,10 +519,11 @@ def cmd_decider_run(_conn, args) -> int:
 
 
 def cmd_decider_spec(_conn, args) -> int:
-    """The decider id and spec digest that a `delegate` act names."""
+    """The decider id and spec digest that a `delegate` act names, and the runner code digest that it includes."""
     from . import decider
     spec = decider.load_spec(args.spec)
-    _print({"decider": spec.decider, "approver": spec.approver, "spec_sha256": spec.sha256.hex()})
+    _print({"decider": spec.decider, "approver": spec.approver, "spec_sha256": spec.sha256.hex(),
+            "runner_code": decider.runner_code()})
     return 0
 
 

@@ -3,16 +3,20 @@ live delegation turns a suggestion into a use that the database decides.
 
     kutuphane decider run --spec FILE [--shadow]     (KUTUPHANE_DECIDER_DSN: the kutuphane_decider role)
 
-Phase 1, suggestions: for each note in scope with no Standing event and no suggestion of this decider and spec, one
-model call through LLMDAP, local routes only, with NO lock held; then a short transaction under the memory lock writes
-the `note_suggestion`. Phase 2, uses: for each note in the class of a live delegation of this decider and spec, a short
-transaction under the memory lock inserts a `delegation_use`. The database checks the use, draws the sample and writes
-the approval (migration 025); the runner cannot choose a sample and holds no INSERT on `standing_event`.
+Phase 1, suggestions: for each note in scope with no Standing event and no suggestion of this decider and spec, the
+text gate again just before the call, then one model call through LLMDAP, local routes only, with NO lock held; then a
+short transaction under the memory lock writes the `note_suggestion`. The role reads note text only through the SQL
+function `decider_notes` (migration 029: the gated books and the text gate). Phase 2, uses: for each live delegation
+of this decider and spec, a short transaction per note under the memory lock inserts a `delegation_use` for the note
+that `delegation_next` names (the oldest eligible one). The database checks the use, sets its seq and draws the sample
+(an HMAC under a key the role cannot read) and writes the approval (migrations 025, 029); the runner cannot choose a
+note or a sample and holds no INSERT on `standing_event`.
 
 A suggestion is never shown before a person decides the note and never writes Standing (§6.4). Shadow mode (the first
 decider, §14 Q9): phase 1 only.
 """
 import hashlib
+import inspect
 import json
 import math
 import os
@@ -24,7 +28,7 @@ from pathlib import Path
 import psycopg
 from psycopg.types.json import Jsonb
 
-from . import authz, ids, llmdap, notes
+from . import ids, llmdap, notes
 from .gate import Actor
 
 RUNNER = "kutuphane-decider/1"  # the prompt framing and the answer parsing below; a change is a new runner version
@@ -95,7 +99,8 @@ def _text(doc: dict, key: str) -> str:
 
 
 def spec_of(doc: dict) -> Spec:
-    """Check a spec; `spec_sha256` = SHA-256 of its canonical JSON (docs/25 §8.3): every field is pinned."""
+    """Check a spec; `spec_sha256` = SHA-256 of its canonical JSON plus `runner_code` (docs/25 §8.3): every field and
+    the runner's prompt and answer code are pinned."""
     if not isinstance(doc, dict):
         raise SpecRefused("spec must be a JSON object")
     missing, unknown = SPEC_KEYS - doc.keys(), doc.keys() - SPEC_KEYS - OPTIONAL_KEYS
@@ -127,7 +132,7 @@ def spec_of(doc: dict) -> Spec:
         raise SpecRefused("spec: criteria must describe every label")
     if not (isinstance(doc["max_chars"], int) and 1 <= doc["max_chars"] <= MAX_CHARS):
         raise SpecRefused(f"spec: max_chars must be 1..{MAX_CHARS}")
-    return Spec(doc, hashlib.sha256(ids.canonical(doc)).digest())
+    return Spec(doc, hashlib.sha256(ids.canonical({**doc, "runner_code": runner_code()})).digest())
 
 
 def load_spec(path) -> Spec:
@@ -218,6 +223,18 @@ def check_answer(spec: Spec, answer) -> None:
             raise AnswerRefused(f"the answer names revision {revision!r}, the spec {spec['model_revision']!r}")
 
 
+# The code that frames the prompt and reads the answer. Its source is part of every spec digest, so a change to it
+# (also a comment) is another spec: no delegation matches it until a person signs one for the new digest.
+PROMPT_CODE = ("_pointer", "_row", "model_input", "_messages", "_systemone_body", "_confidence", "parse",
+               "check_answer", "ask")
+
+
+def runner_code() -> str:
+    """SHA-256 (hex) of the source of the PROMPT_CODE functions and of the call constants."""
+    parts = [inspect.getsource(globals()[name]) for name in PROMPT_CODE]
+    return hashlib.sha256("\n".join(parts + [json.dumps(CHAT_OPTIONS, sort_keys=True), QUESTION]).encode()).hexdigest()
+
+
 def ask(conn, spec: Spec, bridge: llmdap.Bridge, actor: Actor, row: dict) -> tuple[str, float]:
     """One model call (no transaction, no lock). `source_books` = the note's, so a `local_only` book never goes to a
     cloud route (the egress check of llmdap)."""
@@ -234,26 +251,18 @@ def ask(conn, spec: Spec, bridge: llmdap.Bridge, actor: Actor, row: dict) -> tup
 # --- phase 1: suggestions -------------------------------------------------------------------------------------------
 
 _LIVE = """
-SELECT d.id, d.book, d.kind, d.min_confidence, d.created_by
+SELECT d.id, d.book
   FROM curate_delegation d
  WHERE d.decider = %s AND d.spec_sha256 = %s AND clock_timestamp() < d.expires_at
    AND NOT EXISTS (SELECT 1 FROM delegation_end e WHERE e.delegation = d.id)
  ORDER BY d.created_at, d.id
 """
 
-# The text gate (§8.3 step 1): ai_input of the note AND of the journals of its closure, and no blocked skill (D71).
+# The text gate (§8.3 step 1) is in the SQL function (migration 029): ai_input of the note AND of the journals of its
+# closure, no blocked skill (D71), and only the books where the runner's principal holds `read` directly or that have
+# a live delegation. `seq`: one note again, just before its model call.
 _UNDECIDED = """
-SELECT n.seq, n.book, n.id, n.kind, n.body, n.scope_repo, n.scope_branch, n.scope_paths, n.options, n.choice,
-       n.source_books
-  FROM note n JOIN note_journal j ON j.seq = n.seq
- WHERE n.book = ANY(%(books)s::text[])
-   AND NOT EXISTS (SELECT 1 FROM standing_event e WHERE e.note_seq = n.seq)
-   AND NOT EXISTS (SELECT 1 FROM note_suggestion s WHERE s.note_seq = n.seq AND s.decider = %(decider)s
-                                                     AND s.spec_sha256 = %(spec)s)
-   AND n.ai_input AND j.ai_input AND NOT note_skill_blocked(n.seq)
-   AND char_length(n.body) <= %(max_chars)s
- ORDER BY n.seq
- LIMIT %(limit)s
+SELECT * FROM decider_notes(%(books)s::text[], %(decider)s, %(spec)s, %(max_chars)s, %(limit)s, %(seq)s)
 """
 
 
@@ -269,13 +278,23 @@ def _row(r) -> dict:
             "source_books": list(source_books)}
 
 
+def _undecided(conn, spec: Spec, books: list[str], limit: int, seq: int | None = None) -> list[dict]:
+    return [_row(r) for r in conn.execute(_UNDECIDED, {"books": books, "decider": spec.decider, "spec": spec.sha256,
+                                                       "max_chars": spec["max_chars"], "limit": limit, "seq": seq})]
+
+
 def suggest(conn, spec: Spec, bridge: llmdap.Bridge, actor: Actor, books: list[str], limit: int) -> dict:
-    """Phase 1. The model call holds no lock and no transaction; the suggestion is a short transaction under the
-    memory lock, written only while the note still has no Standing event (§6.4: before any person decides it)."""
-    rows = [_row(r) for r in conn.execute(_UNDECIDED, {"books": books, "decider": spec.decider, "spec": spec.sha256,
-                                                       "max_chars": spec["max_chars"], "limit": limit})]
-    out = {"suggestions": [], "failed": [], "decided_meanwhile": []}
-    for row in rows:
+    """Phase 1. Just before each model call the note is read again through the text gate: a note whose journal closed
+    `ai_input`, whose skill a scan blocked or that a person decided since the list is not sent (`closed_meanwhile`).
+    The model call holds no lock and no transaction; the suggestion is a short transaction under the memory lock,
+    written only while the note still has no Standing event (§6.4: before any person decides it)."""
+    out = {"suggestions": [], "failed": [], "closed_meanwhile": [], "decided_meanwhile": []}
+    for listed in _undecided(conn, spec, books, limit):
+        again = _undecided(conn, spec, books, 1, listed["seq"])
+        if not again:
+            out["closed_meanwhile"].append(listed["ref"])
+            continue
+        row = again[0]
         try:
             value, confidence = ask(conn, spec, bridge, actor, row)
         except (llmdap.EgressError, AnswerRefused) as exc:
@@ -300,54 +319,46 @@ def suggest(conn, spec: Spec, bridge: llmdap.Bridge, actor: Actor, books: list[s
 
 # --- phase 2: uses --------------------------------------------------------------------------------------------------
 
-_USABLE = """
-SELECT n.seq, n.book || '@' || n.id, s.seq
-  FROM note n JOIN note_suggestion s ON s.note_seq = n.seq AND s.decider = %(decider)s AND s.spec_sha256 = %(spec)s
- WHERE n.book = %(book)s AND n.kind = %(kind)s AND s.value = 'approved' AND s.confidence >= %(c)s
-   AND NOT EXISTS (SELECT 1 FROM standing_event e WHERE e.note_seq = n.seq)
-   AND NOT EXISTS (SELECT 1 FROM delegation_use u WHERE u.note_seq = n.seq)
-   AND NOT EXISTS (SELECT 1 FROM write_record w WHERE w.note_seq = n.seq AND w.action = 'propose'
-                                                  AND w.principal = %(me)s)
- ORDER BY n.seq
-"""
+_NEXT = "SELECT note_seq, ref, suggestion FROM delegation_next(%s)"
 
 _USE = """
 INSERT INTO delegation_use (delegation, book, kind, decider, spec_sha256, approver, note_seq, suggestion,
                             correlation_id)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING seq, sampled
+SELECT d.id, d.book, d.kind, d.decider, d.spec_sha256, d.approver, %s, %s, %s FROM curate_delegation d WHERE d.id = %s
+RETURNING seq, sampled
 """
 
-STOPS = ("is not live", "waits for 3 open samples")  # trigger refusals that stop the whole delegation for this run
+# trigger refusals that stop the whole delegation for this run
+STOPS = ("is not live", "waits for 3 open samples", "no longer holds curate")
 
 
 def use(conn, spec: Spec, actor: Actor) -> dict:
-    """Phase 2: one short transaction per note under the memory lock. The creator must still hold `curate` on the
-    book now (`authz.direct`, in the same transaction). The database refuses, or draws the sample and, if not
-    sampled, writes the approval (`set_by` = the decider)."""
+    """Phase 2: one short transaction per note under the memory lock, always for the note that `delegation_next`
+    names (the oldest eligible note of the class; migration 029). The database refuses (an ended delegation, open
+    samples, a creator without `curate` now, …), or draws the sample and, if not sampled, writes the approval
+    (`set_by` = the decider). Any refusal ends the delegation's turn in this run: the next note stays the same."""
     out = {"uses": [], "refused": [], "stopped": []}
-    for delegation, book, kind, min_confidence, creator in live_delegations(conn, spec):
-        candidates = conn.execute(_USABLE, {"decider": spec.decider, "spec": spec.sha256, "book": book, "kind": kind,
-                                            "c": min_confidence, "me": actor.principal}).fetchall()
-        for note_seq, ref, suggestion in candidates:
+    for delegation, _ in live_delegations(conn, spec):
+        while True:
+            ref = None
             try:
                 with conn.transaction():
                     notes._lock(conn)
-                    if not authz.direct(conn, creator, f"book:{book}", "curate").allowed:
-                        out["stopped"].append({"delegation": delegation, "reason": f"{creator} no longer holds "
-                                                                                    f"curate on book:{book}"})
+                    found = conn.execute(_NEXT, (delegation,)).fetchone()
+                    if found is None:
                         break
-                    seq, sampled = conn.execute(_USE, (delegation, book, kind, spec.decider, spec.sha256,
-                                                       spec.approver, note_seq, suggestion,
-                                                       actor.correlation_id)).fetchone()
+                    note_seq, ref, suggestion = found
+                    seq, sampled = conn.execute(_USE, (note_seq, suggestion, actor.correlation_id,
+                                                       delegation)).fetchone()
                     event = conn.execute("SELECT seq FROM standing_event WHERE delegation_use = %s",
                                          (seq,)).fetchone()
             except psycopg.errors.RaiseException as exc:
                 reason = exc.diag.message_primary or str(exc)
                 if any(stop in reason for stop in STOPS):
                     out["stopped"].append({"delegation": delegation, "reason": reason})
-                    break
-                out["refused"].append({"ref": ref, "delegation": delegation, "reason": reason})
-                continue
+                else:
+                    out["refused"].append({"ref": ref, "delegation": delegation, "reason": reason})
+                break
             out["uses"].append({"ref": ref, "delegation": delegation, "use": seq, "sampled": sampled,
                                 "event_seq": event[0] if event else None})
     return out
