@@ -390,14 +390,15 @@ def recurrence(conn, seq: int, w: int) -> int:
 
 def item_info(conn, note_seq: int) -> dict:
     """kstd-shaped item information of a note, for `server._text` and `kstd.allows`: its rights ANDed with the
-    current ones of the journals of its closure, and its shown origin (the lowest over its propose writes)."""
-    row = conn.execute("SELECT n.search AND j.search, n.ai_input AND j.ai_input, "
-                       "ARRAY(SELECT DISTINCT origin FROM write_record WHERE note_seq = n.seq AND action = 'propose') "
+    current ones of the journals of its closure, and its shown origin now (docs/25 §7.6) with the kstd origin
+    details of a live confirmation (`assisted` + `reviewed_by`; `human` + `entered_by` and `confirmed_by`)."""
+    row = conn.execute("SELECT n.search AND j.search, n.ai_input AND j.ai_input "
                        "FROM note n JOIN note_journal j ON j.seq = n.seq WHERE n.seq = %s", (note_seq,)).fetchone()
     if row is None:
         raise NotFound(f"no such note: {note_seq}")
     yn = {True: "y", False: "n"}
-    return {"origin": origins.lowest(row[2]), "ai_use": {"search": yn[row[0]], "ai_input": yn[row[1]]}}
+    shown = origins.shown(conn, [note_seq], None)[note_seq]
+    return {"origin": shown[0], **origins.details(*shown), "ai_use": {"search": yn[row[0]], "ai_input": yn[row[1]]}}
 
 
 _CANONICAL_PARTS = """
@@ -713,7 +714,8 @@ def propose(conn, actor: Actor, args: dict, embedder: llmdap.Routed | None = Non
         again = _prior(conn, actor, draft.key) if draft.key else None
         if again:
             _same_request(again, draft)
-            seq, status, origin, origin_notice = again[1], "created" if again[2] else "existing", again[4], again[5]
+            write_seq, seq, status, origin, origin_notice = again[0], again[1], "created" if again[2] else "existing", \
+                again[4], again[5]
         else:
             _check_limit(conn, actor)
             row = conn.execute("SELECT seq FROM note WHERE book = %s AND id = %s", (draft.book, draft.id)).fetchone()
@@ -727,13 +729,17 @@ def propose(conn, actor: Actor, args: dict, embedder: llmdap.Routed | None = Non
             conn.execute("INSERT INTO note_vector (note_seq, model, embedding) VALUES (%s, %s, %s::vector) "
                          "ON CONFLICT DO NOTHING", (seq, vector.model, vector.literal()))
         reads = authz.allowed(conn, actor.principal, actor.on_behalf_of, ["read"])  # the receipt level, decided now
-        minimal = {"ref": draft.ref, "status": "recorded", "origin": origin, "origin_notice": origin_notice}
+        request = {}
+        if origin_notice == origins.REFUSED and draft.origin_requested in origins.CONFIRMABLE:  # docs/25 §7.1
+            from . import confirm  # confirm imports curation, which needs this module loaded
+            request = {"confirmation": confirm.receipt(conn, write_seq, draft.ref)}
+        minimal = {"ref": draft.ref, "status": "recorded", "origin": origin, "origin_notice": origin_notice, **request}
         if journal not in reads.objects("read"):
             return minimal, again is not None, minimal, []  # propose-only: nothing about existence or counts
         readable = sorted(o.removeprefix("book:") for o in reads.objects("read"))
         candidates = _candidates(conn, seq, draft, readable, embedder, _for_model(actor)) if allow_search else []
         receipt = {"ref": draft.ref, "status": status, "standing": effective_standing(conn, [seq], NOW)[seq][0],
-                   "origin": origin, "origin_notice": origin_notice, "candidates": candidates,
+                   "origin": origin, "origin_notice": origin_notice, **request, "candidates": candidates,
                    **_counts(conn, seq, draft), "vector": vector_status}
         return receipt, again is not None, minimal, candidates
 

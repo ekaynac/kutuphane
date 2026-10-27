@@ -21,6 +21,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 
 from . import authz, coderepo, gate, notes, outcomes, profiles
+from . import origin as origins
 from .gate import Actor
 from .search import SearchChanged
 
@@ -28,7 +29,7 @@ SETS = ("current", "open", "history")
 ORDERS = ("newest", "oldest", "relevance")
 DIRECTIONS = ("out", "in", "both")
 LINK_TYPES = ("derived_from", "same_as", "about", "fixed_by", "violates", "decided_by", "supersedes", "contradicts")
-NOTE_ORIGINS = ("model", "unknown")
+NOTE_ORIGINS = ("human", "assisted", "model", "unknown")  # the shown origin (docs/25 §7.6)
 ROLES = ("rule", "evidence")
 BUDGET_TOKENS = (200, 16000)
 MAX_BYTES = (8192, 131072)
@@ -93,7 +94,9 @@ class Note:
     written_at: datetime
     ai_input: bool               # note AND the journals of its closure now (docs/24 §20.3)
     path_ok: bool                # a file path in the context matches a scope glob (SQL, scope_path_re)
-    origin: str
+    origin: str                  # the shown origin at w (docs/25 §7.6: a live R3 confirmation, else the write path)
+    entered_by: str | None = None    # with a live confirmation: the writer of the request
+    confirmed_by: str | None = None  # with a live confirmation: the person who confirmed
     rank: float = 0.0
     skill_blocked: bool = False  # depends on a blocked skill (read only for model readers)
     w: int = 0
@@ -101,6 +104,7 @@ class Note:
     standing_seq: int | None = None
     citations: list = field(default_factory=list)  # [(kind, ref, Status | None)]; None: not verified yet
     checks: list = field(default_factory=list)     # [(index in citations, (book, CodeCitation, stored hash))]
+    approved_by: str | None = None  # docs/25 §8.5: set_by of the latest event at w (shown only when it approves)
 
     @property
     def ref(self) -> str:
@@ -199,7 +203,8 @@ def watermark(conn) -> int:
     return conn.execute(
         "SELECT greatest((SELECT max(seq) FROM note), (SELECT max(seq) FROM write_record), "
         "                (SELECT max(seq) FROM note_link), (SELECT max(seq) FROM standing_event), "
-        "                (SELECT max(seq) FROM outcome), 0)").fetchone()[0]
+        "                (SELECT max(seq) FROM outcome), (SELECT max(seq) FROM origin_confirmation), "
+        "                (SELECT max(seq) FROM origin_withdrawal), 0)").fetchone()[0]
 
 
 _NOTES = """
@@ -211,7 +216,8 @@ SELECT n.seq, n.book, n.id, n.kind, n.body, n.class_key, n.scope_repo, n.scope_b
          WHERE wr.note_seq = n.seq AND wr.action = 'propose' AND wr.seq <= %(w)s),
        CASE WHEN %(text)s::text IS NULL THEN 0
             ELSE ts_rank_cd(n.tsv, websearch_to_tsquery(%(cfg)s::regconfig, %(text)s::text), %(norm)s) END,
-       CASE WHEN %(blocks)s THEN note_skill_blocked(n.seq) ELSE false END
+       CASE WHEN %(blocks)s THEN note_skill_blocked(n.seq) ELSE false END,
+       (SELECT e.set_by FROM standing_event e WHERE e.note_seq = n.seq AND e.seq <= %(w)s ORDER BY e.seq DESC LIMIT 1)
   FROM note n JOIN note_journal j ON j.seq = n.seq
  WHERE n.book = ANY(%(books)s::text[]) AND n.seq <= %(w)s
    AND (%(seqs)s::bigint[] IS NULL OR n.seq = ANY(%(seqs)s::bigint[]))
@@ -231,10 +237,13 @@ def _load(conn, books, w: int, ctx: Context, *, seqs=None, kinds=None, class_key
         "books": sorted(books), "w": w, "seqs": seqs, "kinds": kinds, "class_key": class_key, "after": after,
         "before": before, "text": text, "cfg": profiles.FTS_CONFIG, "norm": RANK_NORMALIZATION,
         "path": ctx.path if ctx.path and not ctx.path.endswith("/") else None, "blocks": blocks}).fetchall()
-    out = [Note(*r[:13], origin=r[13], rank=float(r[14]), w=w, skill_blocked=r[15]) for r in rows]
+    out = [Note(*r[:13], origin=r[13], rank=float(r[14]), w=w, skill_blocked=r[15], approved_by=r[16]) for r in rows]
     standing = notes.effective_standing(conn, [n.seq for n in out], w)
     for n in out:
         n.standing, n.standing_seq = standing[n.seq]
+    shown = origins.shown(conn, [n.seq for n in out], w)  # docs/25 §7.6: a live R3 confirmation counts
+    for n in out:
+        n.origin, n.entered_by, n.confirmed_by = shown[n.seq]
     return out
 
 
@@ -341,7 +350,9 @@ def _item(note: Note, is_current: bool, recurrence: int, graph: Graph, for_model
     elif for_model and note.skill_blocked:
         withheld = gate.SKILL_WITHHELD
     item = {"ref": note.ref, "kind": note.kind, "role": note.role, "standing": note.standing,
+            "approved_by": note.approved_by if note.standing == "approved" else None,
             "current": is_current, "origin": note.origin,
+            **({"entered_by": note.entered_by, "confirmed_by": note.confirmed_by} if note.confirmed_by else {}),
             "text": None if withheld else note.body, "withheld": withheld,
             "class_key": note.class_key,
             "scope": None if note.scope_repo is None else {"repo": note.scope_repo, "branch": note.scope_branch,
@@ -716,7 +727,10 @@ def _changed(conn, seqs, since: int, w: int, read: set) -> dict:
         UNION SELECT dst_note FROM note_link WHERE dst_note = ANY(%(s)s) AND seq > %(a)s AND seq <= %(w)s
                                                AND src_book = ANY(%(b)s)
         UNION SELECT note_seq FROM standing_event WHERE note_seq = ANY(%(s)s) AND seq > %(a)s AND seq <= %(w)s
-        UNION SELECT note_seq FROM outcome WHERE note_seq = ANY(%(s)s) AND seq > %(a)s AND seq <= %(w)s""", p)}
+        UNION SELECT note_seq FROM outcome WHERE note_seq = ANY(%(s)s) AND seq > %(a)s AND seq <= %(w)s
+        UNION SELECT note_seq FROM origin_confirmation WHERE note_seq = ANY(%(s)s) AND seq > %(a)s AND seq <= %(w)s
+        UNION SELECT c.note_seq FROM origin_withdrawal x JOIN origin_confirmation c ON c.seq = x.confirmation
+               WHERE c.note_seq = ANY(%(s)s) AND x.seq > %(a)s AND x.seq <= %(w)s""", p)}
     out["standing"] = {r[0] for r in conn.execute(
         "SELECT DISTINCT note_seq FROM standing_event WHERE note_seq = ANY(%(s)s) AND seq > %(a)s AND seq <= %(w)s",
         p)}

@@ -867,6 +867,14 @@ shown(note, w) = c.claim                          if c exists and has no origin_
 - Only the confirmer withdraws the confirmation, with a `withdraw` act (database key). `as_of` before the withdrawal still shows the confirmation.
 - Others use the Standing path (reject or retire) or ask the confirmer; this design has no `contest` act.
 
+### 7.8 Implementation (slice R)
+
+- `confirm.py` holds the requests, the eligibility of §7.4, the `confirm` and `withdraw` statements and rows, and `confirm_origin` with its HTTP route. `origin.shown(conn, seqs, w)` gives the shown origin; `query_notes`, `neighbours`, `open_citation` (all through `notesquery._load`), `notes.item_info` and the decision export use it. The watermark and `since` include `origin_confirmation` and `origin_withdrawal`.
+- Curator web: the page `/c/{book}/{id}` and the list `/requests` load their data from `GET /api/requests` and `GET /api/requests/{book}/{id}` (the full text, the canonical fields, the request, the claims this person may give now, and whether this person may withdraw). A citation or a link into a book that the person cannot read shows no name.
+- A `withdraw` statement names the latest live confirmation; the act transaction refuses (409) when it is no longer the latest live one. `verify_acts` checks the `confirm` and `withdraw` rows against their statements.
+- kstd: a signed package lists the `human` files that carry `entered_by` or `confirmed_by` in `human_confirmed`, only when there is one, so the packages of other installations do not change. A note's kstd item information (`notes.item_info`) has `reviewed_by` for `assisted` and `entered_by` + `confirmed_by` for `human`.
+- The decision export `actor.origin` is the shown origin of the note at the export watermark (before: the stored origin of the creating write).
+
 ## 8. D73: delegated curate
 
 ### 8.1 The delegation
@@ -901,6 +909,7 @@ A delegation covers only Standing `pending → approved` of fresh notes of its c
 - `spec_sha256` = SHA-256 of the canonical spec. It pins the runner version, the route and its locality, the model and its immutable revision (for Laya the pinned Hub commit; for a local Qwen the weights digest), the prompt and the label map. Another value is another spec, and no delegation matches it.
 - The runner refuses a spec whose `route_locality` is not `local`, and refuses a model answer whose reported model or revision differs from the spec. **Limit:** LLMDAP reports the route's configured class and model; the route configuration and the model server are in the trusted base (§3.5).
 - `kutuphane decider run --spec FILE`, by a timer, with `KUTUPHANE_DECIDER_DSN` (role `kutuphane_decider`) and its own LLMDAP subject key. Audit principal: `agent:kutuphane-decider`.
+- **Implementation (slice D):** the spec files are `deploy/deciders/qwen-notes.json` (the first decider) and `laya-notes.json`. A spec also has `answer`: the JSON pointers of the reported model and revision in the model answer (`/model` and `/system_fingerprint` on the `chat` route; `/routing/model` and none on `laya`, whose revision the LLMDAP digest gate pins), and, for `systemone`, optional `criteria`. The runner version is `kutuphane-decider/1`. For the local Qwen, the pinned revision is the vLLM `system_fingerprint` that the route reports: the server reports no weights digest. The runner's subject key is `KUTUPHANE_DECIDER_LLMDAP_KEY`; the model answer is `{label, confidence}`, mapped by `labels`. A note longer than `max_chars` is not sent (the person decides it).
 - **Scope:** the books of the live delegations of this decider and spec, and the books that the operator lists in `KUTUPHANE_DECIDER_BOOKS` for pre-sort suggestions. No agent can extend it.
 - Two decider kinds, one interface:
   - **Local Qwen** through the LLMDAP `chat` route (as `experiments/labeling_v5/llm_propose.py`): a JSON answer `{value, confidence}`; a malformed answer is `abstain`, 0. **This is the first decider** (§14 Q9), in shadow mode: it writes suggestions only, and no delegation uses it until its shadow agreement (§8.7) is enough.
@@ -991,7 +1000,7 @@ Because the page never shows a suggestion or a sample mark before the decision, 
 
 ### 10.3 CLI
 
-`kutuphane curator enroll|passkeys|revoke-passkey|verify-acts|report|web`; `kutuphane decider run`; `kutuphane delegation list|report|end`. `note standing` and `note rollback` stay.
+`kutuphane curator enroll|passkeys|revoke-passkey|verify-acts|queue|report|web` (`queue`: the §6 queue of a named curator on the command line, Pilot 2 G36); `kutuphane decider run`; `kutuphane delegation list|report|end`. `note standing` and `note rollback` stay.
 
 ## 11. Not in this design
 

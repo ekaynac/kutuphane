@@ -504,6 +504,42 @@ Rollback prints:
 
 Use this report to tell the users and agents that used the notes.
 
+### The queue (#77)
+
+The queue lists the pending notes of a curator in risk order. The phone page and the CLI show the same queue:
+
+```sh
+KUTUPHANE_CURATOR_DSN=… kutuphane curator queue --curator user:ayse [--book adc-memory] [--as-of W] [--cursor C]
+```
+
+- **Books:** only the books where the curator holds `curate` and `read` directly, now. A book with `curate` but no
+  `read` is in `read_needed` ("grant read to curate this book").
+- **Groups:** the pending notes of one `same_as` cluster are one group. A group shows every member, also the decided
+  ones, with its Standing. Members joined by `contradicts` are in `pairs`.
+- **Order:** groups by tier, then by the oldest pending note. Inside a group, by seq.
+
+| Tier | Notes |
+|---|---|
+| 1 | a rule note whose approval retires an approved rule of the same scope (`supersedes`); any note with a `contradicts` link to an approved note |
+| 2 | `decision_proposal` |
+| 3 | `convention` |
+| 4 | `finding` |
+| 5 | `lesson`, `dead_end` |
+| 6 | `test_result` |
+
+- **Watermark:** the output has `watermark` (w). The same w and the same rights give the same queue, byte for byte.
+  `next_cursor` gives the next page at the same w (20 groups per page; `--limit` changes it).
+- **Each note** shows every part that its id covers: the text, the scope, the class key, the commit, the decision
+  options and choice, the citations, and the links with the target text. It also shows "why here", the writers, the
+  origin, the outcome counts, and per group the recurrence and "proposed again after rejection". A citation or a link
+  into a book that the curator cannot read shows only "a passage (note) in a book you cannot read".
+  `hidden_parts` counts these parts in the note's own citations and creation links: such a note cannot be approved
+  on the phone (the curator can reject it, or get `read` on that book).
+- **No model suggestion** is in the queue, and the queue order does not use one (D67). A note that a delegation
+  holds as a sample has its normal place and no mark.
+- Each queue page is recorded as an `access_event` (action `curate_view`) with the notes and their Standing events,
+  so the rollback report can list who saw a note.
+
 ### On the phone (curator web, D72)
 
 Install it first: [install.md](install.md#curator-web). Then, for each curator:
@@ -516,13 +552,18 @@ The command prints a one-time URL (valid 15 minutes, for one passkey). Give it t
 opens it on her phone (with the Tailscale app on), taps **Create passkey** and confirms with her face, fingerprint or
 PIN. Then she taps **Sign in with passkey**.
 
-The page shows each pending note of the books where she holds `curate` and `read`: the text first (hidden Unicode
-characters are shown as marks such as `⟦U+202E⟧`), then the kind, the scope and who wrote it. She picks a reason,
-taps **Approve** or **Reject**, reads the statement, and taps **Sign with passkey**. The passkey signs that exact
-statement: the note, its digest, the Standing in force, the new value and the reason. When she approves a rule-role
-note that supersedes a current rule of the same scope, the statement also lists that rule as retired (`retires`),
-and the act retires exactly those notes. If another curator acted on the note or on a listed rule in between, the
-page says so and reloads.
+The page shows the queue (above): one card per group, the text of each note first (hidden Unicode characters are
+shown as marks such as `⟦U+202E⟧`), then every other part of the note. For each pending note she taps **Approve**,
+**Reject** or **Skip**; **Select group** selects every pending note of the group for approval. The bottom bar shows
+the counts ("Approve 1 · Reject 4"). She writes or picks a reason ("duplicate of …", "wrong", …), taps **Sign**,
+reads the statement (each note: the kind, the first 120 characters, the short reference; and the approved rules that
+the approval retires), and taps **Sign with passkey**. One act decides every selected note, with one reason; each
+note gets its own Standing event. The passkey signs that exact statement: the notes, their digests, the Standing in
+force, the new values and the reason. If another curator acted on a note in between, the page says so and reloads.
+
+After the act, the page shows the receipt: for each note, the suggestion of a model decider if there is one ("agrees"
+or "differs"), and for a sample of a delegation, "this was a check of delegation <id>". The page shows these only
+after the act.
 
 Rules of one act: 1–50 notes, one reason, at most one rule-role note (`decision_proposal`, `convention`) approved,
 never two notes joined by `contradicts` approved together. The transitions are the ones in the table above. iPhone
@@ -543,9 +584,107 @@ session registers a passkey only for its own code.
 
 After each enrollment, check `curator passkeys`: one new passkey per enrollment that you made. `verify-acts` checks
 every stored act again, offline: the statement gives the challenge, the signature verifies with user verification
-against the stored passkey, the Standing events of the act are exactly the items of its statement, and the
-retirements that they caused are exactly its `retires`. It exits 1
-and lists the act when a check fails.
+against the stored passkey, and the rows of the act (Standing events, origin confirmations and withdrawals) are
+exactly the items of its statement, and the
+retirements that they caused are exactly its `retires`. It exits 1 and lists the act when a check fails.
+
+### "My words": confirm the origin of a note (D70 R3, R7)
+
+The server never stores `human` from a token. When an agent (or a person over HTTP) proposes a note with
+`origin: human` or `assisted`, the note gets the write-path origin (`model` or `unknown`) with the notice
+`origin-claim-refused`, and the receipt gets a confirmation URL: `<KUTUPHANE_CURATOR_URL>/c/<book>/<nt_id>`. The
+MCP tool `confirm_origin` gives the same URL to the agent; a 2026-07-28 client shows it to the person as a URL
+elicitation. The URL holds no secret and gives no right.
+
+The person opens the URL in curator web (or `/requests` for every open request), signs in with a passkey, and
+reads who asks (the writer and the client), the full text and the fields of the note. Then the person picks one
+sentence and signs it with the passkey:
+
+| Choice | Origin | Who may choose it |
+|---|---|---|
+| "These are my words, verbatim (I wrote or dictated them)." | `human` | only the person the words were entered for: the user that the agent acted for, or the user who wrote (a database key) |
+| "A model wrote or reworded this. I reviewed it in substance." | `assisted` | that person, or a curator of the book |
+
+The person also needs `read` on the book. Nothing is stored before the signature; leaving the page stores nothing.
+
+- **Expiry:** a request is open for `KUTUPHANE_CONFIRM_HOURS` (24) hours after its write. Then the page refuses it.
+  The same bytes proposed again open a new request. A confirmation itself does not expire.
+- **One changed byte** is another note, with the write-path origin. A confirmation never moves to another note,
+  also not to the note that supersedes it.
+- **What readers see:** `query_notes`, `neighbours`, `open_citation` and the decision export give the shown origin,
+  and with a live confirmation also `entered_by` and `confirmed_by`. The `origin` filter uses the shown origin.
+  `write_record.origin` never changes. The origin changes no Standing and no right.
+- **Withdraw (R7):** only the person who confirmed can withdraw, on the same page (**Withdraw my confirmation**, a
+  passkey act). Then the origin is the write-path value again; an older confirmation does not come back. A query
+  with `as_of` before the withdrawal still shows the confirmation. Other people use the Standing path (reject or
+  retire).
+
+### Model suggestions and delegated curate (D73)
+
+A **decider** is a local model behind LLMDAP with a pinned spec file (`deploy/deciders/*.json`): the model, its
+revision, the route, the prompt and the label map. `kutuphane decider run` gives each undecided note in its books one
+**suggestion** (`approved`, `rejected` or `abstain`, and a confidence). A suggestion never changes Standing, and the
+phone page never shows it before a person decides the note. Install the runner first:
+[install.md](install.md#decider-runner).
+
+The first decider is the local Qwen (`deploy/deciders/qwen-notes.json`) in **shadow mode**: suggestions only.
+
+```sh
+kutuphane decider spec deploy/deciders/qwen-notes.json        # the decider id and spec_sha256
+KUTUPHANE_DECIDER_DSN=… KUTUPHANE_DECIDER_LLMDAP_KEY=… KUTUPHANE_LLMDAP_URL=… KUTUPHANE_DECIDER_BOOKS=adc-memory \
+  kutuphane decider run --spec deploy/deciders/qwen-notes.json --shadow
+KUTUPHANE_CURATOR_DSN=… kutuphane delegation agreement --spec deploy/deciders/qwen-notes.json --book adc-memory --kind finding
+```
+
+`delegation agreement` shows the **shadow agreement**: for each threshold (0.5–0.95), the notes with a suggestion
+`approved` at that confidence or more, written before the first human Standing event of the note, whose first human
+event is `approved` or `rejected`: `n`, the share approved, and the Wilson 95 % lower bound.
+
+**A delegation** lets the decider approve fresh notes of one evidence kind (`finding`, `lesson`, `dead_end` or
+`test_result`, never a rule kind) in one journal. A curator with `curate` and `read` creates it on the phone: tap
+**Delegations**, read the agreement table, choose the threshold (default 0.90), the sample rate N (default 10) and
+the days (default 14, at most 30), tap **Delegate** and sign. The page refuses it with fewer than 30 shadow decisions
+at the chosen threshold (`KUTUPHANE_DELEGATION_MIN_SHADOW`).
+
+While a delegation is live, each `decider run` (by a timer) gives every note of its class with an `approved`
+suggestion at the threshold or more a **use**. The database then decides:
+
+| Rule | Effect |
+|---|---|
+| the delegation ended or expired; the note has a Standing event, a `contradicts` link, or text that may not go to a model; the note was written by the runner | no use |
+| the creator no longer holds `curate` on the book | the run skips the delegation |
+| a random 1 in N use (and always one after 2N unchecked uses) | a **sample**: no event; the note stays `pending` in the normal list, with no mark |
+| any other use | an `approved` event with `set_by: model:<name>@<version>` and the reason `delegated: <id>` |
+| 3 samples wait for a person | no new use until a person decides one |
+| a person's first decision on a sample is not `approved` (phone, `note standing` or `note rollback`) | the delegation ends at once (`ended:disagreement`) |
+
+Readers see the approver: `query_notes`, `neighbours` and `open_citation` give `approved_by` (`user:…` or
+`model:…`) for an approved note.
+
+```sh
+KUTUPHANE_CURATOR_DSN=… kutuphane delegation list [--book adc-memory]      # state and use counts
+KUTUPHANE_CURATOR_DSN=… kutuphane delegation report cd_<32 hex>            # every use, its model call, agreement
+KUTUPHANE_CURATOR_DSN=… kutuphane delegation end cd_<32 hex> --curator user:ayse --reason '…'
+```
+
+An end is final; a new delegation is a new signed act. On the phone, **Details** shows the checks (agreed,
+disagreed, open, closed with no verdict) and the notes that the delegation approved, newest first. After an end,
+**Retire** retires them in one act (at most 50 at a time). Nothing is retired automatically.
+
+### Measures
+
+```sh
+KUTUPHANE_CURATOR_DSN=… kutuphane curator report --from 2026-10-01 --to 2026-11-01
+```
+
+`--from` is included, `--to` is not; a date with no zone is UTC. The report is read only.
+
+| Key | Content |
+|---|---|
+| `curator_time` | `seconds_per_approved_note`: the visible time of the phone acts that approve a note (from the first display of the cards to the tap on **Sign**, only while the tab is visible, at most 1 hour) ÷ the notes they approve. Also the median seconds per act and per decided note, the acts with no time, and the acts signed by a synced passkey. |
+| `pending_after_7_days` | Among the notes written from `--from` to 7 days before `--to` (and at least 7 days ago): the share with no Standing event 7 days after it was written. By tier (the tier now) and by book. |
+| `decided_by` | Standing events in the period: `people_web` (phone acts), `people_cli`, `delegations`, `system`, by value. |
+| `delegations` | Each delegation live in the period: uses, approvals, the samples (agreed, disagreed, open, closed with no verdict), the coverage of its class, and the outcome counts of delegated and human approvals of the class. |
 
 ## 8. Outcomes and decision export
 
@@ -710,6 +849,8 @@ Disk encryption is a deployment duty at the volume level (D48). The application 
 | `curator end-sessions` | End every live session of a curator. |
 | `curator cancel-enrollment` | Cancel an unused enrollment code; its session ends. |
 | `curator verify-acts` | Check every stored phone act again: statement, signature with user verification, effects. |
+| `curator queue` | List the pending notes of a curator in risk order, with their `same_as` groups (`KUTUPHANE_CURATOR_DSN`). |
+| `curator report` | Curator seconds per approved note, the share still pending after 7 days, who decided, delegations. |
 | `curator web` | Serve curator web (`KUTUPHANE_CURATOR_WEB_DSN`, `KUTUPHANE_WEBAUTHN_RP_ID`, `KUTUPHANE_WEBAUTHN_ORIGIN`). |
 
 For problems, read [troubleshooting.md](troubleshooting.md).

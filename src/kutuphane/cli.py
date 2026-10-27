@@ -11,8 +11,8 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import (answers, audit, authz, catalog, coderepo, db, decisions, devauth, gate, identity, kstd, llmdap,
-               noteimport, notes, packages, passkey, profiles, search, retrieval, signing, skillscan, vectors)
+from . import (answers, audit, authz, catalog, coderepo, curatorqueue, db, decisions, devauth, gate, identity, kstd,
+               llmdap, noteimport, notes, packages, passkey, profiles, search, retrieval, signing, skillscan, vectors)
 from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, make_policy
 from .source import AcceptedFinding, read_source
 
@@ -470,9 +470,95 @@ def cmd_curator_verify_acts(conn, args) -> int:
     return 1 if out["problems"] else 0
 
 
+def cmd_curator_queue(conn, args) -> int:
+    """docs/25 §6 (G36): the queue of a curator in risk order, as curator web shows it (no suggestion, no sample
+    mark). Read only; the view is logged as `curate_view` for the named curator, as on the page."""
+    try:
+        with conn.transaction():
+            _print(curatorqueue.queue(conn, args.curator, w=args.as_of, cursor=args.cursor, limit=args.limit,
+                                      book=args.book))
+    except gate.Denied as exc:
+        print(f"denied: {exc}", file=sys.stderr)
+        return 3
+    return 0
+
+
+def _when(text: str) -> datetime:
+    """An ISO date or time; with no zone, UTC."""
+    value = datetime.fromisoformat(text)
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def cmd_curator_report(conn, args) -> int:
+    """docs/25 §6.7: curator seconds per approved note, the share still pending after 7 days, who decided, and the
+    delegations. Read only."""
+    _print(curatorqueue.report(conn, _when(args.start), _when(args.end)))
+    return 0
+
+
 def cmd_curator_web(_conn, args) -> int:
     import uvicorn
     uvicorn.run("kutuphane.curatorweb:app_from_env", factory=True, host=args.host, port=args.port)
+    return 0
+
+
+def cmd_decider_run(_conn, args) -> int:
+    """docs/25 §8.3: one run of the decider runner with its own role (KUTUPHANE_DECIDER_DSN) and LLMDAP subject key.
+    Shadow mode writes suggestions only (the first decider, §14 Q9)."""
+    from . import decider
+    spec = decider.load_spec(args.spec)
+    bridge = decider.bridge_of(spec)
+    dsn = os.environ.get(decider.DSN_ENV)
+    if not dsn:
+        print(f"error: {decider.DSN_ENV} is not set (the kutuphane_decider role)", file=sys.stderr)
+        return 2
+    with db.connect(dsn) as conn:
+        _print(decider.run(conn, spec, bridge, books=decider.books_from_env(), shadow=args.shadow,
+                           limit=args.limit))
+    return 0
+
+
+def cmd_decider_spec(_conn, args) -> int:
+    """The decider id and spec digest that a `delegate` act names."""
+    from . import decider
+    spec = decider.load_spec(args.spec)
+    _print({"decider": spec.decider, "approver": spec.approver, "spec_sha256": spec.sha256.hex()})
+    return 0
+
+
+def cmd_delegation_list(conn, args) -> int:
+    from . import delegation
+    _print(delegation.list_(conn, [args.book] if args.book else None))
+    return 0
+
+
+def cmd_delegation_report(conn, args) -> int:
+    from . import delegation
+    try:
+        _print(delegation.report(conn, args.id))
+    except gate.NotFound as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
+def cmd_delegation_agreement(conn, args) -> int:
+    from . import decider, delegation
+    spec = decider.load_spec(args.spec)
+    _print({"decider": spec.decider, "spec_sha256": spec.sha256.hex(), "book": args.book, "kind": args.kind,
+            "min_shadow": delegation.min_shadow(),
+            "agreement": delegation.agreement(conn, spec.decider, spec.sha256, args.book, args.kind)})
+    return 0
+
+
+def cmd_delegation_end(conn, args) -> int:
+    """docs/25 §8.2: a curator ends a delegation (owner credential; ending only tightens). An end is final."""
+    from . import delegation
+    try:
+        _print(delegation.end(conn, args.id, curator=args.curator, reason=args.reason))
+    except (gate.Denied, gate.NotFound) as exc:
+        print(f"denied: {exc}", file=sys.stderr)
+        return 3
     return 0
 
 
@@ -730,10 +816,51 @@ def parser() -> argparse.ArgumentParser:
     cv = cusub.add_parser("verify-acts", help="check every stored act again: statement, signature with UV, effects")
     cv.add_argument("--since", type=int, default=0, help="only acts with a higher seq")
     cv.set_defaults(fn=cmd_curator_verify_acts, curator_db=True)
+    cq = cusub.add_parser("queue", help="the pending notes of a curator in risk order, with their same_as groups")
+    cq.add_argument("--curator", required=True, help="user:<name>, who holds curate and read on the books")
+    cq.add_argument("--book", help="only this book")
+    cq.add_argument("--as-of", type=int, help="the watermark w (default: now); the same w gives the same queue")
+    cq.add_argument("--cursor", help="next_cursor of the previous page")
+    cq.add_argument("--limit", type=int, default=curatorqueue.PAGE_GROUPS, help="groups per page")
+    cq.set_defaults(fn=cmd_curator_queue, curator_db=True)
+    cm = cusub.add_parser("report", help="curator seconds per approved note, the share pending after 7 days, "
+                                         "who decided, delegations")
+    cm.add_argument("--from", dest="start", required=True, help="ISO date or time (UTC if no zone), inclusive")
+    cm.add_argument("--to", dest="end", required=True, help="ISO date or time (UTC if no zone), exclusive")
+    cm.set_defaults(fn=cmd_curator_report, curator_db=True)
     cw = cusub.add_parser("web", help="serve curator web (KUTUPHANE_CURATOR_WEB_DSN, KUTUPHANE_WEBAUTHN_*)")
     cw.add_argument("--host", default="127.0.0.1")
     cw.add_argument("--port", type=int, default=8090)
     cw.set_defaults(fn=cmd_curator_web, no_db=True)
+    dr = sub.add_parser("decider", help="the decider runner: model suggestions and delegated uses (docs/25 §8.3)")
+    drsub = dr.add_subparsers(dest="decider_cmd", required=True)
+    drr = drsub.add_parser("run", help="one run (KUTUPHANE_DECIDER_DSN, KUTUPHANE_DECIDER_LLMDAP_KEY, "
+                                       "KUTUPHANE_DECIDER_BOOKS)")
+    drr.add_argument("--spec", required=True, help="the decider spec file (deploy/deciders/*.json)")
+    drr.add_argument("--shadow", action="store_true", help="suggestions only: no delegated use")
+    drr.add_argument("--limit", type=int, default=100, help="at most this many model calls")
+    drr.set_defaults(fn=cmd_decider_run, no_db=True)
+    drs = drsub.add_parser("spec", help="check a spec; print its decider id and spec_sha256")
+    drs.add_argument("spec")
+    drs.set_defaults(fn=cmd_decider_spec, no_db=True)
+    dg = sub.add_parser("delegation", help="D73 delegated curate (docs/25 §8; needs KUTUPHANE_CURATOR_DSN)")
+    dgsub = dg.add_subparsers(dest="delegation_cmd", required=True)
+    dgl = dgsub.add_parser("list", help="every delegation with its state and use counts")
+    dgl.add_argument("--book")
+    dgl.set_defaults(fn=cmd_delegation_list, curator_db=True)
+    dgr = dgsub.add_parser("report", help="the act, the end, every use with its model call; agreement, outcomes")
+    dgr.add_argument("id")
+    dgr.set_defaults(fn=cmd_delegation_report, curator_db=True)
+    dga = dgsub.add_parser("agreement", help="the shadow agreement of a decider spec in one (book, kind)")
+    dga.add_argument("--spec", required=True)
+    dga.add_argument("--book", required=True)
+    dga.add_argument("--kind", required=True)
+    dga.set_defaults(fn=cmd_delegation_agreement, curator_db=True)
+    dge = dgsub.add_parser("end", help="end a delegation as a curator (final)")
+    dge.add_argument("id")
+    dge.add_argument("--curator", required=True, help="user:<name>, who holds curate on the book")
+    dge.add_argument("--reason", required=True)
+    dge.set_defaults(fn=cmd_delegation_end, curator_db=True)
     return ap
 
 

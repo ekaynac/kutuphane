@@ -20,3 +20,7 @@ GRANT UPDATE (stale) ON skill_scan TO kutuphane_app;
 REVOKE INSERT, UPDATE, DELETE ON curator_person, curator_enrollment, passkey, curator_session, curator_challenge,
     curator_act FROM kutuphane_app;
 REVOKE SELECT ON curator_person, curator_enrollment, curator_session, curator_challenge FROM kutuphane_app;
+-- docs/25 §4.5 (024): the R3 confirmations and R7 withdrawals are written only by curator web; the app reads them.
+REVOKE INSERT, UPDATE, DELETE ON origin_confirmation, origin_withdrawal FROM kutuphane_app;
+-- docs/25 §4.5 (025): no write on the decider and delegation tables (the decider role and curator web write them).
+REVOKE INSERT, UPDATE, DELETE ON note_suggestion, curate_delegation, delegation_use, delegation_end FROM kutuphane_app;

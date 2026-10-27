@@ -107,13 +107,18 @@ def events(conn):
     return conn.execute("SELECT note_seq, value, set_by, act FROM standing_event ORDER BY seq").fetchall()
 
 
+def queued(client):
+    """Every member of every group of the first queue page (docs/25 §6)."""
+    return [m for g in client.get("/api/queue").json()["groups"] for m in g["members"]]
+
+
 # --- C1, C2: enrollment, login, one approval ---------------------------------------------------------------------
 
 def test_enroll_login_and_approve_one_note_with_user_verification(env, client):  # C1, C2
     ref = note(env, "Retry loop in run.py hides timeouts")
     auth = ready(env, client)
     assert client.get("/api/me").json() == {"principal": U}
-    pending = client.get("/api/pending").json()["items"]
+    pending = queued(client)
     assert [i["ref"] for i in pending] == [ref] and pending[0]["text"] == "Retry loop in run.py hides timeouts"
     o = options(client, [{"ref": ref, "to": "approved"}])
     assert o["statement"]["items"] == [{"ref": ref, "id": ref.split("@")[1], "was": None, "to": "approved"}]
@@ -124,7 +129,7 @@ def test_enroll_login_and_approve_one_note_with_user_verification(env, client): 
     assert (value, set_by) == ("approved", U) and act_seq == r.json()["act"]
     row = env.execute("SELECT backup_state, shown_ms FROM curator_act WHERE seq = %s", (act_seq,)).fetchone()
     assert row == (True, 1200)  # a synced passkey (D72 default Q3) is recorded with each act
-    assert client.get("/api/pending").json()["items"] == []
+    assert queued(client) == []
     assert notes.effective_standing(env, [seq], notes.NOW)[seq][0] == "approved"
 
 
@@ -152,7 +157,7 @@ def test_enrollment_refusals(env, client):  # C1
     env.commit()
     assert client.post("/api/enroll/session", json={"code": late}, headers=H).status_code == 403
     # an enrollment session may only register
-    assert client.get("/api/pending").status_code == 401
+    assert client.get("/api/queue").status_code == 401
 
 
 def test_login_needs_user_verification_and_the_person_handle(env, client):  # C6, C11
@@ -278,7 +283,7 @@ def test_a_note_whose_parts_changed_is_refused(env, client):  # C14
     env.execute("INSERT INTO note_link (src, src_book, type, dst_note, dst_note_book, creation, write_seq) "
                 "VALUES (%s, %s, 'about', %s, %s, true, %s)", (seq_b, J, seq_a, J, write))
     env.commit()
-    item = next(i for i in client.get("/api/pending").json()["items"] if i["ref"] == b)
+    item = next(i for i in queued(client) if i["ref"] == b)
     assert item["integrity"] == "note-integrity"
     r = client.post("/api/act/options", json={"action": "standing", "items": [{"ref": b, "to": "approved"}],
                                               "reason": "x"}, headers=H)
@@ -321,9 +326,10 @@ def test_batch_rules(env):  # §6.5 (also Q3 for the phone path)
 
 def test_the_curator_web_route_snapshot(client):  # C10
     paths = sorted({r.path for r in client.app.routes if hasattr(r, "path")})
-    assert paths == ["/", "/api/act", "/api/act/options", "/api/enroll", "/api/enroll/options",
-                     "/api/enroll/session", "/api/me", "/api/pending", "/auth/logout", "/auth/passkey",
-                     "/auth/passkey/options", "/enroll", "/static"]
+    assert paths == ["/", "/api/act", "/api/act/options", "/api/delegations", "/api/delegations/{id}", "/api/enroll",
+                     "/api/enroll/options", "/api/enroll/session", "/api/me", "/api/note/{book}/{id}", "/api/queue",
+                     "/api/requests", "/api/requests/{book}/{id}", "/auth/logout", "/auth/passkey",
+                     "/auth/passkey/options", "/c/{book}/{id}", "/enroll", "/requests", "/static"]
 
 
 def test_verify_acts_finds_a_bad_signature_and_a_missing_effect(env, client):  # C12

@@ -208,8 +208,10 @@ The tools are in this order in `tools/list`. The order does not change between c
 | 13 | [`query_notes`](#513-query_notes) | List notes with filters. | `GET /v1/notes` |
 | 14 | [`neighbours`](#514-neighbours) | The notes linked to a note or a passage. | `GET /v1/notes/{book}/{id}/neighbours` |
 | 15 | [`record_outcome`](#515-record_outcome) | Record how a note or passage worked in a task. | `POST /v1/outcomes` |
+| 16 | [`confirm_origin`](#516-confirm_origin) | Ask the person to confirm whose words a note holds. | `GET /v1/notes/{book}/{id}/confirmation` |
 
-No tool changes Standing. Only a curator changes Standing, on the command line ([operations.md](operations.md)).
+No tool changes Standing or origin. Only a curator changes Standing, on the command line or in curator web
+([operations.md](operations.md)). Only a person confirms an origin, in curator web with a passkey (section 5.16).
 
 **Handles used below:**
 
@@ -494,7 +496,7 @@ book are the same note: the receipt has `status: existing` and `recurrence` goes
 | `links` | list of objects | no | `[]` | At most 20 `{"type", "ref"}`. Types: `derived_from`, `supersedes`, `same_as`, `contradicts`, `about`, `fixed_by`, `violates`, `decided_by`. `ref` is a note reference or a passage handle. A passage can be the target of `derived_from` or `about` only. `same_as` stays in one book. The same link two times is refused. |
 | `class_key` | string | no | none | `[a-z0-9][a-z0-9._:/-]{0,79}`. |
 | `decision` | object | no | none | `kind: decision_proposal` only. `{"options": [...], "choice": "..."}`: 2–20 different options of 1–500 characters, in the order offered; `choice` is one of them. |
-| `origin` | string | no | none | `human`, `assisted`, `model`, `tool`, `unknown`. The server computes the origin. Over MCP it stores `model`. A request for a higher value is refused with a notice. |
+| `origin` | string | no | none | `human`, `assisted`, `model`, `tool`, `unknown`. The server computes the origin. Over MCP it stores `model`. A request for a higher value is refused with a notice. A refused `human` or `assisted` opens a confirmation request (section 5.16). |
 | `idempotency_key` | string | no | none | `[A-Za-z0-9._:-]{8,128}` (section 7). |
 
 `derived_from` and `supersedes` exist only as creation links. `derived_from` makes the rights of the note follow
@@ -515,13 +517,15 @@ its sources. Read [agent-memory.md](agent-memory.md).
 | `status` | `created` or `existing`. |
 | `standing` | The real Standing now. For a re-proposal it can be `rejected`. |
 | `origin_notice` | `origin-claim-refused` when the requested origin was refused, else `null`. |
+| `confirmation` | Only when you asked for `human` or `assisted`: `{"url", "expires_at"}`. Show the URL to the person. On that page, the person can confirm the words with a passkey until `expires_at` (24 hours). `url` is `null` when the operator did not set `KUTUPHANE_CURATOR_URL`. Section 5.16. |
 | `candidates` | Possible duplicates: `normalized` (same text after case and white space folding), `vector` (similarity at or above `KUTUPHANE_NOTE_DUP_SIMILARITY`, default 0.90), `class` (same `class_key` in the book). At most 5 per match type. Only from books you may read. The server never merges notes. Use `link_notes` to decide. |
 | `recurrence` | The number of propose writes over the `same_as` cluster of the note. |
 | `class_count` | The number of distinct clusters with this `class_key` in the book. |
 | `guard_due` | `true` when `class_count` ≥ 2 and no approved `convention` note has this `class_key` in the book. |
 | `vector` | `stored`, `skipped:search`, `skipped:ai_input`, `skipped:no_route`, `skipped:egress`, `skipped:error` or `skipped:dimensions`. A skipped vector does not stop the write. |
 
-**Minimal receipt** (no `read` on the journal): `{"ref", "status": "recorded", "origin", "origin_notice"}`.
+**Minimal receipt** (no `read` on the journal): `{"ref", "status": "recorded", "origin", "origin_notice"}`, and
+`confirmation` as above.
 It does not tell if the note existed.
 
 **Errors:** `400` (validation; `text refused: credential-like content (<rules>)`; a code citation refused, for
@@ -612,7 +616,7 @@ request on the same data gives the same bytes.
 | `sets` | list of strings | no | `["current"]` | `current`, `open`, `history`. |
 | `kind` | list of strings | no | none | The note kinds. |
 | `role` | list of strings | no | none | `rule`, `evidence`. |
-| `origin` | list of strings | no | none | `model`, `unknown`. |
+| `origin` | list of strings | no | none | `human`, `assisted`, `model`, `unknown`: the shown origin (section 5.16). |
 | `class_key` | string | no | none | As `propose_note`. |
 | `repo` | string | no | none | The context: a repository slug. |
 | `branch` | string | no | none | The context: a branch. Without `commit`, its head is the code target. |
@@ -654,6 +658,11 @@ The sets:
 ```
 
 - A retired item has `successor`: the note that supersedes it, or `null`.
+- `origin` is the shown origin. With a live confirmation (section 5.16), the item also has `entered_by` (the writer
+  of the request) and `confirmed_by` (the person who confirmed).
+- `approved_by` (after `standing`): for an approved item, who approved it: a curator (`user:…`) or a model through a
+  signed delegation (`model:<name>@<version>`, D73); `null` for other items. `neighbours` and `open_citation` items
+  have it too.
 - An item that alone does not fit the limits has its text cut and `text_cut: true`.
 - `left` holds tombstones `{ref, standing, seq, successor}` for notes that a Standing change after `since` moved
   out of the sets.
@@ -730,6 +739,53 @@ A retry with the same key gives the first receipt.
 {"jsonrpc": "2.0", "id": 16, "method": "tools/call",
  "params": {"name": "record_outcome", "arguments": {"ref": "adc-memory@nt_3f…", "task_ref": "run-42",
             "result": "passed", "idempotency_key": "run-42.outcome-1"}}}
+```
+
+### 5.16 `confirm_origin`
+
+Ask the person to confirm whose words a note holds (D70 R3). The server never stores `human` from a token: a token
+is not a person's act on exact bytes. Only the person can confirm, in curator web, with a passkey act over the exact
+note id. This tool only reads the state and gives the URL of that page.
+
+**Needs:** `read` on the book of the note. It writes nothing.
+
+| Argument | Type | Required | Default | Limits |
+|---|---|---|---|---|
+| `ref` | string | yes | — | A note reference. |
+
+**Result:**
+
+```json
+{"ref": "adc-memory@nt_3f…", "origin": "model",
+ "confirmation": {"state": "open", "url": "https://kutuphane-curator.example.ts.net/c/adc-memory/nt_3f…",
+                  "expires_at": "2026-10-28T10:00:00Z", "claim": "human", "entered_by": "agent:kobra-7"}}
+```
+
+| `state` | Meaning |
+|---|---|
+| `open` | A propose write asked for `human` or `assisted` less than 24 hours ago (`KUTUPHANE_CONFIRM_HOURS`). `url` (when the operator set `KUTUPHANE_CURATOR_URL`) and `expires_at` are present. |
+| `confirmed` | A person confirmed the words. `claim` (`human` or `assisted`), `entered_by` and `confirmed_by` are present. `origin` is the confirmed value. |
+| `expired` | The latest request is older than 24 hours. Propose the same bytes again with the same `origin` to open a new one. |
+| `none` | No propose write asked for `human` or `assisted`. |
+
+**URL-mode elicitation (2026-07-28).** When the client declares the `elicitation.url` capability and the state is
+`open`, the first call returns an `InputRequiredResult` with one `elicitation/create` request in URL mode (a
+message and the URL) and a sealed `requestState`. The client shows the URL to the person, who opens it in the
+person's own browser. Retry the call with the `requestState`: the retry returns the normal result with the state
+now. An `accept` only means "the person opened the URL"; it confirms nothing. The tool never uses form mode. Other
+clients, and 2025-11-25 clients, get the normal result: show `url` to the person.
+
+**Who may confirm:** `human` ("These are my words, verbatim"): only the person the words were entered for (the user
+that the agent acted for, or the user who wrote). `assisted` ("A model wrote or reworded this. I reviewed it in
+substance."): that person, or a curator of the book. An agent that writes on its own rights has no person: a
+curator can give `assisted` only. One changed byte is another note, with the write-path origin (`model`). The
+person who confirmed can withdraw the confirmation; then the origin is the write-path value again.
+
+**Errors:** `400`, `403`, `404`.
+
+```json
+{"jsonrpc": "2.0", "id": 17, "method": "tools/call",
+ "params": {"name": "confirm_origin", "arguments": {"ref": "adc-memory@nt_3f…"}}}
 ```
 
 ## 6. Background jobs

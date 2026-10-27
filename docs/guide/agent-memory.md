@@ -62,7 +62,13 @@ The receipt:
  "candidates": [], "recurrence": 1, "class_count": 0, "guard_due": false, "vector": "stored"}
 ```
 
-- Every note starts `pending`. Origin is `model` on every agent path. You cannot claim `human`.
+- Every note starts `pending`. Origin is `model` on every agent path. You cannot claim `human`: a token is not a
+  person's act. When the person dictated the words, propose with `origin: "human"` (or `"assisted"` when you
+  reworded them). The receipt then has `origin_notice: "origin-claim-refused"` and
+  `confirmation: {"url", "expires_at"}`. Give the URL to the person, or call `confirm_origin` (a 2026-07-28 client
+  shows the URL itself). Only the person can confirm, in curator web with a passkey, within 24 hours. Then the note
+  shows `origin: human` with `entered_by` (you) and `confirmed_by` (the person). Change one byte and it is another
+  note with origin `model` ([mcp.md](mcp.md#516-confirm_origin)).
 - `status: existing` means the same bytes were already there. Its `standing` is the real value. If it is
   `rejected`, stop proposing it.
 - `candidates` lists similar notes (`normalized`, `vector`, `class`). The server never merges them. Decide, and link
@@ -168,8 +174,15 @@ Only a person with `curate` changes Standing, on the command line, with the cura
 KUTUPHANE_CURATOR_DSN=… kutuphane note standing adc-memory@nt_… approved --curator user:ayse --reason "checked"
 ```
 
-Find the open notes with `query_notes` and `sets: ["open"]`. When a curator approves a `rule` note with a
-`supersedes` link to an approved note with the same scope, the system retires the old note.
+A curator lists the open notes in risk order with `kutuphane curator queue --curator user:ayse`, or on the phone
+(curator web; [operations.md](operations.md), section 7). An agent finds them with `query_notes` and
+`sets: ["open"]`. When a curator approves a `rule` note with a `supersedes` link to an approved note with the same
+scope, the system retires the old note.
+
+A person can also let a local model approve fresh evidence notes of one kind in one journal, for at most 30 days, with
+a signed delegation (D73, [operations.md](operations.md), section 7). Every approved item has `approved_by`: the
+curator (`user:…`) or the model (`model:<name>@<version>`). If your orchestrator trusts only human approvals, keep
+the items whose `approved_by` starts with `user:`.
 
 ## 10. Rollback of a poisoned note
 

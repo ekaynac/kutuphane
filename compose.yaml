@@ -54,6 +54,9 @@ services:
       KUTUPHANE_LLMDAP_RERANK_ROUTE_CLASS: ${KUTUPHANE_LLMDAP_RERANK_ROUTE_CLASS:-local}
       KUTUPHANE_RERANK_MODEL: ${KUTUPHANE_RERANK_MODEL:-}
       KUTUPHANE_REPO_ROOTS: /srv/repos
+      # docs/25 §7: the base of the "my words" confirmation URL (curator web), and how long a request is open.
+      KUTUPHANE_CURATOR_URL: ${KUTUPHANE_CURATOR_URL:-}
+      KUTUPHANE_CONFIRM_HOURS: ${KUTUPHANE_CONFIRM_HOURS:-24}
     volumes:
       - ${KUTUPHANE_OIDC_JWKS_FILE:-./deploy/jwks.json}:/run/kutuphane/jwks.json:ro
       # Bare mirrors for code citations (docs/24 §10.2), kept current by the operator: core only reads them.

@@ -1,10 +1,9 @@
 "use strict";
-// Curator web (docs/25 §3.3, §3.4, §5, §6.6). Enrollment, passkey login, and one act per decision: the server builds
-// the statement, the page shows it in words, the passkey signs its digest. Note text is plain text only.
+// Curator web (docs/25 §3.3, §3.4, §5, §6.6): the shared helpers, enrollment and passkey login. The queue and its
+// acts are in queue.js (`load`). Note text is plain text only.
 
 const $ = (id) => document.getElementById(id);
 const HIDDEN = /[\u200b\u200c\u200d\u2060\ufeff\u202a-\u202e\u2066-\u2069\u00ad]/g;
-const REASONS = { approved: ["checked: correct", "useful evidence"], rejected: ["wrong", "duplicate", "not useful", "out of scope"] };
 
 function b64u(buf) {
   let s = "";
@@ -92,68 +91,14 @@ function textWithMarks(pre, text) {
 
 function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
 
-function card(item) {
-  const c = el("div", "card"), shown = performance.now();
-  if (item.integrity) c.classList.add("integrity");
-  const pre = el("pre"); textWithMarks(pre, item.text); c.append(pre);
-  const scope = item.scope ? ` · ${item.scope.repo}${item.scope.branch ? "@" + item.scope.branch : ""} ${item.scope.paths.join(", ")}` : "";
-  c.append(el("div", "meta", `${item.kind} (${item.role}) · ${item.book}${scope}`));
-  const w = item.writers[0] || {};
-  c.append(el("div", "meta", `written by ${w.principal}${w.on_behalf_of ? " for " + w.on_behalf_of : ""}` +
-                              `${w.client_id ? " via " + w.client_id : ""} · origin ${w.origin} · ${item.written_at}`));
-  if (item.integrity) { c.append(el("div", "err", "The stored parts of this note do not give its id. It cannot be signed.")); return c; }
-  const reason = el("input"); reason.type = "text"; reason.placeholder = "Reason (required)"; reason.maxLength = 500;
-  const chips = el("div", "chips"), choices = el("div", "choices");
-  for (const [to, label, cls] of [["approved", "Approve", "primary"], ["rejected", "Reject", "danger"]]) {
-    const b = el("button", cls, label); b.type = "button";
-    b.onclick = () => decide(item, to, reason.value.trim(), Math.round(performance.now() - shown)).catch((e) => msg(e.message, "err"));
-    choices.append(b);
-    for (const r of REASONS[to]) {
-      const chip = el("button", "chip", r); chip.type = "button";
-      chip.onclick = () => { reason.value = r; };
-      chips.append(chip);
-    }
-  }
-  c.append(chips, reason, choices);
-  return c;
-}
-
-async function decide(item, to, reason, shownMs) {
-  if (!reason) throw new Error("Give a reason first.");
-  const o = await post("/api/act/options", { action: "standing", items: [{ ref: item.ref, to }], reason });
-  $("sheet-text").textContent = `${o.statement.items.length === 1 ? "" : o.statement.items.length + " notes: "}` +
-    `${to === "approved" ? "Approve" : "Reject"} · reason: “${o.statement.reason}” · signed as ${o.statement.principal}`;
-  const list = $("sheet-items"); list.replaceChildren();
-  for (const i of o.statement.items) list.append(el("li", null, `${i.to}: ${i.ref.slice(0, 40)}…`));
-  $("sheet").hidden = false;
-  $("sheet-cancel").onclick = () => { $("sheet").hidden = true; };
-  $("sheet-sign").onclick = async () => {
-    try {
-      const c = await navigator.credentials.get({ publicKey: requestOptions(o.publicKey) });
-      const r = await post("/api/act", { challenge_id: o.challenge_id, credential: credentialJSON(c), shown_ms: shownMs });
-      $("sheet").hidden = true;
-      msg(`Signed: ${r.items.map((i) => i.standing).join(", ")}`, "ok");
-      await load();
-    } catch (e) { msg(e.message, "err"); }
-  };
-}
-
-async function load() {
-  const r = await fetch("/api/pending", { credentials: "same-origin" });
-  if (r.status === 401) return start("Sign in with the passkey of this device.", "Sign in with passkey", login);
-  const data = await r.json();
-  $("start").hidden = true;
-  $("progress").textContent = `${data.items.length} pending · books: ${data.books.join(", ") || "none"}`;
-  $("cards").replaceChildren(...data.items.map(card));
-  if (!data.items.length) $("cards").append(el("section", "meta", "Nothing is pending."));
-}
-
 async function main() {
   if (!window.PublicKeyCredential) return start("This browser has no passkey support.", "Reload", async () => location.reload());
   if (location.pathname === "/enroll") return enroll();
   const me = await fetch("/api/me", { credentials: "same-origin" });
   if (me.ok) $("who").textContent = `Kütüphane curator · ${(await me.json()).principal}`;
+  if (location.pathname.startsWith("/c/") || location.pathname === "/requests") return confirmPage();
   return load();
 }
 
-main().catch((e) => msg(e.message, "err"));
+// Every deferred script (queue.js, …) has run when the document is parsed.
+document.addEventListener("DOMContentLoaded", () => main().catch((e) => msg(e.message, "err")));

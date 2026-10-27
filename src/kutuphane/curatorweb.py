@@ -21,28 +21,13 @@ from starlette.concurrency import run_in_threadpool
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import authz, curation, db, gate, notes, passkey
+from . import authz, confirm, curation, curatorqueue, db, delegation, gate, notes, passkey
 from .server import SecurityHeaders
 
 COOKIE = "__Host-kc"
 DSN_ENV = "KUTUPHANE_CURATOR_WEB_DSN"
 UI_DIR = Path(__file__).parent / "curator_ui"
-PENDING_LIMIT = 50
 SESSION_SECONDS = 8 * 3600
-
-_PENDING = """
-SELECT n.seq, n.book, n.id, n.kind, n.body, n.class_key, n.scope_repo, n.scope_branch, n.scope_paths, n.written_at,
-       e.seq, e.value,
-       ARRAY(SELECT jsonb_build_object('principal', w.principal, 'on_behalf_of', w.on_behalf_of,
-                                       'client_id', w.client_id, 'origin', w.origin)
-               FROM write_record w WHERE w.note_seq = n.seq AND w.action = 'propose' ORDER BY w.seq)
-  FROM note n
-  LEFT JOIN LATERAL (SELECT seq, value FROM standing_event s WHERE s.note_seq = n.seq ORDER BY s.seq DESC LIMIT 1) e
-         ON true
- WHERE n.book = ANY(%s) AND (e.value IS NULL OR e.value = 'pending')
- ORDER BY n.seq
- LIMIT %s
-"""
 
 
 class Refused(Exception):
@@ -66,12 +51,25 @@ def _log(conn, principal: str, action: str, allowed: bool, reason: str, items=No
                   Jsonb(items) if items is not None else None))
 
 
+def _shown_whole(conn, principal: str, items) -> None:
+    """An approval needs every part of the note that its id covers shown to the person (review #16 finding 1): a
+    citation or a creation link into a book that the person cannot read now refuses it, at the options and the act."""
+    for item in items if isinstance(items, list) else []:
+        if isinstance(item, dict) and item.get("to") == "approved" and isinstance(item.get("ref"), str):
+            book, note_id = notes.parse_ref(item["ref"])
+            row = conn.execute("SELECT seq FROM note WHERE book = %s AND id = %s", (book, note_id)).fetchone()
+            if row and curatorqueue.unseen_parts(conn, principal, row[0]):
+                raise gate.Denied(f"{item['ref']} has a part in a book you cannot read: it cannot be approved here")
+
+
 def _standing(conn, act: passkey.Act) -> dict:
-    """The rows of a `standing` statement (docs/25 §5.4 step 7, §6.5)."""
+    """The rows of a `standing` statement (docs/25 §5.4 step 7, §6.5). The receipt adds, after the act, each note's
+    suggestions and, for a sample, its delegation (§5.4 step 8, §6.4, §8.4)."""
     items = [{"ref": i["ref"], "to": i["to"], "was": i["was"]} for i in act.payload["items"]]
+    _shown_whole(conn, act.principal, items)
     out = curation.apply(conn, principal=act.principal, items=items, reason=act.payload["reason"], act=act.seq,
                          need_read=True, check_was=True, integrity=True, retires=act.payload["retires"])
-    return {"act": act.seq, "items": out}
+    return {"act": act.seq, "items": curatorqueue.receipt(conn, out)}
 
 
 HANDLERS = {"standing": _standing}  # slices R and D add confirm, withdraw, delegate, end_delegation
@@ -79,6 +77,7 @@ HANDLERS = {"standing": _standing}  # slices R and D add confirm, withdraw, dele
 
 def _standing_fields(conn, principal: str, body: dict) -> dict:
     items, reason = body.get("items"), body.get("reason")
+    _shown_whole(conn, principal, items)
     prepared = curation.prepare(conn, principal=principal, items=items if isinstance(items, list) else None,
                                 reason=reason, need_read=True, integrity=True)
     return {"items": sorted(({"ref": i["ref"], "id": i["id"], "was": i["was"], "to": i["to"]} for i in prepared),
@@ -88,6 +87,11 @@ def _standing_fields(conn, principal: str, body: dict) -> dict:
 
 
 FIELDS = {"standing": _standing_fields}
+HANDLERS.update(confirm=confirm.confirm_act, withdraw=confirm.withdraw_act)       # slice R (docs/25 §7)
+FIELDS.update(confirm=confirm.confirm_fields, withdraw=confirm.withdraw_fields)
+# docs/25 §8 (slice D): a `delegate` act creates one delegation; an `end_delegation` act ends one.
+HANDLERS.update({"delegate": delegation.apply_delegate, "end_delegation": delegation.apply_end})
+FIELDS.update({"delegate": delegation.delegate_fields, "end_delegation": delegation.end_fields})
 
 
 def create_app(*, dsn: str, cfg: passkey.Config, ui_dir: Path = UI_DIR) -> Starlette:
@@ -189,23 +193,44 @@ def create_app(*, dsn: str, cfg: passkey.Config, ui_dir: Path = UI_DIR) -> Starl
     def me(conn, request, _raw):
         return JSONResponse({"principal": session_of(conn, request)[1]})
 
-    # --- the pending notes (slice Q replaces the order with the risk order of §6.2) -------------------------------
-    def pending(conn, request, _raw):
+    # --- R3 "my words" requests (docs/25 §7.3, §7.4): the text first; nothing is stored before the act ------------
+    def requests(conn, request, _raw):
         _, principal, _ = session_of(conn, request)
-        rights = authz.allowed(conn, principal, None, ["curate", "read"])
-        books = sorted(o.removeprefix("book:") for o in rights.objects("curate") & rights.objects("read"))
-        items, delivered = [], []
-        for (seq, book, note_id, kind, text, class_key, repo, branch, paths, written, ev, _value,
-             writers) in conn.execute(_PENDING, (books, PENDING_LIMIT)).fetchall():
-            ref = f"{book}@{note_id}"
-            whole = notes.canonical_of(conn, seq)[0] == note_id
-            items.append({"ref": ref, "book": book, "kind": kind, "role": notes.KIND_ROLE[kind], "text": text,
-                          "class_key": class_key, "scope": {"repo": repo, "branch": branch, "paths": list(paths)}
-                          if repo else None, "written_at": written.isoformat(), "was": ev, "writers": writers,
-                          "integrity": None if whole else "note-integrity"})
-            delivered.append({"ref": ref, "standing_seq": ev})
-        _log(conn, principal, "curate_view", True, "pending notes", delivered)
-        return JSONResponse({"books": books, "items": items})
+        items = confirm.requests_for(conn, principal)
+        _log(conn, principal, "confirm_view", True, "confirmation requests",
+             [{"ref": i["ref"], "write": i["request"]["write"]} for i in items])
+        return JSONResponse({"items": items})
+
+    def request_page(conn, request, _raw):
+        _, principal, _ = session_of(conn, request)
+        p = request.path_params
+        item = confirm.page(conn, principal, f"{p['book']}@{p['id']}")
+        _log(conn, principal, "confirm_view", True, "confirmation page",
+             [{"ref": item["ref"], "write": (item["request"] or {}).get("write")}])
+        return JSONResponse(item)
+
+    # --- the queue (docs/25 §6): risk order at a watermark; no suggestion and no sample mark ----------------------
+    def _int_param(request, name):
+        value = request.query_params.get(name)
+        if value is None:
+            return None
+        if not value.isdigit():
+            raise Refused(400, f"{name} must be an integer")
+        return int(value)
+
+    def queue(conn, request, _raw):
+        _, principal, _ = session_of(conn, request)
+        with conn.transaction():
+            out = curatorqueue.queue(conn, principal, w=_int_param(request, "w"),
+                                     cursor=request.query_params.get("cursor"), channel="http")
+        return JSONResponse(out)
+
+    def note_view(conn, request, _raw):
+        _, principal, _ = session_of(conn, request)
+        ref = f"{request.path_params['book']}@{request.path_params['id']}"
+        with conn.transaction():
+            out = curatorqueue.note(conn, principal, ref, w=_int_param(request, "w"), channel="http")
+        return JSONResponse(out)
 
     # --- acts ----------------------------------------------------------------------------------------------------
     def act_options(conn, request, raw):
@@ -244,8 +269,35 @@ def create_app(*, dsn: str, cfg: passkey.Config, ui_dir: Path = UI_DIR) -> Starl
                 raise Refused(403, "refused by the database") from None
             raise
 
+    # --- delegations (docs/25 §8; slice D) ------------------------------------------------------------------------
+    def curated_books(conn, principal: str) -> list[str]:
+        rights = authz.allowed(conn, principal, None, ["curate", "read"])
+        return sorted(o.removeprefix("book:") for o in rights.objects("curate") & rights.objects("read"))
+
+    def delegations(conn, request, _raw):
+        """The delegations of the person's books, and the shadow agreement of each decider spec per evidence class:
+        what the person sees before signing a `delegate` act (§8.2)."""
+        _, principal, _ = session_of(conn, request)
+        books = curated_books(conn, principal)
+        return JSONResponse({"books": books, "kinds": list(delegation.EVIDENCE_KINDS), "defaults": delegation.DEFAULTS,
+                             "max_days": delegation.MAX_DAYS, "delegations": delegation.list_(conn, books),
+                             "shadow": delegation.shadow_classes(conn, books)})
+
+    def delegation_view(conn, request, _raw):
+        """One delegation: the report (§8.6) and the review list of the notes it approved (§8.4)."""
+        _, principal, _ = session_of(conn, request)
+        out = delegation.report(conn, request.path_params["id"])
+        if out["delegation"]["book"] not in curated_books(conn, principal):
+            raise gate.NotFound(f"no such delegation: {request.path_params['id']}")
+        out["review"] = delegation.review_list(conn, request.path_params["id"])
+        _log(conn, principal, "curate_view", True, f"delegation {request.path_params['id']}",
+             [{"ref": r["ref"], "standing_seq": r["was"]} for r in out["review"]])
+        return JSONResponse(out)
+
     routes = [
         Route("/", page), Route("/enroll", page),
+        Route("/c/{book}/{id}", page), Route("/requests", page),
+        Route("/api/requests", answer(requests)), Route("/api/requests/{book}/{id}", answer(request_page)),
         Route("/api/enroll/session", answer(enroll_session), methods=["POST"]),
         Route("/api/enroll/options", answer(enroll_options), methods=["POST"]),
         Route("/api/enroll", answer(enroll_register), methods=["POST"]),
@@ -253,9 +305,12 @@ def create_app(*, dsn: str, cfg: passkey.Config, ui_dir: Path = UI_DIR) -> Starl
         Route("/auth/passkey", answer(login), methods=["POST"]),
         Route("/auth/logout", answer(logout), methods=["POST"]),
         Route("/api/me", answer(me)),
-        Route("/api/pending", answer(pending)),
+        Route("/api/queue", answer(queue)),
+        Route("/api/note/{book}/{id}", answer(note_view)),
         Route("/api/act/options", answer(act_options), methods=["POST"]),
         Route("/api/act", answer(act), methods=["POST"]),
+        Route("/api/delegations", answer(delegations)),
+        Route("/api/delegations/{id}", answer(delegation_view)),
         Mount("/static", StaticFiles(directory=ui_dir)),
     ]
     app = Starlette(routes=routes)

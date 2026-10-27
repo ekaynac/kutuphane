@@ -360,6 +360,25 @@ def _standing_effects(conn, act: int, payload: dict) -> bool:
 EFFECTS = {"standing": _standing_effects}  # slices R and D add their actions
 
 
+def _confirm_effects(conn, act: int, payload: dict) -> bool:
+    """docs/25 §7: exactly one confirmation, of this note id, request, claim and writer."""
+    got = conn.execute("SELECT book || '@' || note_id, write_seq, claim, entered_by FROM origin_confirmation "
+                       "WHERE act = %s", (act,)).fetchall()
+    item = payload.get("item", {})
+    return [tuple(r) for r in got] == [(item.get("ref"), item.get("write"), payload.get("claim"),
+                                        payload.get("entered_by"))]
+
+
+def _withdraw_effects(conn, act: int, payload: dict) -> bool:
+    """docs/25 §7.7: exactly one withdrawal, of this confirmation of this note."""
+    got = conn.execute("SELECT w.confirmation, c.book || '@' || c.note_id FROM origin_withdrawal w "
+                       "JOIN origin_confirmation c ON c.seq = w.confirmation WHERE w.act = %s", (act,)).fetchall()
+    return [tuple(r) for r in got] == [(payload.get("confirmation"), payload.get("item", {}).get("ref"))]
+
+
+EFFECTS.update(confirm=_confirm_effects, withdraw=_withdraw_effects)  # slice R (024)
+
+
 def verify_acts(conn, cfg: Config, since: int = 0) -> dict:
     """Check every stored act again: the statement gives the challenge, the assertion verifies with UV against the
     stored passkey, and the rows that name the act are exactly the ones its statement asks for."""
@@ -390,3 +409,10 @@ def verify_acts(conn, cfg: Config, since: int = 0) -> dict:
         elif not check(conn, seq, payload):
             problems.append({"act": seq, "problem": "effects"})
     return {"acts": len(rows), "problems": problems}
+
+
+# docs/25 §8 (slice D): the effects of the delegation acts. Imported here, at the end, because delegation.py does not
+# import this module and verify_acts reads EFFECTS only when it runs.
+from . import delegation  # noqa: E402
+
+EFFECTS.update({"delegate": delegation.delegate_effects, "end_delegation": delegation.end_effects})
