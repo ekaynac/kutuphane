@@ -1,7 +1,7 @@
-# Knowledge standard — draft 0.2
+# Knowledge standard — draft 0.3
 
-**Status:** DRAFT 0.2, 2026-10-20. The working name is `kstd` (operator question Q5). **Since D59 (2026-10-22) this draft is a contribution and a test tool, not a standard proposed alone:** it is re-checked against the existing work in `docs/13-landscape.md` and brought to the matching communities.
-- **History:** draft 0.1 merged three round-3 proposals (Claude, Astra, Mythos). Astra and Mythos critiqued it in round 4. The change log is in §10. The sources are in `docs/research/2026-10-20-round{3,4}-*`.
+**Status:** DRAFT 0.3, 2026-10-27 (draft 0.2: 2026-10-20). The working name is `kstd` (operator question Q5). **Since D59 (2026-10-22) this draft is a contribution and a test tool, not a standard proposed alone:** it is re-checked against the existing work in `docs/13-landscape.md` and brought to the matching communities.
+- **History:** draft 0.1 merged three round-3 proposals (Claude, Astra, Mythos). Astra and Mythos critiqued it in round 4. Draft 0.3 makes the core minimal (D74, `docs/22` §3). The changes from 0.2 are in §11; the change log 0.1 → 0.2 is in §12. The sources are in `docs/research/2026-10-20-round{3,4}-*` and `docs/research/2026-10-27-*`.
 - **Language:** ASD-STE100 Simplified Technical English. **MUST**, **MUST NOT** and **MAY** are normative.
 
 ## 1. Scope and shape
@@ -17,6 +17,8 @@ It does not govern genres, storage or transport. The shape is an hourglass:
 - in the waist, only **artifacts**, **statements** and one **decision rule**.
 
 It serves an organization node (on-prem, air-gapped possible) and a network of nodes (routers of shared knowledge) with the same model.
+
+**The normative core is small** (D74): the core envelope, the core permissions and origin with a safe default (§5.1), and the decision rule (§4). Every other field belongs to an **operation profile** (§5.2): only the operation that reads it requires it. A missing profile field makes that operation `deny` or `escalate`; the other operations still work.
 
 ## 2. The waist
 
@@ -41,13 +43,13 @@ An artifact identity and a statement identity are separate. A correction of righ
 | `use_record` | `use` (written by `deliver`) or `outcome` (signed by the actor; it references the `use` record). Not called "receipt": in SCITT a receipt is a log inclusion proof, and in DPV/ISO 27560 a consent record. | audit; the trigger for reviews |
 | `disposition` | an erasure: its scope, completion, exceptions and unresolved copies | honest erasure |
 
-A field outside this standard MUST NOT change a decision.
+A field outside this standard MUST NOT change a decision. A validator ignores it, with a notice; it does not make the statement unreadable (§7).
 
 ## 3. Operations
 
 | Operation | Effect |
 |---|---|
-| **register** | Admit an artifact or a received statement. Verify the format, the identity and the signature. Assign **no** authority. A received status or use record does not become an item. |
+| **register** | Admit an artifact or a received statement. Verify the format, the core envelope (§5.1: version, subject digest, issuer) and the signature. Assign **no** authority. A received status or use record does not become an item. |
 | **derive** | Create an artifact from recorded inputs and a named process: summary, translation, embedding, consolidation, training. The new item lists its inputs. Its rights are checked per input for each proposed use (§5); its handling inherits the strictest input value. |
 | **attest** | Add a statement. A statement MUST NOT give powers that its issuer does not have. |
 | **decide** | Apply the decision rule (§4). Result: `permit`, `deny` or `escalate`, with a reason. |
@@ -64,18 +66,50 @@ A field outside this standard MUST NOT change a decision.
 
 Given the same request, policy, trust configuration, statements and evaluation time, two conforming implementations MUST return the same result and the same reason.
 
-1. The result is the strictest of all applicable rules: `deny` > `escalate` > `permit`.
-2. No applicable permission means `deny`.
-3. An unknown *required rights* term means `deny`. Unknown required *applicability* context means `escalate`.
-4. An imported statement that **tightens access** (rights, handling, a prohibition) applies at once, from any issuer. A statement that loosens applies only if the trust policy names its issuer for that **kind × scope × action**, with an expiry. A withdrawal or a hold affects **availability**, not access, so rule 8 applies to it: from an issuer that is not trusted, it is only a visible contest mark.
-5. When two trusted issuers conflict, the local precedence rule decides; without one, the result is `escalate`. A timestamp never decides between issuers.
-6. A status of an imported item that is past its maximum age removes **rule authority** only. The content stays available as evidence, and rule authority comes back when a current status arrives (over the network or in a package). The maximum age is set **per trusted source**; the default is 30 days. An administrator can set "never" for a source; when the last status is older than the default age, each use then shows the notice "status not checked". A node's own items need no status check.
-7. A `permit` is bound to exact artifact, statement and policy versions, and it has an expiry.
-8. No proposal from an issuer that is not trusted can remove an accepted item from use. A **hold** needs a named owner and a review deadline.
+Each rule names the level or the profile (§5) that it **reads**. A rule that reads a profile applies only to the operations that need that profile.
+
+1. The result is the strictest of all applicable rules: `deny` > `escalate` > `permit`. *Reads:* the results of the other rules.
+2. No applicable permission means `deny`. *Reads:* the node policy; for a search and for model input, the core permissions (§5.1): an absent `ai_use.search` or `ai_use.ai_input` is not a permission.
+3. An unknown *required rights* term means `deny`. Unknown required *applicability* context means `escalate`. *Reads:* the core permissions, the license profile and the personal-data profile (rights terms); the rule-authority profile (applicability).
+4. **Loosening:** a statement that loosens access applies only if the trust policy names its issuer for that **kind × scope × action**, with an expiry. **Restriction admissibility:** a statement that **tightens access** (rights, handling, a prohibition) applies at once, for every action, only when its issuer is the node, the item's own issuer, or an issuer that the trust policy names for that **kind × scope** (any action), with an expiry that has not passed. From any other issuer, a tightening does not deny: when it would change the result of the request, the result is `escalate`, with the reason `restriction-untrusted` and the notice `restricted-by:<issuer>`; for a request that it does not restrict, it changes nothing. So an issuer that is not trusted can send a use to a person for review, but it cannot deny access to everything. A withdrawal or a hold affects **availability**, not access, so rule 8 applies to it: from an issuer that is not trusted, it is only a visible contest mark. *Reads:* the trust configuration and every restricting statement (the license, personal-data, handling and tags profiles; prohibitions in the node policy).
+5. When two trusted issuers conflict, the local precedence rule decides; without one, the result is `escalate`. A timestamp never decides between issuers. *Reads:* the rule-authority profile (acceptance) and the local precedence rule.
+6. A status of an imported item that is past its maximum age removes **rule authority** only. The content stays available as evidence, and rule authority comes back when a current status arrives (over the network or in a package). The maximum age is set **per trusted source**; the default is 30 days. An administrator can set "never" for a source; when the last status is older than the default age, each use then shows the notice "status not checked". A node's own items need no status check. *Reads:* the federation profile (status) and the rule-authority profile.
+7. A `permit` is bound to exact artifact, statement and policy versions, and it has an expiry. *Reads:* the core envelope (the subject digest), the statement identities and the policy version.
+8. No proposal from an issuer that is not trusted can remove an accepted item from use. A **hold** needs a named owner and a review deadline. *Reads:* the rule-authority profile (acceptance), holds, and the federation profile (status, withdrawals).
 
 The conformance test suite (a set of request → result cases) is part of the standard.
 
-## 5. Properties and their behaviors
+## 5. Levels, properties and their behaviors
+
+**A requirement belongs to an operation, not to an item** (docs/19 §2). Only the core envelope is required to register an item. A missing field never makes an item invalid: it makes the operations that need the field `deny` or `escalate`, and the other operations still work.
+
+### 5.1 The core
+
+| Level | Fields | Required for | Missing → | Changed from 0.2 |
+|---|---|---|---|---|
+| **Core envelope** | `version` (the standard version; `standard` in §8); `subject` = the content digest (`digest` in §8); `issuer` (from the authenticated write path or a verified signature; declared in L0) | registration (§3) | not registered | `issued` is no longer required (no decision reads it at L0) |
+| **Core permissions** | `ai_use.search`, `ai_use.ai_input` (`y` / `n` / absent) | a search (`operation: search`); content sent to a model (`infer`) | `deny` (rules 2–3): not indexed, never sent to a model | were part of the rights property, with `train` |
+| **Origin** (safe default) | `origin` | none: it is never required from a person. The system fills it from the write path when it can. | `unknown`, handled as `model` | unchanged |
+
+### 5.2 Operation profiles
+
+Each profile is required only by the operations in its row. A node that does not support a profile denies those operations (rule 2).
+
+| Profile | Fields | Required by | Missing → | Changed from 0.2 |
+|---|---|---|---|---|
+| **License** | `license`, `holder`, `ai_use.train` | `derive`, `forward`, `train` | `deny` (`rights-unknown`, `rights-reserved:train`) | **moved** from the core rights |
+| **Personal data** | `personal_data`, legal basis (DPV codes) | `forward`; `infer` to a cloud destination; export | `unknown` counts as `yes`: `deny` without a legal basis (`personal-data-basis-missing`) | **moved** from the core |
+| **Handling** | `export`, `route` | `forward`; a cloud destination | the strictest value (`restricted`, `local_only`) | **moved** from the core |
+| **Lineage** | `inputs` | `derive`; every use of a derived item | a recorded input that is not known: `deny` (`input-unknown`) | **moved** from the core |
+| **Origin details** | `reviewed_by` (for `assisted`), `software_agent: {name, version}` (for `tool`) | a claim of `assisted` or `tool` (the export marks, §5.3) | the claim is not trusted: the origin counts as `unknown`, with a notice (§7) | **moved** from the core; in 0.2 a missing value blocked publication |
+| **Rule authority** | acceptance, mandate, applicability (conditions, exclusions, valid time) | ordinary use (acceptance); a request for rule authority (all three) | `pending` (not in the ordinary view); evidence only; `escalate` when authority is needed | **moved** from the core |
+| **Activation** | an `activate` permission in a scope | an agent runs the item as an instruction or a skill | read only | **moved** from the core |
+| **Tags** | discovery tags and access tags from a controlled list (docs/19 §5) | a policy that names an access tag | a discovery tag changes no decision; an access tag is a restriction (rule 4) | new as a profile (0.2 removed labels from the core) |
+| **Federation, status, erasure** | status streams with a maximum age, trust per issuer × kind × scope × action, use records, dispositions | rule authority of imported items (rule 6); transfer between nodes; `erase` | an imported item without a current status keeps evidence authority only | **moved** from the core (L3) |
+
+### 5.3 Properties and their behaviors
+
+The behaviors are the same as in 0.2. The level or profile of each property is in §5.1–§5.2.
 
 | Property | Values | Behavior |
 |---|---|---|
@@ -104,34 +138,44 @@ Each change records: trigger, actor, scope, reason, policy version, prior statem
 | local permission → suspended | its source item is withdrawn, and the permission depends on continued acceptance | system | yes | the source is accepted again, and the grant holder confirms |
 | package: quarantined → registered / rejected | registration checks and the acceptance policy | the receiving node; a person or a delegated agent | as the policy declares | a resubmitted package |
 | retained → erased | a valid disposition | the custodian | execution can be automatic | none |
-| mandate, handling, rights, delegation changed | a new statement | an issuer with that power | tightening: yes; loosening: rule 4 of §4 | a new statement |
+| mandate, handling, rights, delegation changed | a new statement | an issuer with that power | tightening: yes, from an admissible issuer (rule 4 of §4); from any other issuer: `escalate`, never `deny`; loosening: rule 4 of §4 | a new statement |
 
 ## 7. Conformance levels
 
 | Level | Requires | Rights |
 |---|---|---|
-| **L0 Described** | One manifest file (§8). Unsigned. A tool that ignores every field still reads the files. **Reading the bytes is not permission to use them.** A validator checks digests, SPDX ids, `ai_use` terms and dates. | Declared. `unknown` gives no permission. |
+| **L0 Described** | One manifest file (§8). Unsigned. A tool that ignores every field still reads the files. **Reading the bytes is not permission to use them.** A validator gives the three results below. | Declared. `unknown` gives no permission. |
 | **L1 Verifiable** | Signed statements (DSSE) and packages, multihash, agile algorithms, revision checks, derive with inputs. | Bound to exact versions. |
 | **L2 Governed** | The decision rule with its test suite, acceptance, mandates, delegation, activation, handling, use records, honest erasure, a tamper-evident append-only audit. Storage is free. | Enforced. |
 | **L3 Federated** | Signed status streams with a maximum age per source (as in TUF timestamps and OCSP stapling; the stream can travel in packages, so air-gapped nodes conform), withdrawal delivery, trust policy per issuer × kind × scope × action, use-record tracking. | Enforced across nodes. A controlled transfer needs an L2 receiver; a public release does not. |
 
-**Profiles** (outside the core, versioned): mappings (SWHID, IPTC, PROV-O, Web Annotation, ODRL, Croissant, Agent Skills, AIPREF/TDMRep), compliance (GDPR, AI Act Art. 50/53, DSM Directive), obligations, outcome ranking, labels, block and claim extraction, transparency witnesses. A conformance badge never claims legal compliance.
+**Three validation results** (Astra, docs/22 §3). A validator keeps them separate:
+1. **Readable and importable.** The bytes parse in one way only (no aliases, no merge keys, no duplicate keys). The core envelope (§5.1) is complete, and each listed digest matches its file. Each stated value has an allowed form: SPDX expression, `ai_use` term `y` / `n`, personal-data value, origin value, dates, paths. A failure blocks registration (in L0: publication).
+2. **Valid governance evidence.** Each claim is checked alone, and a bad claim does not block the others:
+   - an unknown field (not `x-`) is ignored;
+   - an origin claim without its evidence (`assisted` without `reviewed_by`, `tool` without a complete `software_agent`) counts as `unknown` (= `model`);
+   - reviewer or generator data for another origin is ignored.
+
+   Each case gives a notice on the item, and the validator reports it as a warning.
+3. **Authorized for this operation.** The decision rule (§4). It reads only the levels and profiles that the operation needs (§5).
+
+**Mapping and compliance profiles** (outside the core, versioned; different from the operation profiles of §5.2): mappings (SWHID, IPTC, PROV-O, Web Annotation, ODRL, Croissant, Agent Skills, AIPREF/TDMRep), compliance (GDPR, AI Act Art. 50/53, DSM Directive), obligations, outcome ranking, labels, block and claim extraction, transparency witnesses. A conformance badge never claims legal compliance.
 
 ## 8. L0 example (`kstd.yaml`)
 
 ```yaml
-standard: kstd/0.2
-issuer: "ACME GmbH <knowledge@acme.example>"   # who answers for this file
-issued: 2026-10-20
+standard: kstd/0.3                       # core envelope: version (a reader also accepts kstd/0.2)
+issuer: "ACME GmbH <knowledge@acme.example>"   # core envelope: who answers for this file
+issued: 2026-10-20                       # optional
 rights:                                  # default for every item
   license: CC-BY-4.0                     # SPDX id, or unknown
   holder: "ACME GmbH"
-  ai_use: {search: y, ai_input: y, train: n}   # absent = not stated; a decision treats it as n
+  ai_use: {search: y, ai_input: y, train: n}   # core permissions; absent = not stated; a decision treats it as n
   personal_data: no                      # yes | no | synthetic | unknown (= yes)
 notices: ["Attribution: ACME GmbH, 2026"]
 items:
   - path: procedures/pressure-test.md
-    digest: sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+    digest: sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08   # core envelope: subject
     origin: human                        # human | assisted | model | tool | unknown (= model)
     valid_from: 2026-01-01
     applies_to: "Plant 3, line A"
@@ -168,7 +212,24 @@ Five different things have different licenses:
 | Q4 | Maximum status age | **Option c** (2026-10-21): a maximum age per source, default 30 days; "never" is allowed for air-gapped sources, with a visible warning (§4 rule 6). |
 | Q5 | Name | **`kstd` is the temporary name.** |
 
-## 11. Change log (0.1 → 0.2)
+## 11. Changes from 0.2 (draft 0.3, D74)
+
+- **Minimal core (§1, §5.1–§5.2):** the core is the envelope (`version`, `subject` = the content digest, `issuer`), the core permissions (`ai_use.search`, `ai_use.ai_input`; absent = `deny`) and origin with the safe default `unknown` (handled as `model`). Every other field is in an operation profile and is required only by the operations that read it.
+- **Moved from the core to profiles:**
+  - `license`, `holder` and `ai_use.train` → the license profile (`derive`, `forward`, `train`);
+  - personal data and legal basis → the personal-data profile (`forward`, cloud `infer`, export);
+  - handling → the handling profile; `inputs` → the lineage profile;
+  - `reviewed_by` and `software_agent` → the origin-details profile;
+  - acceptance, mandate and applicability → the rule-authority profile;
+  - activation → the activation profile;
+  - status, trust per source, use records and erasure → the federation profile.
+- **`issued`** is optional. A reader accepts `standard: kstd/0.2` and `kstd/0.3`: the fields are the same.
+- **Rule 4, restriction admissibility (§4):** a tightening counts only from the node, the item's own issuer, or an issuer trusted for that kind × scope. From any other issuer it gives `escalate` (reason `restriction-untrusted`, notice `restricted-by:<issuer>`), never `deny`. In 0.2 a tightening counted from any issuer, so any issuer could deny access to everything. Conformance cases: seven cases in the rule-4 group (one changed, six added); four of the seven fail with the 0.2 rule.
+- **Each rule of §4 names what it reads.** The decision results do not change, except for rule 4.
+- **Three validation results (§7):** readable, valid governance evidence, authorized. An unknown field, an origin claim without its evidence, and reviewer or generator data for another origin no longer block publication. That claim is not trusted, with a notice. The strict checks stay: unambiguous parsing, the envelope, the digests and the allowed values.
+- **`kstd-init`** (Kütüphane) starts from "not stated" for every `ai_use` term (`deny`). In 0.2 it wrote `search: y`.
+
+## 12. Change log (0.1 → 0.2)
 
 - **Decisions:**
   - D1: no core origin gate; three values.

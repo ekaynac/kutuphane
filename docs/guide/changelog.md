@@ -9,6 +9,12 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### kstd (draft 0.3, D74)
+
+- `kutuphane kstd-init` states no `ai_use` term: until you state the terms, no file is indexed or sent to a model. It writes `standard: kstd/0.3`; a `kstd/0.2` manifest is still accepted, and `issued` is optional ([#108](https://github.com/ekaynac/kutuphane/pull/108)).
+- An unknown field, `assisted` without `reviewed_by`, `tool` without a complete `software_agent`, and `reviewed_by` or `software_agent` for another origin no longer refuse the book. The claim is not trusted (the field is ignored, or the origin counts as `unknown`), `kstd-check` warns, and the item `notices` show the same text. The error for a wrong `ai_use` value is now "ai_use terms take y or n" ([#108](https://github.com/ekaynac/kutuphane/pull/108)).
+- The standard has a minimal core (envelope, `ai_use.search` and `ai_use.ai_input`, origin with the default `unknown`), and the other fields are profiles. In the decision rule, a restriction from an issuer that is not trusted gives `escalate` (`restriction-untrusted`), not `deny`. See [kstd.md](kstd.md) ([#108](https://github.com/ekaynac/kutuphane/pull/108)).
+
 ### Documentation
 
 - The user and operator guide is in `docs/guide/` (start at [index.md](index.md)), and `README.md` is a short overview with a tested quick start (D75).

@@ -51,7 +51,7 @@ A folder default is an explicit claim **by the issuer that it covers the listed 
 
 The page shows the inherited values and their source in one line, so a person can see an exception. It keeps `unknown` apart from `model`, and an absent `ai_use` term apart from `n`.
 
-**To fix:** `kstd-init` writes `search: y` today. It should write the terms as **not stated**, so that a new manifest starts fully fail-closed.
+**Fixed (D74, draft 0.3):** `kstd-init` writes every `ai_use` term as **not stated**, so a new manifest starts fully fail-closed. In 0.2 it wrote `search: y`.
 
 ### 3.2 Conditions follow behavior, not genre (Astra points 3–4)
 

@@ -138,7 +138,7 @@ quarantined (stored, not indexed): <path>: <reason>
 
 These problems refuse the whole book:
 
-- an invalid `kstd.yaml`;
+- a `kstd.yaml` that cannot be read (an error in `kstd-check`). A claim that is not trusted (a warning in `kstd-check`, for example an unknown field or `assisted` without `reviewed_by`) does not refuse the book: see [kstd.md](kstd.md#validation);
 - a symlink, a path violation or a size violation;
 - markdown that is not UTF-8 or has invalid frontmatter;
 - a credential-like file name (`credentials.json`, `*.env`, `id_rsa`, key stores, `settings.local.json`);
@@ -195,7 +195,7 @@ kutuphane kstd-init <folder> --issuer 'ACME <kb@acme.example>'
 kutuphane kstd-check <folder>
 ```
 
-`kstd-init` and `kstd-check` do not use the database.
+`kstd-init` and `kstd-check` do not use the database. `kstd-init` states no `ai_use` term: until you state the terms, no file is indexed or sent to a model.
 
 ### Profile versions and re-ingest
 

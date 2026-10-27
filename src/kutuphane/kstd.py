@@ -1,16 +1,22 @@
 """kstd L0: the `kstd.yaml` manifest (docs/11 §7–§8). It describes a folder: who answers for it, the rights of
 its files, their origin, validity and applicability.
 
-A book whose files contain `kstd.yaml` at the root follows it:
-- an invalid manifest blocks publication (fail closed);
-- a file with `ai_use.search` not `y` is not indexed;
-- a passage with `ai_use.ai_input` not `y` is never sent to a model (embedding, reranking, answers);
-- a file with `personal_data` not `no` or `synthetic` is exported only with a recorded legal basis (DPV codes);
-- an exported package marks files with origin `model` or `unknown` as AI-generated; `assisted` files (model output
-  that a named person reviewed) are not marked and carry `reviewed_by` (EU AI Act Art. 50(4)); `tool` files (made
-  by software that runs only written rules, or records events; no learned model) are not marked and carry their
-  `software_agent` (docs/17, D63);
-- search results, citations and answers show the item information.
+A book whose files contain `kstd.yaml` at the root follows it. Validation has three separate results (docs/11 §7):
+- **readable**: a manifest that cannot be read unambiguously (YAML tricks, wrong types), a wrong envelope
+  (`standard`, `issuer`, a file digest) or a term with a wrong value blocks publication (fail closed);
+- **valid evidence**: an unknown field (not `x-`) is ignored, and an origin claim without its evidence
+  (`assisted` without `reviewed_by`, `tool` without `software_agent`) counts as `unknown` (= model); reviewer or
+  generator data for another origin is ignored. Each one gives a notice on the item and a `kstd-check` warning,
+  and publication goes on;
+- **authorized**: each operation reads only the fields that it needs:
+  - a file with `ai_use.search` not `y` is not indexed;
+  - a passage with `ai_use.ai_input` not `y` is never sent to a model (embedding, reranking, answers);
+  - a file with `personal_data` not `no` or `synthetic` is exported only with a recorded legal basis (DPV codes);
+  - an exported package marks files with origin `model` or `unknown` as AI-generated; `assisted` files (model
+    output that a named person reviewed) are not marked and carry `reviewed_by` (EU AI Act Art. 50(4)); `tool`
+    files (made by software that runs only written rules, or records events; no learned model) are not marked and
+    carry their `software_agent` (docs/17, D63);
+  - search results, citations and answers show the item information.
 
 A book without `kstd.yaml` behaves as before: only its book policy applies. `ai_use` keeps three states: an
 absent term is "not stated" and is reported as absent, but every decision treats it as `n`; an unknown license
@@ -29,7 +35,8 @@ import yaml
 from .ids import normalize_path
 
 MANIFEST = "kstd.yaml"
-STANDARD = "kstd/0.2"
+STANDARD = "kstd/0.3"
+READABLE = ("kstd/0.2", STANDARD)  # 0.3 only relaxes the 0.2 validation (docs/11 §11): a 0.2 manifest reads the same
 MAX_MANIFEST_BYTES = 1024 * 1024
 AI_USE = ("search", "ai_input", "train")
 ORIGINS = ("human", "assisted", "model", "tool", "unknown")
@@ -89,15 +96,53 @@ def parse(data: bytes) -> dict:
     return doc
 
 
-def _known(where: str, mapping: dict, allowed: set, errors: list) -> None:
-    for key in mapping:
-        if key not in allowed and not str(key).startswith("x-"):  # x- keys are extensions; they never decide
-            errors.append(f"{where}: unknown field {key!r} (extensions must start with 'x-')")
+def _unknown(where: str, mapping, allowed) -> list[str]:
+    """Notices for unknown fields. They are ignored: a field outside the standard never decides (docs/11 §2)."""
+    return [f"{where}: unknown field {key!r} ignored (extensions start with 'x-')" for key in mapping
+            if key not in allowed and not str(key).startswith("x-")] if isinstance(mapping, dict) else []
+
+
+def _rights_unknown(where: str, rights) -> list[str]:
+    if not isinstance(rights, dict):
+        return []
+    return _unknown(where, rights, RIGHTS_KEYS) + _unknown(f"{where} ai_use", rights.get("ai_use"), AI_USE)
+
+
+def _folder_notices(manifest: dict) -> list[str]:
+    return _unknown(MANIFEST, manifest, TOP_KEYS) + _rights_unknown(f"{MANIFEST} rights", manifest.get("rights"))
+
+
+def _claims(item: dict, where: str) -> tuple[dict, list[str]]:
+    """The origin claim of one item as decisions use it, and a notice for each claim that is not valid evidence
+    (docs/11 §7). An origin without its evidence counts as `unknown` (= model); data for another origin is ignored."""
+    origin, notices = item.get("origin", "unknown"), _unknown(where, item, ITEM_KEYS)
+    notices += _rights_unknown(f"{where} rights", item.get("rights"))
+    claim = {"origin": origin, "reviewed_by": None, "software_agent": None}
+    reviewer, agent = item.get("reviewed_by"), item.get("software_agent")
+    if origin == "assisted":
+        if isinstance(reviewer, str) and reviewer.strip():
+            claim["reviewed_by"] = reviewer
+        else:
+            claim["origin"] = "unknown"
+            notices.append(f"{where}: origin 'assisted' not trusted: it needs reviewed_by (the person who reviewed "
+                           f"it); handled as unknown")
+    elif "reviewed_by" in item:
+        notices.append(f"{where}: reviewed_by ignored: it is only for origin assisted")
+    if origin == "tool":
+        if _software_agent_ok(agent):
+            claim["software_agent"] = agent
+        else:
+            claim["origin"] = "unknown"
+            notices.append(f"{where}: origin 'tool' not trusted: it needs software_agent: {{name, version}} of the "
+                           f"generator or recorder, as strings (quote a version such as \"1.10\"); handled as unknown")
+    elif "software_agent" in item:
+        notices.append(f"{where}: software_agent ignored: it is only for origin tool")
+    return claim, notices
 
 
 def _license_ok(value) -> bool:
     """`unknown`, or an SPDX expression of ids and LicenseRef-… joined by AND/OR, with balanced parentheses.
-    WITH exceptions are not supported in kstd/0.2."""
+    WITH exceptions are not supported in kstd/0.3."""
     if value == "unknown":
         return True
     if not isinstance(value, str) or len(value) > 1000:
@@ -182,7 +227,6 @@ def _rights(where: str, rights, errors: list) -> None:
     if not isinstance(rights, dict):
         errors.append(f"{where}: rights must be a mapping")
         return
-    _known(where, rights, RIGHTS_KEYS, errors)
     if "license" in rights and not _license_ok(rights["license"]):
         errors.append(f"{where}: license {rights['license']!r} is not an SPDX expression (AND/OR of SPDX ids or "
                       f"LicenseRef-…; WITH is not supported) or 'unknown'")
@@ -190,8 +234,8 @@ def _rights(where: str, rights, errors: list) -> None:
         errors.append(f"{where}: holder must be a non-empty string")
     if "ai_use" in rights:
         use = rights["ai_use"]
-        if not isinstance(use, dict) or any(k not in AI_USE or _yn(v) not in ("y", "n") for k, v in use.items()):
-            errors.append(f"{where}: ai_use takes only {', '.join(AI_USE)} with y or n")
+        if not isinstance(use, dict) or any(k in AI_USE and _yn(v) not in ("y", "n") for k, v in use.items()):
+            errors.append(f"{where}: ai_use terms take y or n ({', '.join(AI_USE)})")
     if "personal_data" in rights and _pd(rights["personal_data"]) not in PERSONAL_DATA:
         errors.append(f"{where}: personal_data must be one of {', '.join(PERSONAL_DATA)}")
 
@@ -202,14 +246,15 @@ def _notices(where: str, notices, errors: list) -> None:
 
 
 def check(manifest: dict, files: dict[str, str]) -> tuple[list[str], list[str]]:
-    """Errors (publication is refused) and warnings. `files`: {normalized path: sha256 hex} of the folder."""
-    errors, warnings = [], []
-    _known(MANIFEST, manifest, TOP_KEYS, errors)
-    if manifest.get("standard") != STANDARD:
-        errors.append(f"{MANIFEST}: standard must be {STANDARD!r}")
+    """Errors (the manifest is not readable: publication is refused) and warnings (publication goes on; this
+    includes every claim that is not valid evidence, with the notice that its item shows). `files`: {normalized
+    path: sha256 hex} of the folder."""
+    errors, warnings = [], _folder_notices(manifest)
+    if manifest.get("standard") not in READABLE:
+        errors.append(f"{MANIFEST}: standard must be {STANDARD!r} (or {READABLE[0]!r})")
     if not (isinstance(manifest.get("issuer"), str) and manifest["issuer"].strip()):
         errors.append(f"{MANIFEST}: issuer is required (who answers for this folder)")
-    if instant(manifest.get("issued")) is None:
+    if "issued" in manifest and instant(manifest["issued"]) is None:
         errors.append(f"{MANIFEST}: issued must be a date (YYYY-MM-DD)")
     if "rights" in manifest:
         _rights(f"{MANIFEST} rights", manifest["rights"], errors)
@@ -225,7 +270,6 @@ def check(manifest: dict, files: dict[str, str]) -> tuple[list[str], list[str]]:
         if not isinstance(item, dict):
             errors.append(f"{where}: must be a mapping")
             continue
-        _known(where, item, ITEM_KEYS, errors)
         try:
             path = normalize_path(str(item.get("path", "")))
         except ValueError:
@@ -244,19 +288,9 @@ def check(manifest: dict, files: dict[str, str]) -> tuple[list[str], list[str]]:
             errors.append(f"{where}: digest must be sha256:<64 lowercase hex>")
         elif path in files and digest != f"sha256:{files[path]}":
             errors.append(f"{where}: digest does not match the file")
-        origin = item.get("origin", "unknown")
-        if origin not in ORIGINS:
+        if item.get("origin", "unknown") not in ORIGINS:
             errors.append(f"{where}: origin must be one of {', '.join(ORIGINS)}")
-        reviewer = item.get("reviewed_by")
-        if origin == "assisted" and not (isinstance(reviewer, str) and reviewer.strip()):
-            errors.append(f"{where}: origin assisted needs reviewed_by (the person who reviewed it)")
-        elif "reviewed_by" in item and origin != "assisted":
-            errors.append(f"{where}: reviewed_by is only for origin assisted")
-        agent = item.get("software_agent")
-        if origin == "tool" and not _software_agent_ok(agent):
-            errors.append(f"{where}: origin tool needs software_agent: {{name, version}} of the generator or recorder, as strings (quote a version such as \"1.10\")")
-        elif "software_agent" in item and origin != "tool":
-            errors.append(f"{where}: software_agent is only for origin tool")
+        warnings += _claims(item, where)[1]
         start, end = item.get("valid_from"), item.get("valid_to")
         for key, value in (("valid_from", start), ("valid_to", end)):
             if value is not None and instant(value) is None:
@@ -299,20 +333,20 @@ def effective(manifest: dict, path: str) -> dict | None:
     base, own = manifest.get("rights", {}), (item or {}).get("rights", {})
     ai_use = base.get("ai_use", {}) | own.get("ai_use", {})  # stated terms only; allows() treats absent as n
     start, end = (item or {}).get("valid_from"), (item or {}).get("valid_to")
+    claim, untrusted = _claims(item or {}, f"{MANIFEST} {path}")
     return {
         "issuer": manifest["issuer"],
         "listed": item is not None,
-        "origin": (item or {}).get("origin", "unknown"),
-        "reviewed_by": (item or {}).get("reviewed_by"),
-        "software_agent": (item or {}).get("software_agent"),
+        **claim,
         "license": own.get("license", base.get("license", "unknown")),
         "holder": own.get("holder", base.get("holder")),
-        "ai_use": {k: _yn(v) for k, v in ai_use.items()},
+        "ai_use": {k: _yn(v) for k, v in ai_use.items() if k in AI_USE},
         "personal_data": _pd(own.get("personal_data", base.get("personal_data", "unknown"))),
         "valid_from": _bound(start),
         "valid_to": _bound(end),
         "applies_to": (item or {}).get("applies_to"),
-        "notices": list(manifest.get("notices", [])) + list((item or {}).get("notices", [])),
+        "notices": list(manifest.get("notices", [])) + list((item or {}).get("notices", []))
+                   + _folder_notices(manifest) + untrusted,
     }
 
 
@@ -368,7 +402,8 @@ def _quoted(value: str) -> str:
 
 
 def init(files: list, issuer: str, today: date | None = None) -> str:
-    """A starting manifest for a folder: every file listed with its digest, all rights unknown, origin unknown."""
+    """A starting manifest for a folder: every file listed with its digest, all rights unknown, no `ai_use` term
+    stated (deny: nothing is indexed or sent to a model until the issuer states the terms, D74), origin unknown."""
     lines = [
         f"standard: {STANDARD}",
         f"issuer: {_quoted(issuer)}   # who answers for this folder",
@@ -376,7 +411,7 @@ def init(files: list, issuer: str, today: date | None = None) -> str:
         "rights:                               # defaults for every item",
         "  license: unknown                    # an SPDX id, e.g. CC-BY-4.0; unknown gives no permission",
         "  holder: " + _quoted(issuer),
-        "  ai_use: {search: y, ai_input: n, train: n}   # absent = not stated; decisions treat it as n",
+        "  # ai_use: {search: y|n, ai_input: y|n, train: y|n}   # not stated = deny: no file is indexed or sent to a model",
         "  personal_data: unknown              # yes | no | synthetic | unknown (= yes)",
         "items:",
     ]
