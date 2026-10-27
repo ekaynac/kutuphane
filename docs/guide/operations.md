@@ -328,6 +328,7 @@ A filter never adds a book. A book that the caller cannot read gives the same em
 ### Two languages (G19)
 
 When the passages are in Turkish and in English, the answer model translates the question. Only the question goes to the model.
+The translation uses greedy decoding (`temperature` 0): the question gets the most likely translation, not a sampled one.
 A second search runs with the translation. Kütüphane authorizes the merged passages again. Each passage is reranked against the question in its own language.
 Without a translation, up to 2 passages in the other language from the hybrid top 8 keep a place.
 
