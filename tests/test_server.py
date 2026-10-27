@@ -500,3 +500,87 @@ def test_client_id_comes_from_the_token_and_client_info_changes_nothing(app_env,
             _, out = mcp_rpc(client, auth, "tools/call", {"name": "probe_client", "arguments": {}},
                              version=version, meta=claimed)
             assert json.loads(out["result"]["content"][0]["text"]) == expected
+
+
+# --- docs/24 §12.5, §12.7: the issuer, and a scoped test client --------------------------------------------------
+
+def _resource_metadata(client) -> dict:
+    r = client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, headers=MCP_HEADERS)
+    url = r.headers["www-authenticate"].split('resource_metadata="')[1].split('"')[0]
+    return client.get(url.removeprefix(PUBLIC)).json()
+
+
+@pytest.mark.parametrize("issuer", [ISS, "https://idp.test"])
+def test_resource_metadata_advertises_exactly_the_pinned_issuer(conn, keys, verifier, issuer):  # §12.5
+    import dataclasses
+    pinned = dataclasses.replace(verifier, issuer=issuer)
+    app = server.create_app(dsn=os.environ["KUTUPHANE_TEST_DSN"], verifier=pinned, bridge=None, model=None,
+                            public_url=PUBLIC)
+    with TestClient(app, base_url=PUBLIC) as client:
+        assert _resource_metadata(client)["authorization_servers"] == [issuer]    # what a client records (RFC 9207)
+        assert client.get("/v1/whoami", headers=bearer(keys, iss=issuer)).status_code == 200  # what tokens carry
+
+
+@pytest.mark.parametrize("issuer", ["https://IDP.test/realms/kurum", "https://idp.test:443/realms/kurum"])
+def test_an_issuer_the_sdk_would_rewrite_is_refused_at_start(conn, verifier, issuer):  # §12.5
+    import dataclasses
+    with pytest.raises(RuntimeError, match="issuer"):
+        server.create_app(dsn=os.environ["KUTUPHANE_TEST_DSN"], verifier=dataclasses.replace(verifier, issuer=issuer),
+                          bridge=None, model=None, public_url=PUBLIC)
+
+
+@pytest.mark.parametrize("version", [LEGACY, MODERN])
+def test_scoped_test_client_reads_one_book_and_nothing_else(app_env, keys, conn, okf_dir, tmp_path, monkeypatch,
+                                                            capsys, version):  # §12.7, ADC stage-2 T3
+    from kutuphane import cli, notes
+    from kutuphane.gate import Actor
+    user_app, _, dsn = app_env
+    catalog.publish(conn, book="baska", title="baska", files=read_source(okf_dir),
+                    policy=make_policy(sensitivity="normal", egress="local_only", protection="standard"),
+                    profile=profiles.spec("chunked"))
+    authz.grant(conn, "book:baska", "read", U)
+    notes.create_journal(conn, book="gunluk", title="gunluk", search=True, ai_input=True, by="user:admin",
+                         policy=make_policy(sensitivity="normal", egress="local_only", protection="standard"))
+    for mode in ("read", "propose"):
+        authz.grant(conn, "book:gunluk", mode, U)
+    notes.propose(conn, Actor(U, channel="http"), {"book": "gunluk", "kind": "finding", "text": "Kayıtlar saklanır."})
+
+    # The documented procedure (§12.7), local form.
+    monkeypatch.setenv("KUTUPHANE_DEV", "1")
+    monkeypatch.setenv("KUTUPHANE_DSN", dsn)
+    auth_dir = tmp_path / "dev-auth"
+    assert cli.main(["dev-keys", str(auth_dir)]) == 0
+    assert cli.main(["grant", "book:kitap", "read", "agent:adc-t3"]) == 0
+    capsys.readouterr()
+    assert cli.main(["dev-token", "adc-t3", "--agent", "--client-id", "adc-t3", "--issuer", ISS, "--audience", AUD,
+                     "--private-key", str(auth_dir / "dev-private.pem")]) == 0
+    t3 = {"Authorization": f"Bearer {capsys.readouterr().out.strip()}"}
+    app = server.create_app(dsn=dsn, verifier=Verifier.from_files(ISS, AUD, auth_dir / "jwks.json"), bridge=None,
+                            model=None, public_url=PUBLIC)
+
+    with TestClient(user_app, base_url=PUBLIC) as client:   # the user sees both books and the note
+        other = client.get("/v1/search", params={"q": "kayıtlar saklanır", "book": "baska"},
+                           headers=bearer(keys)).json()["results"]
+        assert other and client.get("/v1/notes", params={"sets": "open"}, headers=bearer(keys)).json()["items"]
+    with TestClient(app, base_url=PUBLIC) as client:
+        def call(name: str, args: dict) -> dict:
+            status, msg = mcp_rpc(client, t3, "tools/call", {"name": name, "arguments": args}, version=version)
+            assert status == 200
+            return msg["result"]
+
+        def refused(result: dict) -> bool:
+            return result.get("isError") and "forbidden" in result["content"][0]["text"]
+
+        assert client.get("/v1/whoami", headers=t3).json()["principal"] == "agent:adc-t3"
+        found = call("search_library", {"query": "kayıtlar saklanır"})["structuredContent"]["result"]
+        assert found and {h["citation"].split("@")[0] for h in found} == {"kitap"}
+        opened = json.loads(call("open_citation", {"handle": found[0]["citation"]})["content"][0]["text"])
+        assert opened["citation"] == found[0]["citation"] and opened["text"]
+
+        assert call("search_library", {"query": "kayıtlar saklanır", "book": ["baska"]})["structuredContent"] \
+            == {"result": []}
+        assert refused(call("open_citation", {"handle": other[0]["citation"]}))
+        cited = server.parse_citation(other[0]["citation"])
+        assert refused(call("read_document", {"book": "baska", "content_id": cited.content_id, "path": cited.path}))
+        assert refused(call("propose_note", {"book": "gunluk", "kind": "finding", "text": "T3 cannot write."}))
+        assert json.loads(call("query_notes", {"sets": ["open", "current"]})["content"][0]["text"])["items"] == []

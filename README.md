@@ -114,6 +114,10 @@ API key.
   `act.sub` = the agent; the agent also needs a live delegation from the person, as for any agent.
 - The token's `client_id` (RFC 9068), else `azp`, is recorded as the client. It never changes rights or origin.
   `kutuphane dev-token <sub> --client-id <id>` makes such a development token.
+- `KUTUPHANE_OIDC_ISSUER` is the IdP's issuer exactly as its tokens carry it: `iss` is compared without any
+  normalization, and the protected-resource metadata advertises the same string. An issuer the MCP SDK would
+  rewrite (an uppercase host, a default port) stops the server at start (docs/24 §12.5).
+- A scoped, non-admin test client (one book, read only): docs/24 §12.7.
 
 MCP (`/mcp`) is stateless and serves 2025-11-25 clients (with `initialize`) and 2026-07-28 clients (no `initialize`;
 the reverse proxy must pass the `Mcp-Method` and `Mcp-Name` headers). `server/discover` advertises the

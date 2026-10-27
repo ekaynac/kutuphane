@@ -1,7 +1,8 @@
 """Caller identity (D38, D50): Kütüphane verifies OIDC/JWT access tokens itself; it never trusts headers.
 
 - Signature against a JWKS (file path; air-gapped friendly), algorithm allowlist, required `exp`, `iat`, `iss`,
-  `aud`, `sub`; small clock leeway.
+  `aud`, `sub`; small clock leeway. `iss` must equal the one configured issuer exactly (no normalization; RFC 9207,
+  docs/24 §12.5).
 - Principal kind comes from the namespaced claim `kutuphane/principal_type` (`user` default, or `agent`); the
   IdP is configured to emit it.
 - Delegation travels as the RFC 8693 actor claim: `sub` = user, `act.sub` = agent. One level only; nested

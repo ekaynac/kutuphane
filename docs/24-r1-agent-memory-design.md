@@ -711,7 +711,7 @@ Verified against the spec changelog (<https://modelcontextprotocol.io/specificat
 | `subscriptions/listen` replaces GET streams and `resources/subscribe` | we have no subscriptions | R1 uses `since` polling with tombstones (§9.5); a feed waits for R2 |
 | sampling, roots, logging deprecated; `ping` removed | not used | none |
 | 4 MiB default body limit | our largest input is about 200 KB | none |
-| RFC 9207 `iss`, CIMD over DCR, credentials bound to the issuer | client and IdP matters | none in the resource server |
+| RFC 9207 `iss`, CIMD over DCR, credentials bound to the issuer | mostly client and IdP matters | the resource server pins the issuer and advertises it exactly (§12.5); CIMD needs nothing here (§12.6) |
 
 ### 12.2 Long operations: durable jobs
 
@@ -739,6 +739,54 @@ The IdP issues all tokens. Kütüphane stores no client secrets and accepts no s
 - `client_id` (RFC 9068) or `azp` is recorded in `write_record.client_id`. It never changes origin or rights.
 - If an IdP maps a machine client to a `user:` principal by mistake, its writes are still at most `unknown` (§5.2), and it cannot curate, because no Standing path exists on MCP or HTTP (§8.2).
 - The server advertises the extension in `server/discover`.
+
+### 12.5 Issuer binding (RFC 9207, SEP-2352) — R2
+
+2026-07-28 tells the **client** to check `iss` in the authorization response (RFC 9207) and to keep its credentials per issuer (SEP-2352). The resource server has two duties of its own:
+
+- **One issuer, compared exactly.** An installation trusts one IdP. The verifier compares the token's `iss` with `KUTUPHANE_OIDC_ISSUER` by simple string comparison (RFC 3986 §6.2.1): no case folding, no trailing-slash, port or percent-encoding normalization, no prefix or substring match. Any other value is 401, also when a key in our JWKS signed the token. This applies to client-credentials tokens as to all others: a client's credentials are valid only at the IdP that issued them, and the token is valid here only if that IdP is ours. `PyJWT>=2.10.1`, because 2.10.0 compared `iss` as a substring (CVE-2024-53861).
+- **Advertise the same string.** The protected-resource metadata lists exactly that issuer as its only `authorization_servers` entry. A client records the issuer from there for its RFC 9207 check, and the IdP's tokens carry the configured form. The SDK stores the issuer as a parsed URL (lowercase host, default port removed). If that form differs from the configured issuer, the server refuses to start, with the reason; it never advertises one issuer and verifies another.
+
+Tests: `tests/test_identity.py::test_issuer_is_compared_exactly`, `tests/test_server.py::test_resource_metadata_advertises_exactly_the_pinned_issuer`, `::test_an_issuer_the_sdk_would_rewrite_is_refused_at_start`.
+
+### 12.6 Client ID Metadata Documents (CIMD) — R2 finding
+
+CIMD replaces Dynamic Client Registration for interactive clients: the `client_id` is an HTTPS URL, and the **authorization server** fetches that document and checks its `client_id` and `redirect_uris`. The resource server takes no part.
+
+- **SDK:** `mcp` 2.3 has CIMD on the client side (`OAuthClientProvider(client_metadata_url=…)`, used when the authorization server metadata has `client_id_metadata_document_supported`). Our server uses only the resource-server part of the SDK (`TokenVerifier`, `AuthSettings`); that part has nothing for CIMD.
+- **IdP:** Keycloak (the proposed IdP, D38) has CIMD from 26.6 as an experimental feature. Headless clients (ADC, nöbetçi) use client credentials as pre-registered confidential clients (§12.4); CIMD does not apply to them.
+- **Our side:** a CIMD client's token carries the URL in `client_id`/`azp`. The verifier accepts any non-empty string and `write_record.client_id` is `text`, so the URL is recorded as it is. It never changes rights or origin (§5.1).
+- **Decision:** no code. Test: `tests/test_identity.py::test_a_cimd_client_id_url_is_accepted_as_it_is`.
+
+### 12.7 A scoped, non-admin test client (ADC stage-2 T3) — R2
+
+ADC's T3 needs a client-credentials token that can call `search_library` and `open_citation` on one book and on nothing else. The existing commands give it; no new command. The principal is `agent:adc-t3`; replace `<book>` with the book slug.
+
+1. **Token, local (development auth only):**
+   ```
+   export KUTUPHANE_DEV=1
+   kutuphane dev-keys ./dev-auth        # once; set KUTUPHANE_OIDC_JWKS=./dev-auth/jwks.json for the server
+   kutuphane dev-token adc-t3 --agent --client-id adc-t3 \
+       --private-key ./dev-auth/dev-private.pem --issuer "$KUTUPHANE_OIDC_ISSUER"
+   ```
+   The token has the claims of an IdP client-credentials token (§12.4) and lives 8 hours.
+2. **Token, real IdP:** a confidential client `adc-t3` with only the client-credentials grant (no browser flow), whose mappers set `kutuphane/principal_type: agent`, `sub: adc-t3` and the audience `kutuphane` (§12.4). The client asks the IdP's token endpoint; Kütüphane stores no secret.
+3. **The right:** `kutuphane grant book:<book> read agent:adc-t3`. Nothing more: no role membership, no delegation, no `propose`. No `use` grant: no code path checks `use` today, so it would change nothing (D53).
+4. **Remove:** `kutuphane revoke book:<book> read agent:adc-t3`. The next call sees the change (rights are decided per call).
+
+With this token, `search_library` gives passages of `<book>` only, `open_citation` opens them, and a handle or a document of another book is "forbidden" (`open_citation`, `read_document`). `propose_note` is "forbidden" and `query_notes` finds nothing. Test: `tests/test_server.py::test_scoped_test_client_reads_one_book_and_nothing_else` (both protocol versions; it runs the commands of steps 1 and 3).
+
+### 12.8 T33 through the deployed proxy — result
+
+The deployed proxy is the `ingress` service: `nginx:1.27-alpine` with `deploy/nginx.conf` (`proxy_pass http://core:8080`, HTTP/1.1, no buffering). It runs without the live stack: on 2026-10-27 the same image (nginx 1.27.5) and the same file ran as a separate container (`--add-host core:host-gateway`, published on `127.0.0.1:58080`), in front of a local Core from this branch (uvicorn on the Docker bridge address, port 8080; a scratch database; development auth; no LLMDAP). The live services were not started, stopped or changed.
+
+```
+KUTUPHANE_PROBE_TOKEN=<dev token, agent:probe> python3 deploy/mcp_probe.py http://127.0.0.1:58080 --journal probe-gunluk
+```
+
+Result: **9/9 checks pass** on 2025-11-25 and 2026-07-28 (tools/list stable, `search_library` → `structuredContent.result`, `propose_note`, no token → 401 with the resource metadata, `Mcp-Name` mismatch → -32020). The proxy passes `Mcp-Method`/`Mcp-Name` and the `Host` header that the DNS-rebinding check needs. The resource metadata through the proxy names exactly the configured issuer. With the scoped test client of §12.7 (`agent:adc-t3`, `read` on `kitap` only), the same run gives 7/9: both `propose_note` checks fail with "forbidden", as they must.
+
+Still open: the same probe against the real installation (TLS on the proxy and the IdP's tokens), when it runs.
 
 ## 13. HTTP equivalents
 

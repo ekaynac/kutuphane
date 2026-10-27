@@ -477,10 +477,13 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
     """The MCP server. Its tools are registered in a fixed order (built-ins, then features), so `tools/list` is
     stable. The host app mounts `mcp_http_app` of it."""
     features = FEATURES if features is None else features
+    auth = AuthSettings(issuer_url=verifier.issuer, resource_server_url=public_url,
+                        validate_token_resource=False)  # our verifier checks `aud` itself
+    if str(auth.issuer_url) != verifier.issuer:  # docs/24 §12.5: advertise exactly the issuer we verify
+        raise RuntimeError(f"issuer {verifier.issuer!r} would be advertised as {str(auth.issuer_url)!r}: "
+                           "write KUTUPHANE_OIDC_ISSUER exactly as the IdP's tokens carry it, in that normal form")
     mcp = MCPServer("kutuphane", token_verifier=_Verifier(verifier), extensions=[_ClientCredentials()],
-                    cache_hints=CACHE_HINTS,
-                    auth=AuthSettings(issuer_url=verifier.issuer, resource_server_url=public_url,
-                                      validate_token_resource=False))  # our verifier checks `aud` itself
+                    cache_hints=CACHE_HINTS, auth=auth)
 
     @mcp.tool()
     @_mcp_errors
