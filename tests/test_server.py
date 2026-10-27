@@ -357,7 +357,8 @@ def test_feature_hooks_add_tools_and_routes_with_the_server_gate(app_env, keys, 
 MODERN, LEGACY = "2026-07-28", "2025-11-25"
 TOOLS = ["search_library", "open_citation", "ask_library", "reopen_answer", "read_document",
          "record_runbook_feedback", "job_status", "job_result", "job_cancel",
-         "propose_note", "link_notes", "verify_citations", "query_notes", "neighbours"]  # then FEATURES, in order
+         "propose_note", "link_notes", "verify_citations", "query_notes", "neighbours",
+         "record_outcome"]  # then FEATURES, in order
 
 
 def _message(r) -> dict:

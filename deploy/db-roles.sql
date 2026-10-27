@@ -9,4 +9,4 @@ GRANT USAGE ON SCHEMA public TO kutuphane_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO kutuphane_app;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO kutuphane_app;
 REVOKE INSERT, UPDATE, DELETE ON standing_event FROM kutuphane_app;
-REVOKE UPDATE, DELETE ON note, write_record, note_link, note_citation FROM kutuphane_app;
+REVOKE UPDATE, DELETE ON note, write_record, note_link, note_citation, outcome FROM kutuphane_app;

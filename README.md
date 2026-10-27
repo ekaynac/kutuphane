@@ -93,8 +93,15 @@ Database roles: the server and every process an agent can reach connect as `kutu
 (`kutuphane migrate`, `kutuphane note standing`); keep it out of every environment an agent can read. Create the
 app role once (`CREATE ROLE kutuphane_app LOGIN PASSWORD '…'`), then apply `deploy/db-roles.sql` as the owner
 after every `kutuphane migrate`. Without `KUTUPHANE_CURATOR_DSN`, `migrate` uses `KUTUPHANE_DSN` (one-role
-development databases). `KUTUPHANE_NOTE_WRITES_PER_DAY` (500) limits writes per principal;
+development databases). `KUTUPHANE_NOTE_WRITES_PER_DAY` (500) limits writes (notes, links, outcomes) per principal;
 `KUTUPHANE_NOTE_DUP_SIMILARITY` (0.90) is the vector candidate threshold.
+
+Outcomes and decision records (R2 #74, `docs/24` §19): `record_outcome` / `POST /v1/outcomes` records
+`passed`, `failed`, `reverted` or `reopened` for a task on one exact note or passage version (needs `propose` and
+`read` on its book, and an `idempotency_key`). Reads show the counts; Standing never changes. A `decision_proposal`
+note can carry `decision: {options, choice}`. `kutuphane decisions export <principal> --out FILE` writes JSONL
+decision records; their text, options and choice are present only when the note allows `ai_input` and `train`
+(`journal create --train y`, default `n`), else only references and hashes.
 
 Identity and egress (M1c) are configured by environment:
 `KUTUPHANE_OIDC_ISSUER`, `KUTUPHANE_OIDC_AUDIENCE`, `KUTUPHANE_OIDC_JWKS` (path to a JWKS file);
@@ -121,9 +128,9 @@ the reverse proxy must pass the `Mcp-Method` and `Mcp-Name` headers). `server/di
 versions through the proxy (`KUTUPHANE_PROBE_TOKEN`; `--journal <book>` also proposes a note).
 MCP tools, in `tools/list` order: `search_library`, `open_citation`, `ask_library`, `reopen_answer`,
 `read_document`, `record_runbook_feedback`, `job_status`, `job_result`, `job_cancel`, `propose_note`, `link_notes`,
-`verify_citations`, `query_notes`, `neighbours`. `query_notes` lists notes (`sets`: `current`, `open`, `history`;
-context `repo`/`branch`/`path`/`commit`; `collapse` merges only `same_as` groups) with no model call; HTTP
-`GET /v1/notes` and `GET /v1/notes/{book}/{id}/neighbours`.
+`verify_citations`, `query_notes`, `neighbours`, `record_outcome`. `query_notes` lists notes (`sets`: `current`,
+`open`, `history`; context `repo`/`branch`/`path`/`commit`; `collapse` merges only `same_as` groups) with no model
+call; HTTP `GET /v1/notes` and `GET /v1/notes/{book}/{id}/neighbours`.
 
 Hybrid search (optional): `KUTUPHANE_LLMDAP_EMBED_ROUTE` (an LLMDAP `surface: "embeddings"` route, openai schema),
 `KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS`, `KUTUPHANE_EMBED_MODEL` (the route's pinned model, e.g. `bge-m3`). `ingest` and

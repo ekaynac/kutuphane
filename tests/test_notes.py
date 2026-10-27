@@ -497,7 +497,7 @@ def test_journals_from_the_cli_and_restriction_only_tightens(conn, monkeypatch, 
         cli.main(["journal", "create", "eksik", "--search", "y", "--sensitivity", "normal", "--egress",
                   "local_only", "--protection", "standard", "--by", "user:admin"])
     assert cli.main(["journal", "restrict", J, "--no-ai-input"]) == 0
-    assert json.loads(capsys.readouterr().out) == {"book": J, "search": True, "ai_input": False}
+    assert json.loads(capsys.readouterr().out) == {"book": J, "search": True, "ai_input": False, "train": False}
     allow(conn, J, "read", "propose")
     propose(conn, http(), text="after restriction")
     assert notes.item_info(conn, row(conn, "SELECT seq FROM note")[0])["ai_use"] == {"search": "y", "ai_input": "n"}

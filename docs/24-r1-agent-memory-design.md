@@ -866,3 +866,121 @@ Decisions on the review: no `human` origin in R1 (#2); `same_as` and clusters in
 | 20 | SDK test break | Adapter migration, the list wrapper kept on purpose, boundary tests for both versions through the proxy (§12.1, T33, T34). |
 | 21 | token budget | `budget_tokens` is an estimate over the whole response; `max_bytes` is a hard limit (§9.1, T21). |
 | 22 | distinctions without behavior | `standing_event` (no facet column), `ask_job` (no kind column); `rejected` kept with its D68 behavior (§4, §8.2). |
+
+## 19. R2 #74: outcome feedback and the decision export
+
+**Basis:** issue #74; `docs/23` §5 (export: JSONL decision records), §7 (R2). Migration `020_outcome.sql`.
+
+### 19.1 `record_outcome` (MCP) / `POST /v1/outcomes` (HTTP)
+
+```
+record_outcome(ref: str,            # a note reference book@nt_… or a passage handle book@ct_…/pf_…/path#ordinal
+               task_ref: str,       # the orchestrator's task or run, [A-Za-z0-9._:/#@+-]{1,200}
+               result: str,         # passed | failed | reverted | reopened
+               idempotency_key: str) -> {"ref", "task_ref", "result", "origin"}
+```
+
+- Both reference forms name one exact version: a note id is the digest of its bytes; a passage handle names its content version. An outcome never moves to another version.
+- **Rights:** `propose` **and** `read` on the item's book, decided before and again in one statement at commit (`gate.guard_many`). `read` is also necessary: without it, the answer (found or `not found`) tells a propose-only caller that a note with the given bytes exists. §6.1 never gives that to a propose-only caller.
+- **Origin** comes from the write path, with the rules of §5.2 and no `origin` argument: an agent path stores `model`; a direct user over HTTP stores `unknown`.
+- **Append-only.** The app role has no `UPDATE` or `DELETE` on `outcome`. A later outcome for the same task (for example `passed`, then `reverted`) is a new row.
+- **Idempotency:** the key is **required**, because a retried outcome that counts twice makes a false label. The rules are those of §6.4: scope `(principal, on_behalf_of)`; a retry with the same request returns the first receipt (HTTP 200, else 201); the same key with another request → 409.
+- The outcome counts in the daily write limit of §6.1 step 4 (`KUTUPHANE_NOTE_WRITES_PER_DAY`).
+- Every outcome takes `seq` from `memory_seq` under the memory advisory lock (§4).
+- **Standing does not change.** No outcome writes a Standing event, and the "current" predicate (§9.2) does not read outcomes. An outcome is a measurement; only a curator changes authority (R1: uncertainty never increases authority).
+
+### 19.2 Where outcomes are shown
+
+| Read | Shows |
+|---|---|
+| `query_notes`, `neighbours`, `open_citation` (note) | item key `outcomes`: the non-zero counts per result, rows with `seq ≤ w`, in the order `passed, failed, reverted, reopened`. `as_of` gives the old counts; for `since`, a new outcome is a memory event of its note. |
+| `open_citation` (passage) | the same `outcomes` key for that passage at its version |
+| `kutuphane decisions export` | the outcome rows of each decision note (§19.4) |
+
+### 19.3 Decision fields and the `train` right
+
+- `propose_note` takes an optional `decision: {options: [str], choice: str}`, only for kind `decision_proposal`: 2–20 different options of 1–500 characters (NFC, no control characters) in the order offered, and the choice, which is one of them. The secret scan reads them too. The pair is in the canonical body (key `decision`, present only when given), so another choice is another note. A note without the field keeps its id.
+- **`train`.** A decision record is training data, and kstd `ai_use.train` controls that use. A journal now states `train` (`kutuphane journal create --train y|n`, default `n`: missing = deny; `journal restrict --no-train`). A note's `train` = `journal.train` AND every dependency allows `train` (the rule of §6.2). Journals and notes made before 020 get `train = false`.
+
+### 19.4 `kutuphane decisions export`
+
+```
+kutuphane decisions export <principal> --out FILE [--book B]... [--on-behalf-of U]
+```
+
+- One JSON object per line for each `decision_proposal` note with `seq ≤ w`, in the order (book, seq). Every Standing is exported, with its value: a rejected decision is a label too.
+- **Rights:** `read` on each book, by the gate of `gate.guard_many` (before and at the end). Without `--book`: every journal that the principal may read. Each book gets one `access_event` with `action = export_decisions` and `items = [{ref, standing_seq}]`, so the #79 report finds an export of a retired note.
+- **Text gate:** the text, the options and the choice are in a record only when the note's `ai_input` and `train` are both `y` (note AND journal now). Else the record has only references and hashes (`text_sha256`, `options_sha256`, `choice_sha256`), and `withheld` gives the reason. The hashes are always present, so a consumer can join records.
+- Passage citations and links into books that the principal may not read are left out (as §9.1).
+- The file is created new (`O_EXCL`). The command prints `{out, records, withheld, books, watermark}`.
+
+```json
+{"ref": "adc-memory@nt_…", "book": "adc-memory", "written_at": "…", "standing": "approved",
+ "context": {"text": "…", "text_sha256": "…", "class_key": null, "scope": null, "commit": null,
+             "citations": ["kitap@ct_…/pf_…/a.md#0"], "links": [{"type": "about", "ref": "…"}]},
+ "options": ["retry", "fail fast"], "choice": "fail fast",
+ "options_sha256": ["…", "…"], "choice_sha256": "…",
+ "actor": {"principal": "agent:adc", "on_behalf_of": null, "client_id": "adc", "origin": "model"},
+ "outcomes": [{"task_ref": "adc:run/41", "result": "passed", "at": "…", "principal": "agent:adc",
+               "on_behalf_of": null, "origin": "model"}],
+ "ai_use": {"search": "y", "ai_input": "y", "train": "y"}, "withheld": null}
+```
+
+### 19.5 `020_outcome.sql`
+
+```sql
+ALTER TABLE journal ADD COLUMN train boolean NOT NULL DEFAULT false;
+ALTER TABLE note ADD COLUMN train boolean NOT NULL DEFAULT false,
+                 ADD COLUMN options text[], ADD COLUMN choice text,
+                 ADD CONSTRAINT note_decision CHECK ((options IS NULL) = (choice IS NULL) AND (options IS NULL OR
+                     (kind = 'decision_proposal' AND cardinality(options) BETWEEN 2 AND 20 AND choice = ANY(options))));
+
+CREATE TABLE outcome (
+    seq             bigint PRIMARY KEY DEFAULT nextval('memory_seq'),
+    at              timestamptz NOT NULL DEFAULT now(),
+    correlation_id  text NOT NULL,
+    book            text NOT NULL,
+    note_seq        bigint,                                                 -- a note, or
+    content_id      text, profile_id text, path text, ordinal integer,      -- a passage at its version
+    task_ref        text NOT NULL CHECK (task_ref ~ '^[A-Za-z0-9._:/#@+-]{1,200}$'),
+    result          text NOT NULL CHECK (result IN ('passed', 'failed', 'reverted', 'reopened')),
+    principal       text NOT NULL,
+    on_behalf_of    text,
+    channel         text NOT NULL CHECK (channel IN ('mcp', 'http')),
+    client_id       text,
+    origin          text NOT NULL CHECK (origin IN ('model', 'unknown')),
+    idempotency_key text NOT NULL CHECK (idempotency_key ~ '^[A-Za-z0-9._:-]{8,128}$'),
+    request_sha256  bytea NOT NULL,
+    FOREIGN KEY (note_seq, book) REFERENCES note (seq, book),
+    FOREIGN KEY (book, content_id, profile_id, path, ordinal) REFERENCES chunk (book, content_id, profile_id, path, ordinal),
+    CHECK ((note_seq IS NULL) <> (content_id IS NULL)),
+    CHECK (content_id IS NULL OR (profile_id IS NOT NULL AND path IS NOT NULL AND ordinal IS NOT NULL)),
+    CHECK (origin = 'model' OR (principal LIKE 'user:%' AND on_behalf_of IS NULL AND channel = 'http'))
+);
+```
+
+| Field | Changes |
+|---|---|
+| `journal.train`, `note.train` | the decision export gives text only with `train` (and `ai_input`) |
+| `note.options`, `note.choice` | the export's `options` and `choice`; part of the note identity |
+| `outcome.book`, `note_seq` / passage columns | the item version; the rights check; the counts on that item |
+| `task_ref` | the outcome link in the export |
+| `result` | the counts; the export |
+| `principal`, `on_behalf_of`, `channel`, `client_id`, `origin` | the stored origin (§5); the daily limit; the idempotency scope; the export's actor of an outcome |
+| `idempotency_key`, `request_sha256` | a retry returns the first receipt; a reuse with another request is refused |
+| `seq` | `as_of` and `since` of the counts |
+| `at`, `correlation_id` | the export; the audit join |
+
+### 19.6 Tests (consumer-visible)
+
+| # | Test |
+|---|---|
+| O1 | An agent records `passed` on a note over MCP: origin `model`, a row; `query_notes` shows `outcomes: {passed: 1}`; Standing and `current` do not change, also after `failed` and `reverted`. |
+| O2 | The same key and request: the same receipt, one row; the same key with another result → 409. |
+| O3 | No `propose`, or no `read`, on the item's book: refused and logged, no row. |
+| O4 | A passage handle: recorded; `open_citation` shows the counts; a missing passage → not found. |
+| O5 | A direct user over HTTP stores `unknown`; the app role cannot update or delete an outcome. |
+| O6 | `as_of` gives the old counts; `since` lists a note that got an outcome. |
+| O7 | A `decision` on a non-decision kind, a choice that is not an option, or a credential in an option: refused. |
+| O8 | Export: a journal with `ai_input` and `train`: text, options and choice; with `train: n` (or a dependency without `train`): hashes only, never the text; the outcome rows, the actor and the rights are in each record; one `access_event` per book with the items. |
+| O9 | Migration 020 applies to a database at 018 with notes; old journals and notes get `train = false`; old note ids do not change. |

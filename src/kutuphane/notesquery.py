@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 
-from . import authz, coderepo, gate, notes, profiles
+from . import authz, coderepo, gate, notes, outcomes, profiles
 from .gate import Actor
 from .search import SearchChanged
 
@@ -191,7 +191,8 @@ def watermark(conn) -> int:
     with seq <= this value is committed (§4, §9.5)."""
     return conn.execute(
         "SELECT greatest((SELECT max(seq) FROM note), (SELECT max(seq) FROM write_record), "
-        "                (SELECT max(seq) FROM note_link), (SELECT max(seq) FROM standing_event), 0)").fetchone()[0]
+        "                (SELECT max(seq) FROM note_link), (SELECT max(seq) FROM standing_event), "
+        "                (SELECT max(seq) FROM outcome), 0)").fetchone()[0]
 
 
 _NOTES = """
@@ -316,8 +317,9 @@ def _iso(t: datetime) -> str:
     return t.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def _item(note: Note, is_current: bool, recurrence: int, graph: Graph, for_model: bool) -> dict:
-    """One note, with keys in a fixed order (deterministic bytes). Its code citations must be verified."""
+def _item(note: Note, is_current: bool, recurrence: int, graph: Graph, for_model: bool, outcomes: dict) -> dict:
+    """One note, with keys in a fixed order (deterministic bytes). Its code citations must be verified. `outcomes`:
+    the non-zero outcome counts at w (§19.2); they never change `current`."""
     if note.checks:
         raise ValueError("a note is shown only after _verify")
     links = {}
@@ -333,6 +335,7 @@ def _item(note: Note, is_current: bool, recurrence: int, graph: Graph, for_model
                                                             "paths": list(note.scope_paths)},
             "observed_commit": note.observed_commit, "written_at": _iso(note.written_at),
             "recurrence": recurrence, "links": {t: links[t] for t in LINK_TYPES if t in links},
+            "outcomes": outcomes,
             "citations": [_citation(k, ref, st) for k, ref, st in note.citations]}
     if note.standing == "retired":
         item["successor"] = _successor(note.seq, graph)
@@ -602,6 +605,7 @@ def query_notes(conn, actor: Actor, *, for_model: bool, book=None, sets=("curren
         _citations(conn, found, read, targets)
         graph = _graph(conn, [n.seq for n in found], read, w)
         recurrence, clusters = _recurrence(conn, found, w) if found else ({}, {})
+        counted = outcomes.counts(conn, [n.seq for n in found], w)
 
         changed = _changed(conn, [n.seq for n in found], since, w, read) if since is not None else None
         then = notes.effective_standing(conn, [n.seq for n in found], since) if since is not None else {}
@@ -652,7 +656,8 @@ def query_notes(conn, actor: Actor, *, for_model: bool, book=None, sets=("curren
                     if n.seq not in kept[root]:
                         continue
                 if in_sets:
-                    yield "items", _item(n, is_current, recurrence.get(n.seq, 0), graph, for_model), key(n)
+                    yield "items", _item(n, is_current, recurrence.get(n.seq, 0), graph, for_model,
+                                         counted.get(n.seq, {})), key(n)
                 elif why in ("code", "needs_context"):
                     passed.append((key(n), why))
 
@@ -678,8 +683,8 @@ def query_notes(conn, actor: Actor, *, for_model: bool, book=None, sets=("curren
 
 def _changed(conn, seqs, since: int, w: int, read: set) -> dict:
     """{note seq: True} for notes with a memory event in (since, w], plus "standing": the notes with a Standing
-    event there (§9.5: written, linked, a Standing event, or a recurrence). A link counts only from the authorized
-    graph: the caller may read both of its ends now."""
+    event there (§9.5: written, linked, a Standing event, a recurrence, or an outcome). A link counts only from the
+    authorized graph: the caller may read both of its ends now."""
     if not seqs:
         return {"standing": set()}
     p = {"s": list(seqs), "a": since, "w": w, "b": sorted(o.removeprefix("book:") for o in read)}
@@ -690,7 +695,8 @@ def _changed(conn, seqs, since: int, w: int, read: set) -> dict:
                                           AND coalesce(dst_note_book, dst_book) = ANY(%(b)s)
         UNION SELECT dst_note FROM note_link WHERE dst_note = ANY(%(s)s) AND seq > %(a)s AND seq <= %(w)s
                                                AND src_book = ANY(%(b)s)
-        UNION SELECT note_seq FROM standing_event WHERE note_seq = ANY(%(s)s) AND seq > %(a)s AND seq <= %(w)s""", p)}
+        UNION SELECT note_seq FROM standing_event WHERE note_seq = ANY(%(s)s) AND seq > %(a)s AND seq <= %(w)s
+        UNION SELECT note_seq FROM outcome WHERE note_seq = ANY(%(s)s) AND seq > %(a)s AND seq <= %(w)s""", p)}
     out["standing"] = {r[0] for r in conn.execute(
         "SELECT DISTINCT note_seq FROM standing_event WHERE note_seq = ANY(%(s)s) AND seq > %(a)s AND seq <= %(w)s",
         p)}
@@ -795,6 +801,7 @@ def neighbours(conn, actor: Actor, *, for_model: bool, ref: str, types=None, dep
         all_notes = ([root] if root else []) + nodes
         graph = _graph(conn, [n.seq for n in all_notes], read, w)
         recurrence, _ = _recurrence(conn, all_notes, w) if all_notes else ({}, {})
+        counted = outcomes.counts(conn, [n.seq for n in all_notes], w)
         final = _read(conn, actor)
         if _lost(conn, actor, "neighbours", pre, final):
             continue
@@ -802,7 +809,8 @@ def neighbours(conn, actor: Actor, *, for_model: bool, ref: str, types=None, dep
         refs = {n.seq: n.ref for n in all_notes}
 
         def item(n):
-            return _item(n, current(n, ctx, w) is None, recurrence.get(n.seq, 0), graph, for_model)
+            return _item(n, current(n, ctx, w) is None, recurrence.get(n.seq, 0), graph, for_model,
+                         counted.get(n.seq, {}))
         envelope = {"root": item(root) if root else None, "nodes": [],
                     "edges": [{"src": refs[s], "type": t, "dst": refs[d] if d is not None else p}
                               for _, s, t, d, p in edges],
@@ -870,7 +878,8 @@ def open_note(conn, actor: Actor, *, for_model: bool, ref: str, repo=None, branc
         _verify(coderepo.Verifier(conn, targets), [note])
         graph = _graph(conn, [note.seq], read, w)
         recurrence, _ = _recurrence(conn, [note], w)
-        item = _item(note, current(note, ctx, w) is None, recurrence.get(note.seq, 0), graph, for_model)
+        item = _item(note, current(note, ctx, w) is None, recurrence.get(note.seq, 0), graph, for_model,
+                     outcomes.counts(conn, [note.seq], w).get(note.seq, {}))
         final = _read(conn, actor)
         if obj not in final.objects("read"):
             gate.log_event(conn, actor, "cite", obj, "read", authz.Decision(False, "no current right"),

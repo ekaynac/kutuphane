@@ -413,3 +413,11 @@ Ham metin: `docs/research/2026-10-27-astra-review-13-raw.md`. Dokuz bulgunun hep
 9. **Mezar taşları bayt sınırını aşıyordu (orta):** `left` girdileri öğelerle birlikte sayfalanır: önce mezar taşları (not `seq` sırasıyla), sonra öğeler. Hepsi bütün zarfı sayan aynı bayt ve tahmin sınırı altındadır. `next_cursor` bir mezar taşından da devam eder (`[w, "left", seq]`), yani istemci `since` filigranını imleç null olana dek ilerletmez ve hiçbir kaldırma atlanmaz. `excluded` sayıları sayfadan sonra bilinir; zarfa üst sınırları ölçülerek konur. Test: `test_tombstones_are_paged_under_the_byte_limit`. 80 mezar taşı ve 6 öğe, 8192 baytlık sayfalarda, eksiksiz ve tekrarsız gelir.
 
 `docs/24` §9.1, §9.4, §9.5, §10.2, §10.3, §11, §12.2 ve T32 buna göre güncellendi.
+
+# R2: sonuç geri bildirimi ve karar kayıtları (docs/24 §19, #74)
+
+- **`record_outcome` / `POST /v1/outcomes`:** bir notun (`book@nt_…`) ya da bir pasajın (`book@ct_…/pf_…/yol#n`) tam sürümüne bir görevin (`task_ref`) sonucunu yazar: `passed`, `failed`, `reverted`, `reopened`. Kitapta `propose` ve `read` ister; `read` olmadan "var/yok" cevabı yalnız-öneren çağırana notun varlığını söylerdi. Köken yazma yolundan gelir (§5.2). Kayıtlar yalnız eklenir (`kutuphane_app` güncelleyemez, silemez); `idempotency_key` zorunludur, tekrar ilk alındıyı döner. Günlük yazma sınırına sayılır. 020 göçü.
+- **Standing değişmez:** `query_notes`, `neighbours` ve `open_citation` sonuçları yalnız sayı olarak gösterir (`outcomes`); "current" kuralı onları okumaz.
+- **Karar alanları:** `decision_proposal` notu `decision: {options, choice}` taşıyabilir; kanonik gövdeye yalnız verildiğinde girer, eski notların kimliği değişmez.
+- **`train` hakkı:** dergi `train` belirtir (`journal create --train y|n`, varsayılan `n`; `journal restrict --no-train`); not `train` değeri bağımlılıklardan türer (§6.2 kuralı). Eski dergi ve notlar `train = false` alır.
+- **`kutuphane decisions export <principal> --out FILE`:** okunabilir dergilerdeki karar notlarını JSONL yazar: bağlam, seçenekler, seçim, yazan, sonuç kayıtları, `ai_use`. Metin yalnız `ai_input` ve `train` ikisi de `y` iken vardır; yoksa yalnız referans ve SHA-256. Her kitap için `action = export_decisions` erişim kaydı, `items = [{ref, standing_seq}]`.

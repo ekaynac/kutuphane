@@ -11,8 +11,8 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import (answers, audit, authz, catalog, coderepo, db, devauth, gate, identity, kstd, llmdap, notes, packages,
-               profiles, search, retrieval, signing, vectors)
+from . import (answers, audit, authz, catalog, coderepo, db, decisions, devauth, gate, identity, kstd, llmdap, notes,
+               packages, profiles, search, retrieval, signing, vectors)
 from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, make_policy
 from .source import AcceptedFinding, read_source
 
@@ -294,12 +294,29 @@ def cmd_imports(conn, _args) -> int:
 def cmd_journal_create(conn, args) -> int:
     policy = make_policy(sensitivity=args.sensitivity, egress=args.egress, protection=args.protection)
     _print(notes.create_journal(conn, book=args.book, title=args.title or args.book, search=args.search == "y",
-                                ai_input=args.ai_input == "y", policy=policy, by=args.by))
+                                ai_input=args.ai_input == "y", train=args.train == "y", policy=policy, by=args.by))
     return 0
 
 
 def cmd_journal_restrict(conn, args) -> int:
-    _print(notes.restrict_journal(conn, args.book, search=args.no_search, ai_input=args.no_ai_input))
+    _print(notes.restrict_journal(conn, args.book, search=args.no_search, ai_input=args.no_ai_input,
+                                  train=args.no_train))
+    return 0
+
+
+def cmd_decisions_export(conn, args) -> int:
+    """docs/24 §19.4: JSONL decision records through the read gate; text only with ai_input and train."""
+    if os.path.lexists(args.out):
+        raise ValueError(f"{args.out} exists; the export writes a new file")
+    try:
+        records, summary = decisions.export(conn, gate.Actor(args.principal, args.on_behalf_of), args.book)
+    except (gate.Denied, gate.NotFound) as exc:
+        print(f"denied: {exc}", file=sys.stderr)
+        return 3
+    fd = os.open(args.out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)  # it can hold note text
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.writelines(json.dumps(r, ensure_ascii=False, separators=(",", ":")) + "\n" for r in records)
+    _print({"out": args.out, **summary})
     return 0
 
 
@@ -491,6 +508,8 @@ def parser() -> argparse.ArgumentParser:
     jc.add_argument("--title")
     jc.add_argument("--search", required=True, choices=("y", "n"), help="notes get full text and vectors")
     jc.add_argument("--ai-input", required=True, choices=("y", "n"), help="note text may be sent to models")
+    jc.add_argument("--train", choices=("y", "n"), default="n",
+                    help="note text may be exported as training data (default n: missing = deny)")
     jc.add_argument("--sensitivity", required=True, choices=SENSITIVITY)
     jc.add_argument("--egress", required=True, choices=EGRESS)
     jc.add_argument("--protection", required=True, choices=PROTECTION_M1)
@@ -500,6 +519,7 @@ def parser() -> argparse.ArgumentParser:
     jt.add_argument("book")
     jt.add_argument("--no-search", action="store_true")
     jt.add_argument("--no-ai-input", action="store_true")
+    jt.add_argument("--no-train", action="store_true")
     jt.set_defaults(fn=cmd_journal_restrict)
     nt = sub.add_parser("note", help="notes (curation needs KUTUPHANE_CURATOR_DSN)")
     nsub = nt.add_subparsers(dest="note_cmd", required=True)
@@ -509,6 +529,15 @@ def parser() -> argparse.ArgumentParser:
     ns.add_argument("--curator", required=True, help="user:<name>, who holds curate on the book")
     ns.add_argument("--reason", required=True)
     ns.set_defaults(fn=cmd_note_standing, curator_db=True)
+    dc = sub.add_parser("decisions", help="decision records of journals (docs/24 §19)")
+    dcsub = dc.add_subparsers(dest="decisions_cmd", required=True)
+    de = dcsub.add_parser("export", help="write JSONL decision records the principal may read; text only with "
+                                         "ai_input and train")
+    de.add_argument("principal")
+    de.add_argument("--out", required=True, help="a new file")
+    de.add_argument("--book", action="append", help="only this journal (repeatable); default: every readable one")
+    de.add_argument("--on-behalf-of")
+    de.set_defaults(fn=cmd_decisions_export)
     return ap
 
 
