@@ -168,8 +168,10 @@ Only a person with `curate` changes Standing, on the command line, with the cura
 KUTUPHANE_CURATOR_DSN=… kutuphane note standing adc-memory@nt_… approved --curator user:ayse --reason "checked"
 ```
 
-Find the open notes with `query_notes` and `sets: ["open"]`. When a curator approves a `rule` note with a
-`supersedes` link to an approved note with the same scope, the system retires the old note.
+A curator lists the open notes in risk order with `kutuphane curator queue --curator user:ayse`, or on the phone
+(curator web; [operations.md](operations.md), section 7). An agent finds them with `query_notes` and
+`sets: ["open"]`. When a curator approves a `rule` note with a `supersedes` link to an approved note with the same
+scope, the system retires the old note.
 
 ## 10. Rollback of a poisoned note
 

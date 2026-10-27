@@ -11,8 +11,8 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import (answers, audit, authz, catalog, coderepo, db, decisions, devauth, gate, identity, kstd, llmdap,
-               noteimport, notes, packages, passkey, profiles, search, retrieval, signing, skillscan, vectors)
+from . import (answers, audit, authz, catalog, coderepo, curatorqueue, db, decisions, devauth, gate, identity, kstd,
+               llmdap, noteimport, notes, packages, passkey, profiles, search, retrieval, signing, skillscan, vectors)
 from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, make_policy
 from .source import AcceptedFinding, read_source
 
@@ -442,6 +442,32 @@ def cmd_curator_verify_acts(conn, args) -> int:
     return 1 if out["problems"] else 0
 
 
+def cmd_curator_queue(conn, args) -> int:
+    """docs/25 §6 (G36): the queue of a curator in risk order, as curator web shows it (no suggestion, no sample
+    mark). Read only; the view is logged as `curate_view` for the named curator, as on the page."""
+    try:
+        with conn.transaction():
+            _print(curatorqueue.queue(conn, args.curator, w=args.as_of, cursor=args.cursor, limit=args.limit,
+                                      book=args.book))
+    except gate.Denied as exc:
+        print(f"denied: {exc}", file=sys.stderr)
+        return 3
+    return 0
+
+
+def _when(text: str) -> datetime:
+    """An ISO date or time; with no zone, UTC."""
+    value = datetime.fromisoformat(text)
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def cmd_curator_report(conn, args) -> int:
+    """docs/25 §6.7: curator seconds per approved note, the share still pending after 7 days, who decided, and the
+    delegations. Read only."""
+    _print(curatorqueue.report(conn, _when(args.start), _when(args.end)))
+    return 0
+
+
 def cmd_curator_web(_conn, args) -> int:
     import uvicorn
     uvicorn.run("kutuphane.curatorweb:app_from_env", factory=True, host=args.host, port=args.port)
@@ -695,6 +721,18 @@ def parser() -> argparse.ArgumentParser:
     cv = cusub.add_parser("verify-acts", help="check every stored act again: statement, signature with UV, effects")
     cv.add_argument("--since", type=int, default=0, help="only acts with a higher seq")
     cv.set_defaults(fn=cmd_curator_verify_acts, curator_db=True)
+    cq = cusub.add_parser("queue", help="the pending notes of a curator in risk order, with their same_as groups")
+    cq.add_argument("--curator", required=True, help="user:<name>, who holds curate and read on the books")
+    cq.add_argument("--book", help="only this book")
+    cq.add_argument("--as-of", type=int, help="the watermark w (default: now); the same w gives the same queue")
+    cq.add_argument("--cursor", help="next_cursor of the previous page")
+    cq.add_argument("--limit", type=int, default=curatorqueue.PAGE_GROUPS, help="groups per page")
+    cq.set_defaults(fn=cmd_curator_queue, curator_db=True)
+    cm = cusub.add_parser("report", help="curator seconds per approved note, the share pending after 7 days, "
+                                         "who decided, delegations")
+    cm.add_argument("--from", dest="start", required=True, help="ISO date or time (UTC if no zone), inclusive")
+    cm.add_argument("--to", dest="end", required=True, help="ISO date or time (UTC if no zone), exclusive")
+    cm.set_defaults(fn=cmd_curator_report, curator_db=True)
     cw = cusub.add_parser("web", help="serve curator web (KUTUPHANE_CURATOR_WEB_DSN, KUTUPHANE_WEBAUTHN_*)")
     cw.add_argument("--host", default="127.0.0.1")
     cw.add_argument("--port", type=int, default=8090)

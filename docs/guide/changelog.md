@@ -9,6 +9,15 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### The curator queue and its measures (#77, docs/25 slice Q)
+
+- New: the curator queue. The pending notes of the books where the curator holds `curate` and `read`, in risk order (tier 1: an approval that changes what is current; then decision proposals, conventions, findings, lessons and dead ends, test results), as `same_as` groups, at a watermark: the same watermark gives the same queue. Read [operations.md](operations.md), section 7, "The queue".
+- Curator web: the page shows the queue. One passkey act decides a batch or a whole group (1–50 notes, one reason, one Standing event per note); **Select group** selects a group. The routes `GET /api/queue` and `GET /api/note/{book}/{id}` replace `GET /api/pending`.
+- Each card shows every part of the note that its id covers: the text, the scope, the class key, the commit, the decision options and choice, the citations, and the links with the target text. A note with a citation or a creation link into a book that the curator cannot read cannot be approved on the phone (security review #16, finding 1).
+- A model suggestion and a delegation sample are never in the queue and never change its order (D67). The act receipt shows them after the decision.
+- New command `kutuphane curator queue --curator user:<name>`: the same queue on the command line (Pilot 2 G36).
+- New command `kutuphane curator report --from D1 --to D2`: curator seconds per approved note, the share still pending after 7 days (by tier and by book), who decided, and the delegations.
+
 ### Curator web with passkeys (D72, docs/25 slice P)
 
 - New: curator web, the phone page of the curator. A curator approves or rejects pending notes and signs each decision with a passkey (WebAuthn, user verification required). The passkey signs the exact statement: the notes and their digests, the Standing in force, the new values and the reason. Install: [install.md](install.md#curator-web); use: [operations.md](operations.md), section 7. The CLI path (`note standing`) stays and works as before ([#115](https://github.com/ekaynac/kutuphane/pull/115)).
