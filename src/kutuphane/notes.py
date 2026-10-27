@@ -2,6 +2,8 @@
 read path (slice B) needs. Slice A's version replaces it at integration."""
 import re
 
+from . import ids, search
+
 KIND_ROLE = {"decision_proposal": "rule", "convention": "rule", "finding": "evidence", "lesson": "evidence",
              "dead_end": "evidence", "test_result": "evidence"}
 _REF = re.compile(r"^([a-z0-9][a-z0-9-]{0,62})@(nt_[0-9a-f]{64})\Z")
@@ -13,6 +15,19 @@ def parse_ref(ref: str) -> tuple[str, str]:
     if not m:
         raise ValueError("malformed note reference")
     return m.group(1), m.group(2)
+
+
+def parse_passage(handle) -> search.Citation:
+    """A passage handle `book@ct_…/pf_…/path#ordinal`, as `open_citation` takes it."""
+    if not isinstance(handle, str) or re.search(r"[\x00-\x1f\x7f]", handle):
+        raise ValueError("malformed passage handle")
+    try:
+        head, ordinal = handle.rsplit("#", 1)
+        book, rest = head.split("@", 1)
+        content_id, profile_id, path = rest.split("/", 2)
+        return search.Citation(book, content_id, profile_id, ids.normalize_path(path), int(ordinal))
+    except ValueError:
+        raise ValueError("malformed passage handle") from None
 
 
 def effective_standing(conn, seqs, w: int) -> dict:

@@ -645,11 +645,6 @@ def _collapse(chosen: list, clusters: dict, graph: Graph) -> list:
 
 # --- neighbours (§9.3) -------------------------------------------------------------------------------------
 
-def _passage(ref: str):
-    from .server import parse_citation  # the one passage-handle parser
-    return parse_citation(ref)
-
-
 def neighbours(conn, actor: Actor, *, for_model: bool, ref: str, types=None, depth: int = 1,
                direction: str = "both", sets=("current",), repo=None, branch=None, path=None, commit=None,
                max_nodes: int = 50, budget_tokens: int = 2000, max_bytes: int = 32768, as_of=None,
@@ -669,7 +664,7 @@ def neighbours(conn, actor: Actor, *, for_model: bool, ref: str, types=None, dep
         root_book, root_id = notes.parse_ref(ref)
         passage = None
     except ValueError:
-        passage = _passage(ref)
+        passage = notes.parse_passage(ref)
         root_book, root_id = passage.book, None
     w, _ = _as_of(conn, as_of, None)
 
@@ -937,5 +932,5 @@ def http_routes(deps, endpoint) -> list:
         return Response(_dumps(body), media_type="application/json",
                         headers={"X-Correlation-Id": actor.correlation_id})
 
-    return [Route("/v1/notes", endpoint(h_notes)),
-            Route("/v1/notes/{book}/{id}/neighbours", endpoint(h_neighbours))]
+    return [Route("/v1/notes", endpoint(h_notes), methods=["GET"]),  # POST /v1/notes is the write path's route
+            Route("/v1/notes/{book}/{id}/neighbours", endpoint(h_neighbours), methods=["GET"])]
