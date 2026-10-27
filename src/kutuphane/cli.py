@@ -49,6 +49,8 @@ def _warn_skills(scans: list[dict]) -> None:
         if s["blocking"]:
             verdict = f"{s['recommendation']} {s['score']}, coverage {s['completeness']}" if s["status"] == "scanned" \
                 else f"scan failed: {s['reason']}"
+            if s.get("carried_from"):
+                verdict += f", carried from scan record {s['carried_from']}: the same skill bytes"
             print(f"skill blocked for agents ({verdict}): {s['skill_path']}; `kutuphane skill show` lists the "
                   "findings, a curator lifts the block with `kutuphane skill clear`", file=sys.stderr)
         elif s["status"] == "not_scanned":

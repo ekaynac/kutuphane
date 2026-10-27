@@ -226,6 +226,55 @@ cases:
     request: {actor: user:ayse, action: infer, item: i-imp, want: evidence, context: {}, destination: cloud}
     expect: {result: deny, authority: rule, reasons: [route-local-only], notices: []}
 
+  - name: an unauthorized loosening does not supersede the same issuer's admissible restriction
+    rule: [4]
+    <<: *base
+    statements:
+      - *stmts
+      - [{id: i-ven, kind: item, issuer: node:vendor, issued_at: 2026-10-01T00:00:00Z,
+          body: {scope: book:ops, origin: human, rights: {license: CC-BY-4.0, ai_use: {ai_input: y}, personal_data: "no"},
+                 applicability: {}}},
+         {kind: acceptance, about: i-ven, issuer: node:acme, issued_at: 2026-10-02T00:00:00Z, body: {value: accepted}},
+         {kind: handling, about: i-ven, issuer: node:acme, issued_at: 2026-10-02T00:00:00Z, body: {export: normal, route: cloud_ok}},
+         {kind: handling, about: i-ven, issuer: node:vendor, issued_at: 2026-10-20T00:00:00Z, body: {route: local_only}},
+         {kind: handling, about: i-ven, issuer: node:vendor, issued_at: 2026-10-21T00:00:00Z, body: {route: cloud_ok}}]
+    request: {actor: user:ayse, action: infer, item: i-ven, want: evidence, context: {}, destination: cloud}
+    expect: {result: deny, authority: evidence, reasons: [route-local-only], notices: []}
+
+  - name: a loosening without trust for the action does not supersede a restriction from trust for the kind and scope
+    rule: [4]
+    <<: *base
+    trust:
+      - {issuer: node:partner, kinds: [acceptance, mandate, status], scopes: [book:ops],
+         actions: [read, infer, derive, forward, activate], expires: 2027-06-01T00:00:00Z}
+      - {issuer: node:partner, kinds: [handling], scopes: [book:ops], actions: [read], expires: 2027-06-01T00:00:00Z}
+    statements:
+      - *stmts
+      - [{kind: handling, about: i-own, issuer: node:partner, issued_at: 2026-10-20T00:00:00Z, body: {export: restricted}},
+         {kind: handling, about: i-own, issuer: node:partner, issued_at: 2026-10-21T00:00:00Z, body: {export: normal}}]
+    request: {actor: user:ayse, action: forward, item: i-own, want: evidence, context: {}, destination: node:partner}
+    expect: {result: deny, authority: evidence, reasons: [handling-restricted], notices: []}
+
+  - name: an authorized loosening supersedes the same issuer's earlier restriction
+    rule: [4]
+    <<: *base
+    statements:
+      - *stmts
+      - [{kind: handling, about: i-imp, issuer: node:partner, issued_at: 2026-10-20T00:00:00Z, body: {route: local_only}},
+         {kind: handling, about: i-imp, issuer: node:partner, issued_at: 2026-10-21T00:00:00Z, body: {route: cloud_ok}}]
+    request: {actor: user:ayse, action: infer, item: i-imp, want: evidence, context: {}, destination: cloud}
+    expect: {result: permit, authority: rule, reasons: [], notices: []}
+
+  - name: an untrusted issuer's later loosening withdraws its own untrusted tightening
+    rule: [4]
+    <<: *base
+    statements:
+      - *stmts
+      - [{kind: handling, about: i-own, issuer: node:stranger, issued_at: 2026-10-20T00:00:00Z, body: {route: local_only}},
+         {kind: handling, about: i-own, issuer: node:stranger, issued_at: 2026-10-21T00:00:00Z, body: {route: cloud_ok}}]
+    request: {actor: user:ayse, action: infer, item: i-own, want: evidence, context: {}, destination: "cloud:llm.example.net"}
+    expect: {result: permit, authority: evidence, reasons: [], notices: []}
+
   - name: unconfirmed handling is the strictest value
     rule: [4]
     <<: *base

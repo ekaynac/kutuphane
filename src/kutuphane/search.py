@@ -205,18 +205,19 @@ def authorize(conn, actor: Actor, hits: list[Hit]) -> list[Hit]:
     needs = _needs(actor, ((h.citation.book, h.instruction) for h in hits))
     if not needs:
         return []
-    lost = _lost(conn, actor, needs, authz.allowed(conn, actor.principal, actor.on_behalf_of, _modes(actor)))
-    blocked = _blocked(conn, actor, ((h.citation.book, h.citation.content_id, h.citation.path, h.instruction)
-                                     for h in hits))
+    final = authz.allowed(conn, actor.principal, actor.on_behalf_of, _modes(actor), skills=_skills(
+        actor, ((h.citation.book, h.citation.content_id, h.citation.path, h.instruction) for h in hits)))
+    lost = _lost(conn, actor, needs, final)
     return [h for h in hits if f"book:{h.citation.book}" not in lost
-            and (h.citation.book, h.citation.content_id, h.citation.path) not in blocked]
+            and (h.citation.book, h.citation.content_id, h.citation.path) not in final.blocked_files]
 
 
-def _blocked(conn, actor: Actor, passages) -> set:
-    """(book, content_id, path) of an agent's instruction passages inside a blocked skill (D71)."""
+def _skills(actor: Actor, passages) -> list[tuple[str, str, str]]:
+    """(book, content_id, path) of an agent's instruction passages: the final statement reads their skill blocks
+    (D71) together with the rights (Astra review #15)."""
     if not actor.principal.startswith("agent:"):
-        return set()
-    return gate.blocked_skills(conn, [(b, c, p) for b, c, p, instruction in passages if instruction])
+        return []
+    return sorted({(b, c, p) for b, c, p, instruction in passages if instruction})
 
 
 def search(conn, actor: Actor, query: str, k: int = DEFAULT_K, attempts: int = 2,
@@ -243,11 +244,12 @@ def search(conn, actor: Actor, query: str, k: int = DEFAULT_K, attempts: int = 2
                                       "model": vector.model if vector else None,
                                       "prefix": scope.path, "files": files}).fetchall()
         needs = _needs(actor, ((r[0], r[9]) for r in rows))
-        # One final statement for the whole result set: the request's single linearization point.
-        final = authz.allowed(conn, actor.principal, actor.on_behalf_of, modes)
+        # One final statement for the whole result set, rights and skill blocks: the single linearization point.
+        final = authz.allowed(conn, actor.principal, actor.on_behalf_of, modes,
+                              skills=_skills(actor, ((r[0], r[1], r[3], r[9]) for r in rows)))
         if _lost(conn, actor, needs, final):
             continue  # search again with the rights as they are now, so revoked books never consume `k`
-        if _blocked(conn, actor, ((r[0], r[1], r[3], r[9]) for r in rows)):
+        if final.blocked_files:
             continue  # a scan blocked a skill meanwhile (D71): the next pre-filter leaves it out
         hits = [Hit(Citation(*r[:5]), r[5], r[6], r[7], r[8], float(r[10]), r[11], r[9]) for r in rows]
         for obj, ms in needs.items():

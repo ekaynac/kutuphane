@@ -9,6 +9,15 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Security fixes (Astra review #15)
+
+- A skill block now follows the skill's bytes: a new version of a book with the same skill files keeps every block that a curator did not clear, also when the new scan says `SAFE`, an earlier scan failed, or no scanner is configured now. `kutuphane skill show` shows the copy (`carried_from`), and one `skill clear` lifts all copies. Migration `022_skill_block_carry.sql`; after `migrate`, run `kutuphane skill rescan` once ([#110](https://github.com/ekaynac/kutuphane/pull/110)).
+- A note that cites a passage of a blocked skill, or that is derived from such a note, is handled as `ai_input: n` for model readers: `query_notes`, `neighbours`, a note in `open_citation` and the `propose_note` candidates give `text: null` with `withheld`. The decision export withholds its text, options and choice for every reader ([#110](https://github.com/ekaynac/kutuphane/pull/110)).
+- The last rights check before a delivery and the skill block check are one database statement for files, passages, answers and notes, so a concurrent change cannot give a delivery that no state permitted ([#110](https://github.com/ekaynac/kutuphane/pull/110)).
+- A SkillSpector report that is larger than 8 MiB, nested deeper than 64 levels, or has a NUL, a lone surrogate, NaN or infinity is a failed scan that blocks; the ingest no longer stops ([#110](https://github.com/ekaynac/kutuphane/pull/110)).
+- `deploy/skillspector/install.sh` installs the build backend (hatchling and its dependencies, `deploy/skillspector/build-requirements.txt`) with hash checks, installs wheels only, and builds SkillSpector without build isolation. `SKILLSPECTOR_WHEELS=<folder>` installs without network. It needs Python 3.12 or 3.13 ([#110](https://github.com/ekaynac/kutuphane/pull/110)).
+- kstd rule 4: a later loosening from an issuer without trust for that kind, scope and action no longer replaces the same issuer's restriction; the restriction stays in force. Four conformance cases are added ([#110](https://github.com/ekaynac/kutuphane/pull/110)).
+
 ### Skill scan (SkillSpector, D71)
 
 - Optional: `deploy/skillspector/install.sh` installs the pinned SkillSpector 2.13.1 (tag tarball sha256 checked) into its own environment. With `KUTUPHANE_SKILLSPECTOR_BIN`, `ingest`, `approve-import` and `skill rescan` scan each skill folder with `--no-llm` and record the result as a curator proposal; `receive` shows it as a finding ([#109](https://github.com/ekaynac/kutuphane/pull/109)).

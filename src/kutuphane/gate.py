@@ -4,7 +4,9 @@
   while a request is in flight still stops the content (AT-04, AT-05).
 - Agent instructions (K3) reach an agent only with a separate `activate` grant, logged as its own event
   (D37, AT-12). People may read them as reference with `read`. A skill that a SkillSpector scan blocks (D71,
-  skillscan.py) is refused to agents even with that grant, until a curator clears it; a scan never grants.
+  skillscan.py) is refused to agents even with that grant, until a curator clears it; a scan never grants. The
+  final decision and the block are read by ONE statement (Astra review #15): `authz.decide(skills=…)`,
+  `authz.allowed(skills=…, notes=…)`.
 - Every decision, allowed or not, is written to `access_event` with the policy and grant rows behind it.
 """
 import uuid
@@ -71,11 +73,13 @@ def guard(conn, actor: Actor, obj: str, modes: list[str], fetch, *, action: str,
     try:
         with conn.transaction():
             data = fetch()
-            # Again, right before handing anything out: one statement for every mode and the policy in force.
-            final = authz.decide(conn, actor.principal, actor.on_behalf_of, obj, modes)
+            # Again, right before handing anything out: one statement for every mode, the policy in force and, for
+            # `activate`, the skill block of this file.
+            skills = [(obj.removeprefix("book:"), content_id, path)] \
+                if "activate" in modes and content_id is not None else []
+            final = authz.decide(conn, actor.principal, actor.on_behalf_of, obj, modes, skills=skills)
             revoked = next(((m, d) for m, d in final.decisions.items() if not d.allowed), None)
-            blocked = (revoked is None and "activate" in modes and content_id is not None
-                       and bool(blocked_skills(conn, [(obj.removeprefix("book:"), content_id, path)])))
+            blocked = revoked is None and bool(final.blocked_files)
             if revoked or blocked:
                 raise _Rollback
     except _Rollback:
@@ -100,30 +104,17 @@ def modes_for(actor: Actor, instruction: bool) -> list[str]:
 
 
 SKILL_BLOCKED = "skill blocked by a scan (D71); only a curator clears it"
+# A note that depends on a blocked skill (SQL `note_skill_blocked`): its text is withheld from readers that put it
+# into a model, as for ai_input = false (Astra review #15).
+SKILL_WITHHELD = "derived from a skill blocked by a scan (D71); only a curator clears it"
 
 
-def blocked_skills(conn, refs) -> set[tuple[str, str, str]]:
-    """The (book, content_id, path) of `refs` inside a skill folder that a scan blocks and no curator cleared (the
-    SQL function `skill_blocked`, migration 021). The block is on `activate`: pass the instruction files of agents."""
-    refs = sorted(set(refs))
-    if not refs:
-        return set()
-    books, contents, paths = (list(column) for column in zip(*refs))
-    return {tuple(r) for r in conn.execute("SELECT b, c, p FROM unnest(%s::text[], %s::text[], %s::text[]) AS "
-                                           "r(b, c, p) WHERE skill_blocked(b, c, p)", (books, contents, paths))}
-
-
-def refuse_blocked_skills(conn, actor: Actor, refs, *, action: str) -> None:
-    """For an agent: refuse (and log, per file) a delivery built from instruction passages of a blocked skill.
-    `refs`: (book, content_id, path) of the instruction passages."""
-    if not actor.principal.startswith("agent:"):
-        return
-    blocked = blocked_skills(conn, refs)
+def log_blocked(conn, actor: Actor, blocked, policies: dict) -> None:
+    """One refused `activate` event per file of a blocked skill. `blocked`: (book, content_id, path); `policies`:
+    the policy in force per object, from the same final decision."""
     for book, content_id, path in sorted(blocked):
         log_event(conn, actor, "activate", f"book:{book}", "activate", authz.Decision(False, SKILL_BLOCKED),
-                  catalog.current_policy(conn, book), content_id, path)
-    if blocked:
-        raise Denied(f"{action}: activate refused: {SKILL_BLOCKED}")
+                  policies.get(f"book:{book}"), content_id, path)
 
 
 def deliver_file(conn, actor: Actor, book: str, content_id: str, path: str) -> bytes:
@@ -139,19 +130,24 @@ def deliver_file(conn, actor: Actor, book: str, content_id: str, path: str) -> b
 
 
 def check_many(conn, actor: Actor, needs: dict, *, action: str, items: dict | None = None,
-               policies_out: dict | None = None) -> None:
+               policies_out: dict | None = None, skills=()) -> None:
     """Right before handing out something built from several books (an answer, a reopened answer): decide every
-    book and mode in ONE statement, log, and refuse unless all hold. `needs`: {object: {modes}}."""
+    book and mode in ONE statement, log, and refuse unless all hold. `needs`: {object: {modes}}. `skills`: the
+    (book, content_id, path) of the instruction passages an agent receives; the same statement reads their skill
+    blocks (D71), and a blocked one refuses the whole delivery."""
     if not needs:
         return
     modes = ["read", "activate"] if any("activate" in m for m in needs.values()) else ["read"]
-    final = authz.allowed(conn, actor.principal, actor.on_behalf_of, modes)
+    final = authz.allowed(conn, actor.principal, actor.on_behalf_of, modes, skills=sorted(set(skills)))
     missing = sorted(o for o, m in needs.items() if not set(m) <= set(final.decisions.get(o, {})))
     if missing:
         for obj in missing:
             log_event(conn, actor, action, obj, "read", authz.Decision(False, "no current right"),
                       final.policies.get(obj), None, None)
         raise Denied(f"{action}: no current right on {', '.join(missing)}")
+    if final.blocked_files:
+        log_blocked(conn, actor, final.blocked_files, final.policies)
+        raise Denied(f"{action}: activate refused: {SKILL_BLOCKED}")
     for obj, ms in needs.items():
         for mode in sorted(ms, key=modes.index):
             log_event(conn, actor, action if mode == "read" else mode, obj, mode, final.decisions[obj][mode],
@@ -160,14 +156,17 @@ def check_many(conn, actor: Actor, needs: dict, *, action: str, items: dict | No
         policies_out.update(final.policies)
 
 
-def guard_many(conn, actor: Actor, needs: dict, work, *, action: str, items: dict | None = None, finish=None):
+def guard_many(conn, actor: Actor, needs: dict, work, *, action: str, items: dict | None = None, finish=None,
+               notes_of=None):
     """`guard` for work that depends on several books (docs/24 §6.1, a write such as a note that cites other books).
     `needs`: {object: {modes}}. Every object and mode is decided in ONE statement before the work, so a refused
     request does nothing. The work runs in a transaction, and every object and mode is decided again in ONE
     statement inside it: if any right was lost meanwhile, the work is rolled back and nothing is handed out. Each
     decision is logged; a refusal is logged after the rollback, so it stays on record.
     `finish(final, data) -> data`, if given, runs in the transaction right after that final decision (which then
-    also decides `read` on every book): what the work built from optional rights outside `needs` is cut to it."""
+    also decides `read` on every book): what the work built from optional rights outside `needs` is cut to it.
+    `notes_of(data) -> note seqs`, if given: the final statement also reads which of those notes depend on a
+    blocked skill (`final.blocked_notes`, D71), for `finish` to withhold their text."""
     if not needs:
         raise ValueError("guard_many needs at least one object")
     wanted = {m for ms in needs.values() for m in ms} | ({"read"} if finish else set())
@@ -189,7 +188,8 @@ def guard_many(conn, actor: Actor, needs: dict, work, *, action: str, items: dic
     try:
         with conn.transaction():
             data = work()
-            final = authz.allowed(conn, actor.principal, actor.on_behalf_of, modes)
+            final = authz.allowed(conn, actor.principal, actor.on_behalf_of, modes,
+                                  notes=notes_of(data) if notes_of else ())
             if missing := lost(final):
                 raise _Rollback
             if finish is not None:

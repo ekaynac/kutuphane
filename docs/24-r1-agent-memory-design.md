@@ -1125,7 +1125,7 @@ CREATE TABLE outcome (
 ### 22.1 One pinned version, outside our package
 
 - `deploy/skillspector/skillspector.pin` names the one tested version (`2.13.1`), the tag tarball URL and its sha256. `skillscan.TESTED_VERSION` must be equal (a unit test checks it).
-- `deploy/skillspector/install.sh [PREFIX]` (default `/opt/skillspector`) downloads the tag tarball (or takes `SKILLSPECTOR_TARBALL=<file>` on a host without network), refuses it when the sha256 is not the pinned one, and installs it into its own venv: the runtime dependencies from the upstream `uv.lock` in that verified tarball, with hash checks, then the project with no dependencies. It copies `LICENSE`, `THIRD_PARTY_NOTICES.md` and the upstream fixtures `safe_skill`, `malicious_skill` to `PREFIX/share/skillspector/`. It needs `uv` and Python 3.12–3.14.
+- `deploy/skillspector/install.sh [PREFIX]` (default `/opt/skillspector`) downloads the tag tarball (or takes `SKILLSPECTOR_TARBALL=<file>` on a host without network), refuses it when the sha256 is not the pinned one, and installs it into its own venv: the runtime dependencies from the upstream `uv.lock` in that verified tarball and the build backend (`deploy/skillspector/build-requirements.txt`: hatchling and its dependencies, pinned and hashed), in one install with `--require-hashes --no-build` (wheels only: no isolated sdist build can fetch an unhashed build dependency), then the project with `--no-build-isolation --no-deps`, built by that hashed backend (Astra review #15). `SKILLSPECTOR_WHEELS=<dir>` takes the wheels from a folder (`--no-index`), for a host without network. It copies `LICENSE`, `THIRD_PARTY_NOTICES.md` and the upstream fixtures `safe_skill`, `malicious_skill` to `PREFIX/share/skillspector/`. It needs `uv` and Python 3.12 or 3.13 (yara-python 4.5.4 has no cp314 wheel).
 - No Kütüphane package metadata names SkillSpector. It is never imported, vendored or released with us. The operator sets `KUTUPHANE_SKILLSPECTOR_BIN=PREFIX/bin/skillspector`.
 
 ### 22.2 The adapter
@@ -1136,6 +1136,7 @@ CREATE TABLE outcome (
 - **Timeout:** `KUTUPHANE_SKILLSPECTOR_TIMEOUT` seconds (default 120) for `--version` and for each scan.
 - **Version:** `<bin> --version` is read first. A version that is not `TESTED_VERSION` is refused (`not_scanned`) unless `KUTUPHANE_SKILLSPECTOR_ALLOW_VERSION` names exactly that version. The record stores the version that ran, and the report must name the same version.
 - **Exit codes:** 0 and 1 carry a verdict (1: score above 50). Any other exit, a timeout, output that is not JSON, or a report with an unknown recommendation, score or completeness is a `failed` scan.
+- **Hostile reports (Astra review #15):** stdout goes to a file; more than `MAX_REPORT_BYTES` (8 MiB) is a `failed` scan and is never read. Parsing refuses NaN and infinity; then an iterative walk refuses nesting deeper than `MAX_DEPTH` (64) and any string with NUL or a lone surrogate (jsonb and UTF-8 cannot store them). Parsing, normalization and the report digest are one failure boundary: whatever breaks there is a recorded `failed` scan that blocks, never an aborted ingest or rescan.
 - **Normalization:** the keys `finding_id` (random) and `scanned_at` (a clock) are dropped at every depth, and the temporary folder path is replaced by the skill path. The report digest is the sha256 of the canonical JSON of that report; two runs on the same bytes give the same digest.
 
 ### 22.3 The record
@@ -1151,6 +1152,7 @@ CREATE TABLE outcome (
 | `findings` | the normalized issues, shown to the curator (`skill show`) |
 | `reason` | why a scan failed or did not run (shown at ingest and in `skill show`) |
 | `stale` | the next ingest of that version and `skill rescan` scan it again |
+| `carried_from` | a copy of an uncleared block of the same `input_digest` from another content version (migration 022) |
 
 `skill_clearance` (`book`, `input_digest`, `tool_version`, `report_digest`, `scan_id`, `curator`, `reason`, `at`) is the curator act. The view `skill_block` holds every blocking record with no matching clearance. The SQL function `skill_blocked(book, content_id, path)` tells whether a file is inside such a folder.
 
@@ -1162,16 +1164,20 @@ CREATE TABLE outcome (
 - **`SAFE` grants nothing.** An agent still needs its `activate` grant. `CAUTION` does not block.
 - **`not_scanned`** (no tool configured, the tool not runnable, a version not allowed) does not block, and ingest works as before. This is an open operator choice (§22.7).
 - **New tool version.** A scan with version V marks every record of another version `stale`. The next ingest of that content, or `kutuphane skill rescan [--book B]`, scans again where no fresh `scanned` record of V exists. A record of the same bytes and version in the same book is copied, not scanned again.
+- **The block follows the bytes (Astra review #15).** In the publication transaction (and in `skill rescan`), every uncleared block of the book with the same `input_digest` as a skill folder of the version is copied into the version (`carried_from`), one copy per (tool version, report digest), whatever the plan did: a reused scan, a new scan that says `SAFE`, or no tool. So an edit outside the skill folder cannot drop a block that a failed scan or another tool version made. One clearance (its key has no content version) lifts the block and every copy.
 - **Users** read skill files as reference with `read`, as before; the block is on `activate` only.
+- **Notes (Astra review #15).** SQL `note_skill_blocked(seq)` (migration 022) is true when a passage citation or a `derived_from` passage of the note, or of a note it is derived from (transitively), is inside a blocked skill. For model readers it acts as `ai_input = false`: the text is withheld, the note stays listed (the same choice as §20.3, so a note never disappears from a list because of a block).
 
 ### 22.5 Where the block applies
 
 | Path | Rule |
 |---|---|
-| `gate.guard` (`read_document`, `kutuphane read`, `open_citation`) | in the final decision inside the transaction: refused, logged as `activate` denied with the reason and the grant ids that it overrides |
-| `search.search` pre-filter | an agent's instruction chunks inside a blocked skill are left out before ranking; a block that lands during the search makes it run again |
-| `search.authorize` (the merged retrieval pool) | such passages are dropped |
-| `answers.ask`, `answers.reopen` | an agent is refused, and each blocked file is logged, when an instruction source is inside a blocked skill (the model saw it) |
+| `gate.guard` (`read_document`, `kutuphane read`, `open_citation`) | in the final decision inside the transaction, in the same statement (`authz.decide(skills=…)`): refused, logged as `activate` denied with the reason and the grant ids that it overrides |
+| `search.search` pre-filter | an agent's instruction chunks inside a blocked skill are left out before ranking; a block that lands during the search makes it run again (read by the final `authz.allowed(skills=…)` statement) |
+| `search.authorize` (the merged retrieval pool) | such passages are dropped (the same single statement) |
+| `answers.ask`, `answers.reopen` | `gate.check_many(skills=…)`: an agent is refused, and each blocked file is logged, when an instruction source is inside a blocked skill (the model saw it); rights and blocks in one statement |
+| `query_notes`, `neighbours`, a note in `open_citation` | for a model reader, the text of a note that depends on a blocked skill is withheld; the final `authz.allowed(notes=…)` reads the blocks of every shown text with the rights, and a block that landed meanwhile runs the read again |
+| `propose_note` candidates, `decisions export` | `gate.guard_many(notes_of=…)`: the final statement reads the blocks; `finish` withholds the candidate text (model readers) or the record text, options and choice (every reader) |
 | `packages.receive` | a `skill_scan` finding for each skill folder (status, blocking, origin, software_agent, recommendation, score, completeness, issue count) for the person who approves; the publication at approval records the scans |
 | `kutuphane ingest`, `approve-import` | the publication result has `skill_scans`; stderr names each blocked or not scanned skill |
 

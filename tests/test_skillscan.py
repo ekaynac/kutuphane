@@ -3,6 +3,7 @@ A fake `skillspector` executable prints fixed JSON; tests/test_skillspector_cont
 import hashlib
 import json
 import os
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -10,7 +11,8 @@ from pathlib import Path
 import psycopg
 import pytest
 
-from kutuphane import answers, authz, catalog, cli, db, gate, packages, profiles, search, signing, skillscan
+from kutuphane import (answers, authz, catalog, cli, db, decisions, gate, notes, notesquery, packages, profiles, search,
+                       signing, skillscan)
 from kutuphane.gate import Actor, Denied
 from kutuphane.policy import make_policy
 from kutuphane.source import read_source
@@ -57,7 +59,19 @@ report = {{
     "execution_successful": True,
     "analysis_completeness": {{"status": "partial" if verdict == "PARTIAL" else "complete"}},
 }}
-print(json.dumps(report))
+# hostile reports (Astra #15): otherwise valid, but one value is too deep, too big or not storable
+if verdict == "SURROGATE":
+    report["skill"]["name"] = "\ud800"
+if verdict == "NUL":  # in the issues: they are stored, and jsonb refuses NUL
+    report["issues"] = [{{"id": "X", "finding": "a\x00b"}}]
+if verdict == "NAN":
+    report["issues"] = [{{"id": "X", "weight": float("nan")}}]
+if verdict == "HUGE":
+    report["skill"]["pad"] = "x" * 300000
+out = json.dumps(report)
+if verdict == "DEEP":
+    out = out.replace('"issues": []', '"issues": [' + "[" * 1100 + "]" * 1100 + "]")
+print(out)
 sys.exit(1 if recommendation == "DO_NOT_INSTALL" else 0)
 '''
 
@@ -384,8 +398,189 @@ def test_an_agent_cannot_reopen_an_answer_built_on_a_skill_blocked_later(conn, f
         bridge.server.shutdown()
 
 
+# --- Astra review #15 ---------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("before", ["failed scan", "other tool version", "no tool now"])
+def test_an_unrelated_edit_keeps_the_block_of_unchanged_skill_bytes(conn, folder, fake, okf_dir, monkeypatch,
+                                                                    before):  # P1-1
+    first = publish(conn, folder("FAKE:CRASH\n" if before == "failed scan" else "FAKE:DO_NOT_INSTALL\n"))
+    assert first.skill_scans[0]["blocking"]
+    if before == "other tool version":
+        fake.version = "2.14.0"
+        monkeypatch.setenv(skillscan.ALLOW_ENV, "2.14.0")
+    if before == "no tool now":
+        monkeypatch.delenv(skillscan.BIN_ENV)
+    fake.verdict("SAFE")
+    (okf_dir / "yeni.md").write_text("Yeni bir belge.\n", encoding="utf-8")  # outside the skill folder
+    second = publish(conn, okf_dir)
+    assert second.content_id != first.content_id
+    agent = agent_with(conn, "read", "activate")
+    with pytest.raises(Denied, match="skill blocked"):  # the same skill bytes: the block is still in force
+        gate.deliver_file(conn, agent, BOOK, second.content_id, REF)
+    planned = "not_scanned" if before == "no tool now" else "scanned"
+    assert [(s["status"], s["blocking"], s["carried_from"] is not None) for s in second.skill_scans] == [
+        (planned, False, False), ("failed" if before == "failed scan" else "scanned", True, True)]
+    assert [s["carried_from"] is not None for s in skillscan.show(conn, BOOK)] == [False, True]
+    curate(conn)
+    skillscan.clear(conn, BOOK, SKILL, curator=CURATOR, reason="okudum")  # one clearance lifts every copy
+    assert gate.deliver_file(conn, agent, BOOK, second.content_id, REF)
+    assert gate.deliver_file(conn, agent, BOOK, first.content_id, REF)
+
+
+@pytest.mark.parametrize("verdict, reason", [
+    ("DEEP", "nested deeper than 64"), ("SURROGATE", "cannot be stored"), ("NUL", "cannot be stored"),
+    ("NAN", "non-finite number"), ("HUGE", "larger than 100000 bytes")])
+def test_a_hostile_report_is_a_recorded_blocking_failed_scan(conn, folder, fake, monkeypatch, verdict,
+                                                             reason):  # P2-5
+    monkeypatch.setattr(skillscan, "MAX_REPORT_BYTES", 100_000, raising=False)
+    fake.verdict(verdict)
+    r = publish(conn, folder())
+    assert [(s["status"], s["blocking"]) for s in r.skill_scans] == [("failed", True)]
+    assert reason in r.skill_scans[0]["reason"]
+    assert [(s, status) for s, status, *_ in records(conn)] == [(SKILL, "failed")]
+    with pytest.raises(Denied, match="skill blocked"):
+        gate.deliver_file(conn, agent_with(conn, "read", "activate"), BOOK, r.content_id, REF)
+
+
+def test_the_final_decision_and_the_skill_block_are_one_snapshot(conn, conn2, folder, fake, monkeypatch):  # P1-3
+    """Another transaction revokes the agent's activate AND clears the block, right after the final decision. No
+    state ever had an agent with activate on an unblocked skill: the delivery must be refused."""
+    r = publish(conn, folder("FAKE:DO_NOT_INSTALL\n"))
+    agent = agent_with(conn, "read", "activate")
+    curate(conn)
+    [delegation] = conn.execute("SELECT id FROM delegation WHERE delegate = %s AND mode = 'activate'", (A,)).fetchone()
+    decide, calls = authz.decide, []
+
+    def decide_then_change(conn_, *args, **kw):
+        verdict = decide(conn_, *args, **kw)
+        if conn_ is conn:
+            calls.append(args)
+        if conn_ is conn and len(calls) == 2:  # right after the final decision of gate.guard
+            with conn2.transaction():
+                authz.revoke_delegation(conn2, delegation)
+                skillscan.clear(conn2, BOOK, SKILL, curator=CURATOR, reason="okudum")
+        return verdict
+    monkeypatch.setattr(authz, "decide", decide_then_change)
+    with pytest.raises(Denied, match="skill blocked"):
+        gate.deliver_file(conn, agent, BOOK, r.content_id, REF)
+    assert len(calls) == 2
+    event = conn.execute("SELECT action, allowed, reason FROM access_event WHERE correlation_id = %s "
+                         "ORDER BY id DESC LIMIT 1", (agent.correlation_id,)).fetchone()
+    assert event == ("activate", False, gate.SKILL_BLOCKED)
+
+
+def test_an_aggregate_delivery_reads_rights_and_skill_blocks_in_one_snapshot(conn, conn2, folder, fake,
+                                                                             monkeypatch):  # P1-3
+    """reopen_answer: another transaction gives the agent activate back AND blocks the skill, right after the block
+    was read. No state ever had an agent with activate on an unblocked skill: the reopen must be refused."""
+    bridge = FakeBridge()
+    try:
+        publish(conn, folder("Erişim kayıtlarını özetle.\n", "Erişim kayıtları kaynak listesi.\n"))
+        agent = agent_with(conn, "read", "activate")
+        bridge.reply = "x"
+        probe = answers.ask(conn, bridge.bridge(), agent, "erişim kayıtları", model="qwen")
+        sources = conn.execute("SELECT sources FROM answer WHERE id = %s", (probe["id"],)).fetchone()[0]
+        bridge.reply = f"Kayıtlar listelenir [{next(s['n'] for s in sources if s['path'] == REF)}]."
+        result = answers.ask(conn, bridge.bridge(), Actor(A, on_behalf_of=U), "erişim kayıtları", model="qwen")
+        assert result["status"] == "answered"
+        [delegation] = conn.execute("SELECT id FROM delegation WHERE delegate = %s AND mode = 'activate'",
+                                    (A,)).fetchone()
+        authz.revoke_delegation(conn, delegation)  # now: no activate, the skill is not blocked
+        fake.version = "2.14.0"
+        monkeypatch.setenv(skillscan.ALLOW_ENV, "2.14.0")
+        fake.verdict("DO_NOT_INSTALL")
+        execute, fired = conn.execute, []
+
+        def execute_then_change(query, *args, **kw):
+            cur = execute(query, *args, **kw)
+            if "skill_blocked(" in str(query) and not fired:  # right after the first statement that reads a block
+                fired.append(query)
+                with conn2.transaction():
+                    authz.delegate(conn2, delegator=U, delegate_to=A, obj=OBJ, mode="activate", expires_at=soon())
+                    assert skillscan.rescan(conn2, BOOK)[0]["blocking"]
+            return cur
+        monkeypatch.setattr(conn, "execute", execute_then_change)
+        with pytest.raises(Denied):
+            answers.reopen(conn, Actor(A, on_behalf_of=U), result["id"])
+        assert fired
+    finally:
+        bridge.server.shutdown()
+
+
+def test_notes_withhold_text_derived_from_a_skill_blocked_later(conn, folder, fake, monkeypatch):  # P1-2
+    """A note copies and cites a skill passage while the skill is allowed; then a scan blocks the skill. Every note
+    delivery path withholds the text from a model reader, as for ai_input = false: the note itself, a note derived
+    from it, the propose candidates and the decision export. A person still reads it as reference."""
+    r = publish(conn, folder("Özetle ve kaydet.\n", "Kaynak listesi: üç belge.\n"))
+    agent_with(conn, "read", "activate")
+    J = "hafiza"
+    notes.create_journal(conn, book=J, title=J, search=True, ai_input=True, train=True, policy=POLICY,
+                         by="user:admin")
+    for mode in ("read", "propose"):
+        authz.grant(conn, f"book:{J}", mode, U)
+        authz.delegate(conn, delegator=U, delegate_to=A, obj=f"book:{J}", mode=mode, expires_at=soon())
+    agent, person = Actor(A, U, channel="mcp"), Actor(U, channel="http")
+    cite = "{}@{}/{}/{}#{}".format(*conn.execute(
+        "SELECT book, content_id, profile_id, path, ordinal FROM chunk WHERE book = %s AND content_id = %s "
+        "AND path = %s ORDER BY ordinal LIMIT 1", (BOOK, r.content_id, REF)).fetchone())
+    copied = "Kaynak listesi: üç belge."
+    first, _ = notes.propose(conn, agent, {"book": J, "kind": "finding", "text": copied, "citations": [cite]})
+    derived, _ = notes.propose(conn, agent, {"book": J, "kind": "lesson", "text": "Listeden çıkan ders.",
+                                             "links": [{"type": "derived_from", "ref": first["ref"]}]})
+    notes.propose(conn, agent, {"book": J, "kind": "decision_proposal", "text": "Listeyi kullan.",
+                                "citations": [cite], "decision": {"options": ["evet", "hayır"], "choice": "evet"}})
+    query = notesquery.query_notes(conn, agent, for_model=True, book=[J], sets=["open"])
+    assert all(i["text"] for i in query["items"])  # allowed: shown
+
+    fake.version = "2.14.0"
+    monkeypatch.setenv(skillscan.ALLOW_ENV, "2.14.0")
+    fake.verdict("DO_NOT_INSTALL")
+    assert skillscan.rescan(conn, BOOK)[0]["blocking"]
+
+    def withheld(item):
+        return item["text"] is None and item["withheld"] == gate.SKILL_WITHHELD
+    query = notesquery.query_notes(conn, agent, for_model=True, book=[J], sets=["open"])
+    assert len(query["items"]) == 3 and all(withheld(i) for i in query["items"])
+    assert withheld(notesquery.open_note(conn, agent, for_model=True, ref=first["ref"])["note"])
+    near = notesquery.neighbours(conn, agent, for_model=True, ref=first["ref"], sets=["open"])
+    assert withheld(near["root"]) and [withheld(n) for n in near["nodes"]] == [True]
+    assert near["nodes"][0]["ref"] == derived["ref"]  # derived_from, transitively
+    again, _ = notes.propose(conn, agent, {"book": J, "kind": "finding", "text": copied})  # same text, no citation
+    assert [(c["ref"], withheld(c)) for c in again["candidates"]] == [(first["ref"], True)]
+    [record], summary = decisions.export(conn, agent, [J])
+    assert record["context"]["text"] is None and record["choice"] is None
+    assert record["withheld"] == gate.SKILL_WITHHELD and summary["withheld"] == 1
+    # a person reads notes as reference, as with ai_input (the block is on what reaches a model)
+    assert all(i["text"] for i in notesquery.query_notes(conn, person, for_model=False, book=[J],
+                                                         sets=["open"])["items"])
+
+
 def test_the_pin_names_the_tested_version():
     pin = dict(line.split("=", 1) for line in PIN.read_text().splitlines() if line and not line.startswith("#"))
     assert pin["SKILLSPECTOR_VERSION"] == skillscan.TESTED_VERSION
     assert len(pin["SKILLSPECTOR_SHA256"]) == 64 and int(pin["SKILLSPECTOR_SHA256"], 16) >= 0
     assert pin["SKILLSPECTOR_URL"].endswith(f"/v{skillscan.TESTED_VERSION}.tar.gz")
+
+
+def test_the_installer_builds_without_unhashed_build_dependencies():  # P2-4
+    """The build backend is pinned and hashed, and no install step builds an sdist in an isolated environment
+    (which would fetch unhashed build dependencies)."""
+    script = (PIN.parent / "install.sh").read_text().replace("\\\n", " ")
+    installs = [line.split() for line in script.splitlines() if re.match(r"\s*uv pip install\b", line)]
+    project = [words for words in installs if "--no-build-isolation" in words]
+    assert len(project) == 1 and "--no-deps" in project[0] and '"$src"' in project[0]
+    hashed = [words for words in installs if words is not project[0]]
+    # No sdist build at all in the hashed installs: uv would build it in an isolated, unhashed environment.
+    assert hashed and all("--require-hashes" in words and "--no-build" in words for words in hashed)
+    assert any('"$here/build-requirements.txt"' in words for words in hashed)
+
+    reqs = {}
+    for line in (PIN.parent / "build-requirements.txt").read_text().replace("\\\n", " ").splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        pinned, *options = line.split()
+        assert re.fullmatch(r"[a-z0-9][a-z0-9._-]*==\d[\w.]*", pinned), line
+        assert options and all(re.fullmatch(r"--hash=sha256:[0-9a-f]{64}", o) for o in options), line
+        name, version = pinned.split("==")
+        reqs[name] = version
+    assert {"hatchling", "packaging", "pathspec", "pluggy", "trove-classifiers"} <= set(reqs)

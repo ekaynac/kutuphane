@@ -129,8 +129,8 @@ def test_agent_search_needs_delegation_and_activate_for_instructions(conn, okf_d
 def _revoke_after_first_prefilter(monkeypatch, action):
     real, calls = authz.allowed, []
 
-    def wrapped(*args):
-        out = real(*args)
+    def wrapped(*args, **kw):
+        out = real(*args, **kw)
         calls.append(1)
         if len(calls) == 1:
             action()  # lands between the pre-filter and the single final check
@@ -179,8 +179,8 @@ def test_rights_changing_twice_refuses(conn, conn2, okf_dir, monkeypatch):
                   lambda: authz.revoke(conn2, "book:kitap", "read", U),
                   lambda: None])
 
-    def wrapped(*args):
-        out = real(*args)
+    def wrapped(*args, **kw):
+        out = real(*args, **kw)
         next(flips)()
         return out
     monkeypatch.setattr(authz, "allowed", wrapped)

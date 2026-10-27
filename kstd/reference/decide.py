@@ -65,17 +65,24 @@ def handling_of(case, src, action, prop) -> tuple[str, list]:
     """Rule 4. A looser value counts only from an issuer trusted for handling × scope × action. A tightening counts
     from the node, the item's own issuer, or an issuer trusted for handling × scope (any action); the strictest
     counted value wins, and with no counted value the strictest value applies (unconfirmed handling, §5).
+    A later statement replaces the same issuer's earlier one, except that a loosening that does not count never
+    replaces a tightening that counts: the restriction stays in force.
     Returns the value and the issuers of tightenings that do not count (only when the value is not already the
     strictest): they escalate, they never deny."""
-    order, counted, untrusted, scope = STRICT[prop], [], [], src["body"]["scope"]
-    for issuer, s in latest_per_issuer([s for s in about(case, src["id"], "handling") if prop in s["body"]]).items():
-        value = s["body"][prop]
+    order, scope = STRICT[prop], src["body"]["scope"]
+    current = {}  # issuer -> (value, counts)
+    statements = [s for s in about(case, src["id"], "handling") if prop in s["body"]]
+    for s in sorted(statements, key=lambda s: ts(s["issued_at"])):
+        issuer, value = s["issuer"], s["body"][prop]
         tightens = value == order[-1]
-        if trusted(case, issuer, "handling", scope, action) or (
-                tightens and (issuer == src["issuer"] or trusted(case, issuer, "handling", scope, None))):
-            counted.append(value)
-        elif tightens:
-            untrusted.append(issuer)
+        counts = bool(trusted(case, issuer, "handling", scope, action) or (
+            tightens and (issuer == src["issuer"] or trusted(case, issuer, "handling", scope, None))))
+        held = current.get(issuer)
+        if not counts and not tightens and held and held[1] and held[0] == order[-1]:
+            continue  # an unauthorized loosening does not supersede an admissible restriction
+        current[issuer] = (value, counts)
+    counted = [value for value, counts in current.values() if counts]
+    untrusted = [issuer for issuer, (value, counts) in current.items() if not counts and value == order[-1]]
     value = max(counted, key=order.index) if counted else order[-1]
     return value, ([] if value == order[-1] else untrusted)
 

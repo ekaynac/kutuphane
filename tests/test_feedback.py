@@ -56,11 +56,11 @@ def test_feedback_written_while_rights_vanish_is_rolled_back(conn, conn2, okf_di
     real = az.decide
     calls = []
 
-    def decide_then_revoke(*args):
+    def decide_then_revoke(*args, **kw):
         calls.append(1)
         if len(calls) == 2:  # the final decision, after the insert ran inside the transaction
             az.revoke(conn2, "book:kitap", "read", U)
-        return real(*args)
+        return real(*args, **kw)
     monkeypatch.setattr(az, "decide", decide_then_revoke)
     with pytest.raises(Denied, match="revoked before delivery"):
         feedback.record(conn, Actor(U), book="kitap", content_id=v1.content_id, path=RUNBOOK, outcome="worked")

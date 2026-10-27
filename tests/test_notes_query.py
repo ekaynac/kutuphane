@@ -341,13 +341,13 @@ def test_right_revoked_during_query_reruns_and_logs(mem, monkeypatch):  # T25
     link(mem, mem.execute("SELECT min(seq) FROM note WHERE book = 'mem'").fetchone()[0], "contradicts", gone)
     real, calls = notesquery._read, []
 
-    def racing(conn, actor):
+    def racing(conn, actor, notes=()):
         calls.append(1)
         if len(calls) == 1:
-            out = real(conn, actor)
+            out = real(conn, actor, notes)
             authz.revoke(conn, "book:two", "read", U)
             return out
-        return real(conn, actor)
+        return real(conn, actor, notes)
     monkeypatch.setattr(notesquery, "_read", racing)
     out = q(mem)
     assert out["books"] == ["mem"] and out["items"][0]["links"] == {} and len(calls) == 4
@@ -376,9 +376,9 @@ def test_open_citation_reruns_when_a_linked_book_is_lost(mem, monkeypatch):  # A
     assert open_note(mem, PERSON, for_model=False, ref=ref(mem, p))["note"]["successor"] == ref(mem, s)
     real, calls = notesquery._read, []
 
-    def racing(conn, actor):
+    def racing(conn, actor, notes=()):
         calls.append(1)
-        out = real(conn, actor)
+        out = real(conn, actor, notes)
         if len(calls) == 1:
             authz.revoke(conn, "book:two", "read", U)
         return out
