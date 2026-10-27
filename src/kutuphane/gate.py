@@ -42,13 +42,13 @@ class Actor:
 
 
 def log_event(conn, actor: Actor, action: str, obj: str, mode: str, d: authz.Decision, policy_id, content_id, path,
-         reason: str | None = None, profile_id=None, items=None) -> None:
+         reason: str | None = None, profile_id=None, items=None, memory_seq=None) -> None:
     conn.execute("INSERT INTO access_event (correlation_id, principal, on_behalf_of, action, object, mode, allowed, "
-                 "reason, policy_id, grant_ids, delegation_id, content_id, path, profile_id, items) "
-                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                 "reason, policy_id, grant_ids, delegation_id, content_id, path, profile_id, items, memory_seq) "
+                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                  (actor.correlation_id, actor.principal, actor.on_behalf_of, action, obj, mode, d.allowed,
                   reason or d.reason, policy_id, list(d.grant_ids), d.delegation_id, content_id, path, profile_id,
-                  Jsonb(items) if items is not None else None))
+                  Jsonb(items) if items is not None else None, memory_seq))
 
 
 def guard(conn, actor: Actor, obj: str, modes: list[str], fetch, *, action: str, content_id=None, path=None,

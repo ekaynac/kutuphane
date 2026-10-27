@@ -120,12 +120,16 @@ def _needs(actor: Actor, sources: list[dict], instruction_of) -> dict:
 
 
 def ask(conn, bridge: llmdap.Bridge, actor: Actor, question: str, *, model: str, k: int = search.DEFAULT_K,
-        stages: retrieval.Stages = retrieval.Stages(), scope: search.Scope = search.Scope()) -> dict:
+        stages: retrieval.Stages = retrieval.Stages(), scope: search.Scope = search.Scope(), check=None) -> dict:
+    """`check`, if given, runs before the model call and before the answer is stored; it raises to stop the ask
+    (a background job's cancel, docs/24 §12.2)."""
+    check = check or (lambda: None)
     found = retrieval.retrieve(conn, actor, question, k, stages, scope)
     rights = kstd.Rights(conn)  # kstd: a passage whose rights do not allow ai_input never reaches the answer model
     hits = [h for h in found if rights.allows(h.citation.book, h.citation.content_id, h.citation.path, "ai_input")]
     withheld = len(found) - len(hits)
     if not hits:
+        check()
         return {**_store(conn, actor, question, "not_in_library", None, [], [], None), "withheld": withheld}
     sources = [_ref(n, h) for n, h in enumerate(hits, start=1)]
     passages = "\n\n".join(f"[{n}] ({h.citation.book}/{h.citation.path})\n{_shown(h.text)}"
@@ -134,6 +138,7 @@ def ask(conn, bridge: llmdap.Bridge, actor: Actor, question: str, *, model: str,
     q_label, p_label = LABELS[lang]
     messages = [{"role": "system", "content": SYSTEM[lang]},
                 {"role": "user", "content": f"{q_label}: {question}\n\n{p_label}:\n{passages}"}]
+    check()
     body = _content(llmdap.chat(conn, bridge, actor, model=model, messages=messages,
                                 source_books=sorted({h.citation.book for h in hits}), purpose="answer"))
     numbers = cited_numbers(body, len(hits))
@@ -145,6 +150,7 @@ def ask(conn, bridge: llmdap.Bridge, actor: Actor, question: str, *, model: str,
     gate.check_many(conn, actor, _needs(actor, sources, lambda ref: _is_instruction_chunk(conn, ref)),
                     action="answer", items={f"book:{r['book']}": [_handle(c) for c in cited if c["book"] == r["book"]]
                                             for r in sources})
+    check()
     stored = _store(conn, actor, question, status, body if status == "answered" else None, cited, sources, model)
     citations = [{**c, "item": rights.info(c["book"], c["content_id"], c["path"])} for c in stored["citations"]]
     return {**stored, "citations": citations, "withheld": withheld}
@@ -162,17 +168,22 @@ def _is_instruction_chunk(conn, ref) -> bool:
     return bool(row and row[1])
 
 
+def visible(actor: Actor, asker: str, asked_for: str | None) -> bool:
+    """The one visibility policy of stored answers and of ask jobs (docs/24 §12.2): the same context only (the same
+    principal acting for the same user), or the user the work was made for, calling directly. A token's claim to act
+    for someone is not enough on its own: that is what the context check enforces."""
+    same_context = (actor.principal, actor.on_behalf_of) == (asker, asked_for)
+    owner = asked_for is not None and actor.on_behalf_of is None and actor.principal == asked_for
+    return same_context or owner
+
+
 def reopen(conn, actor: Actor, answer_id: str) -> dict:
     row = conn.execute("SELECT question, status, body, citations, sources, source_books, principal, on_behalf_of "
                        "FROM answer WHERE id = %s", (answer_id,)).fetchone()
     if row is None:
         raise NotFound(answer_id)
     question, status, body, cited, sources, _books, asker, asked_for = row
-    # Same context only (the same principal acting for the same user), or the user an answer was made for.
-    # A token's claim to act for someone is not enough on its own: that is what the context check enforces.
-    same_context = (actor.principal, actor.on_behalf_of) == (asker, asked_for)
-    owner = asked_for is not None and actor.on_behalf_of is None and actor.principal == asked_for
-    if not (same_context or owner):
+    if not visible(actor, asker, asked_for):
         raise Denied(f"answer {answer_id} belongs to another principal")  # sharing answers is not in M1
     texts = {ref["n"]: _chunk(conn, ref) for ref in cited}
     # One statement decides every source book (the evidence AND the body depend on all of them), right before

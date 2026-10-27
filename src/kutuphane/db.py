@@ -5,6 +5,8 @@ from importlib.resources import files
 import psycopg
 
 DSN_ENV = "KUTUPHANE_DSN"
+# The owner role (docs/24 §4.1, §8.2): migrations and the Standing act. Never in an environment an agent can read.
+CURATOR_DSN_ENV = "KUTUPHANE_CURATOR_DSN"
 
 
 def connect(dsn: str | None = None) -> psycopg.Connection:
