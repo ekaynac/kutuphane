@@ -585,8 +585,9 @@ def query_notes(conn, actor: Actor, *, for_model: bool, book=None, sets=("curren
                 written_after=None, written_before=None, since=None, text=None, unfixed: bool = False,
                 collapse: bool = False, include_unverified: bool = False, order: str = "newest",
                 budget_tokens: int = 2000, max_bytes: int = 32768, as_of=None, cursor=None,
-                attempts: int = 2) -> dict:
-    """docs/24 §9.1. `for_model`: the reader puts the text into a model's context (`server._for_model`)."""
+                attempts: int = 2, readable_out: set | None = None) -> dict:
+    """docs/24 §9.1. `for_model`: the reader puts the text into a model's context (`server._for_model`).
+    `readable_out`, if given, gets the books (slugs) of the final read set, for the handling labels (handling.py)."""
     wanted = _strings("book", book, pattern=_SLUG)
     if wanted is not None and len(wanted) > MAX_BOOKS:
         raise ValueError(f"at most {MAX_BOOKS} books")
@@ -709,6 +710,8 @@ def query_notes(conn, actor: Actor, *, for_model: bool, book=None, sets=("curren
             continue  # the whole query, counts included, again with the rights and blocks as they are now
 
         _log(conn, actor, "query_notes", final, [by_ref[e["ref"]] for e in items + gone], w)
+        if readable_out is not None:
+            readable_out.update(o.removeprefix("book:") for o in final.objects("read"))
         return {**envelope, "items": items, "left": gone, "next_cursor": nxt, "excluded": excluded}
     raise SearchChanged("authorization changed during the query; retry")
 
@@ -895,10 +898,11 @@ def _links(conn, frontier, passage, direction: str, types, w: int) -> list:
 # --- notes in open_citation (§9.4) --------------------------------------------------------------------------
 
 def open_note(conn, actor: Actor, *, for_model: bool, ref: str, repo=None, branch=None, path=None,
-              commit=None, attempts: int = 2) -> dict:
+              commit=None, attempts: int = 2, readable_out: set | None = None) -> dict:
     """One note with its full text (the `ai_input` and skill-block gates apply) and any Standing, `current` from the shared
     predicate. The gates of `query_notes`: citations, link counts and the successor come from the whole read set,
-    which is decided again at the end; a lost book runs it all again once, then `SearchChanged`."""
+    which is decided again at the end; a lost book runs it all again once, then `SearchChanged`. `readable_out`: as
+    in `query_notes`."""
     book, note_id = notes.parse_ref(ref)
     ctx = Context(repo, branch, path, commit)
     obj = f"book:{book}"
@@ -930,6 +934,8 @@ def open_note(conn, actor: Actor, *, for_model: bool, ref: str, repo=None, branc
             continue  # link counts, the successor and the text again, with the rights and blocks as they are now
         gate.log_event(conn, actor, "cite", obj, "read", final.decisions[obj]["read"], final.policies.get(obj),
                        None, None, items=[{"ref": note.ref, "standing_seq": note.standing_seq}], memory_seq=w)
+        if readable_out is not None:
+            readable_out.update(o.removeprefix("book:") for o in final.objects("read"))
         return {"citation": note.ref, "note": item, "targets": _targets_out(targets), "watermark": w}
     raise SearchChanged("authorization changed during the query; retry")
 
@@ -961,9 +967,11 @@ def register_mcp(mcp, deps) -> None:
     def run(fn, labels_out: dict | None = None, **kw):
         actor = deps.mcp_actor()
         with db.connect(deps.dsn) as conn:
-            out = fn(conn, actor, for_model=_for_model(actor, True), **kw)
-            if labels_out is not None:  # #80: the journals and source books of the notes shown
-                labels_out.update(handling.labels(conn, handling.note_books(conn, [e["ref"] for e in out["items"]])))
+            readable: set = set()
+            out = fn(conn, actor, for_model=_for_model(actor, True), **kw,
+                     **({"readable_out": readable} if labels_out is not None else {}))
+            if labels_out is not None:  # #80: the journals and the readable source books of the notes shown
+                labels_out.update(handling.note_labels(conn, [e["ref"] for e in out["items"]], readable))
             return out
 
     @mcp.tool()

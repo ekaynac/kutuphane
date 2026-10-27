@@ -39,8 +39,8 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import (answers, coderepo, confirm, db, feedback, gate, handling, identity, ids, jobs, kstd, llmdap, notes,
-               notesquery, outcomes, retrieval, search, skills)
+from . import (answers, catalog, coderepo, confirm, db, feedback, gate, handling, identity, ids, jobs, kstd, llmdap,
+               notes, notesquery, outcomes, retrieval, search, skills)
 from .gate import Actor
 from .ids import normalize_path
 
@@ -125,13 +125,14 @@ def op_search(dsn, stages, actor: Actor, query: str, k: int, model_reader: bool 
 def op_citation(dsn, actor: Actor, handle: str, model_reader: bool = False, context: dict | None = None,
                 labels_out: dict | None = None) -> dict:
     """A passage handle, or a note reference with the optional context (docs/24 §9.4). `labels_out`: as op_search;
-    a note's labels cover its journal and its `source_books`."""
+    a note's labels cover its journal and its `source_books`; only the readable ones are named (handling.py)."""
     if notesquery.is_note_ref(handle):
         def note(conn):
+            readable: set = set()
             out = notesquery.open_note(conn, actor, for_model=_for_model(actor, model_reader), ref=handle,
-                                       **(context or {}))
+                                       **(context or {}), readable_out=readable)
             if labels_out is not None:
-                labels_out.update(handling.labels(conn, handling.note_books(conn, [out["citation"]])))
+                labels_out.update(handling.note_labels(conn, [out["citation"]], readable))
             return out
         return _run(dsn, note)
 
@@ -199,8 +200,11 @@ def op_file(dsn, actor: Actor, book: str, content_id: str, path: str,
             model_reader: bool = False, labels_out: dict | None = None) -> tuple[bytes, str]:
     def go(conn):
         norm = normalize_path(path)
-        item = kstd.Rights(conn).info(book, content_id, norm)
-        if _for_model(actor, model_reader) and not kstd.allows(item, "ai_input"):
+        rights = kstd.Rights(conn)
+        # A file inside a skill folder stands for its whole skill (review #18, the rule of skills.py): a model
+        # reader gets it only when kstd allows AI input for every file of the innermost skill that holds it.
+        scope = catalog.skill_files(conn, book, content_id, norm) if _for_model(actor, model_reader) else []
+        if not all(kstd.allows(rights.info(book, content_id, p), "ai_input") for p in scope):
             # Callers who may not read get the ordinary refusal; the rights refusal is only for readers.
             gate.check_many(conn, actor, {f"book:{book}": {"read"}}, action="model-read")
             raise gate.Denied(f"{norm}: its rights do not allow AI input")  # nothing is delivered

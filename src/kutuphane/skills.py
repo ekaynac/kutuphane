@@ -13,9 +13,15 @@
   content id covers) and `size`. `_meta` has the content id and the handling labels (handling.py).
 - Gate, the same for `skills/list`, `skills/get` and `resources/read`: `read` and `activate` on the book for every
   principal (also people: a skill is for a model to load), `ai_input` that kstd allows for every file of the skill,
-  and no file of the skill blocked by a scan (D71). The final rights and the blocks come from one statement.
+  and no file of the skill blocked by a scan (D71). The final rights and the blocks come from one statement. A
+  refusal inside the fetch (`ai_input`, not found) is logged too (gate.guard). The events and labels name the
+  content id of the version whose entry or bytes are served.
 - No prefetch: `skills/list` and `skills/get` give entries only. The bytes of a file go out only on
-  `resources/read`, one file for each request, through `gate.guard`.
+  `resources/read`, one file for each request, through `gate.guard`. An active media type (HTML, JavaScript, SVG,
+  XML) is sent as `text/plain` (`application/octet-stream` when not UTF-8); the bytes and the digest are unchanged.
+- Cost: the validated frontmatter is stored at publication (`skill_frontmatter`, migration 033; a version published
+  before it is indexed once, at its first skills call). A call reads that row and the manifest, never a SKILL.md
+  blob; `skills/get` and `resources/read` take only the skills whose folder holds the requested path.
 """
 import datetime
 import math
@@ -23,6 +29,8 @@ import re
 import urllib.parse
 from dataclasses import dataclass
 from itertools import groupby
+
+from psycopg.types.json import Jsonb
 
 from . import agentfiles, authz, gate, handling, kstd
 from .gate import Actor
@@ -40,6 +48,7 @@ NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 TEXT_TYPES = ("application/json", "application/yaml", "application/toml")
 LIST_ACTION, GET_ACTION = "skills_list", "skills_get"
 NO_AI_INPUT = "rights do not allow AI input"
+ACTIVE_TYPES = ("text/html", "image/svg+xml", "application/xhtml+xml")  # with any *javascript*, *ecmascript*, *xml
 
 
 def uri(book: str, path: str) -> str:
@@ -125,26 +134,57 @@ def _conforming(book: str, folder: str, data: bytes | None) -> dict | None:
     return meta
 
 
-def _skills(conn, books) -> list[Skill]:
-    """The conforming skills of the current version of these books (no right is checked here)."""
-    rows = conn.execute("SELECT b.slug, b.current_content, c.manifest FROM book b "
-                        "JOIN content_version c ON c.book = b.slug AND c.id = b.current_content "
-                        "WHERE b.slug = ANY(%s) ORDER BY b.slug", (sorted(set(books)),)).fetchall()
-    found = []
-    for book, content_id, manifest in rows:
-        paths = {e["path"] for e in manifest}
-        for folder in sorted(agentfiles.skill_dirs(paths)):
-            files = tuple(e for e in manifest if agentfiles.relative(folder, e["path"]) is not None)
-            md = SKILL_MD if folder == "." else f"{folder}/{SKILL_MD}"
-            if md in paths and len(files) <= MAX_FILES and sum(f["size"] for f in files) <= MAX_BYTES:
-                found.append((book, content_id, folder, files, next(f for f in files if f["path"] == md)["sha256"]))
+def _md(folder: str) -> str:
+    return SKILL_MD if folder == "." else f"{folder}/{SKILL_MD}"
+
+
+def _index(book: str, paths, load) -> dict:
+    """{folder: frontmatter} of the conforming skills of one content version. `load(path)`: the bytes of a file."""
+    out = {}
+    for folder in sorted(agentfiles.skill_dirs(paths)):
+        if _md(folder) in paths and (meta := _conforming(book, folder, load(_md(folder)))) is not None:
+            out[folder] = meta
+    return out
+
+
+def store(conn, book: str, content_id: str, files) -> None:
+    """At publication (catalog.publish): store the validated frontmatter of the version's skills (migration 033),
+    so a skills call never parses a SKILL.md blob."""
+    data = {f.path: f.data for f in files}
+    conn.execute("INSERT INTO skill_frontmatter (book, content_id, skills) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+                 (book, content_id, Jsonb(_index(book, set(data), data.get))))
+
+
+def _stored(conn, book: str, content_id: str, manifest: list[dict]) -> dict:
+    """The stored frontmatter of a version published before migration 033: computed once, from its SKILL.md
+    blobs only, then stored."""
+    paths = {e["path"] for e in manifest}
+    digests = {e["path"]: e["sha256"] for e in manifest if e["path"] in {_md(d) for d in agentfiles.skill_dirs(paths)}}
     blobs = dict(conn.execute("SELECT sha256, data FROM blob WHERE sha256 = ANY(%s)",
-                              (sorted({f[4] for f in found}),)).fetchall()) if found else {}
+                              (sorted(set(digests.values())),)).fetchall()) if digests else {}
+    index = _index(book, paths, lambda p: bytes(blobs[digests[p]]) if digests.get(p) in blobs else None)
+    conn.execute("INSERT INTO skill_frontmatter (book, content_id, skills) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+                 (book, content_id, Jsonb(index)))
+    return index
+
+
+def _skills(conn, books, path: str | None = None) -> list[Skill]:
+    """The conforming skills of the current version of these books (no right is checked here); with `path`, only
+    the skills whose folder holds it. The frontmatter comes from `skill_frontmatter` (review #18): no blob is read."""
+    rows = conn.execute("SELECT b.slug, b.current_content, c.manifest, s.skills FROM book b "
+                        "JOIN content_version c ON c.book = b.slug AND c.id = b.current_content "
+                        "LEFT JOIN skill_frontmatter s ON s.book = b.slug AND s.content_id = b.current_content "
+                        "WHERE b.slug = ANY(%s) ORDER BY b.slug", (sorted(set(books)),)).fetchall()
     out = []
-    for book, content_id, folder, files, digest in found:
-        meta = _conforming(book, folder, bytes(blobs[digest]) if digest in blobs else None)
-        if meta is not None:
-            out.append(Skill(book, content_id, folder, meta, files))
+    for book, content_id, manifest, stored in rows:
+        if stored is None:
+            stored = _stored(conn, book, content_id, manifest)
+        for folder, meta in sorted(stored.items()):
+            if path is not None and agentfiles.relative(folder, path) is None:
+                continue
+            files = tuple(e for e in manifest if agentfiles.relative(folder, e["path"]) is not None)
+            if len(files) <= MAX_FILES and sum(f["size"] for f in files) <= MAX_BYTES:
+                out.append(Skill(book, content_id, folder, meta, files))
     return out
 
 
@@ -185,39 +225,34 @@ def listing(conn, actor: Actor) -> list[dict]:
     return [s.entry(_labels(per_book, scans, s)) for s in served]
 
 
-def _current(conn, book: str) -> str | None:
-    row = conn.execute("SELECT current_content FROM book WHERE slug = %s", (book,)).fetchone()
-    return row[0] if row else None
-
-
 def get(conn, actor: Actor, value) -> dict:
     """`skills/get`: the entry of one skill by the URI of its SKILL.md, through the gate (`skills_get` and
-    `activate` events)."""
+    `activate` events, with the content id of the version served)."""
     book, path = parse(value)
     if path.rsplit("/", 1)[-1] != SKILL_MD:
         raise gate.NotFound("not the URI of a SKILL.md")
-    content_id = _current(conn, book)
 
     def fetch() -> Skill:
-        skill = next((s for s in _skills(conn, [book]) if s.path == path), None)
+        skill = next((s for s in _skills(conn, [book], path) if s.path == path), None)
         if skill is None:
             raise gate.NotFound(value)
         if not _ai_input(kstd.Rights(conn), skill):
             raise gate.Denied(f"{value}: {NO_AI_INPUT}")
         return skill
-    skill = gate.guard(conn, actor, f"book:{book}", MODES, fetch, action=GET_ACTION, content_id=content_id, path=path,
-                       items=[uri(book, path)], blocks_of=Skill.triples)
+    skill = gate.guard(conn, actor, f"book:{book}", MODES, fetch, action=GET_ACTION, path=path,
+                       items=[uri(book, path)], blocks_of=Skill.triples, content_of=lambda s: s.content_id)
     return skill.entry(handling.labels(conn, [book], skill.triples()))
 
 
 def read(conn, actor: Actor, value) -> tuple[bytes, str, dict]:
     """`resources/read` of a `skill://` file: (bytes, media type, handling labels). The file must be inside a
-    conforming skill; the innermost one decides `ai_input` and the block, for every file it holds."""
+    conforming skill; the innermost one decides `ai_input` and the block, for every file it holds. The events and
+    the labels name the content version whose bytes are served (review #18). An active media type is served as
+    `served_type` says."""
     book, path = parse(value)
-    content_id = _current(conn, book)
 
     def fetch() -> tuple[Skill, bytes]:
-        mine = [s for s in _skills(conn, [book]) if any(f["path"] == path for f in s.files)]
+        mine = [s for s in _skills(conn, [book], path) if any(f["path"] == path for f in s.files)]
         if not mine:
             raise gate.NotFound(value)
         skill = max(mine, key=lambda s: s.depth)
@@ -225,10 +260,24 @@ def read(conn, actor: Actor, value) -> tuple[bytes, str, dict]:
             raise gate.Denied(f"{value}: {NO_AI_INPUT}")
         return skill, bytes(conn.execute("SELECT data FROM blob WHERE sha256 = %s",
                                          (next(f for f in skill.files if f["path"] == path)["sha256"],)).fetchone()[0])
-    skill, data = gate.guard(conn, actor, f"book:{book}", MODES, fetch, action="read", content_id=content_id,
-                             path=path, blocks_of=lambda found: found[0].triples())
+    skill, data = gate.guard(conn, actor, f"book:{book}", MODES, fetch, action="read", path=path,
+                             blocks_of=lambda found: found[0].triples(), content_of=lambda found: found[0].content_id)
     media_type = next(f["media_type"] for f in skill.files if f["path"] == path)
-    return data, media_type, handling.labels(conn, [book], [(book, content_id, path)])
+    return data, served_type(media_type, data), handling.labels(conn, [book], [(book, skill.content_id, path)])
+
+
+def served_type(media_type: str, data: bytes) -> str:
+    """The media type a `skill://` read is sent with (review #18): an active type (HTML, JavaScript, SVG, XML) goes
+    out as `text/plain`, or `application/octet-stream` when it is not UTF-8, so no host renders or runs it. The
+    bytes, and so the digest, stay the same."""
+    folded = media_type.lower()
+    if not (folded in ACTIVE_TYPES or "javascript" in folded or "ecmascript" in folded or folded.endswith("xml")):
+        return media_type
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError:
+        return "application/octet-stream"
+    return "text/plain"
 
 
 def is_text(media_type: str) -> bool:

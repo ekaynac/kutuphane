@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from starlette.testclient import TestClient
 
-from kutuphane import authz, catalog, gate, handling, notes, profiles, server, skills
+from kutuphane import authz, catalog, gate, handling, kstd, notes, profiles, server, skills
 from kutuphane.policy import make_policy
 from kutuphane.source import read_source
 from test_server import LEGACY, MCP_HEADERS, MODERN, PUBLIC, bearer, fake, keys, mcp_rpc, verifier  # noqa: F401
@@ -215,6 +215,128 @@ def test_only_files_of_a_served_skill_are_skill_resources(env, keys, conn, uri):
             assert error["code"] == -32602 and error["message"] == "not found"
 
 
+# --- security review #18 -------------------------------------------------------------------------------------
+
+def republish(conn, okf_dir):
+    return catalog.publish(conn, book=BOOK, title=BOOK, files=read_source(okf_dir),
+                           policy=make_policy(sensitivity="normal", egress="local_only", protection="standard"),
+                           profile=profiles.spec("chunked"))
+
+
+def no_ai_input(conn, okf_dir) -> None:
+    """REF may not go into a model (kstd), so its whole skill may not either."""
+    from test_kstd import digest, write_manifest
+    write_manifest(okf_dir, items=[{"path": REF, "digest": digest(okf_dir / REF),
+                                    "rights": {"ai_use": {"ai_input": "n"}}}])
+    republish(conn, okf_dir)
+
+
+def test_events_and_labels_name_the_version_served(env, conn, okf_dir, monkeypatch):  # finding 3
+    _, old = env
+    activate(conn)
+    decide, calls = authz.decide, []
+
+    def publish_first(*args, **kw):  # a new version lands after the request starts and before the fetch
+        if not calls:
+            calls.append(1)
+            write(okf_dir, REF, REF_TEXT + "\nYeni sürüm.\n")
+            calls.append(republish(conn, okf_dir).content_id)
+        return decide(*args, **kw)
+    monkeypatch.setattr(authz, "decide", publish_first)
+    data, _, labels = skills.read(conn, gate.Actor(A, U), REF_URI)
+    new = calls[1]
+    assert new != old.content_id and data.decode() == REF_TEXT + "\nYeni sürüm.\n"
+    assert {s["content_id"] for s in labels["skill_scans"]} == {new}
+    rows = conn.execute("SELECT DISTINCT content_id FROM access_event WHERE path = %s", (REF,)).fetchall()
+    assert rows == [(new,)]
+
+
+@pytest.mark.parametrize("version", VERSIONS)
+def test_refusals_inside_the_fetch_are_logged(env, keys, conn, okf_dir, version):  # finding 4
+    app, _ = env
+    activate(conn)
+    no_ai_input(conn, okf_dir)
+    missing = f"skill://{BOOK}/{SKILL}/yok.md"
+    with TestClient(app, base_url=PUBLIC) as client:
+        for method, uri in (("skills/get", SKILL_URI), ("resources/read", SKILL_URI), ("resources/read", missing)):
+            error = rpc(client, agent(keys), method, {"uri": uri}, version=version)["error"]
+            assert error["message"] == ("not found" if uri == missing else "forbidden")
+    got = [e[:4] for e in events(conn) if e[2] is False]
+    assert (skills.GET_ACTION, "read", False, f"{SKILL_URI}: {skills.NO_AI_INPUT}") in got
+    assert ("activate", "activate", False, f"{SKILL_URI}: {skills.NO_AI_INPUT}") in got
+    assert ("read", "read", False, f"{SKILL_URI}: {skills.NO_AI_INPUT}") in got
+    assert ("read", "read", False, f"not found: {missing}") in got
+
+
+@pytest.mark.parametrize("version", VERSIONS)
+def test_active_media_types_are_sent_as_plain_text(env, keys, conn, okf_dir, version):  # finding 6
+    app, _ = env
+    activate(conn)
+    files = {f"{SKILL}/sayfa.html": "<script>alert(1)</script>\n", f"{SKILL}/cizim.svg": "<svg onload=\"x()\"/>\n",
+             f"{SKILL}/betik.js": "x()\n", f"{SKILL}/veri.xml": "<a/>\n"}
+    for path, text in files.items():
+        write(okf_dir, path, text)
+    republish(conn, okf_dir)
+    with TestClient(app, base_url=PUBLIC) as client:
+        entry = rpc(client, agent(keys), "skills/get", {"uri": SKILL_URI}, version=version)["result"]["skill"]
+        digests = {r["uri"]: r["digest"] for r in entry["resources"]}
+        for path, text in files.items():
+            content = rpc(client, agent(keys), "resources/read", {"uri": skills.uri(BOOK, path)},
+                          version=version)["result"]["contents"][0]
+            assert content["mimeType"] == "text/plain" and content["text"] == text
+            assert digests[skills.uri(BOOK, path)] == f"sha256:{hashlib.sha256(text.encode()).hexdigest()}"
+    assert skills.served_type("text/html", b"\xff") == "application/octet-stream"
+    assert skills.served_type("text/markdown", b"x") == "text/markdown"
+
+
+def test_skills_calls_never_parse_a_skill_md(env, keys, conn, monkeypatch):  # finding 7
+    app, published = env
+    activate(conn)
+    stored = conn.execute("SELECT skills FROM skill_frontmatter WHERE book = %s AND content_id = %s",
+                          (BOOK, published.content_id)).fetchone()[0]
+    assert list(stored) == [SKILL]  # `yanlis` does not conform: not stored
+
+    def parsed(*_a, **_k):
+        raise AssertionError("a SKILL.md was parsed")
+    conforming = skills._conforming
+    monkeypatch.setattr(skills, "_conforming", parsed)
+    with TestClient(app, base_url=PUBLIC) as client:
+        assert rpc(client, agent(keys), "skills/list", version=MODERN)["result"]["skills"]
+        assert rpc(client, agent(keys), "skills/get", {"uri": SKILL_URI}, version=MODERN)["result"]["skill"]
+        assert rpc(client, agent(keys), "resources/read", {"uri": REF_URI}, version=MODERN)["result"]
+        monkeypatch.setattr(skills, "_conforming", conforming)
+        conn.execute("DELETE FROM skill_frontmatter")  # a version published before migration 033: indexed once
+        assert rpc(client, agent(keys), "skills/get", {"uri": SKILL_URI}, version=MODERN)["result"]["skill"]
+    assert conn.execute("SELECT skills FROM skill_frontmatter").fetchone()[0] == stored
+
+
+def test_read_document_applies_the_whole_skill_rule(env, keys, conn, okf_dir):  # finding 8
+    app, _ = env
+    write(okf_dir, "araclar/SKILL.md", "---\nname: araclar\ndescription: Araçlar.\n---\nAlt beceriler.\n")
+    r = republish(conn, okf_dir)
+    activate(conn)
+    block(conn, r.content_id)  # the nested skill araclar/ozet
+
+    def read_document(path):
+        return rpc(client, agent(keys), "tools/call", {"name": "read_document", "arguments": {
+            "book": BOOK, "content_id": r.content_id, "path": path}}, version=MODERN)["result"]
+    with TestClient(app, base_url=PUBLIC) as client:
+        assert read_document("araclar/SKILL.md")["isError"]  # skills/get refuses it too
+        assert not read_document("index.md").get("isError")
+
+
+def test_read_document_checks_ai_input_for_the_whole_skill(env, keys, conn, okf_dir):  # finding 8
+    app, _ = env
+    activate(conn)
+    no_ai_input(conn, okf_dir)  # REF only; SKILL.md itself may go into a model
+    current = conn.execute("SELECT current_content FROM book WHERE slug = %s", (BOOK,)).fetchone()[0]
+    with TestClient(app, base_url=PUBLIC) as client:
+        result = rpc(client, agent(keys), "tools/call", {"name": "read_document", "arguments": {
+            "book": BOOK, "content_id": current, "path": SKILL_MD}}, version=MODERN)["result"]
+    assert result["isError"]
+    assert kstd.Rights(conn).allows(BOOK, current, SKILL_MD, "ai_input")  # refused for REF, a file of its skill
+
+
 # --- `_meta` handling labels -----------------------------------------------------------------------------------
 
 @pytest.mark.parametrize("version", VERSIONS)
@@ -259,6 +381,34 @@ def test_the_read_tools_carry_the_handling_labels(env, keys, conn, version):
         assert empty["_meta"][handling.KEY] == {"books": {}}  # no content: no claim
         if version == MODERN:  # the SDK's serverInfo stamp stays beside ours
             assert "io.modelcontextprotocol/serverInfo" in found["_meta"]
+
+
+@pytest.mark.parametrize("version", VERSIONS)
+def test_a_note_label_never_names_a_source_book_the_caller_cannot_read(env, keys, conn, okf_dir, version):
+    """Review #18, finding 1: a note in a readable journal derived from an unreadable book. The book is not named
+    (T24), but its policy still makes the whole label stricter."""
+    app, _ = env
+    catalog.publish(conn, book="gizli", title="gizli", files=read_source(okf_dir),
+                    policy=make_policy(sensitivity="restricted", egress="local_only", protection="standard"),
+                    profile=profiles.spec("chunked"))
+    notes.create_journal(conn, book="defter", title="defter", search=True, ai_input=True, by="user:admin",
+                         policy=make_policy(sensitivity="normal", egress="cloud_ok", protection="standard"))
+    authz.grant(conn, "book:defter", "read", U)
+    authz.delegate(conn, delegator=U, delegate_to=A, obj="book:defter", mode="read", expires_at=soon())
+    from test_notes_query import note
+    conn.execute("INSERT INTO profile_version (id, spec) VALUES ('pf_journal', '{}') ON CONFLICT DO NOTHING")
+    seq = note(conn, "defter", "Gizli kitaptan türeyen bir bulgu.")
+    conn.execute("UPDATE note SET source_books = ARRAY['defter', 'gizli', %s] WHERE seq = %s", (BOOK, seq))
+    expected = {"books": {"defter": {"sensitivity": "normal", "egress": "cloud_ok"},
+                          BOOK: {"sensitivity": "normal", "egress": "local_only"}},
+                "unnamed_sources": 1, "sensitivity": "restricted", "egress": "local_only"}
+    with TestClient(app, base_url=PUBLIC) as client:
+        queried = tool(client, agent(keys), "query_notes", {"sets": ["open"]}, version=version)
+        assert queried["_meta"][handling.KEY] == expected
+        assert "gizli" not in json.dumps(queried["_meta"])
+        ref = json.loads(queried["content"][0]["text"])["items"][0]["ref"]
+        opened = tool(client, agent(keys), "open_citation", {"handle": ref}, version=version)
+        assert opened["_meta"][handling.KEY] == expected
 
 
 def test_the_strictest_policy_labels_a_result_of_several_books(conn):

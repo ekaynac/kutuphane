@@ -55,11 +55,14 @@ def log_event(conn, actor: Actor, action: str, obj: str, mode: str, d: authz.Dec
 
 
 def guard(conn, actor: Actor, obj: str, modes: list[str], fetch, *, action: str, content_id=None, path=None,
-          profile_id=None, items=None, blocks_of=None):
+          profile_id=None, items=None, blocks_of=None, content_of=None):
     """Decide, fetch, decide again, then log and hand out. Every single-object content path goes through here.
     An agent's `activate` on a file inside a skill that a scan blocks (D71) is refused in that final step.
     `blocks_of(data)`, if given: the (book, content_id, path) files whose skill block refuses this delivery (a
-    whole skill, #80); by default the file `content_id`/`path` when `activate` is asked."""
+    whole skill, #80); by default the file `content_id`/`path` when `activate` is asked. `content_of(data)`, if
+    given: the content id of what `fetch` read, for the events, so they name the version handed out (review #18).
+    A `Denied` or `NotFound` from `fetch` (an `ai_input` refusal, a missing file) is logged as a refusal of every
+    mode, with its reason, and raised again: every decision is in `access_event`."""
     def log(mode, d, policy_id, reason=None):
         log_event(conn, actor, action if mode == "read" else mode, obj, mode, d, policy_id, content_id, path, reason,
              profile_id, items if d.allowed else None)
@@ -75,6 +78,8 @@ def guard(conn, actor: Actor, obj: str, modes: list[str], fetch, *, action: str,
     try:
         with conn.transaction():
             data = fetch()
+            if content_of is not None:
+                content_id = content_of(data)
             # Again, right before handing anything out: one statement for every mode, the policy in force and, for
             # `activate`, the skill block of this file (or of every file `blocks_of` names).
             skills = blocks_of(data) if blocks_of is not None else \
@@ -92,6 +97,11 @@ def guard(conn, actor: Actor, obj: str, modes: list[str], fetch, *, action: str,
         mode, d = revoked
         log(mode, d, final.policy_id, f"revoked before delivery: {d.reason}")
         raise Denied(f"{mode} on {obj}: revoked before delivery") from None
+    except (Denied, NotFound) as exc:  # refused by the fetch itself, after a first decision that allowed it
+        reason = f"not found: {exc}" if isinstance(exc, NotFound) else str(exc)
+        for mode, d in first.decisions.items():
+            log(mode, replace(d, allowed=False), first.policy_id, reason)
+        raise
     for mode, d in final.decisions.items():
         log(mode, d, final.policy_id)
     return data
@@ -120,15 +130,21 @@ def log_blocked(conn, actor: Actor, blocked, policies: dict) -> None:
 
 
 def deliver_file(conn, actor: Actor, book: str, content_id: str, path: str) -> bytes:
+    """One file of a content version. An instruction file inside a skill folder stands for its whole skill (the
+    rule of skills.py, review #18): an agent's `activate` is refused when any file of the innermost skill that
+    holds it is blocked, a blocked nested skill included."""
     entry = catalog.manifest_entry(conn, book, content_id, path)
     instruction = bool(entry) and is_instruction(entry, catalog.skill_dirs(conn, book, content_id))
     modes = modes_for(actor, instruction)
+    whole = [(book, content_id, p) for p in catalog.skill_files(conn, book, content_id, path)] \
+        if "activate" in modes else []
 
     def fetch():
         if entry is None:
             raise NotFound(f"{book}@{content_id}:{path}")
         return catalog.read_file(conn, book, content_id, path)
-    return guard(conn, actor, f"book:{book}", modes, fetch, action="read", content_id=content_id, path=path)
+    return guard(conn, actor, f"book:{book}", modes, fetch, action="read", content_id=content_id, path=path,
+                 blocks_of=(lambda _data: whole) if whole else None)
 
 
 def check_many(conn, actor: Actor, needs: dict, *, action: str, items: dict | None = None,
