@@ -45,3 +45,9 @@ def profile_id(spec: dict) -> str:
 
 def policy_id(doc: dict) -> str:
     return _make("policy", doc)
+
+
+def request_digest(args) -> bytes:
+    """SHA-256 of the canonical JSON of a request's arguments (docs/24 §6.4): the idempotency check. Key order does
+    not count; every value does. The caller leaves out the idempotency key itself."""
+    return hashlib.sha256(canonical(args)).digest()

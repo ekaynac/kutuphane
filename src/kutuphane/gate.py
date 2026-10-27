@@ -23,11 +23,22 @@ class NotFound(LookupError):
     pass
 
 
+CHANNELS = ("cli", "http", "mcp")
+
+
 @dataclass(frozen=True)
 class Actor:
     principal: str
     on_behalf_of: str | None = None
     correlation_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    # docs/24 §5.1: what the authenticated token's client is (recorded only, never a right), and the entry point
+    # the request came through. Only the server entry points set the channel; anything else is the CLI.
+    client_id: str | None = None
+    channel: str = "cli"
+
+    def __post_init__(self):
+        if self.channel not in CHANNELS:
+            raise ValueError(f"channel must be one of {', '.join(CHANNELS)}")
 
 
 def log_event(conn, actor: Actor, action: str, obj: str, mode: str, d: authz.Decision, policy_id, content_id, path,
@@ -112,3 +123,42 @@ def check_many(conn, actor: Actor, needs: dict, *, action: str, items: dict | No
                       final.policies.get(obj), None, None, items=(items or {}).get(obj))
     if policies_out is not None:
         policies_out.update(final.policies)
+
+
+def guard_many(conn, actor: Actor, needs: dict, work, *, action: str, items: dict | None = None):
+    """`guard` for work that depends on several books (docs/24 §6.1, a write such as a note that cites other books).
+    `needs`: {object: {modes}}. Every object and mode is decided in ONE statement before the work, so a refused
+    request does nothing. The work runs in a transaction, and every object and mode is decided again in ONE
+    statement inside it: if any right was lost meanwhile, the work is rolled back and nothing is handed out. Each
+    decision is logged; a refusal is logged after the rollback, so it stays on record."""
+    if not needs:
+        raise ValueError("guard_many needs at least one object")
+    modes = sorted({m for ms in needs.values() for m in ms}, key=authz.MODES.index)
+
+    def lost(verdict: authz.Allowed) -> list[tuple[str, str]]:
+        return [(o, m) for o in sorted(needs) for m in sorted(needs[o], key=modes.index)
+                if m not in verdict.decisions.get(o, {})]
+
+    def refuse(verdict: authz.Allowed, missing, reason: str) -> None:
+        for obj, mode in missing:
+            log_event(conn, actor, action if mode == "read" else mode, obj, mode, authz.Decision(False, reason),
+                      verdict.policies.get(obj), None, None)
+
+    first = authz.allowed(conn, actor.principal, actor.on_behalf_of, modes)
+    if missing := lost(first):
+        refuse(first, missing, "no current right")
+        raise Denied(f"{action}: no current right on {', '.join(sorted({o for o, _ in missing}))}")
+    try:
+        with conn.transaction():
+            data = work()
+            final = authz.allowed(conn, actor.principal, actor.on_behalf_of, modes)
+            if missing := lost(final):
+                raise _Rollback
+    except _Rollback:
+        refuse(final, missing, "revoked before delivery: no current right")
+        raise Denied(f"{action}: revoked before delivery") from None
+    for obj in sorted(needs):
+        for mode in sorted(needs[obj], key=modes.index):
+            log_event(conn, actor, action if mode == "read" else mode, obj, mode, final.decisions[obj][mode],
+                      final.policies.get(obj), None, None, items=(items or {}).get(obj))
+    return data
