@@ -224,7 +224,8 @@ Search the books that you may read now. The results carry passage handles for `o
 The filters narrow the evidence before ranking. A filter never adds a book: a book that you cannot read gives the
 same empty result as a book that does not exist.
 
-**Needs:** `read` on each book. An agent also needs `activate` to get instruction passages (agent files).
+**Needs:** `read` on each book. An agent also needs `activate` to get instruction passages (agent files). An agent
+never gets passages of a skill that a SkillSpector scan blocks ([security.md](security.md#skill-scan-skillspector)).
 
 | Argument | Type | Required | Default | Limits |
 |---|---|---|---|---|
@@ -259,7 +260,8 @@ route fails, the search continues without that stage. It does not fail.
 Open a passage handle: the exact passage of that version, if you may read it now. Or open a note reference: the
 note with its full text, any Standing, and `current` for the optional context.
 
-**Needs:** `read` on the book. For an instruction passage, an agent also needs `activate`.
+**Needs:** `read` on the book. For an instruction passage, an agent also needs `activate`, and the passage must not
+be in a skill that a scan blocks.
 
 | Argument | Type | Required | Default | Limits |
 |---|---|---|---|---|
@@ -296,7 +298,8 @@ question, the status is `not_in_library`. The answer is in the language of the q
 The server sends a passage to the answer model only when its kstd rights allow AI input. The answer model is
 called through LLMDAP.
 
-**Needs:** `read` on the books of the passages. An agent also needs `activate` for instruction passages.
+**Needs:** `read` on the books of the passages. An agent also needs `activate` for instruction passages. An agent is
+refused when an instruction source is in a skill that a scan blocks.
 The server decides the rights again after the model call.
 
 | Argument | Type | Required | Default | Limits |
@@ -338,7 +341,7 @@ Show a stored answer and its evidence again. There is no model call. Current rig
 
 **Needs:** The answer must be visible to you: the same principal acting for the same user, or the user that the
 answer was made for, calling directly. You also need `read` now on every source book of the answer (and, for an
-agent, `activate` for instruction passages).
+agent, `activate` for instruction passages). An agent is refused when a source is now in a skill that a scan blocks.
 
 | Argument | Type | Required | Default | Limits |
 |---|---|---|---|---|
@@ -364,7 +367,8 @@ An evidence entry can have `"text": null` with `withheld` (section 4.2).
 
 Read a text file of one specific content version.
 
-**Needs:** `read` on the book. An agent needs `activate` too for an agent instruction file. The kstd rights of the
+**Needs:** `read` on the book. An agent needs `activate` too for an agent instruction file, and the file must not be
+in a skill that a scan blocks. The kstd rights of the
 file must allow AI input.
 
 | Argument | Type | Required | Default | Limits |

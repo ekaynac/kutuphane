@@ -160,7 +160,8 @@ def ask(conn, bridge: llmdap.Bridge, actor: Actor, question: str, *, model: str,
     cited = [sources[n - 1] for n in numbers] if status == "answered" else []
 
     # The model took time; rights may have changed. Decide every source book again before handing anything out.
-    gate.check_many(conn, actor, _needs(actor, sources, lambda ref: _is_instruction_chunk(conn, ref)),
+    marked = _instruction_refs(conn, actor, sources, "answer")
+    gate.check_many(conn, actor, _needs(actor, sources, lambda ref: ref in marked),
                     action="answer", items={f"book:{r['book']}": [_handle(c) for c in cited if c["book"] == r["book"]]
                                             for r in sources})
     check()
@@ -180,6 +181,14 @@ def _chunk(conn, ref):
 def _is_instruction_chunk(conn, ref) -> bool:
     row = _chunk(conn, ref)
     return bool(row and row[1])
+
+
+def _instruction_refs(conn, actor: Actor, sources: list[dict], action: str) -> list[dict]:
+    """The instruction passages among the sources. An agent is refused when one is inside a skill that a scan
+    blocks (D71): the model saw it, so the body depends on it."""
+    marked = [ref for ref in sources if _is_instruction_chunk(conn, ref)]
+    gate.refuse_blocked_skills(conn, actor, [(r["book"], r["content_id"], r["path"]) for r in marked], action=action)
+    return marked
 
 
 def visible(actor: Actor, asker: str, asked_for: str | None) -> bool:
@@ -202,7 +211,8 @@ def reopen(conn, actor: Actor, answer_id: str) -> dict:
     texts = {ref["n"]: _chunk(conn, ref) for ref in cited}
     # One statement decides every source book (the evidence AND the body depend on all of them), right before
     # anything is shown. Nothing is regenerated.
-    gate.check_many(conn, actor, _needs(actor, sources, lambda ref: _is_instruction_chunk(conn, ref)),
+    marked = _instruction_refs(conn, actor, sources, "reopen")
+    gate.check_many(conn, actor, _needs(actor, sources, lambda ref: ref in marked),
                     action="reopen", items={f"book:{r['book']}": [_handle(c) for c in cited if c["book"] == r["book"]]
                                             for r in sources})
     rights = kstd.Rights(conn)

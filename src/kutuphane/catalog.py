@@ -7,12 +7,15 @@ version being served. A later version that fixes the file (new bytes), or a read
 profile), indexes it, and the quarantine of the old version no longer applies: nothing is carried over.
 
 Accepted credential findings (`--accept-finding`, source.AcceptedFinding) are part of the publication record:
-[{path, sha256, rule}] for this publication, shown by `book_state`. The matched text is never recorded."""
+[{path, sha256, rule}] for this publication, shown by `book_state`. The matched text is never recorded.
+
+Skill scans (D71, skillscan.py): the skill folders are scanned before the transaction (a subprocess must not hold
+the book lock); the records are written in it, so a block is in force as soon as the version is."""
 from dataclasses import dataclass, field
 
 from psycopg.types.json import Jsonb
 
-from . import agentfiles, ids, kstd, profiles
+from . import agentfiles, ids, kstd, profiles, skillscan
 from .policy import check_policy
 from .source import SourceFile
 
@@ -31,6 +34,7 @@ class Published:
     new_policy: bool
     quarantined: list[dict] = field(default_factory=list)  # [{path, reason}]: stored, listed, not indexed
     accepted_findings: list[dict] = field(default_factory=list)  # [{path, sha256, rule}]: reviewed secretscan findings
+    skill_scans: list[dict] = field(default_factory=list)  # skillscan.summary() of the scans this publication recorded
 
 
 def manifest_of(files: list[SourceFile]) -> list[dict]:
@@ -56,6 +60,7 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
     accepted = [{"path": f.path, "sha256": f.sha256, "rule": rule} for f in sorted(files, key=lambda f: f.path)
                 for rule in f.accepted]
     fts = profile["settings"]["fts"]
+    scans = skillscan.plan(conn, book, content_id, files)
     with conn.transaction():
         conn.execute("INSERT INTO book (slug, title) VALUES (%s, %s) ON CONFLICT (slug) DO NOTHING", (book, title))
         current = conn.execute("SELECT current_content, current_policy FROM book WHERE slug = %s FOR UPDATE",
@@ -64,6 +69,7 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
             conn.execute("INSERT INTO blob (sha256, data) VALUES (%s, %s) ON CONFLICT DO NOTHING", (f.sha256, f.data))
         conn.execute("INSERT INTO content_version (book, id, manifest) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
                      (book, content_id, Jsonb(manifest_of(files))))
+        skillscan.store(conn, book, content_id, scans)
         conn.execute("INSERT INTO policy_version (id, doc) VALUES (%s, %s) ON CONFLICT DO NOTHING",
                      (policy_id, Jsonb(policy)))
         conn.execute("INSERT INTO profile_version (id, spec) VALUES (%s, %s) ON CONFLICT DO NOTHING",
@@ -87,7 +93,8 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
         conn.execute("INSERT INTO publication (book, content_id, profile_id, policy_id, accepted_findings) "
                      "VALUES (%s, %s, %s, %s, %s)", (book, content_id, profile_id, policy_id, Jsonb(accepted)))
     return Published(book, content_id, profile_id, policy_id, new_content=current[0] != content_id,
-                     new_policy=current[1] != policy_id, quarantined=quarantined, accepted_findings=accepted)
+                     new_policy=current[1] != policy_id, quarantined=quarantined, accepted_findings=accepted,
+                     skill_scans=skillscan.summary(scans))
 
 
 def book_state(conn, book: str) -> dict | None:

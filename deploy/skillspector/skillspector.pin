@@ -1,0 +1,6 @@
+# The one SkillSpector version this Kütüphane release is tested with (D71, docs/24 §22).
+# src/kutuphane/skillscan.py TESTED_VERSION must equal SKILLSPECTOR_VERSION (tests/test_skillscan.py checks it).
+# SKILLSPECTOR_SHA256 is the sha256 of the GitHub tag tarball at SKILLSPECTOR_URL; install.sh refuses any other bytes.
+SKILLSPECTOR_VERSION=2.13.1
+SKILLSPECTOR_URL=https://github.com/NVIDIA/SkillSpector/archive/refs/tags/v2.13.1.tar.gz
+SKILLSPECTOR_SHA256=a1f735dbe20d60ba17a7f41df524a2d638dfa8204757728d2e6924825a3760b6

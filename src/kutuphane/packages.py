@@ -20,7 +20,7 @@ import time
 
 from psycopg.types.json import Jsonb
 
-from . import agentfiles, catalog, ids, kstd, profiles, signing
+from . import agentfiles, catalog, ids, kstd, profiles, signing, skillscan
 from .policy import check_policy
 from .source import MAX_FILE_BYTES, MAX_SOURCE_BYTES, TEXT_TYPES, SourceError, read_file
 
@@ -223,6 +223,9 @@ def _last_sequence(conn, issuer, book, lock=False) -> int:
 
 
 def _scan(files) -> list[dict]:
+    """Findings for the person who approves, never an approval or a rejection by themselves. The SkillSpector scan
+    of each skill folder (D71) is a proposal here; the publication at approval records the scans that block
+    `activate`."""
     findings, skills = [], agentfiles.skill_dirs(f.path for f in files)
     for f in files:
         if agentfiles.is_instruction({"path": f.path, "okf_type": f.okf_type}, skills):
@@ -233,7 +236,7 @@ def _scan(files) -> list[dict]:
         if f.media_type.startswith("text/") or f.media_type in TEXT_TYPES.values():
             for m in SUSPICIOUS.finditer(f.data.decode("utf-8", errors="replace")):
                 findings.append({"path": f.path, "kind": "instruction_like_text", "match": m.group(0)})
-    return findings
+    return findings + [skillscan.finding(path, scan) for path, scan in skillscan.scan_files(files)]
 
 
 def _diff(conn, book: str, files) -> dict:

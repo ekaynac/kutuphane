@@ -33,6 +33,15 @@ def make_pdf(text: str) -> bytes:
     return bytes(out)
 
 
+@pytest.fixture(autouse=True)
+def _no_skillspector(monkeypatch):
+    """Every test starts without a configured SkillSpector (D71): a scan runs only where a test sets one up. The
+    contract test reads KUTUPHANE_SKILLSPECTOR_BIN when it is collected, before this runs."""
+    for name in ("KUTUPHANE_SKILLSPECTOR_BIN", "KUTUPHANE_SKILLSPECTOR_ALLOW_VERSION", "KUTUPHANE_SKILLSPECTOR_TIMEOUT",
+                 "KUTUPHANE_SKILLSPECTOR_PROXY"):
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture
 def okf_dir(tmp_path) -> Path:
     dest = tmp_path / "okf-kitap"

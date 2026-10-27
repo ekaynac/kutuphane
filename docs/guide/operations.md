@@ -53,7 +53,7 @@ All `KUTUPHANE_*` variables that the code, `compose.yaml` and `deploy/` read:
 | Variable | Default | Effect |
 |---|---|---|
 | `KUTUPHANE_DSN` | none (compose: app role at `postgres:5432/kutuphane`) | Database connection as the app role. Required. |
-| `KUTUPHANE_CURATOR_DSN` | none | Owner connection for `migrate`, `note standing`, `note rollback`. |
+| `KUTUPHANE_CURATOR_DSN` | none | Owner connection for `migrate`, `note standing`, `note rollback`, `skill clear`. |
 | `KUTUPHANE_DB_PASSWORD` | none (compose stops without it) | Password of the Postgres owner `kutuphane` in compose. |
 | `KUTUPHANE_APP_DB_PASSWORD` | empty | Password of `kutuphane_app` in the compose `KUTUPHANE_DSN`. |
 | `KUTUPHANE_PUBLIC_URL` | none | Public URL of the server. The server does not start without it. |
@@ -83,6 +83,10 @@ All `KUTUPHANE_*` variables that the code, `compose.yaml` and `deploy/` read:
 | `KUTUPHANE_REPO_ROOTS` | compose: `/srv/repos` | Absolute directories, `:`-separated, that can hold code mirrors. |
 | `KUTUPHANE_REPO_DIR` | `./deploy/repos` | Compose only: host directory mounted read-only at `/srv/repos`. |
 | `KUTUPHANE_SIGNING_KEY` | none | Path of this installation's Ed25519 package signing key (`export`). |
+| `KUTUPHANE_SKILLSPECTOR_BIN` | none | Path of the installed SkillSpector (`deploy/skillspector/install.sh`). Without it, skills are not scanned. |
+| `KUTUPHANE_SKILLSPECTOR_ALLOW_VERSION` | none | One exact SkillSpector version that you allow in place of the tested one. |
+| `KUTUPHANE_SKILLSPECTOR_TIMEOUT` | `120` | Seconds for each SkillSpector call. A timeout is a failed scan, and a failed scan blocks. |
+| `KUTUPHANE_SKILLSPECTOR_PROXY` | none | Proxy for the SkillSpector subprocess. A dead port (`http://127.0.0.1:9`) blocks its OSV.dev requests. |
 | `KUTUPHANE_DEV` | none | `1` enables `dev-keys` and `dev-token`. Set it on a development machine only. |
 | `KUTUPHANE_PROBE_TOKEN` | none | Access token for `deploy/mcp_probe.py`. The probe never prints it. |
 
@@ -185,6 +189,49 @@ Kütüphane marks these files as agent instructions:
 - files with a frontmatter type such as `skill`.
 
 People read them with `read`. An agent also needs the `activate` mode.
+
+### Skill scan (SkillSpector, D71)
+
+Kütüphane can scan each skill folder (a folder with `SKILL.md`) with NVIDIA SkillSpector when you ingest a book,
+re-scan it, or receive a package. SkillSpector is not part of Kütüphane. Install the tested version (the pin in
+`deploy/skillspector/skillspector.pin`) into its own environment, and tell Kütüphane where it is:
+
+```sh
+deploy/skillspector/install.sh /opt/skillspector
+export KUTUPHANE_SKILLSPECTOR_BIN=/opt/skillspector/bin/skillspector
+```
+
+Without `KUTUPHANE_SKILLSPECTOR_BIN`, ingest works as before, and each skill is recorded as `not_scanned`.
+
+The result of a scan is a proposal to the curator (origin `tool`, `software_agent: skillspector <version>`), never
+an approval:
+
+| Result | Effect for agents |
+|---|---|
+| `DO_NOT_INSTALL` | blocked: no agent can activate any file of the skill |
+| coverage not `complete` (for example missing referenced files) | blocked |
+| the scan failed (a crash, a timeout, output that is not a valid report) | blocked |
+| `CAUTION`, `SAFE` | no block; an agent still needs its `activate` grant (`SAFE` gives no right) |
+| `not_scanned` (no tool, or a version that is not allowed) | no block |
+
+People can still read a blocked skill with `read`. `ingest` prints `skill_scans` in its result and names each
+blocked or not scanned skill on stderr.
+
+```sh
+kutuphane skill show <book>                    # scan results, findings, blocks and clearances of the current version
+KUTUPHANE_CURATOR_DSN=… kutuphane skill clear <book> <skill-folder> --curator user:<name> --reason '…'
+kutuphane skill rescan [--book <book>]         # scan again after a SkillSpector update
+```
+
+- `skill clear` is the curator act (section 7). It covers only those files and that scan report. A changed skill or
+  a new SkillSpector version is a new proposal and can block again. A later `SAFE` scan never lifts a block.
+- Kütüphane refuses a SkillSpector version that is not the tested one, unless `KUTUPHANE_SKILLSPECTOR_ALLOW_VERSION`
+  names it. A scan with a new version marks the old results `stale`. The next ingest of that version, or
+  `skill rescan`, scans again. A stale block stays until a curator clears it.
+- A skill folder with the same bytes in a new version of the book reuses the earlier scan.
+- SkillSpector runs with `--no-llm` and a minimal environment (no API keys). It sends dependency names to
+  api.osv.dev; see [security.md](security.md#skill-scan-skillspector).
+- To check an installed SkillSpector: `KUTUPHANE_SKILLSPECTOR_BIN=… pytest tests/test_skillspector_contract.py`.
 
 ### kstd manifest
 
@@ -370,6 +417,7 @@ kutuphane grant book:adc-memory curate user:ayse
 
 A note starts `pending`. Only a curator changes its Standing, and only on the command line.
 Both commands need `KUTUPHANE_CURATOR_DSN`. The curator needs `curate` on the book.
+The same credential and right lift a skill scan block: `kutuphane skill clear` (section 2, "Skill scan").
 
 ```sh
 KUTUPHANE_CURATOR_DSN=… kutuphane note standing adc-memory@nt_<64 hex> approved --curator user:ayse --reason '…'
@@ -468,6 +516,9 @@ kutuphane reject-import <id> --by user:admin --reason '…'
 - `imports` lists the last 50 received packages and their verdicts.
 - `approve-import` publishes the package with this installation's policy. It indexes like `ingest` (exit code 3 if the index is incomplete).
 - `reject-import` refuses the package. Kütüphane keeps the record.
+- With `KUTUPHANE_SKILLSPECTOR_BIN`, `receive` adds a `skill_scan` finding for each skill folder (status, blocking,
+  recommendation, score, completeness, issue count). The publication at `approve-import` records the scans that
+  block agents.
 
 ## 11. Audit and logs
 
@@ -549,5 +600,8 @@ Disk encryption is a deployment duty at the volume level (D48). The application 
 | `note standing` | Set the Standing of a note as a curator. |
 | `note rollback` | Retire a note and its derived notes; report who used them. |
 | `decisions export` | Write JSONL decision records that the principal can read. |
+| `skill show` | Show the SkillSpector scans of a book's current version, the blocks and the clearances. |
+| `skill rescan` | Scan skills again where no fresh result of the configured SkillSpector version exists. |
+| `skill clear` | Lift the scan block of one skill as a curator (`KUTUPHANE_CURATOR_DSN`). |
 
 For problems, read [troubleshooting.md](troubleshooting.md).

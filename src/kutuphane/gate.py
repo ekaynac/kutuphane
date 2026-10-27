@@ -3,11 +3,12 @@
 - The decision is taken before the fetch and taken again right before delivery, so a revocation that lands
   while a request is in flight still stops the content (AT-04, AT-05).
 - Agent instructions (K3) reach an agent only with a separate `activate` grant, logged as its own event
-  (D37, AT-12). People may read them as reference with `read`.
+  (D37, AT-12). People may read them as reference with `read`. A skill that a SkillSpector scan blocks (D71,
+  skillscan.py) is refused to agents even with that grant, until a curator clears it; a scan never grants.
 - Every decision, allowed or not, is written to `access_event` with the policy and grant rows behind it.
 """
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from psycopg.types.json import Jsonb
 
@@ -53,7 +54,8 @@ def log_event(conn, actor: Actor, action: str, obj: str, mode: str, d: authz.Dec
 
 def guard(conn, actor: Actor, obj: str, modes: list[str], fetch, *, action: str, content_id=None, path=None,
           profile_id=None, items=None):
-    """Decide, fetch, decide again, then log and hand out. Every single-object content path goes through here."""
+    """Decide, fetch, decide again, then log and hand out. Every single-object content path goes through here.
+    An agent's `activate` on a file inside a skill that a scan blocks (D71) is refused in that final step."""
     def log(mode, d, policy_id, reason=None):
         log_event(conn, actor, action if mode == "read" else mode, obj, mode, d, policy_id, content_id, path, reason,
              profile_id, items if d.allowed else None)
@@ -65,16 +67,22 @@ def guard(conn, actor: Actor, obj: str, modes: list[str], fetch, *, action: str,
             raise Denied(f"{mode} on {obj}: {d.reason}")
     # The work (a read, or a write such as feedback) and the final decision share one transaction: if the final
     # decision says no, a write is rolled back and nothing is handed out. The refusal is logged after rollback.
-    revoked = None
+    revoked, blocked = None, False
     try:
         with conn.transaction():
             data = fetch()
             # Again, right before handing anything out: one statement for every mode and the policy in force.
             final = authz.decide(conn, actor.principal, actor.on_behalf_of, obj, modes)
             revoked = next(((m, d) for m, d in final.decisions.items() if not d.allowed), None)
-            if revoked:
+            blocked = (revoked is None and "activate" in modes and content_id is not None
+                       and bool(blocked_skills(conn, [(obj.removeprefix("book:"), content_id, path)])))
+            if revoked or blocked:
                 raise _Rollback
     except _Rollback:
+        if blocked:
+            d = replace(final.decisions["activate"], allowed=False, reason=SKILL_BLOCKED)
+            log("activate", d, final.policy_id)
+            raise Denied(f"activate on {obj}: {SKILL_BLOCKED}") from None
         mode, d = revoked
         log(mode, d, final.policy_id, f"revoked before delivery: {d.reason}")
         raise Denied(f"{mode} on {obj}: revoked before delivery") from None
@@ -89,6 +97,33 @@ class _Rollback(Exception):
 
 def modes_for(actor: Actor, instruction: bool) -> list[str]:
     return ["read", "activate"] if instruction and actor.principal.startswith("agent:") else ["read"]
+
+
+SKILL_BLOCKED = "skill blocked by a scan (D71); only a curator clears it"
+
+
+def blocked_skills(conn, refs) -> set[tuple[str, str, str]]:
+    """The (book, content_id, path) of `refs` inside a skill folder that a scan blocks and no curator cleared (the
+    SQL function `skill_blocked`, migration 021). The block is on `activate`: pass the instruction files of agents."""
+    refs = sorted(set(refs))
+    if not refs:
+        return set()
+    books, contents, paths = (list(column) for column in zip(*refs))
+    return {tuple(r) for r in conn.execute("SELECT b, c, p FROM unnest(%s::text[], %s::text[], %s::text[]) AS "
+                                           "r(b, c, p) WHERE skill_blocked(b, c, p)", (books, contents, paths))}
+
+
+def refuse_blocked_skills(conn, actor: Actor, refs, *, action: str) -> None:
+    """For an agent: refuse (and log, per file) a delivery built from instruction passages of a blocked skill.
+    `refs`: (book, content_id, path) of the instruction passages."""
+    if not actor.principal.startswith("agent:"):
+        return
+    blocked = blocked_skills(conn, refs)
+    for book, content_id, path in sorted(blocked):
+        log_event(conn, actor, "activate", f"book:{book}", "activate", authz.Decision(False, SKILL_BLOCKED),
+                  catalog.current_policy(conn, book), content_id, path)
+    if blocked:
+        raise Denied(f"{action}: activate refused: {SKILL_BLOCKED}")
 
 
 def deliver_file(conn, actor: Actor, book: str, content_id: str, path: str) -> bytes:

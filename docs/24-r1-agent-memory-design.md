@@ -1117,3 +1117,96 @@ CREATE TABLE outcome (
 | O8 | Export: a journal with `ai_input` and `train`: text, options and choice; with `train: n` (or a dependency without `train`): hashes only, never the text; the outcome rows, the actor and the rights are in each record; one `access_event` per book with the items. |
 | O9 | Migration 020 applies to a database at 018 with notes; old journals and notes get `train = false`; old note ids do not change. |
 | O10 | `journal restrict --no-train` on a source journal: the export of a decision derived from it in another journal has hashes only, and a new note derived from that decision gets `train = false` (`test_rollback.py`). The #79 report lists a real `decisions export` of a decision note in the closure (T41). |
+
+## 22. SkillSpector: an optional external scanner of skills (D71)
+
+**Basis:** D71; the evaluation `docs/research/2026-10-27-skillspector-eval.md` §3–§5 (options A + C); docs/09 R1 and the Agent instruction facet. Migration `021_skill_scan.sql`; code `skillscan.py`; install `deploy/skillspector/`.
+
+### 22.1 One pinned version, outside our package
+
+- `deploy/skillspector/skillspector.pin` names the one tested version (`2.13.1`), the tag tarball URL and its sha256. `skillscan.TESTED_VERSION` must be equal (a unit test checks it).
+- `deploy/skillspector/install.sh [PREFIX]` (default `/opt/skillspector`) downloads the tag tarball (or takes `SKILLSPECTOR_TARBALL=<file>` on a host without network), refuses it when the sha256 is not the pinned one, and installs it into its own venv: the runtime dependencies from the upstream `uv.lock` in that verified tarball, with hash checks, then the project with no dependencies. It copies `LICENSE`, `THIRD_PARTY_NOTICES.md` and the upstream fixtures `safe_skill`, `malicious_skill` to `PREFIX/share/skillspector/`. It needs `uv` and Python 3.12–3.14.
+- No Kütüphane package metadata names SkillSpector. It is never imported, vendored or released with us. The operator sets `KUTUPHANE_SKILLSPECTOR_BIN=PREFIX/bin/skillspector`.
+
+### 22.2 The adapter
+
+- The skill folders of a version are `agentfiles.skill_dirs` (a folder with `SKILL.md`; `.` is the book root). The files of one folder are written to a new temporary folder, and `<bin> scan <folder> --no-llm --format json` runs as a subprocess.
+- **Environment:** only `PATH=/usr/bin:/bin`, `HOME` (an empty temporary folder), `LANG`, `NO_COLOR`, `SKILLSPECTOR_LOG_LEVEL`. No provider key, no `LANGSMITH_*`, no Kütüphane variable reaches it. `--use-shipped-baseline` is never given, so a skill cannot suppress its own findings.
+- **Egress:** the SC4 check sends dependency names to `api.osv.dev`, also with `--no-llm`. `KUTUPHANE_SKILLSPECTOR_PROXY` gives the subprocess `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY`; a dead port (for example `http://127.0.0.1:9`) blocks that egress, and SC4 then uses its bundled list. Without the variable, the egress follows the host network.
+- **Timeout:** `KUTUPHANE_SKILLSPECTOR_TIMEOUT` seconds (default 120) for `--version` and for each scan.
+- **Version:** `<bin> --version` is read first. A version that is not `TESTED_VERSION` is refused (`not_scanned`) unless `KUTUPHANE_SKILLSPECTOR_ALLOW_VERSION` names exactly that version. The record stores the version that ran, and the report must name the same version.
+- **Exit codes:** 0 and 1 carry a verdict (1: score above 50). Any other exit, a timeout, output that is not JSON, or a report with an unknown recommendation, score or completeness is a `failed` scan.
+- **Normalization:** the keys `finding_id` (random) and `scanned_at` (a clock) are dropped at every depth, and the temporary folder path is replaced by the skill path. The report digest is the sha256 of the canonical JSON of that report; two runs on the same bytes give the same digest.
+
+### 22.3 The record
+
+| Field (`skill_scan`) | Changes |
+|---|---|
+| `book`, `content_id`, `skill_path` | which files of which version the block covers |
+| `status` (`scanned`, `failed`, `not_scanned`) | `failed` blocks; `not_scanned` does not block |
+| `input_digest` | sha256 over the relative paths and file digests of the skill folder: a clearance covers exactly these bytes; a scan of the same bytes and version is reused |
+| `tool_version`, `mode` (`no-llm`) | `software_agent {skillspector, version}` and origin `tool` of the proposal; a clearance covers this version only; other versions become `stale` |
+| `report_digest` | a clearance covers this report only |
+| `recommendation`, `score`, `completeness` | `DO_NOT_INSTALL` or a completeness other than `complete` blocks |
+| `findings` | the normalized issues, shown to the curator (`skill show`) |
+| `reason` | why a scan failed or did not run (shown at ingest and in `skill show`) |
+| `stale` | the next ingest of that version and `skill rescan` scan it again |
+
+`skill_clearance` (`book`, `input_digest`, `tool_version`, `report_digest`, `scan_id`, `curator`, `reason`, `at`) is the curator act. The view `skill_block` holds every blocking record with no matching clearance. The SQL function `skill_blocked(book, content_id, path)` tells whether a file is inside such a folder.
+
+### 22.4 Behavior
+
+- **A proposal, never an approval.** A record has origin `tool` and `software_agent {skillspector, version}` (D63/D64). An LLM mode would be origin `model` and is not in this release.
+- **Block at once (R1).** `DO_NOT_INSTALL`, a completeness other than `complete`, or a `failed` scan blocks `activate` on every file of that skill folder. The record is written in the publication transaction, so the block is in force when the version is. A failed scan blocks, so a skill cannot escape the scan when it breaks the scanner.
+- **Only a person lifts a block.** A later scan never lifts a block, also when it says `SAFE`. A stale record keeps its block. `kutuphane skill clear <book> <path> --curator user:… --reason …` needs `KUTUPHANE_CURATOR_DSN` (the app role cannot write `skill_clearance`, and `deploy/db-roles.sql` removes its `UPDATE`/`DELETE` on `skill_scan` except `stale`, and its writes through the view). The curator must hold `curate` on the book now. One clearance is recorded for each blocking report of that skill in the current version. A new version of the skill (other bytes) or another tool version is a new proposal.
+- **`SAFE` grants nothing.** An agent still needs its `activate` grant. `CAUTION` does not block.
+- **`not_scanned`** (no tool configured, the tool not runnable, a version not allowed) does not block, and ingest works as before. This is an open operator choice (§22.7).
+- **New tool version.** A scan with version V marks every record of another version `stale`. The next ingest of that content, or `kutuphane skill rescan [--book B]`, scans again where no fresh `scanned` record of V exists. A record of the same bytes and version in the same book is copied, not scanned again.
+- **Users** read skill files as reference with `read`, as before; the block is on `activate` only.
+
+### 22.5 Where the block applies
+
+| Path | Rule |
+|---|---|
+| `gate.guard` (`read_document`, `kutuphane read`, `open_citation`) | in the final decision inside the transaction: refused, logged as `activate` denied with the reason and the grant ids that it overrides |
+| `search.search` pre-filter | an agent's instruction chunks inside a blocked skill are left out before ranking; a block that lands during the search makes it run again |
+| `search.authorize` (the merged retrieval pool) | such passages are dropped |
+| `answers.ask`, `answers.reopen` | an agent is refused, and each blocked file is logged, when an instruction source is inside a blocked skill (the model saw it) |
+| `packages.receive` | a `skill_scan` finding for each skill folder (status, blocking, origin, software_agent, recommendation, score, completeness, issue count) for the person who approves; the publication at approval records the scans |
+| `kutuphane ingest`, `approve-import` | the publication result has `skill_scans`; stderr names each blocked or not scanned skill |
+
+### 22.6 CLI
+
+```
+kutuphane skill show <book>                                   # records of the current version, blocks, clearances
+kutuphane skill rescan [--book B]                             # with KUTUPHANE_SKILLSPECTOR_BIN
+kutuphane skill clear <book> <path> --curator user:… --reason …   # with KUTUPHANE_CURATOR_DSN
+```
+
+### 22.7 Open questions
+
+- **`not_scanned` does not block.** An installation without SkillSpector, or with a version that is not allowed, serves skills with only the `activate` grant, as before. The operator can choose that `not_scanned` blocks for some or all books.
+- **The tarball digest.** GitHub makes the tag tarball on request; its bytes were stable in our test, but GitHub does not promise this. If the digest changes, `install.sh` refuses the install; then keep a verified copy (`SKILLSPECTOR_TARBALL`) or use conda-forge.
+- **False positives** (eval §5): 2 of 3 benign skills got `CAUTION`, which does not block. Partial coverage blocks, so curators can get many clearances to give for skills with missing referenced files.
+
+### 22.8 Tests (consumer-visible)
+
+| # | Test (`tests/test_skillscan.py`, with a fake `skillspector` script) |
+|---|---|
+| S1 | No tool configured: ingest works, one `not_scanned` record, no block. A book without skills never runs the tool. |
+| S2 | `DO_NOT_INSTALL`: every file of the skill is refused to an agent with `read` and `activate` (logged with the overridden grant); a file outside the skill and a person's `read` are unchanged; agent search and `open_citation` leave it out. |
+| S3 | Partial coverage, a crash, output that is not JSON, a report of another version, and a timeout block. |
+| S4 | `SAFE`/`CAUTION` grant nothing. |
+| S5 | The subprocess gets only the minimal environment (no key, no `LANGSMITH_*`), `--no-llm --format json`, and the proxy when set. |
+| S6 | The report digest is stable over runs; `finding_id` is not stored. |
+| S7 | An unknown version is `not_scanned` unless allowed. |
+| S8 | Unchanged skill bytes in a new version reuse the scan and keep the block. |
+| S9 | Only a curator with `curate` clears, it is recorded, and the agent then gets the skill; a clearance does not cover other bytes. |
+| S10 | A new tool version makes old records stale; a later `SAFE` does not lift the stale block; a curator does. |
+| S11 | CLI: `skill rescan`, `skill show`; `skill clear` needs the curator credential and `curate`. |
+| S12 | The app role cannot delete or change a record (except `stale`), write through `skill_block`, or write a clearance. |
+| S13 | Package receive shows the scan as a proposal finding. |
+| S14 | An agent cannot reopen an answer whose skill source was blocked later; the person can. |
+| S15 | The pin file names `TESTED_VERSION`. |
+
+`tests/test_skillspector_contract.py` runs only with `KUTUPHANE_SKILLSPECTOR_BIN`: the version, the JSON keys that the adapter reads, the exit codes and verdicts on the upstream `safe_skill` (0, `SAFE`) and `malicious_skill` (1, `DO_NOT_INSTALL`) and on our harmless `tests/fixtures/skills/harmless-summary` (0, `SAFE`), and a stable report digest through the adapter.
