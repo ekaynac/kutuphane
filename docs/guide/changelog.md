@@ -11,7 +11,7 @@ For the terms, read [concepts.md](concepts.md).
 
 ### Retrieval re-check (Pilot 1 questions 1–3)
 
-- Fixed: for a question with passages in Turkish and in English, the question translation was sampled. An English question could get a Turkish word of another sense, or an answer in place of a translation, and the second search then missed the passage with the answer (G19). The translation now uses greedy decoding (`temperature` 0). Pilot 1 question 2 in English: the literal translation in 3 of 3 runs, before 1 of 3 ([operations.md](operations.md), section 4; results in [../18-pilot-radar.md](../18-pilot-radar.md), section 4.2).
+- Fixed: for a question with passages in Turkish and in English, the question translation was sampled. An English question could get a Turkish word of another sense, or an answer in place of a translation, and the second search then missed the passage with the answer (G19). The translation now uses greedy decoding (`temperature` 0). Pilot 1 question 2 in English: the literal translation in 3 of 3 runs, before 1 of 3 ([operations.md](operations.md), section 4; results in [../18-pilot-radar.md](../18-pilot-radar.md), section 4.2) ([#122](https://github.com/ekaynac/kutuphane/pull/122)).
 
 ### Security review #17 fixes (curator slices R, D, Q)
 
