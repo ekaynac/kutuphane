@@ -213,8 +213,9 @@ are also in each skill entry and in each `skill://` read (section 10).
 
 | Key | Value |
 |---|---|
-| `books` | The E5 policy now (Sensitivity, Egress) of each book whose content is in the result: the book of each passage or file, the journal of each note, and the `source_books` of each note (the books that its text came from). |
-| `sensitivity`, `egress` | The strictest value of `books`: `restricted` before `normal`, `local_only` before `cloud_ok`. Apply one rule to the whole result with them. They are not there when the result has no content: that is no claim, not `normal`. |
+| `books` | The E5 policy now (Sensitivity, Egress) of each book whose content is in the result and that you may read now: the book of each passage or file, the journal of each note, and the `source_books` of each note (the books that its text came from). A source book that you may not read is never named. |
+| `unnamed_sources` | Notes only, and only when it is not 0: the number of source books that are not in `books` because you may not read them. |
+| `sensitivity`, `egress` | The strictest value of all the books of the result, the unnamed source books included: `restricted` before `normal`, `local_only` before `cloud_ok`. So a note that came from restricted text is `restricted` also when you cannot read its source. Apply one rule to the whole result with them. They are not there when the result has no content: that is no claim, not `normal`. |
 | `skill_scans` | Only when a scan record applies. For each skill folder that holds a file or passage of the result: its latest scan record. `scan_id` is the `id` in `kutuphane skill show <book>`. A record is a proposal of a tool, never an approval ([security.md](security.md#skill-scan-skillspector)). |
 
 The labels describe the content. They give no right and refuse nothing: the gate decided before.
@@ -436,9 +437,10 @@ An evidence entry can have `"text": null` with `withheld` (section 4.2).
 
 Read a text file of one specific content version.
 
-**Needs:** `read` on the book. An agent needs `activate` too for an agent instruction file, and the file must not be
-in a skill that a scan blocks. The kstd rights of the
-file must allow AI input.
+**Needs:** `read` on the book. An agent needs `activate` too for an agent instruction file. A file in a skill folder
+stands for its whole skill (the innermost skill that holds it, as in section 10.3): for an agent, no file of that
+skill may be in a skill that a scan blocks, a blocked skill in a subfolder included. For a model reader, the kstd
+rights of every file of that skill must allow AI input; for another file, the rights of the file.
 
 | Argument | Type | Required | Default | Limits |
 |---|---|---|---|---|
@@ -997,7 +999,14 @@ The gate is the same for `skills/list`, `skills/get` and `resources/read`:
 A skill that fails the gate is not in the list. `skills/get` and `resources/read` refuse it with `forbidden`.
 Every decision is in `access_event`: `skills_list` and `skills_get` (mode `read`, the skill URIs as items),
 `activate`, and `read` for each file read. A blocked skill in the list gives one refused `activate` event for its
-`SKILL.md`.
+`SKILL.md`. A refusal after the first decision (the kstd rights do not allow AI input, or the file is not in a
+served skill) gives a refused event for each mode, with the reason. The events and the labels name the content
+version whose entry or bytes you get.
+
+Cost: the server stores the checked frontmatter of each skill when a version is published. The calls read it from
+that table and the manifest, and never parse a `SKILL.md` again. `skills/get` and `resources/read` look only at the
+skills whose folder holds the requested path. (A version published before migration 033 is indexed once, at its
+first skills call.)
 
 ### 10.4 Declaration
 
@@ -1054,8 +1063,10 @@ Use it to refresh the digests of one skill. A URI that is not the `SKILL.md` of 
  "params": {"uri": "skill://runbooks/skills/backup/references/restore.md"}}
 ```
 
-The result has one item with the file's media type. Text is in `text`; other files are in `blob` (base64). The
-item's `_meta["kutuphane/handling"]` has the handling labels. The hash of the bytes (the UTF-8 bytes of `text`)
+The result has one item with the file's media type. Text is in `text`; other files are in `blob` (base64). An active
+media type (HTML, JavaScript, SVG, any XML) is sent as `text/plain`, or `application/octet-stream` when the bytes are
+not UTF-8, so that a host does not render or run it; the bytes, and so the digest, do not change. The item's
+`_meta["kutuphane/handling"]` has the handling labels. The hash of the bytes (the UTF-8 bytes of `text`)
 is the `digest` of the entry. A file that is not in a served skill gives `-32602` with `not found`. A
 `resources/read` only reads: loading a skill is the host's act.
 

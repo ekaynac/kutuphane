@@ -3,8 +3,11 @@
 The labels go under the namespaced `_meta` key `kutuphane/handling` of `search_library`, `open_citation`,
 `read_document` and `query_notes` results, of `skills/list` and `skills/get` entries, and of `skill://` reads:
 - `books`: the E5 policy now (Sensitivity, Egress) of every book whose content is in the result: the book of each
-  passage or file, the journal of each note and its `source_books` (the books that the note text came from);
-- `sensitivity`, `egress`: the strictest of those (`restricted` over `normal`, `local_only` over `cloud_ok`), so a
+  passage or file, the journal of each note and its `source_books` (the books that the note text came from) that the
+  caller may read now. A source book the caller cannot read is never named (T24, review #18);
+- `unnamed_sources`: notes only, the number of source books left out of `books` that way (absent when none);
+- `sensitivity`, `egress`: the strictest over every book of the result, the unnamed source books included, so a note
+  derived from restricted text stays restricted (`restricted` over `normal`, `local_only` over `cloud_ok`), so a
   client can apply one rule to the whole result. Absent when the result holds no content: "no claim", never
   "normal";
 - `skill_scans`: for each skill folder (D71) that holds a file or passage of the result, a reference to its latest
@@ -54,12 +57,17 @@ def scans(conn, files: Iterable[tuple[str, str, str]]) -> list[dict]:
             for b, c, p, i, status, recommendation, blocking in rows]
 
 
-def build(per_book: dict, skill_scans: list[dict]) -> dict:
-    """The labels of a result from its books' policies and its scan references."""
+def build(per_book: dict, skill_scans: list[dict], unnamed: Iterable[dict] = ()) -> dict:
+    """The labels of a result from its books' policies and its scan references. `unnamed`: the policies of books
+    whose content is in the result but that the caller cannot read; they make the overall labels stricter, and
+    only their number is shown."""
+    unnamed = list(unnamed)
     out: dict = {"books": dict(sorted(per_book.items()))}
-    if per_book:
+    if unnamed:
+        out["unnamed_sources"] = len(unnamed)
+    if per_book or unnamed:
         for name, strict in STRICT.items():
-            values = {p[name] for p in per_book.values()}
+            values = {p[name] for p in (*per_book.values(), *unnamed)}
             out[name] = strict if strict in values else values.pop()  # else one value: E5 has two per attribute
     if skill_scans:
         out["skill_scans"] = skill_scans
@@ -70,6 +78,14 @@ def labels(conn, books: Iterable[str], files: Iterable[tuple[str, str, str]] = (
     """`books`: the books whose content is in the result. `files`: (book, content_id, path) of its files and
     passages, for the skill-scan references."""
     return build(policies(conn, books), scans(conn, files))
+
+
+def note_labels(conn, refs: Iterable[str], readable: Iterable[str]) -> dict:
+    """The labels of notes (`book@nt_…`): `readable`, the books (slugs) of the caller's final read set."""
+    readable = set(readable)
+    per_book = policies(conn, note_books(conn, refs))
+    return build({b: p for b, p in per_book.items() if b in readable}, [],
+                 [p for b, p in per_book.items() if b not in readable])
 
 
 def note_books(conn, refs: Iterable[str]) -> set[str]:

@@ -10,10 +10,18 @@ a text file carries the line it starts on (for JSONL: the record's line). HTML i
 only: no scripts, styles, templates or comments. Quarantined files (source.py) are stored but never cut.
 
 Markdown (G27, G28): a heading is an ATX heading line (`#` to `######` and a space) outside a code fence, so
-`#41` and a shell comment in a fence are text. A cut that holds only headings, thematic breaks (`---`) or HTML
-comments (a leading source comment) is not a passage: it joins the passage after it (at the end of the file, the
-passage before it). Every other passage keeps exactly the text that the cut without this step gives, so its
-embedded text, and so its vector (vectors.py), stays the same.
+`#41` and a shell comment in a fence are text. A cut that holds only headings, thematic breaks (`---`) or the
+leading source comment is not a passage: it joins the passage after it (at the end of the file, the passage before
+it). Every other passage keeps exactly the text that the cut without this step gives, so its embedded text, and so
+its vector (vectors.py), stays the same.
+
+Markdown HTML comments (review #18): a reader of the rendered file never sees them, so they are hidden from every
+passage. Each character of a comment outside a code fence becomes a space (a line end stays), so offsets and line
+numbers do not change, and a block of comments only is blank: no passage. One exception, G28: the leading source
+comment, `<!-- source: … -->` as the first content of the file, on one line of at most SOURCE_MAX_CHARS. It is a
+citation of the vendor document, not an instruction, so it stays and joins the rule passage after it. It is the
+first line of the file, where every reviewer sees it; any other comment, `source:` or not, is hidden. A comment in
+a code fence is shown code and stays.
 """
 import io
 import re
@@ -27,7 +35,9 @@ from .agentfiles import is_instruction
 from .source import CSV, HTML, JSONL, MARKDOWN, PDF, TEXT_TYPES, SourceFile, extracted_text
 
 READER_VERSION = 3  # 3: G1 text formats, G3 quarantine, G5 agent folders. Bump when source.py's classification changes.
-CHUNKER_VERSION = 5  # 5: a heading, `---` or comment alone joins the next passage; ATX headings outside fences only
+# 5: a heading, `---` or the leading source comment alone joins the next passage; ATX headings outside fences only.
+# Review #18 (other markdown comments blanked) kept 5: no passage text of any ingested book changed (2787 checked).
+CHUNKER_VERSION = 5
 TARGET_CHARS = 1200
 FTS_CONFIG = "turkish"  # Postgres text search configuration; part of the profile id
 MAX_CHUNK_CHARS = 4 * TARGET_CHARS  # a single huge block is cut at whitespace, so nothing escapes the index
@@ -74,6 +84,9 @@ def _pages(f: SourceFile) -> list[tuple[int | None, str]]:
         return []
     if f.media_type == PDF:
         return [(n, page.extract_text() or "") for n, page in enumerate(PdfReader(io.BytesIO(f.data)).pages, 1)]
+    if f.media_type == MARKDOWN:  # the text source.py scanned, with its HTML comments blanked (review #18)
+        text = extracted_text(f.media_type, f.data.decode("utf-8"))
+        return [(None, _hide_comments(text, _frontmatter_end(text)))]
     if f.media_type in _TEXT:
         return [(None, extracted_text(f.media_type, f.data.decode("utf-8")))]  # the text source.py scanned
     return []  # other assets are stored and citable as files, not searched
@@ -100,17 +113,76 @@ def _lines(text: str):
 _HEADING = re.compile(r" {0,3}#{1,6}(?:[ \t]|$)")                  # CommonMark ATX heading
 _FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
 _BREAK = re.compile(r" {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$")        # a thematic break: ---, ***, ___
-_COMMENTS = re.compile(r"(?:\s*<!--.*?-->)+\s*", re.DOTALL)
+_SOURCE = re.compile(r"<!--[ \t]*source:", re.IGNORECASE)
+SOURCE_MAX_CHARS = 500  # a leading source comment longer than this is hidden like any other comment
+_NOT_EOL = re.compile(r"[^\n]")
 
 
-def _paragraph_spans(text: str, base: int, headings: bool) -> list[tuple[int, int, bool, bool]]:
+def _fenced(text: str) -> list[tuple[int, int]]:
+    """The (start, end) of every fenced code block, fence lines included (the fence rule of _paragraph_spans)."""
+    out, fence, opened = [], None, 0
+    for i, line in _lines(text):
+        opener = _FENCE.match(line.rstrip("\n"))
+        if opener and (fence is None or opener.group(1)[0] == fence[0] and len(opener.group(1)) >= len(fence)):
+            if fence is None:
+                fence, opened = opener.group(1), i
+            else:
+                out.append((opened, i + len(line)))
+                fence = None
+    if fence is not None:
+        out.append((opened, len(text)))
+    return out
+
+
+def _source_comment(text: str, start: int) -> tuple[int, int] | None:
+    """The leading source comment of markdown that starts at `start`: the first content, one line, at most
+    SOURCE_MAX_CHARS, `<!-- source: … -->` and nothing else on its line (G28: a citation, not an instruction)."""
+    p = len(text) - len(text[start:].lstrip())
+    if not _SOURCE.match(text, p):
+        return None
+    close, line_end = text.find("-->", p + 2), text.find("\n", p)
+    line_end = len(text) if line_end < 0 else line_end
+    if close < 0 or close + 3 > line_end or close + 3 - p > SOURCE_MAX_CHARS or text[close + 3:line_end].strip():
+        return None
+    return p, close + 3
+
+
+def _hide_comments(text: str, start: int) -> str:
+    """Markdown from `start` with every HTML comment outside a code fence blanked: each character but a line end
+    becomes a space, so offsets and line numbers stay (review #18, finding 5: a reader of the rendered file never
+    sees a comment, so no passage carries one to a model). The leading source comment stays (G28). Linear: one
+    `str.find` pass, no backtracking (review #18, finding 2). A comment runs from `<!--` to the next `-->`
+    (CommonMark; `<!-->` and `<!--->` are whole comments); an unclosed one runs to the end."""
+    keep, fences, pieces, i, f = _source_comment(text, start), _fenced(text), [text[:start]], start, 0
+    while (j := text.find("<!--", i)) >= 0:
+        while f < len(fences) and fences[f][1] <= j:
+            f += 1
+        if f < len(fences) and fences[f][0] <= j:  # code in a fence is shown as it is
+            pieces.append(text[i:fences[f][1]])
+            i = fences[f][1]
+            continue
+        if keep is not None and j == keep[0]:
+            pieces.append(text[i:keep[1]])
+            i = keep[1]
+            continue
+        close = text.find("-->", j + 2)
+        end = len(text) if close < 0 else close + 3
+        pieces += [text[i:j], _NOT_EOL.sub(" ", text[j:end])]
+        i = end
+    pieces.append(text[i:])
+    return "".join(pieces)
+
+
+def _paragraph_spans(text: str, base: int, headings: bool,
+                     source: tuple[int, int] | None = None) -> list[tuple[int, int, bool, bool]]:
     """Blank-line separated blocks as (start, end, heading, bare); with `headings` (markdown), a heading line always
     starts a new block. `heading`: the block starts with a heading. `bare`: markdown, and the block holds only
-    headings and thematic breaks, or only HTML comments."""
+    headings and thematic breaks, or only the leading source comment (`source`, offsets in `text`)."""
     spans, start, end, fence, marks = [], None, 0, None, True
 
     def close(stop: int) -> None:
-        bare = headings and (marks or _COMMENTS.fullmatch(text, start, stop) is not None)
+        alone = source is not None and start == source[0] and not text[source[1]:stop].strip()
+        bare = headings and (marks or alone)
         spans.append((base + start, base + stop, headings and heading_start, bare))
 
     heading_start = False
@@ -191,7 +263,9 @@ def _cut(f: SourceFile, text: str, base: int, full: str) -> list[tuple[int, int]
         return _attach_bare(_merge(_cap(_line_spans(text, base), full)))
     markdown = f.media_type == MARKDOWN
     skip = _frontmatter_end(text) if markdown else 0  # metadata, not passage text
-    return _attach_bare(_merge(_cap(_paragraph_spans(text[skip:], base + skip, markdown), full)))
+    source = _source_comment(text, skip) if markdown else None
+    source = (source[0] - skip, source[1] - skip) if source else None
+    return _attach_bare(_merge(_cap(_paragraph_spans(text[skip:], base + skip, markdown, source), full)))
 
 
 def split(profile: dict, f: SourceFile, skills: frozenset[str] = frozenset()) -> list[Chunk]:

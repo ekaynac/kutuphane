@@ -220,17 +220,24 @@ SkillSpector is one layer, not proof: it does not read images or binaries, and a
 ## MCP Skills and handling labels (#80)
 
 - **Skills over MCP (SEP-2640).** Skill folders reach a model through `skills/list`, `skills/get` and
-  `resources/read` of `skill://` URIs only through the gate of `read_document`, with stricter rules: `read` and
-  `activate` for every principal, `ai_input` for every file of the skill, and no blocked file in the skill. The
+  `resources/read` of `skill://` URIs with the same whole-skill gate as `read_document`: `read` and `activate` for
+  every principal, `ai_input` for every file of the skill, and no blocked file in the skill, a blocked skill in a
+  subfolder included. `read_document` applies the same rule to a file in a skill folder (security review #18). The
   list and the entries hold the frontmatter and the digests only; a file goes out only on its own `resources/read`.
-  The digests are the SHA-256 of the stored bytes (the content manifest), but the same server gives the digests and
-  the bytes: a host must not take a digest match as proof of trust (SEP-2640). Treat skill content as untrusted
-  model input. Details: [mcp.md](mcp.md#10-skills-sep-2640).
+  A refusal inside the fetch (`ai_input`, not found) is in `access_event` too. HTML, JavaScript, SVG and XML go out
+  as `text/plain` (or `application/octet-stream`), so a host does not render or run them; the digest does not
+  change. The digests are the SHA-256 of the stored bytes (the content manifest), but the same server gives the
+  digests and the bytes: a host must not take a digest match as proof of trust (SEP-2640). Treat skill content as
+  untrusted model input. Details: [mcp.md](mcp.md#10-skills-sep-2640).
 - **Handling labels.** `search_library`, `open_citation`, `read_document`, `query_notes` and the skill reads give
   the Sensitivity and Egress of each book in the result, the strictest of them, and the skill-scan records that
-  apply, in `_meta["kutuphane/handling"]` ([mcp.md](mcp.md#44-handling-labels-in-_meta)). The labels inform the
-  client; the server still enforces Egress itself (LLMDAP, `local_only`) and Sensitivity (export). They are not a
-  right and not a proof.
+  apply, in `_meta["kutuphane/handling"]` ([mcp.md](mcp.md#44-handling-labels-in-_meta)). A note's label names
+  only the source books that the caller may read; the others count only in `unnamed_sources` and in the strictest
+  values. The labels inform the client; the server still enforces Egress itself (LLMDAP, `local_only`) and
+  Sensitivity (export). They are not a right and not a proof.
+- **Hidden markdown comments.** No passage holds an HTML comment of a markdown file (a reader of the rendered file
+  never sees it), except the leading one-line source comment of a rule file, which is a citation
+  ([concepts.md](concepts.md)). The cut is linear in the file size: a file of many comments cannot stall an ingest.
 
 ## Secret scan
 

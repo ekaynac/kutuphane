@@ -16,6 +16,8 @@ REVOKE UPDATE, DELETE ON note, write_record, note_link, note_citation, outcome, 
 REVOKE INSERT, UPDATE, DELETE ON skill_clearance, skill_block FROM kutuphane_app;
 REVOKE UPDATE, DELETE ON skill_scan FROM kutuphane_app;
 GRANT UPDATE (stale) ON skill_scan TO kutuphane_app;
+-- Review #18: the stored SKILL.md frontmatter of a content version is written once and never changed.
+REVOKE UPDATE, DELETE ON skill_frontmatter FROM kutuphane_app;
 -- docs/25 §4.5: no write on any curation table; no read of persons, enrollments, sessions or challenges.
 REVOKE INSERT, UPDATE, DELETE ON curator_person, curator_enrollment, passkey, curator_session, curator_challenge,
     curator_act FROM kutuphane_app;

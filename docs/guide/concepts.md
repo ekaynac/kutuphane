@@ -28,9 +28,12 @@ to its current content, profile and policy. Old versions stay, so an old citatio
 named.
 
 **Profiles.** `chunked` (the default) cuts text into passages of about 1,200 characters at headings and blank
-lines. In markdown, a heading, a `---` line or an HTML comment alone is not a passage: it joins the passage after
-it, so a passage starts with its heading and a rule file's leading source comment (for example
-`<!-- source: … | url: … -->`) is in the passage of the rule. A `#` line in a code fence, or `#41` without a space,
+lines. In markdown, a heading or a `---` line alone is not a passage: it joins the passage after it, so a passage
+starts with its heading. HTML comments are hidden in a rendered file, so no passage holds one: the server replaces
+each comment character with a space (the offsets and line numbers stay), and a block of comments only is not a
+passage. One exception: a rule file's leading source comment (`<!-- source: … | url: … -->`, the first line of the
+file, at most 500 characters) is a citation of the vendor document, not an instruction. It stays in the passage of
+the rule. A comment in a code fence is code and stays. A `#` line in a code fence, or `#41` without a space,
 is not a heading. `whole` serves each file as one piece (at most 500,000 characters). A book that an older reader
 published keeps its old index until you ingest it again.
 

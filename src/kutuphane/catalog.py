@@ -110,6 +110,8 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
             conn.execute("INSERT INTO blob (sha256, data) VALUES (%s, %s) ON CONFLICT DO NOTHING", (f.sha256, f.data))
         conn.execute("INSERT INTO content_version (book, id, manifest) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
                      (book, content_id, Jsonb(manifest_of(files))))
+        from . import skills  # here: skills imports gate, which imports this module
+        skills.store(conn, book, content_id, files)  # the validated SKILL.md frontmatter (review #18)
         carried = skillscan.store(conn, book, content_id, scans, files)
         conn.execute("INSERT INTO policy_version (id, doc) VALUES (%s, %s) ON CONFLICT DO NOTHING",
                      (policy_id, Jsonb(policy)))
@@ -179,6 +181,20 @@ def skill_dirs(conn, book: str, content_id: str) -> frozenset[str]:
                         "CROSS JOIN LATERAL jsonb_array_elements(c.manifest) AS m(entry) "
                         "WHERE c.book = %s AND c.id = %s", (book, content_id))
     return agentfiles.skill_dirs(p for (p,) in rows)
+
+
+def skill_files(conn, book: str, content_id: str, path: str) -> list[str]:
+    """The paths of the innermost skill folder (K3: a folder with a SKILL.md) that holds `path`, nested skills
+    included: the whole skill that one of its files stands for (review #18, the rule of skills.py). `[path]` when
+    the file is in no skill folder."""
+    paths = [p for (p,) in conn.execute("SELECT m.entry->>'path' FROM content_version c "
+                                        "CROSS JOIN LATERAL jsonb_array_elements(c.manifest) AS m(entry) "
+                                        "WHERE c.book = %s AND c.id = %s", (book, content_id))]
+    holders = [d for d in agentfiles.skill_dirs(paths) if agentfiles.relative(d, path) is not None]
+    if not holders:
+        return [path]
+    folder = max(holders, key=lambda d: -1 if d == "." else d.count("/"))
+    return sorted(p for p in paths if agentfiles.relative(folder, p) is not None)
 
 
 def read_file(conn, book: str, content_id: str, path: str) -> bytes | None:
