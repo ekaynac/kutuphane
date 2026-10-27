@@ -314,6 +314,17 @@ def cmd_note_standing(conn, args) -> int:
     return 0
 
 
+def cmd_note_rollback(conn, args) -> int:
+    """Rollback along `derived_from` (docs/24 §20): the curator act on the root, a system retirement of every note
+    derived from it, and the report of the reads, answers and exports that used them."""
+    try:
+        _print(notes.rollback(conn, args.ref, curator=args.curator, reason=args.reason))
+    except (gate.Denied, gate.NotFound) as exc:
+        print(f"denied: {exc}", file=sys.stderr)
+        return 3
+    return 0
+
+
 def cmd_whoami(_conn, args) -> int:
     token = sys.stdin.readline().strip()  # never on the command line (shell history, process list)
     try:
@@ -509,6 +520,11 @@ def parser() -> argparse.ArgumentParser:
     ns.add_argument("--curator", required=True, help="user:<name>, who holds curate on the book")
     ns.add_argument("--reason", required=True)
     ns.set_defaults(fn=cmd_note_standing, curator_db=True)
+    nr = nsub.add_parser("rollback", help="retire a note and every note derived from it; report who used them")
+    nr.add_argument("ref", help="<book>@nt_<64 hex>")
+    nr.add_argument("--curator", required=True, help="user:<name>, who holds curate on the book of the note")
+    nr.add_argument("--reason", required=True)
+    nr.set_defaults(fn=cmd_note_rollback, curator_db=True)
     return ap
 
 

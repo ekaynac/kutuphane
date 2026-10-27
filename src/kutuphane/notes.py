@@ -8,8 +8,8 @@ candidates, idempotency, Standing and supersession.
   `ai_input` are the AND of the journal and every dependency; `source_books` is the union, for the egress check.
 - No repository access and no model call happens before the pre-decision (§6.1 step 5). The writes run inside
   `gate.guard_many`: a right lost before the final decision rolls everything back.
-- Standing has its own append-only event table. Curation is CLI-only (`set_standing`), through the owner database
-  credential; no MCP tool and no HTTP route changes Standing (§8.2).
+- Standing has its own append-only event table. Curation is CLI-only (`set_standing`, `rollback`), through the owner
+  database credential; no MCP tool and no HTTP route changes Standing (§8.2, §20).
 - Every memory write takes the advisory lock MEMORY_LOCK before its first `nextval('memory_seq')`, so `seq` order is
   commit order (§4).
 """
@@ -294,10 +294,11 @@ def _journal(conn, book: str) -> tuple[bool, bool]:
 
 
 def _notes(conn, targets) -> dict:
-    """{(book, id): (seq, search, ai_input, source_books)} with search and ai_input ANDed with the journal now."""
+    """{(book, id): (seq, search, ai_input, source_books)} with search and ai_input ANDed with the journals of the
+    note's closure now (`note_journal`, docs/24 §20.3)."""
     keys = sorted({(t[1], t[2]) for t in targets})
     rows = conn.execute("SELECT n.book, n.id, n.seq, n.search AND j.search, n.ai_input AND j.ai_input, n.source_books "
-                        "FROM note n JOIN journal j ON j.book = n.book "
+                        "FROM note n JOIN note_journal j ON j.seq = n.seq "
                         "JOIN unnest(%s::text[], %s::text[]) AS k(book, id) ON (n.book, n.id) = (k.book, k.id)",
                         ([b for b, _ in keys], [i for _, i in keys])).fetchall()
     found = {(b, i): rest for b, i, *rest in rows}
@@ -357,10 +358,10 @@ def recurrence(conn, seq: int, w: int) -> int:
 
 def item_info(conn, note_seq: int) -> dict:
     """kstd-shaped item information of a note, for `server._text` and `kstd.allows`: its rights ANDed with the
-    journal's current ones, and its shown origin (the lowest over its propose writes)."""
+    current ones of the journals of its closure, and its shown origin (the lowest over its propose writes)."""
     row = conn.execute("SELECT n.search AND j.search, n.ai_input AND j.ai_input, "
                        "ARRAY(SELECT DISTINCT origin FROM write_record WHERE note_seq = n.seq AND action = 'propose') "
-                       "FROM note n JOIN journal j ON j.book = n.book WHERE n.seq = %s", (note_seq,)).fetchone()
+                       "FROM note n JOIN note_journal j ON j.seq = n.seq WHERE n.seq = %s", (note_seq,)).fetchone()
     if row is None:
         raise NotFound(f"no such note: {note_seq}")
     yn = {True: "y", False: "n"}
@@ -554,7 +555,7 @@ def _candidates(conn, seq: int, draft: Draft, readable: list[str], embedder, for
     params = {"books": readable, "self": seq, "norm": normalized_sha256(draft.text), "book": draft.book,
               "class_key": draft.class_key, "limit": CANDIDATES_PER_MATCH}
     found = [(row, "normalized", None) for row in conn.execute(
-        f"SELECT {_CANDIDATE_COLUMNS} FROM note n JOIN journal j ON j.book = n.book "
+        f"SELECT {_CANDIDATE_COLUMNS} FROM note n JOIN note_journal j ON j.seq = n.seq "
         f"WHERE n.norm_sha256 = %(norm)s AND {_SEARCHABLE} ORDER BY n.seq DESC LIMIT %(limit)s", params)]
     if embedder is not None:
         params |= {"model": embedder.model,
@@ -562,13 +563,13 @@ def _candidates(conn, seq: int, draft: Draft, readable: list[str], embedder, for
         found += [(row[:6], "vector", round(row[6], 4)) for row in conn.execute(
             f"WITH q AS (SELECT embedding FROM note_vector WHERE note_seq = %(self)s AND model = %(model)s) "
             f"SELECT {_CANDIDATE_COLUMNS}, 1 - (v.embedding <=> q.embedding) AS similarity "
-            f"FROM q CROSS JOIN note_vector v JOIN note n ON n.seq = v.note_seq JOIN journal j ON j.book = n.book "
+            f"FROM q CROSS JOIN note_vector v JOIN note n ON n.seq = v.note_seq JOIN note_journal j ON j.seq = n.seq "
             f"WHERE v.model = %(model)s AND vector_dims(v.embedding) = vector_dims(q.embedding) AND {_SEARCHABLE} "
             f"AND 1 - (v.embedding <=> q.embedding) >= %(threshold)s "
             f"ORDER BY v.embedding <=> q.embedding, n.seq DESC LIMIT %(limit)s", params)]
     if draft.class_key is not None and draft.book in readable:
         found += [(row, "class", None) for row in conn.execute(
-            f"SELECT {_CANDIDATE_COLUMNS} FROM note n JOIN journal j ON j.book = n.book "
+            f"SELECT {_CANDIDATE_COLUMNS} FROM note n JOIN note_journal j ON j.seq = n.seq "
             f"WHERE n.book = %(book)s AND n.class_key = %(class_key)s AND {_SEARCHABLE} "
             f"ORDER BY n.seq DESC LIMIT %(limit)s", params)]
     seen, unique = set(), []
@@ -725,33 +726,47 @@ def link(conn, actor: Actor, src: str, kind: str, dst: str) -> tuple[dict, bool]
 
 # --- Standing (CLI only, §8) ---------------------------------------------------------------------------------
 
-def set_standing(conn, ref: str, value: str, *, curator: str, reason: str) -> dict:
-    """The curator act. The caller connects with the owner credential (KUTUPHANE_CURATOR_DSN): the app role cannot
-    write Standing. Approving a `rule` note retires the approved predecessors it supersedes with exactly the same
-    scope, in the same transaction (§8.3)."""
-    book, note_id = parse_ref(ref)
-    if value not in STANDINGS:
-        raise ValueError(f"standing must be one of {', '.join(STANDINGS)}")
+def _curation(curator, reason) -> None:
     if not _principal("curator", curator).startswith("user:"):
         raise ValueError("a curator is a user:")
     if not isinstance(reason, str) or not 1 <= len(reason) <= 500:
         raise ValueError("reason must be 1..500 characters")
+
+
+def _curated(conn, ref: str, curator: str, columns: str = "seq"):
+    """The note row of a curator act; the curator must hold `curate` on its book now (`curate` is never delegated)."""
+    book, note_id = parse_ref(ref)
+    note = conn.execute(f"SELECT {columns} FROM note WHERE book = %s AND id = %s", (book, note_id)).fetchone()
+    if note is None:
+        raise NotFound(f"no such note: {ref}")
+    if not authz.direct(conn, curator, f"book:{book}", "curate").allowed:
+        raise gate.Denied(f"{curator} does not hold curate on book:{book}")
+    return note
+
+
+def _event(conn, note_seq: int, value: str, set_by: str, reason: str, correlation: str, cause=None) -> int:
+    return conn.execute("INSERT INTO standing_event (note_seq, value, set_by, cause_seq, reason, correlation_id) "
+                        "VALUES (%s, %s, %s, %s, %s, %s) RETURNING seq",
+                        (note_seq, value, set_by, cause, reason, correlation)).fetchone()[0]
+
+
+def set_standing(conn, ref: str, value: str, *, curator: str, reason: str) -> dict:
+    """The curator act. The caller connects with the owner credential (KUTUPHANE_CURATOR_DSN): the app role cannot
+    write Standing. Approving a `rule` note retires the approved predecessors it supersedes with exactly the same
+    scope, in the same transaction (§8.3)."""
+    book, _ = parse_ref(ref)
+    if value not in STANDINGS:
+        raise ValueError(f"standing must be one of {', '.join(STANDINGS)}")
+    _curation(curator, reason)
     with conn.transaction():
         _lock(conn)
-        note = conn.execute("SELECT seq, kind, scope_repo, scope_branch, scope_paths FROM note "
-                            "WHERE book = %s AND id = %s", (book, note_id)).fetchone()
-        if note is None:
-            raise NotFound(f"no such note: {ref}")
-        if not authz.direct(conn, curator, f"book:{book}", "curate").allowed:
-            raise gate.Denied(f"{curator} does not hold curate on book:{book}")
+        note = _curated(conn, ref, curator, "seq, kind, scope_repo, scope_branch, scope_paths")
         seq, kind = note[0], note[1]
         current = effective_standing(conn, [seq], NOW)[seq][0]
         if (current, value) not in TRANSITIONS:
             raise ValueError(f"{current} -> {value} is not a Standing transition")
         correlation = uuid.uuid4().hex
-        event = conn.execute("INSERT INTO standing_event (note_seq, value, set_by, reason, correlation_id) "
-                             "VALUES (%s, %s, %s, %s, %s) RETURNING seq",
-                             (seq, value, curator, reason, correlation)).fetchone()[0]
+        event = _event(conn, seq, value, curator, reason, correlation)
         out = {"ref": ref, "standing": value, "event_seq": event}
         if value != "approved" or KIND_ROLE[kind] != "rule":
             return out
@@ -762,9 +777,7 @@ def set_standing(conn, ref: str, value: str, *, curator: str, reason: str) -> di
                 "AND p.book = %s ORDER BY p.seq", (seq, book)).fetchall():
             same_scope = (repo, branch, sorted(paths)) == (note[2], note[3], sorted(note[4]))
             if same_scope and effective_standing(conn, [p_seq], NOW)[p_seq][0] == "approved":
-                conn.execute("INSERT INTO standing_event (note_seq, value, set_by, cause_seq, reason, correlation_id) "
-                             "VALUES (%s, 'retired', 'system', %s, %s, %s)",
-                             (p_seq, event, f"superseded by {ref}", correlation))
+                _event(conn, p_seq, "retired", "system", f"superseded by {ref}", correlation, cause=event)
                 retired.append(f"{book}@{p_id}")
         rules = conn.execute("SELECT seq, id FROM note WHERE book = %s AND seq <> %s AND kind = ANY(%s) "
                              "AND scope_repo IS NOT DISTINCT FROM %s ORDER BY seq",
@@ -773,6 +786,100 @@ def set_standing(conn, ref: str, value: str, *, curator: str, reason: str) -> di
         # docs/09 §2.1: the curator sees the other current rules for the same repository and decides
         return {**out, "retired": retired,
                 "rules_same_repo": [f"{book}@{i}" for s, i in rules if standing[s][0] == "approved"]}
+
+
+# --- rollback along derived_from (CLI only, §20) -------------------------------------------------------------
+
+# The root keeps D68: a note that was never accepted is rejected; an out note gets one more event with its value.
+ROOT_MOVE = {"approved": "retired", "pending": "rejected", "rejected": "rejected", "retired": "retired"}
+
+_CLOSURE = """
+WITH RECURSIVE c(seq) AS (
+    SELECT %s::bigint
+    UNION
+    SELECT l.src FROM note_link l JOIN c ON l.dst_note = c.seq WHERE l.type = 'derived_from' AND l.creation)
+SELECT n.seq, n.book || '@' || n.id FROM c JOIN note n ON n.seq = c.seq ORDER BY n.seq
+"""
+
+# A delivery item names its Standing event (§11, AT-09); write events log {ref} only, so they never match.
+_DELIVERIES = """
+SELECT a.id, a.at, a.action, a.principal, a.on_behalf_of, a.correlation_id, a.memory_seq,
+       e->>'ref', (e->>'standing_seq')::bigint, ans.id, ans.created_at
+  FROM access_event a
+ CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(a.items) = 'array' THEN a.items
+                                              ELSE '[]'::jsonb END) e
+  LEFT JOIN answer ans ON a.action = 'answer' AND ans.correlation_id = a.correlation_id
+ WHERE a.allowed AND jsonb_typeof(e) = 'object' AND e ? 'standing_seq' AND e->>'ref' = ANY(%s)
+ ORDER BY a.id, ans.id
+"""
+
+
+def rollback(conn, ref: str, *, curator: str, reason: str) -> dict:
+    """Retire a note and every note whose own `derived_from` chain reaches it, then report who used them (§20).
+    The caller connects with the owner credential. The curator needs `curate` on the root's book only: each derived
+    note gets a system event (the system only tightens), `cause_seq` = the root event, in the same transaction."""
+    _curation(curator, reason)
+    with conn.transaction():
+        _lock(conn)
+        root = _curated(conn, ref, curator)[0]
+        closure = conn.execute(_CLOSURE, (root,)).fetchall()  # creation links point back: the root is first
+        was = effective_standing(conn, [s for s, _ in closure], NOW)
+        correlation = uuid.uuid4().hex
+        event = _event(conn, root, ROOT_MOVE[was[root][0]], curator, reason, correlation)
+        writers = _writers(conn, [s for s, _ in closure])
+        out = []
+        for seq, note_ref in closure:
+            before = was[seq][0]
+            if seq == root:
+                after, moved = ROOT_MOVE[before], event
+            elif before in ("approved", "pending"):
+                after = "retired"
+                moved = _event(conn, seq, after, "system", f"derived from {ref}", correlation, cause=event)
+            else:
+                after, moved = before, None  # already out; the notes derived from it are still in the closure
+            out.append({"ref": note_ref, "was": before, "standing": after, "event_seq": moved,
+                        "writers": writers.get(seq, [])})
+        return {"root": ref, "event_seq": event, "notes": out, **_used(conn, [r for _, r in closure])}
+
+
+def _writers(conn, seqs) -> dict:
+    """{note seq: [{principal, on_behalf_of, client_id}]}: the distinct writers of its propose writes, first first."""
+    out = {}
+    for seq, principal, behalf, client in conn.execute(
+            "SELECT note_seq, principal, on_behalf_of, client_id FROM write_record "
+            "WHERE action = 'propose' AND note_seq = ANY(%s) GROUP BY note_seq, principal, on_behalf_of, client_id "
+            "ORDER BY note_seq, min(seq)", (seqs,)):
+        out.setdefault(seq, []).append({"principal": principal, "on_behalf_of": behalf, "client_id": client})
+    return out
+
+
+def _used(conn, refs: list[str]) -> dict:
+    """The deliveries, answers and exports that held any of `refs` (§20.2), from the access records (AT-09)."""
+    rows = conn.execute(_DELIVERIES, (refs,)).fetchall()
+    values = dict(conn.execute("SELECT seq, value FROM standing_event WHERE seq = ANY(%s)",
+                               ([r[8] for r in rows if r[8] is not None],)).fetchall())
+    order = {r: n for n, r in enumerate(refs)}
+    events, answers = {}, {}
+    for a_id, at, action, principal, behalf, correlation, w, note_ref, standing_seq, answer_id, answered in rows:
+        item = {"ref": note_ref, "standing": values.get(standing_seq, "pending")}
+        if answer_id is not None:
+            entry = answers.setdefault(answer_id, {"id": answer_id, "at": answered.isoformat(), "principal": principal,
+                                                   "on_behalf_of": behalf, "refs": []})
+            if note_ref not in entry["refs"]:
+                entry["refs"].append(note_ref)
+            continue
+        entry = events.setdefault(a_id, {"at": at.isoformat(), "action": action, "principal": principal,
+                                         "on_behalf_of": behalf, "correlation_id": correlation, "memory_seq": w,
+                                         "items": []})
+        if item not in entry["items"]:
+            entry["items"].append(item)
+    for entry in events.values():  # closure order: the root first
+        entry["items"].sort(key=lambda i: order[i["ref"]])
+    for entry in answers.values():
+        entry["refs"].sort(key=order.__getitem__)
+    return {"deliveries": [e for e in events.values() if not e["action"].startswith("export")],
+            "answers": list(answers.values()),
+            "exports": [e for e in events.values() if e["action"].startswith("export")]}
 
 
 # --- MCP and HTTP (feature hooks, docs/24 §16 P0) ------------------------------------------------------------

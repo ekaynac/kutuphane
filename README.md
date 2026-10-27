@@ -86,15 +86,17 @@ A note starts `pending`; only a curator changes its Standing, and only on the co
 .venv/bin/kutuphane grant book:adc-memory propose agent:adc
 .venv/bin/kutuphane grant book:adc-memory curate user:ayse      # users only; never delegated
 KUTUPHANE_CURATOR_DSN=… .venv/bin/kutuphane note standing adc-memory@nt_… approved --curator user:ayse --reason "…"
+# a poisoned note: retire it and every note derived from it; prints who read, answered or exported them
+KUTUPHANE_CURATOR_DSN=… .venv/bin/kutuphane note rollback adc-memory@nt_… --curator user:ayse --reason "…"
 ```
 
 Database roles: the server and every process an agent can reach connect as `kutuphane_app`
 (`KUTUPHANE_APP_DB_PASSWORD` in `.env`), which cannot write Standing. `KUTUPHANE_CURATOR_DSN` is the owner role
-(`kutuphane migrate`, `kutuphane note standing`); keep it out of every environment an agent can read. Create the
-app role once (`CREATE ROLE kutuphane_app LOGIN PASSWORD '…'`), then apply `deploy/db-roles.sql` as the owner
-after every `kutuphane migrate`. Without `KUTUPHANE_CURATOR_DSN`, `migrate` uses `KUTUPHANE_DSN` (one-role
-development databases). `KUTUPHANE_NOTE_WRITES_PER_DAY` (500) limits writes per principal;
-`KUTUPHANE_NOTE_DUP_SIMILARITY` (0.90) is the vector candidate threshold.
+(`kutuphane migrate`, `kutuphane note standing`, `kutuphane note rollback`); keep it out of every environment an
+agent can read. Create the app role once (`CREATE ROLE kutuphane_app LOGIN PASSWORD '…'`), then apply
+`deploy/db-roles.sql` as the owner after every `kutuphane migrate`. Without `KUTUPHANE_CURATOR_DSN`, `migrate`
+uses `KUTUPHANE_DSN` (one-role development databases). `KUTUPHANE_NOTE_WRITES_PER_DAY` (500) limits writes per
+principal; `KUTUPHANE_NOTE_DUP_SIMILARITY` (0.90) is the vector candidate threshold.
 
 Identity and egress (M1c) are configured by environment:
 `KUTUPHANE_OIDC_ISSUER`, `KUTUPHANE_OIDC_AUDIENCE`, `KUTUPHANE_OIDC_JWKS` (path to a JWKS file);

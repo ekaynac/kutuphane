@@ -1,6 +1,6 @@
 -- The application database role (docs/24 §4.1, §8.2). The server, and every process that an agent can reach,
 -- connects with KUTUPHANE_DSN as kutuphane_app. Only the owner role (KUTUPHANE_CURATOR_DSN: `kutuphane migrate`,
--- `kutuphane note standing`) writes Standing; memory rows are append-only for the app.
+-- `kutuphane note standing`, `kutuphane note rollback`) writes Standing; memory rows are append-only for the app.
 --
 -- Once, as the owner:   CREATE ROLE kutuphane_app LOGIN PASSWORD '<a new secret>';
 -- After every `kutuphane migrate` (new tables need their grants), as the owner:

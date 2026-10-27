@@ -427,7 +427,7 @@ The **dependencies** of a new note are its passage citations and its `derived_fr
 - A passage dependency uses the kstd item of its pinned file version (`kstd.Rights.info` → `allows(…, "search")`, `allows(…, "ai_input")`). Versions are immutable, so the value is stable.
 - A note dependency uses the stored `search`, `ai_input` and `source_books` of that note. Each note stores its closure, so one level of lookup gives the transitive result (a chain of derived notes keeps the restriction).
 - Book policy egress (`local_only`) is read at call time for every book in `source_books`.
-- Every read and every model call ANDs the note values with the journal's **current** `search` and `ai_input`. An administrator can only tighten a journal in R1 (`kutuphane journal restrict`); loosening needs a new journal.
+- Every read and every model call ANDs the note values with the **current** `search` and `ai_input` of every journal in the note's `source_books` (R2, §20.3). An administrator can only tighten a journal in R1 (`kutuphane journal restrict`); loosening needs a new journal.
 
 ### 6.3 Links
 
@@ -866,3 +866,71 @@ Decisions on the review: no `human` origin in R1 (#2); `same_as` and clusters in
 | 20 | SDK test break | Adapter migration, the list wrapper kept on purpose, boundary tests for both versions through the proxy (§12.1, T33, T34). |
 | 21 | token budget | `budget_tokens` is an estimate over the whole response; `max_bytes` is a hard limit (§9.1, T21). |
 | 22 | distinctions without behavior | `standing_event` (no facet column), `ask_job` (no kind column); `rejected` kept with its D68 behavior (§4, §8.2). |
+
+## 20. R2: rollback along `derived_from` (#79)
+
+### 20.1 The act
+
+```
+kutuphane note rollback <ref> --curator user:ayse --reason "…"
+```
+
+- **CLI only**, with `KUTUPHANE_CURATOR_DSN` (§8.2). The curator must hold `curate` on the book of the root now. The system events in other books need no curator right: the system only tightens (docs/09 §3.2), as in §8.3.
+- **The closure:** the root, and every note whose own `derived_from` chain reaches the root. Every `derived_from` link is a creation link (016 check), so only the write that created a note can put the note in a closure. A later link by another agent cannot attach a note to a closure. The closure crosses books. No other link type is followed (`about`, `same_as`, `supersedes`, …). Passages are not in the closure.
+- **One transaction** under the memory lock (§4).
+- **The root event** is a curator event with the reason. It keeps D68: `approved` → `retired`; `pending` → `rejected` (never accepted). A root that is already `rejected` or `retired` gets one more event with the same value. This event records the act (who, when, why) and is the cause of the system events. So a curator can roll back a note that is already rejected, for example a poisoned note that agents used while it was `pending`.
+- **Each derived note** that is `approved` or `pending` gets its own system event: `retired`, `cause_seq` = the root event, reason `derived from <root ref>`. A reader sees `retired` and the reason (docs/23 P4). A derived note that is already `rejected` or `retired` gets no event; the notes derived from it are still in the closure.
+- A rollback does not lock notes: a curator can reopen a note later (§8.2). A note written later with a `derived_from` link to a rolled-back note is not in the earlier act; a second rollback of the same root reaches it.
+- The act adds no table: the closure is a recursive query over `note_link`, the events are `standing_event` rows (016).
+
+### 20.2 The report
+
+The act prints the report. The report is computed in the same transaction, after the events.
+
+| Field | Content | Changes |
+|---|---|---|
+| `root`, `event_seq` | the root reference and the root event | the cause of every system event |
+| `notes[]` | the closure, root first, then by `seq`: `{ref, was, standing, event_seq, writers}`; `event_seq` is null for a note that the act did not change | the curator sees the whole closure; `was = approved` notes were given to readers as current |
+| `writers[]` | per note, its propose writes: `{principal, on_behalf_of, client_id}` (§4.2) | which agent and which client wrote derived text |
+| `deliveries[]` | allowed `access_event` rows that delivered a closure note: `{at, action, principal, on_behalf_of, correlation_id, memory_seq, items: [{ref, standing}]}`; `items` holds only the closure notes; `standing` is the Standing in force at the delivery | which readers got the notes, and whether as current |
+| `answers[]` | answers whose audit delivered a closure note: `{id, at, principal, on_behalf_of, refs}` | which answers to check again |
+| `exports[]` | as `deliveries`, for export actions (`export_*`, the #74 decision export) | which exported records to withdraw |
+
+- **A delivery** is an allowed `access_event` with an item `{ref, standing_seq}` (§11, AT-09). Writes (`propose`, `link`) log `{ref}` with no `standing_seq`, so they are not deliveries. Candidates in a propose receipt are deliveries (§6.1).
+- **Answers:** an `access_event` with action `answer` and the `answer` row with the same `correlation_id`. Notes are not in `ask_library` in R1 (§9.4). When a later release gives notes to answers with AT-09 items, this list fills with no change to the query.
+- **Exports:** the actions that start with `export`. `kutuphane export` refuses a journal (§14); the #74 export logs `export_decisions` with AT-09 items.
+
+### 20.3 Restriction follows derivation
+
+§6.2 stores `search`, `ai_input` and `source_books` at creation. The gap: `kutuphane journal restrict` on journal A did not reach a note in journal B that is derived from a note of A, because reads ANDed only the note's own journal.
+
+**Change (`019_note_journal.sql`):** every read and every model call ANDs the stored note values with the **current** values of every journal in `source_books`:
+
+```sql
+CREATE VIEW note_journal AS
+SELECT n.seq, j.search, j.ai_input
+  FROM note n
+ CROSS JOIN LATERAL (SELECT bool_and(search) AS search, bool_and(ai_input) AS ai_input
+                       FROM journal WHERE book = ANY(n.source_books)) j;
+```
+
+| Field | Changes |
+|---|---|
+| `note_journal.search` | the `text` filter, relevance order and candidates of the note: off when any journal of its closure has search off |
+| `note_journal.ai_input` | the note text for model readers, and the note as a dependency of a new note (§6.2): off when any journal of its closure has AI input off |
+
+`source_books` always holds the note's own journal, so the values are never null. The app role needs `SELECT` on the view: run `deploy/db-roles.sql` after `migrate`, as for every new table.
+
+**Sensitivity and egress:** no change. `source_books` holds every book of the closure, and the egress of each book is read at call time (§6.2). `restricted` is never `cloud_ok` (policy check), so a note derived from `restricted` or `local_only` text never goes to a cloud route. A journal is never exported (§14).
+
+**kstd:** the closure of §20.1 is the "reach of a withdrawal" of docs/11 (`Inputs`): it reaches every recorded descendant, and the recorded inputs of a note are its creation `derived_from` links and its passage citations.
+
+### 20.4 Tests
+
+| # | Test |
+|---|---|
+| T39 | Rollback of a seeded approved note: the root `retired` by the curator; every note on a `derived_from` chain (also in another journal) `retired` by the system with `cause_seq` = the root event; a note with a later or creation `about` link, and a later `same_as` link, unchanged. |
+| T40 | A `pending` root becomes `rejected`; a `rejected` root gets one more `rejected` event; an already `rejected` derived note gets no event, its derived note is retired. |
+| T41 | The report lists the closure with writers, the `query_notes`, `open_citation` and propose-candidate deliveries, the answers and the exports that held a closure note; not the writes, not a refused event, not a delivery of another note. |
+| T42 | A curator without `curate` on the root's book is refused and no event is written; the CLI needs the curator credential. |
+| T43 | `journal restrict --no-ai-input` on a source journal withholds the text of a derived note in another journal from model readers, and a new note derived from it gets `ai_input` false. |

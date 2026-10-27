@@ -85,7 +85,7 @@ class Note:
     scope_paths: list
     observed_commit: str | None
     written_at: datetime
-    ai_input: bool               # note AND journal now
+    ai_input: bool               # note AND the journals of its closure now (docs/24 §20.3)
     path_ok: bool                # a file path in the context matches a scope glob (SQL, scope_path_re)
     origin: str
     rank: float = 0.0
@@ -203,7 +203,7 @@ SELECT n.seq, n.book, n.id, n.kind, n.body, n.class_key, n.scope_repo, n.scope_b
          WHERE wr.note_seq = n.seq AND wr.action = 'propose' AND wr.seq <= %(w)s),
        CASE WHEN %(text)s::text IS NULL THEN 0
             ELSE ts_rank_cd(n.tsv, websearch_to_tsquery(%(cfg)s::regconfig, %(text)s::text), %(norm)s) END
-  FROM note n JOIN journal j ON j.book = n.book
+  FROM note n JOIN note_journal j ON j.seq = n.seq
  WHERE n.book = ANY(%(books)s::text[]) AND n.seq <= %(w)s
    AND (%(seqs)s::bigint[] IS NULL OR n.seq = ANY(%(seqs)s::bigint[]))
    AND (%(kinds)s::text[] IS NULL OR n.kind = ANY(%(kinds)s::text[]))
