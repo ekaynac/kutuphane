@@ -158,7 +158,7 @@ kutuphane decisions export agent:adc --out decisions.jsonl --book adc-memory
 
 Each line is one decision with its Standing, context, options, choice, writer and outcomes. The text, options and
 choice are present only when the note allows `ai_input` and `train`. Else the record has only hashes and `withheld`
-gives the reason.
+gives the reason. A note from a private journal (step 12), or derived from one, is not in the export.
 
 ## 9. Curation (people)
 
@@ -187,6 +187,58 @@ KUTUPHANE_CURATOR_DSN=… kutuphane note rollback adc-memory@nt_… --curator us
 
 Your next `query_notes` with `since` returns these notes in `left`. Drop them from your caches and check the tasks
 that used them.
+
+## 11. Move a local memory in (bulk import)
+
+An orchestrator can start with a local memory (for example a SQLite file) in the same shape as notes, and move it
+into a journal later. Export it as JSONL, one record on each line:
+
+```json
+{"id": "nb-41", "kind": "finding", "text": "The retry loop in run.py does not stop after a 4xx response.",
+ "standing": "approved", "role": "evidence", "window": "durable", "origin": "model",
+ "created_at": "2026-10-20T09:15:00Z", "updated_at": "2026-10-21T10:00:00Z",
+ "scope": {"repo": "adc", "branch": "main", "paths": ["src/**"]}, "commit": "3f2c…e1",
+ "citations": ["adc@3f2c…e1:src/run.py:40-52#retry_job"], "class_key": "retry-on-4xx",
+ "links": [{"type": "derived_from", "record": "nb-40"}, {"type": "same_as", "record": "nb-44"},
+           {"type": "about", "ref": "<book>@ct_…/pf_…/path#3"}]}
+```
+
+| Field | Rule |
+|---|---|
+| `id` | Required. Your record id: 1–128 characters of `A-Z a-z 0-9 . _ : -`, unique in the file. It is the import key in the journal. |
+| `kind`, `text` | Required. As for `propose_note`. |
+| `standing` | Optional. Kept as a claim only. Every imported note is `pending`; a curator decides. |
+| `role` | Optional. Must be the role of the kind: `rule` for `convention` and `decision_proposal`, else `evidence`. |
+| `window` | Optional. `as_of` for `test_result`, else `durable`. A note has no own time window. |
+| `origin` | Optional. Kept as a claim (`origin_requested`). `human`, `assisted` and `tool` are refused with the notice `origin-claim-refused`. |
+| `created_at`, `updated_at` | Optional. ISO 8601 with a time zone. Kept as provenance. `written_at` of the note is the import time. |
+| `scope`, `commit`, `citations`, `class_key`, `decision` | Optional. As for `propose_note`. Code citations need the repository in the journal (`kutuphane repo add`). |
+| `links` | Optional, at most 20. `{"type", "record"}` names a record of this file or of an earlier import into the same journal. `{"type", "ref"}` names an existing note or passage. |
+
+Other fields are refused.
+
+- `derived_from` and `supersedes` are creation links: they are part of the note identity, as in `propose_note`. They
+  must not form a cycle. The other link types are later links (as `link_notes`), so a `same_as` in both directions
+  is accepted.
+- Origin comes from the importer (D70): `--by agent:<name>` gives `model`, `--by user:<name>` gives `unknown`.
+- A record with the same bytes as an existing note gives `status: existing` and adds to its recurrence.
+- **Import again:** a record id that was imported before is `unchanged`; nothing is written. New records and new
+  later links in the file are added. If a known record id now gives other bytes, the import is refused: a note never
+  changes. Give the correction a new id and a `supersedes` link to the old record.
+- The operator runs the import (operations.md, section 6). There is no MCP tool for it.
+
+## 12. Private project memory
+
+For a project with customer-confidential material, ask the operator for a private journal:
+`--sensitivity restricted --egress local_only` (operations.md, section 6, "Private journals").
+
+- Its notes never leave the installation: no package, no decision export, no training use. Nothing federates
+  journals today; a package is the only path to another installation.
+- Kütüphane sends its text only to `local` model routes. A note with a `derived_from` link to it keeps the same
+  limits.
+- Your MCP reads still get the text when you have `read`. If your model runs in a cloud, the text leaves the
+  machine through you. Use a local model for this journal, or ask for `--ai-input n` (then reads give
+  `text: null`).
 
 ## Checklist for an orchestrator
 

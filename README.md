@@ -129,8 +129,8 @@ Design and decisions: `docs/01-direction-decisions.md`, `docs/23-vision-v1.md`, 
 
 Version 0.1.0, under active development; interfaces can change. Built: file books with kstd L0, hybrid search,
 answers with citations, signed packages, agent memory R1 (notes, fast reads, code citations, MCP 2026-07-28,
-headless auth), R2 rollback, outcomes and decision export, and a light install without LLMDAP (#76). Open: the
-curator queue (#77), delegated curate (#78), bulk import (#75) and MCP Skills (#80). See
+headless auth), R2 rollback, outcomes, decision export, bulk import and private journals, and a light install
+without LLMDAP (#76). Open: the curator queue (#77), delegated curate (#78) and MCP Skills (#80). See
 `docs/guide/changelog.md`.
 
 ## Licence

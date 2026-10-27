@@ -11,8 +11,8 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import (answers, audit, authz, catalog, coderepo, db, decisions, devauth, gate, identity, kstd, llmdap, notes,
-               packages, profiles, search, retrieval, signing, skillscan, vectors)
+from . import (answers, audit, authz, catalog, coderepo, db, decisions, devauth, gate, identity, kstd, llmdap,
+               noteimport, notes, packages, profiles, search, retrieval, signing, skillscan, vectors)
 from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, make_policy
 from .source import AcceptedFinding, read_source
 
@@ -357,6 +357,19 @@ def cmd_note_rollback(conn, args) -> int:
     return 0
 
 
+def cmd_note_import(conn, args) -> int:
+    """Bulk import (docs/24 §23): JSONL records of an orchestrator's local memory become `pending` notes of a
+    journal, written as the principal named by --by, who must hold `propose` on the journal now."""
+    lines = noteimport.read(args.file)
+    embedder = llmdap.Routed.from_env(llmdap.EMBED_ENV)  # a configuration error stops here, before any write
+    try:
+        _print(noteimport.run(conn, gate.Actor(args.by), args.book, lines, embedder))
+    except (gate.Denied, gate.NotFound) as exc:
+        print(f"denied: {exc}", file=sys.stderr)
+        return 3
+    return 0
+
+
 def cmd_skill_show(conn, args) -> int:
     try:
         _print(skillscan.show(conn, args.book))
@@ -592,6 +605,12 @@ def parser() -> argparse.ArgumentParser:
     nr.add_argument("--curator", required=True, help="user:<name>, who holds curate on the book of the note")
     nr.add_argument("--reason", required=True)
     nr.set_defaults(fn=cmd_note_rollback, curator_db=True)
+    ni = nsub.add_parser("import", help="import JSONL records of an orchestrator's local memory as pending notes")
+    ni.add_argument("book", help="the journal")
+    ni.add_argument("file", help="JSONL: one record per line (docs/guide/agent-memory.md)")
+    ni.add_argument("--by", required=True, help="the importer, who holds propose on the journal: user:<name> "
+                                                "(origin unknown) or agent:<name> (origin model)")
+    ni.set_defaults(fn=cmd_note_import)
     dc = sub.add_parser("decisions", help="decision records of journals (docs/24 §21)")
     dcsub = dc.add_subparsers(dest="decisions_cmd", required=True)
     de = dcsub.add_parser("export", help="write JSONL decision records the principal may read; text only with "

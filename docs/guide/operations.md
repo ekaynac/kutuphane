@@ -424,6 +424,48 @@ kutuphane grant book:adc-memory curate user:ayse
 
 `journal restrict <book>` tightens a journal with `--no-search`, `--no-ai-input` and `--no-train`. To loosen a journal, create a new journal.
 
+A journal never gets a content version: `ingest` and `approve-import` into a journal slug are refused.
+
+### Private journals (customer-confidential project memory)
+
+Use a private journal when the project memory contains customer-confidential material and must not leave this installation.
+A private journal is a journal with `--sensitivity restricted --egress local_only`:
+
+```sh
+kutuphane journal create acme-memory --search y --ai-input y \
+  --sensitivity restricted --egress local_only --protection standard --by user:admin
+```
+
+| Path | What Kütüphane does |
+|---|---|
+| Package (`export`) | Refused. A journal has no content version, and a `restricted` book is never in a package. Packages are the only path to another installation. |
+| Publication (`ingest`, `approve-import`) | Refused for a journal slug. |
+| Decision export | The note is left out. This applies also to each note, in any journal, with a `derived_from` link to a private journal note (also through other notes). The summary counts them in `restricted`. |
+| Training (`--train y`) | Refused at `journal create` for a `restricted` journal. |
+| Kütüphane's own model calls (embeddings, answers) | Only `local` routes. A `cloud` route is refused before the call (`not_sent:egress_policy`), also for a note that derives from the private journal. |
+| Agents through MCP and HTTP | Only principals with `read` get the text. Kütüphane cannot see where an agent's model runs. Give `read` only to agents whose model runs locally, or create the journal with `--ai-input n`: then model readers get `text: null`. |
+
+### Import a local memory
+
+An orchestrator that kept its memory locally (for example nöbetçi-mcp in SQLite) moves it into a journal once:
+
+```sh
+kutuphane grant book:nobetci-memory propose user:ayse
+kutuphane note import nobetci-memory nobetci.jsonl --by user:ayse
+```
+
+- The file has one JSON record on each line. The format is in [agent-memory.md](agent-memory.md), section 11.
+- `--by` is the importer. It needs `propose` on the journal, and `read` on each book that a citation or a `ref` link names. A `user:` importer gives origin `unknown`; an `agent:` importer gives origin `model`.
+- Each record becomes a `pending` note. A curator accepts it later (section 7).
+- Kütüphane validates the full file first. If a line is wrong, the command writes nothing and names the line (at most 5 lines in the message).
+- All records go in one transaction: all or none.
+- A record id that was imported before is not written again. The same file again gives `unchanged` for each record.
+- A file has at most 10,000 records and 64 MiB. Split a larger file.
+- The import has no daily write limit. It does not use the importer's MCP and HTTP write limit.
+- With an embeddings route (`KUTUPHANE_LLMDAP_EMBED_ROUTE`), each new note gets a vector after the commit, with the egress check.
+- There is no MCP tool and no HTTP route for the import. An agent writes one note at a time with `propose_note`.
+- The command prints a report: `created`, `existing` (the same bytes were already a note), `unchanged`, `links` and one item for each record. Exit code 3: no right, or the book is not a journal; 2: the file is refused.
+
 ## 7. Curation by CLI
 
 A note starts `pending`. Only a curator changes its Standing, and only on the command line.
@@ -479,6 +521,7 @@ kutuphane decisions export <principal> --out decisions.jsonl [--book <journal>] 
 - `--out` must be a new file. The command creates it with mode 600.
 - Without `--book`, the export includes every journal that the principal can read.
 - The text, options and choice are present only when the note allows `ai_input` and `train` (`journal create --train y`) and the note does not depend on a skill that a scan blocks. Otherwise the record has only references and hashes, and `withheld` gives the reason.
+- A note with a `restricted` book in its sources is not in the export. The summary counts these notes in `restricted`.
 
 ## 9. Code repositories
 
@@ -513,6 +556,8 @@ KUTUPHANE_SIGNING_KEY=/path/key.pem kutuphane export <book> --out <book>.pkg [--
 ```
 
 `--legal-basis` is required when `kstd.yaml` marks files as personal data `yes` or `unknown`.
+
+`export` refuses a journal and a book with `--sensitivity restricted`: restricted content never leaves this installation in a package.
 
 On the receiving installation:
 
@@ -610,6 +655,7 @@ Disk encryption is a deployment duty at the volume level (D48). The application 
 | `journal restrict` | Tighten a journal. |
 | `note standing` | Set the Standing of a note as a curator. |
 | `note rollback` | Retire a note and its derived notes; report who used them. |
+| `note import` | Import JSONL records of a local memory as `pending` notes of a journal. |
 | `decisions export` | Write JSONL decision records that the principal can read. |
 | `skill show` | Show the SkillSpector scans of a book's current version, the blocks and the clearances. |
 | `skill rescan` | Scan skills again where no fresh result of the configured SkillSpector version exists. |

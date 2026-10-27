@@ -1216,3 +1216,55 @@ kutuphane skill clear <book> <path> --curator user:… --reason …   # with KUT
 | S15 | The pin file names `TESTED_VERSION`. |
 
 `tests/test_skillspector_contract.py` runs only with `KUTUPHANE_SKILLSPECTOR_BIN`: the version, the JSON keys that the adapter reads, the exit codes and verdicts on the upstream `safe_skill` (0, `SAFE`) and `malicious_skill` (1, `DO_NOT_INSTALL`) and on our harmless `tests/fixtures/skills/harmless-summary` (0, `SAFE`), and a stable report digest through the adapter.
+
+## 23. R2 #75: bulk import and private journals
+
+An orchestrator can start with a local memory in the shape of notes (nöbetçi-mcp: SQLite) and move it into a journal later. Some project memory has customer-confidential material and must stay in the installation.
+
+### 23.1 `kutuphane note import <journal> <file.jsonl> --by <principal>`
+
+One JSON object per line. Fields: `id` (required; `[A-Za-z0-9._:-]{1,128}`, unique in the file), `kind`, `text` (required), `standing`, `role`, `window`, `scope`, `commit`, `origin`, `created_at`, `updated_at`, `citations`, `links`, `class_key`, `decision`. Another field refuses the file.
+
+| Field | Changes |
+|---|---|
+| `id` | the import key: `note_import (book, record)`. A known id that gives the same note id is `unchanged` (no write). A known id that gives another note id refuses the file: a note never changes (§3); a correction is a new record with `supersedes`. |
+| `standing` | a claim only (`note_import.standing_claimed`). The note is `pending`: no `standing_event`. Only a curator sets Standing (§8.2). |
+| `role`, `window` | checked against the kind (§8.1): `role` = `KIND_ROLE[kind]`; `window` = `as_of` for `test_result`, else `durable`. A note has no own Role or Time in R1. |
+| `origin` | a claim (`write_record.origin_requested`), with the rules of §5.2. |
+| `created_at`, `updated_at` | provenance (`note_import`), ISO 8601 with a zone. `note.written_at` stays the import time: the server's fact. |
+| `links` | `{type, record}` (a record of the file or of an earlier import into the journal) or `{type, ref}`. `derived_from` and `supersedes` are creation links (part of the id, §6.3); the file order changes only so that their targets come first, and a cycle refuses the file. Other types are later links (§6.3), so a symmetric pair imports. |
+| the rest | as `propose_note` (`notes.Draft`): the same canonical body, so the same bytes give the same note id. |
+
+**Origin (D70).** The import writes with `channel = cli`. §5.2 R2 holds: an `agent:` importer is `model`; R4/R6: a `user:` importer without `act` is `unknown`, as over HTTP. Migration 027 extends the `write_record` channel and origin checks to `cli`.
+
+**Order of the work.** (1) Validate the whole file and build every draft; secret scan; resolve record ids (no write; each error names its line). (2) Pre-decision: `propose` on the journal, `read` on every book that a citation or link names (`notes._decide`, logged). (3) Code excerpts of new records (§10.3). (4) ONE transaction under `gate.guard_many` with the memory lock: the known imports are read again (a racing import refuses), notes, write records, citations, creation links, `note_import`, later links (an existing link is not written again). (5) After the commit: an embedding for each new note, through `notes._embed` (egress check of its `source_books`).
+
+**Limits.** The import is an operator act on the host. There is no MCP tool and no HTTP route: an agent already writes with `propose_note` under the daily limit, and a batch route would need its own limit design. The import has no daily limit, and `notes._check_limit` does not count `cli` writes, so an import by `agent:x` does not block the MCP writes of `agent:x`. One file: at most 10,000 records and 64 MiB.
+
+```sql
+-- 027_note_import.sql
+ALTER TABLE write_record channel check: ('mcp', 'http', 'cli');
+ALTER TABLE write_record origin check: origin = 'model' OR (principal LIKE 'user:%' AND on_behalf_of IS NULL
+                                                             AND channel IN ('http', 'cli'));
+CREATE TABLE note_import (book, record, note_seq, write_seq, standing_claimed, created_at, updated_at, imported_at,
+                          PRIMARY KEY (book, record));   -- append-only for kutuphane_app (deploy/db-roles.sql)
+```
+
+### 23.2 Private journals
+
+A private journal is a journal with `sensitivity: restricted`, `egress: local_only`. The existing axes cover most of it; #75 adds only what was missing:
+
+| Path | Before #75 | Now |
+|---|---|---|
+| package `export` | a journal is refused (no content version); a `restricted` content book was exported, against `docs/09` §1 | also a `restricted` book is refused |
+| `ingest`, `approve-import` into a journal slug | accepted: it gave the journal a content version and replaced its profile and policy | refused |
+| decision export | text withheld without `train`; references and hashes exported | every note with a `restricted` book in `source_books` is left out; the summary counts them (`restricted`) |
+| `journal create --train y` | allowed | refused for `restricted` |
+| model calls of Kütüphane | the egress check of `source_books` (§6.2) | unchanged: a `cloud` route is refused before the call |
+| federation | none: a package is the only path between installations (kstd L3 is not built) | unchanged |
+
+Delivery to an agent over MCP or HTTP is decided by `read` (and `ai_input` for model readers). Kütüphane cannot see where the agent's model runs; the operator gives `read` only to agents with a local model, or creates the journal with `ai_input: n`.
+
+### 23.3 Tests (`tests/test_note_import.py`)
+
+Pending with provenance and a refused origin claim; an agent importer stores `model` and the database refuses `unknown` for it; only the CLI imports; links by record id (creation and later, symmetric `same_as`, a passage `ref`); re-import is a no-op, a later batch links to an earlier record, a changed record refuses the file; the same bytes as an existing note are one more write; 16 invalid files write nothing; `propose` and `read` are needed and logged; the daily limit; code citations; embeddings after the commit; the CLI; a private journal on a `cloud` route is refused for import and propose; a private journal is not exported, not published, not in the decision export (also a derived note), and refuses `train`; a `restricted` book is not in a package; 027 applies on a database with notes.
