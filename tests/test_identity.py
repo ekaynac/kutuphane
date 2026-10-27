@@ -145,6 +145,27 @@ def test_malformed_client_id_is_refused(verifier, keys, bad):
         verifier.verify(token(keys, **bad))
 
 
+@pytest.mark.parametrize("iss", [
+    ISS + "/",                                        # trailing slash
+    "https://IDP.test/realms/kurum",                  # host case
+    "https://idp.test:443/realms/kurum",              # default port
+    "https://idp.test/realms/kur%75m",                # percent-encoding
+    "https://idp.test/realms/kuru",                   # prefix of ours
+    "https://idp.test/realms/kurum2",                 # ours is a prefix
+    "https://idp.test/realms",                        # ours contains it (PyJWT 2.10.0, CVE-2024-53861)
+])
+def test_issuer_is_compared_exactly(verifier, keys, iss):  # docs/24 §12.5: RFC 3986 §6.2.1, no normalization
+    machine = dict(sub="adc", client_id="adc", **{"kutuphane/principal_type": "agent"})  # client credentials
+    assert verifier.verify(token(keys, **machine)).principal == "agent:adc"
+    with pytest.raises(AuthenticationError, match="issuer"):
+        verifier.verify(token(keys, iss=iss, **machine))
+
+
+def test_a_cimd_client_id_url_is_accepted_as_it_is(verifier, keys):  # docs/24 §12.6
+    url = "https://adc.example/oauth/client-metadata.json"
+    assert verifier.verify(token(keys, act={"sub": "adc"}, client_id=url)).client_id == url
+
+
 def test_dev_token_carries_client_id(monkeypatch, tmp_path):
     from kutuphane import devauth
     monkeypatch.setenv("KUTUPHANE_DEV", "1")
