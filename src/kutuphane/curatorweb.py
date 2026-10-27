@@ -21,28 +21,13 @@ from starlette.concurrency import run_in_threadpool
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import authz, confirm, curation, db, delegation, gate, notes, passkey
+from . import authz, confirm, curation, curatorqueue, db, delegation, gate, notes, passkey
 from .server import SecurityHeaders
 
 COOKIE = "__Host-kc"
 DSN_ENV = "KUTUPHANE_CURATOR_WEB_DSN"
 UI_DIR = Path(__file__).parent / "curator_ui"
-PENDING_LIMIT = 50
 SESSION_SECONDS = 8 * 3600
-
-_PENDING = """
-SELECT n.seq, n.book, n.id, n.kind, n.body, n.class_key, n.scope_repo, n.scope_branch, n.scope_paths, n.written_at,
-       e.seq, e.value,
-       ARRAY(SELECT jsonb_build_object('principal', w.principal, 'on_behalf_of', w.on_behalf_of,
-                                       'client_id', w.client_id, 'origin', w.origin)
-               FROM write_record w WHERE w.note_seq = n.seq AND w.action = 'propose' ORDER BY w.seq)
-  FROM note n
-  LEFT JOIN LATERAL (SELECT seq, value FROM standing_event s WHERE s.note_seq = n.seq ORDER BY s.seq DESC LIMIT 1) e
-         ON true
- WHERE n.book = ANY(%s) AND (e.value IS NULL OR e.value = 'pending')
- ORDER BY n.seq
- LIMIT %s
-"""
 
 
 class Refused(Exception):
@@ -66,12 +51,25 @@ def _log(conn, principal: str, action: str, allowed: bool, reason: str, items=No
                   Jsonb(items) if items is not None else None))
 
 
+def _shown_whole(conn, principal: str, items) -> None:
+    """An approval needs every part of the note that its id covers shown to the person (review #16 finding 1): a
+    citation or a creation link into a book that the person cannot read now refuses it, at the options and the act."""
+    for item in items if isinstance(items, list) else []:
+        if isinstance(item, dict) and item.get("to") == "approved" and isinstance(item.get("ref"), str):
+            book, note_id = notes.parse_ref(item["ref"])
+            row = conn.execute("SELECT seq FROM note WHERE book = %s AND id = %s", (book, note_id)).fetchone()
+            if row and curatorqueue.unseen_parts(conn, principal, row[0]):
+                raise gate.Denied(f"{item['ref']} has a part in a book you cannot read: it cannot be approved here")
+
+
 def _standing(conn, act: passkey.Act) -> dict:
-    """The rows of a `standing` statement (docs/25 §5.4 step 7, §6.5)."""
+    """The rows of a `standing` statement (docs/25 §5.4 step 7, §6.5). The receipt adds, after the act, each note's
+    suggestions and, for a sample, its delegation (§5.4 step 8, §6.4, §8.4)."""
     items = [{"ref": i["ref"], "to": i["to"], "was": i["was"]} for i in act.payload["items"]]
+    _shown_whole(conn, act.principal, items)
     out = curation.apply(conn, principal=act.principal, items=items, reason=act.payload["reason"], act=act.seq,
                          need_read=True, check_was=True, integrity=True, retires=act.payload["retires"])
-    return {"act": act.seq, "items": out}
+    return {"act": act.seq, "items": curatorqueue.receipt(conn, out)}
 
 
 HANDLERS = {"standing": _standing}  # slices R and D add confirm, withdraw, delegate, end_delegation
@@ -79,6 +77,7 @@ HANDLERS = {"standing": _standing}  # slices R and D add confirm, withdraw, dele
 
 def _standing_fields(conn, principal: str, body: dict) -> dict:
     items, reason = body.get("items"), body.get("reason")
+    _shown_whole(conn, principal, items)
     prepared = curation.prepare(conn, principal=principal, items=items if isinstance(items, list) else None,
                                 reason=reason, need_read=True, integrity=True)
     return {"items": sorted(({"ref": i["ref"], "id": i["id"], "was": i["was"], "to": i["to"]} for i in prepared),
@@ -210,23 +209,28 @@ def create_app(*, dsn: str, cfg: passkey.Config, ui_dir: Path = UI_DIR) -> Starl
              [{"ref": item["ref"], "write": (item["request"] or {}).get("write")}])
         return JSONResponse(item)
 
-    # --- the pending notes (slice Q replaces the order with the risk order of §6.2) -------------------------------
-    def pending(conn, request, _raw):
+    # --- the queue (docs/25 §6): risk order at a watermark; no suggestion and no sample mark ----------------------
+    def _int_param(request, name):
+        value = request.query_params.get(name)
+        if value is None:
+            return None
+        if not value.isdigit():
+            raise Refused(400, f"{name} must be an integer")
+        return int(value)
+
+    def queue(conn, request, _raw):
         _, principal, _ = session_of(conn, request)
-        rights = authz.allowed(conn, principal, None, ["curate", "read"])
-        books = sorted(o.removeprefix("book:") for o in rights.objects("curate") & rights.objects("read"))
-        items, delivered = [], []
-        for (seq, book, note_id, kind, text, class_key, repo, branch, paths, written, ev, _value,
-             writers) in conn.execute(_PENDING, (books, PENDING_LIMIT)).fetchall():
-            ref = f"{book}@{note_id}"
-            whole = notes.canonical_of(conn, seq)[0] == note_id
-            items.append({"ref": ref, "book": book, "kind": kind, "role": notes.KIND_ROLE[kind], "text": text,
-                          "class_key": class_key, "scope": {"repo": repo, "branch": branch, "paths": list(paths)}
-                          if repo else None, "written_at": written.isoformat(), "was": ev, "writers": writers,
-                          "integrity": None if whole else "note-integrity"})
-            delivered.append({"ref": ref, "standing_seq": ev})
-        _log(conn, principal, "curate_view", True, "pending notes", delivered)
-        return JSONResponse({"books": books, "items": items})
+        with conn.transaction():
+            out = curatorqueue.queue(conn, principal, w=_int_param(request, "w"),
+                                     cursor=request.query_params.get("cursor"), channel="http")
+        return JSONResponse(out)
+
+    def note_view(conn, request, _raw):
+        _, principal, _ = session_of(conn, request)
+        ref = f"{request.path_params['book']}@{request.path_params['id']}"
+        with conn.transaction():
+            out = curatorqueue.note(conn, principal, ref, w=_int_param(request, "w"), channel="http")
+        return JSONResponse(out)
 
     # --- acts ----------------------------------------------------------------------------------------------------
     def act_options(conn, request, raw):
@@ -301,7 +305,8 @@ def create_app(*, dsn: str, cfg: passkey.Config, ui_dir: Path = UI_DIR) -> Starl
         Route("/auth/passkey", answer(login), methods=["POST"]),
         Route("/auth/logout", answer(logout), methods=["POST"]),
         Route("/api/me", answer(me)),
-        Route("/api/pending", answer(pending)),
+        Route("/api/queue", answer(queue)),
+        Route("/api/note/{book}/{id}", answer(note_view)),
         Route("/api/act/options", answer(act_options), methods=["POST"]),
         Route("/api/act", answer(act), methods=["POST"]),
         Route("/api/delegations", answer(delegations)),

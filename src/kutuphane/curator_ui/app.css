@@ -36,3 +36,15 @@ table.agreement tr.short td { color:var(--muted); }
 .field { font-size:14px; color:var(--muted); }
 .field input { width:5.5em; font:inherit; padding:6px; border:1px solid var(--line); border-radius:8px; }
 #nav-delegations { margin-top:4px; }
+/* The queue (docs/25 §6.3, §6.6): a group card holds its members; decided members are muted. */
+.member { border-top:1px solid var(--line); padding-top:10px; margin-top:10px; }
+.member.decided { opacity:.75; }
+.member.integrity { border-top-color:var(--warn); }
+pre.linked { white-space:pre-wrap; word-break:break-word; background:#fafafa; border-left:3px solid var(--line);
+             padding:8px; margin:4px 0; font:14px/1.4 system-ui, sans-serif; }
+.choices button.on { outline:3px solid var(--fg); }
+#batchbar { display:grid; gap:6px; text-align:left; }
+#batch-count { font-weight:600; }
+#receipt h2 { font-size:17px; margin:0 0 6px; }
+.decision ol { margin:4px 0 6px; padding-left:22px; }
+.decision pre.choice { border-left:3px solid var(--accent); font-weight:600; }

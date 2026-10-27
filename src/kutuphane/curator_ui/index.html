@@ -8,6 +8,7 @@
 <script src="/static/core.js" defer></script>
 <script src="/static/confirm.js" defer></script>
 <script src="/static/delegation.js" defer></script>
+<script src="/static/queue.js" defer></script>
 </head>
 <body>
 <header>
@@ -19,6 +20,7 @@
     <p id="start-text"></p>
     <button id="start-button" class="primary" type="button"></button>
   </section>
+  <section id="receipt" hidden></section>
   <div id="cards"></div>
 </main>
 <div id="sheet" class="sheet" hidden>
@@ -31,6 +33,14 @@
     <button id="sheet-sign" class="primary" type="button">Sign with passkey</button>
   </div>
 </div>
-<div class="actions"><span id="msg"></span></div>
+<div class="actions">
+  <div id="batchbar" hidden>
+    <div id="batch-count"></div>
+    <div id="batch-chips" class="chips"></div>
+    <input id="batch-reason" type="text" maxlength="500" placeholder="Reason (required)">
+    <button id="batch-sign" class="primary" type="button">Sign</button>
+  </div>
+  <span id="msg"></span>
+</div>
 </body>
 </html>

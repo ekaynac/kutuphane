@@ -1000,7 +1000,7 @@ Because the page never shows a suggestion or a sample mark before the decision, 
 
 ### 10.3 CLI
 
-`kutuphane curator enroll|passkeys|revoke-passkey|verify-acts|report|web`; `kutuphane decider run`; `kutuphane delegation list|report|end`. `note standing` and `note rollback` stay.
+`kutuphane curator enroll|passkeys|revoke-passkey|verify-acts|queue|report|web` (`queue`: the §6 queue of a named curator on the command line, Pilot 2 G36); `kutuphane decider run`; `kutuphane delegation list|report|end`. `note standing` and `note rollback` stay.
 
 ## 11. Not in this design
 
