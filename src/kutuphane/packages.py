@@ -99,18 +99,23 @@ def export(conn, book: str, key, legal_basis: str | None = None) -> bytes:
 
 
 
-ORIGIN_MARKS = ("ai_generated", "reviewed", "tool_made")
+ORIGIN_MARKS = ("ai_generated", "reviewed", "tool_made", "human_confirmed")
 
 
 def origin_marks(infos: dict) -> dict:
     """The origin lists of a package manifest, from the item information of each file ({} without kstd.yaml).
-    Export writes them; receive recomputes them from the enclosed kstd.yaml and refuses any difference."""
+    Export writes them; receive recomputes them from the enclosed kstd.yaml and refuses any difference.
+    `human_confirmed` (docs/25 §7.6) lists the `human` files that carry `entered_by` or `confirmed_by`; it is
+    written only when there is one, so a package without such a file has the lists of before."""
     if not infos:
         return {}
+    confirmed = {p: {k: i.get(k) for k in kstd.HUMAN_DETAILS} for p, i in sorted(infos.items())
+                 if i["origin"] == "human" and any(i.get(k) for k in kstd.HUMAN_DETAILS)}
     return {
         "ai_generated": sorted(p for p, i in infos.items() if i["origin"] in kstd.AI_GENERATED),
         "reviewed": {p: i["reviewed_by"] for p, i in sorted(infos.items()) if i["origin"] == "assisted"},
         "tool_made": {p: i["software_agent"] for p, i in sorted(infos.items()) if i["origin"] == "tool"},
+        **({"human_confirmed": confirmed} if confirmed else {}),
     }
 
 # --- receive ----------------------------------------------------------------------------------------------

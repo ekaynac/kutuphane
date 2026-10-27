@@ -198,6 +198,10 @@ context). Core cannot reach it, and it cannot reach Core.
 4. In `.env`: `KUTUPHANE_CURATOR_WEB_DB_PASSWORD`, `KUTUPHANE_WEBAUTHN_RP_ID=kutuphane-curator.<tailnet>.ts.net`
    and `KUTUPHANE_WEBAUTHN_ORIGIN=https://kutuphane-curator.<tailnet>.ts.net`. Passkeys belong to this host name:
    if it changes, every curator enrolls again.
+5. In `.env`, for Core: `KUTUPHANE_CURATOR_URL=https://kutuphane-curator.<tailnet>.ts.net`. Core puts it in the
+   "my words" confirmation URL (`propose_note` receipt, `confirm_origin`). `KUTUPHANE_CONFIRM_HOURS` (default 24) is
+   how long a confirmation request is open; Core and curator web read the same value. Without
+   `KUTUPHANE_CURATOR_URL`, the receipt gives `url: null` and the person opens `/requests` in curator web.
 
 **Start and check:**
 

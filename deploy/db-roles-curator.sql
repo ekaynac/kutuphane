@@ -23,3 +23,5 @@ CREATE POLICY standing_event_web ON standing_event FOR INSERT TO kutuphane_curat
                            AND l.dst_note = standing_event.note_seq)));
 -- Migration 026 (trigger standing_event_retires_signed) adds: the target is in the `retires` list of the cause's act
 -- statement, and the cause event is of this transaction.
+-- docs/25 §4.5 (024): a confirmation or a withdrawal is the row of a signed confirm or withdraw act (keys, trigger).
+GRANT INSERT ON origin_confirmation, origin_withdrawal TO kutuphane_curator_web;

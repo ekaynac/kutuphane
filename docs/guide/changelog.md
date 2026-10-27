@@ -17,6 +17,15 @@ For the terms, read [concepts.md](concepts.md).
 - Fixed: `deploy/curator_probe.py` reported PASS when docker failed or could not see the containers ([#116](https://github.com/ekaynac/kutuphane/pull/116)).
 - Migration `026_curator_review16.sql`. Open curator sessions end when it runs. After `migrate`, apply `deploy/db-roles-curator.sql` again ([#116](https://github.com/ekaynac/kutuphane/pull/116)).
 
+### "My words" origin confirmation (D70 R3, R7; docs/25 slice R)
+
+- New: a person confirms that a note holds their words. When an agent (or a person over HTTP) proposes with `origin: human` or `assisted`, the receipt gets `confirmation: {url, expires_at}`. The person opens the URL in curator web, reads the full text, picks "These are my words, verbatim" (`human`, only the person the words were entered for) or "A model wrote or reworded this. I reviewed it in substance." (`assisted`, also a curator), and signs with a passkey. A request is open 24 hours (`KUTUPHANE_CONFIRM_HOURS`). One changed byte is another note, with the write-path origin. Use: [operations.md](operations.md), section 7.
+- New MCP tool `confirm_origin` and route `GET /v1/notes/{book}/{id}/confirmation`: the state (`open`, `confirmed`, `expired`, `none`) and the URL. A 2026-07-28 client with the `elicitation.url` capability gets a URL-mode elicitation; the tool never uses a form, and an `accept` confirms nothing ([mcp.md](mcp.md#516-confirm_origin)).
+- Behavior change: `query_notes`, `neighbours`, `open_citation` and the decision export give the shown origin: a live confirmation, else the write-path value. With a confirmation, the item also has `entered_by` and `confirmed_by`. The `origin` filter of `query_notes` and `GET /v1/notes` now takes `human` and `assisted` too. The decision export `actor.origin` is now the shown origin of the note (before: the origin of its first write).
+- R7: only the person who confirmed withdraws the confirmation, with a passkey act on the same page. A query with `as_of` before the withdrawal still shows it.
+- kstd: the origin-details profile gets two optional fields for `human`, `entered_by` and `confirmed_by` (docs/11 0.3). A signed package lists such files in a new list `human_confirmed` (only when there is one, so other packages are unchanged).
+- Migration `024_origin_confirmation.sql` (`origin_confirmation`, `origin_withdrawal`; `write_record.person` and `confirmable`). After `migrate`, apply `deploy/db-roles.sql` and, with curator web, `deploy/db-roles-curator.sql` again. New setting for Core: `KUTUPHANE_CURATOR_URL` ([install.md](install.md#curator-web)).
+
 ### Curator web with passkeys (D72, docs/25 slice P)
 
 - New: curator web, the phone page of the curator. A curator approves or rejects pending notes and signs each decision with a passkey (WebAuthn, user verification required). The passkey signs the exact statement: the notes and their digests, the Standing in force, the new values and the reason. Install: [install.md](install.md#curator-web); use: [operations.md](operations.md), section 7. The CLI path (`note standing`) stays and works as before ([#115](https://github.com/ekaynac/kutuphane/pull/115)).

@@ -25,6 +25,7 @@ services:
       KUTUPHANE_CURATOR_WEB_DSN: postgresql://kutuphane_curator_web:${KUTUPHANE_CURATOR_WEB_DB_PASSWORD:?set KUTUPHANE_CURATOR_WEB_DB_PASSWORD}@postgres:5432/kutuphane
       KUTUPHANE_WEBAUTHN_RP_ID: ${KUTUPHANE_WEBAUTHN_RP_ID:?set KUTUPHANE_WEBAUTHN_RP_ID}
       KUTUPHANE_WEBAUTHN_ORIGIN: ${KUTUPHANE_WEBAUTHN_ORIGIN:?set KUTUPHANE_WEBAUTHN_ORIGIN}
+      KUTUPHANE_CONFIRM_HOURS: ${KUTUPHANE_CONFIRM_HOURS:-24}   # docs/25 §7.5: the same value as Core
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]

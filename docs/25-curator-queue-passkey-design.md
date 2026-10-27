@@ -867,6 +867,14 @@ shown(note, w) = c.claim                          if c exists and has no origin_
 - Only the confirmer withdraws the confirmation, with a `withdraw` act (database key). `as_of` before the withdrawal still shows the confirmation.
 - Others use the Standing path (reject or retire) or ask the confirmer; this design has no `contest` act.
 
+### 7.8 Implementation (slice R)
+
+- `confirm.py` holds the requests, the eligibility of §7.4, the `confirm` and `withdraw` statements and rows, and `confirm_origin` with its HTTP route. `origin.shown(conn, seqs, w)` gives the shown origin; `query_notes`, `neighbours`, `open_citation` (all through `notesquery._load`), `notes.item_info` and the decision export use it. The watermark and `since` include `origin_confirmation` and `origin_withdrawal`.
+- Curator web: the page `/c/{book}/{id}` and the list `/requests` load their data from `GET /api/requests` and `GET /api/requests/{book}/{id}` (the full text, the canonical fields, the request, the claims this person may give now, and whether this person may withdraw). A citation or a link into a book that the person cannot read shows no name.
+- A `withdraw` statement names the latest live confirmation; the act transaction refuses (409) when it is no longer the latest live one. `verify_acts` checks the `confirm` and `withdraw` rows against their statements.
+- kstd: a signed package lists the `human` files that carry `entered_by` or `confirmed_by` in `human_confirmed`, only when there is one, so the packages of other installations do not change. A note's kstd item information (`notes.item_info`) has `reviewed_by` for `assisted` and `entered_by` + `confirmed_by` for `human`.
+- The decision export `actor.origin` is the shown origin of the note at the export watermark (before: the stored origin of the creating write).
+
 ## 8. D73: delegated curate
 
 ### 8.1 The delegation

@@ -543,9 +543,40 @@ session registers a passkey only for its own code.
 
 After each enrollment, check `curator passkeys`: one new passkey per enrollment that you made. `verify-acts` checks
 every stored act again, offline: the statement gives the challenge, the signature verifies with user verification
-against the stored passkey, the Standing events of the act are exactly the items of its statement, and the
-retirements that they caused are exactly its `retires`. It exits 1
-and lists the act when a check fails.
+against the stored passkey, and the rows of the act (Standing events, origin confirmations and withdrawals) are
+exactly the items of its statement, and the
+retirements that they caused are exactly its `retires`. It exits 1 and lists the act when a check fails.
+
+### "My words": confirm the origin of a note (D70 R3, R7)
+
+The server never stores `human` from a token. When an agent (or a person over HTTP) proposes a note with
+`origin: human` or `assisted`, the note gets the write-path origin (`model` or `unknown`) with the notice
+`origin-claim-refused`, and the receipt gets a confirmation URL: `<KUTUPHANE_CURATOR_URL>/c/<book>/<nt_id>`. The
+MCP tool `confirm_origin` gives the same URL to the agent; a 2026-07-28 client shows it to the person as a URL
+elicitation. The URL holds no secret and gives no right.
+
+The person opens the URL in curator web (or `/requests` for every open request), signs in with a passkey, and
+reads who asks (the writer and the client), the full text and the fields of the note. Then the person picks one
+sentence and signs it with the passkey:
+
+| Choice | Origin | Who may choose it |
+|---|---|---|
+| "These are my words, verbatim (I wrote or dictated them)." | `human` | only the person the words were entered for: the user that the agent acted for, or the user who wrote (a database key) |
+| "A model wrote or reworded this. I reviewed it in substance." | `assisted` | that person, or a curator of the book |
+
+The person also needs `read` on the book. Nothing is stored before the signature; leaving the page stores nothing.
+
+- **Expiry:** a request is open for `KUTUPHANE_CONFIRM_HOURS` (24) hours after its write. Then the page refuses it.
+  The same bytes proposed again open a new request. A confirmation itself does not expire.
+- **One changed byte** is another note, with the write-path origin. A confirmation never moves to another note,
+  also not to the note that supersedes it.
+- **What readers see:** `query_notes`, `neighbours`, `open_citation` and the decision export give the shown origin,
+  and with a live confirmation also `entered_by` and `confirmed_by`. The `origin` filter uses the shown origin.
+  `write_record.origin` never changes. The origin changes no Standing and no right.
+- **Withdraw (R7):** only the person who confirmed can withdraw, on the same page (**Withdraw my confirmation**, a
+  passkey act). Then the origin is the write-path value again; an older confirmation does not come back. A query
+  with `as_of` before the withdrawal still shows the confirmation. Other people use the Standing path (reject or
+  retire).
 
 ## 8. Outcomes and decision export
 

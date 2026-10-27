@@ -23,6 +23,8 @@ items:
   - path: procedures/pressure-test.md
     digest: sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
     origin: human                        # human | assisted | model | tool | unknown (= model)
+    entered_by: "agent:kobra-7"          # optional for human: who entered the words
+    confirmed_by: "user:ayse"            # optional for human: the person who confirmed them as their own
     valid_from: 2026-01-01
     applies_to: "Plant 3, line A"
   - path: notes/weekly-summary.md
@@ -63,7 +65,7 @@ the values to the true values before you ingest.
 | Result | Cause | Effect |
 |---|---|---|
 | error | a YAML alias, merge key or duplicate key; a wrong type; no `issuer`; an unknown `standard`; a digest that does not match; an invalid SPDX expression; an `ai_use` value that is not `y` or `n` ("ai_use terms take y or n"); an invalid `personal_data` or `origin` value; an invalid date or path | `ingest` and `approve-import` refuse the book |
-| warning: the claim is not trusted | an unknown field that does not start with `x-` (also an unknown `ai_use` term); `origin: assisted` without `reviewed_by`; `origin: tool` without `software_agent: {name, version}` as strings; `reviewed_by` without `assisted`; `software_agent` without `tool` | publication continues. The field is ignored, or the origin counts as `unknown` (handled as `model`). The item `notices` in search results, citations and answers show the same text, for example `kstd.yaml politika/x.md: origin 'assisted' not trusted: …; handled as unknown` |
+| warning: the claim is not trusted | an unknown field that does not start with `x-` (also an unknown `ai_use` term); `origin: assisted` without `reviewed_by`; `origin: tool` without `software_agent: {name, version}` as strings; `reviewed_by` without `assisted`; `software_agent` without `tool`; `entered_by` or `confirmed_by` without `human`, or not a non-empty string | publication continues. The field is ignored, or the origin counts as `unknown` (handled as `model`). The item `notices` in search results, citations and answers show the same text, for example `kstd.yaml politika/x.md: origin 'assisted' not trusted: …; handled as unknown` |
 | authorized | the fields in the next table | each operation reads only the fields that it needs |
 
 ## What Kütüphane does with each field
@@ -75,7 +77,7 @@ the values to the true values before you ingest.
 | `ai_use.ai_input` not `y` | no embedding, no rerank, not in an answer; model readers get `text: null` and `withheld`; `read_document` refuses it |
 | `ai_use.train` | notes derived from the file inherit it; a decision export needs it for text |
 | `personal_data` not `no` or `synthetic` | `export` needs `--legal-basis` with DPV codes (for example `eu-gdpr:A6-1-b`); the codes go into the signed package |
-| `origin` | shown with every result; the search filter `--origin`; the signed package lists `model`/`unknown` files as AI-generated, `assisted` files as reviewed (with `reviewed_by`), `tool` files as tool-made (with `software_agent`). An `assisted` or `tool` claim without its evidence counts as `unknown`, so the file is listed as AI-generated. |
+| `origin` | shown with every result; the search filter `--origin`; the signed package lists `model`/`unknown` files as AI-generated, `assisted` files as reviewed (with `reviewed_by`), `tool` files as tool-made (with `software_agent`), and `human` files that carry `entered_by` or `confirmed_by` in `human_confirmed`. An `assisted` or `tool` claim without its evidence counts as `unknown`, so the file is listed as AI-generated. `human` stays `human` without `entered_by` and `confirmed_by`: they are optional. |
 | `license`, `valid_from`, `valid_to`, `applies_to`, `notices` | shown with search results, citations and answers (`item`) |
 | `valid_from`, `valid_to` | the `--current-only` filter; `valid_from` dates a file for "recent" questions |
 | absent `ai_use` term | shown as "not stated"; treated as `n` |
@@ -106,8 +108,11 @@ cd kstd/reference && ../../.venv/bin/python -m pytest -q -p no:cacheprovider
 ## Notes and kstd
 
 Notes in journals do not use `kstd.yaml`. The journal states `search`, `ai_input` and `train`, and the server
-computes origin from the write path (see `concepts.md`). The rollback closure of a note is the "reach of a
-withdrawal" of the specification.
+computes origin from the write path (see `concepts.md`). A person can confirm a note's words with a passkey in
+curator web ([operations.md](operations.md), section 7). The note then shows `human` or `assisted` with
+`entered_by` and `confirmed_by`. Its kstd item information has the shape of these fields: `human` with
+`entered_by` and `confirmed_by`, or `assisted` with `reviewed_by` (the person who confirmed). The rollback closure
+of a note is the "reach of a withdrawal" of the specification.
 
 ## The minimal core (D74)
 

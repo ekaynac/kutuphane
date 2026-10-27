@@ -242,6 +242,26 @@ def test_received_origin_lists_must_follow_the_enclosed_manifest(conn, conn_b, o
     assert result["status"] == "rejected" and "origin lists" in result["reasons"][0]
 
 
+def test_confirmed_human_files_carry_entered_by_and_confirmed_by(conn, conn_b, okf_dir, tmp_path):  # docs/25 §7.6
+    from test_packages import resigned, trust
+    write_manifest(okf_dir, policy_item={"origin": "human", "entered_by": "agent:kobra-7", "confirmed_by": "user:ayse"})
+    publish(conn, okf_dir)
+    info = signing.generate(tmp_path / "a.key")
+    private = signing.load_private(tmp_path / "a.key")
+    manifest = read_package(packages.export(conn, "kitap", private))
+    assert "politika/veri-saklama.md" not in manifest["ai_generated"]
+    assert manifest["human_confirmed"] == {"politika/veri-saklama.md": {"entered_by": "agent:kobra-7",
+                                                                       "confirmed_by": "user:ayse"}}
+    trust(conn_b, info)
+    assert packages.receive(conn_b, packages.export(conn, "kitap", private))["status"] == "verified"
+    forged = resigned(packages.export(conn, "kitap", private), private,  # the signer drops the provenance
+                      lambda m: {k: v for k, v in m.items() if k != "human_confirmed"})
+    result = packages.receive(conn_b, forged)
+    assert result["status"] == "rejected" and "origin lists" in result["reasons"][0]
+    item = kstd.effective(yaml.safe_load((okf_dir / kstd.MANIFEST).read_text()), "politika/veri-saklama.md")
+    assert (item["origin"], item["entered_by"], item["confirmed_by"]) == ("human", "agent:kobra-7", "user:ayse")
+
+
 def test_synthetic_personal_data_needs_no_legal_basis_and_origin_is_marked(conn, okf_dir, tmp_path):  # D60
     write_manifest(okf_dir, policy_item={"origin": "assisted", "reviewed_by": "Ayşe Yılmaz",
                                          "rights": {"personal_data": "synthetic"}})

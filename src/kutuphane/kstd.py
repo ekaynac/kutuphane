@@ -15,7 +15,8 @@ A book whose files contain `kstd.yaml` at the root follows it. Validation has th
   - an exported package marks files with origin `model` or `unknown` as AI-generated; `assisted` files (model
     output that a named person reviewed) are not marked and carry `reviewed_by` (EU AI Act Art. 50(4)); `tool`
     files (made by software that runs only written rules, or records events; no learned model) are not marked and
-    carry their `software_agent` (docs/17, D63);
+    carry their `software_agent` (docs/17, D63); `human` files carry their optional `entered_by` and
+    `confirmed_by` (docs/25 §7.6: who entered the words, and the person who confirmed them as their own);
   - search results, citations and answers show the item information.
 
 A book without `kstd.yaml` behaves as before: only its book policy applies. `ai_use` keeps three states: an
@@ -47,8 +48,9 @@ NO_LEGAL_BASIS_NEEDED = ("no", "synthetic")
 LEGAL_BASES = frozenset([f"eu-gdpr:A6-1-{c}" for c in "abcdef"] + [f"eu-gdpr:A9-2-{c}" for c in "abcdefghij"])
 RIGHTS_KEYS = {"license", "holder", "ai_use", "personal_data"}
 TOP_KEYS = {"standard", "issuer", "issued", "rights", "notices", "items"}
-ITEM_KEYS = {"path", "digest", "origin", "reviewed_by", "software_agent", "valid_from", "valid_to", "applies_to",
-             "rights", "notices"}
+ITEM_KEYS = {"path", "digest", "origin", "reviewed_by", "software_agent", "entered_by", "confirmed_by", "valid_from",
+             "valid_to", "applies_to", "rights", "notices"}
+HUMAN_DETAILS = ("entered_by", "confirmed_by")  # optional for `human`: the provenance of a confirmation (docs/25 §7.6)
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}\Z")
 LICENSE_REF = re.compile(r"^(DocumentRef-[A-Za-z0-9.-]+:)?LicenseRef-[A-Za-z0-9.-]+\Z")
 SPDX_IDS = frozenset(line for line in (Path(__file__).parent / "spdx_ids.txt").read_text().splitlines()
@@ -117,7 +119,7 @@ def _claims(item: dict, where: str) -> tuple[dict, list[str]]:
     (docs/11 §7). An origin without its evidence counts as `unknown` (= model); data for another origin is ignored."""
     origin, notices = item.get("origin", "unknown"), _unknown(where, item, ITEM_KEYS)
     notices += _rights_unknown(f"{where} rights", item.get("rights"))
-    claim = {"origin": origin, "reviewed_by": None, "software_agent": None}
+    claim = {"origin": origin, "reviewed_by": None, "software_agent": None, "entered_by": None, "confirmed_by": None}
     reviewer, agent = item.get("reviewed_by"), item.get("software_agent")
     if origin == "assisted":
         if isinstance(reviewer, str) and reviewer.strip():
@@ -137,6 +139,15 @@ def _claims(item: dict, where: str) -> tuple[dict, list[str]]:
                            f"generator or recorder, as strings (quote a version such as \"1.10\"); handled as unknown")
     elif "software_agent" in item:
         notices.append(f"{where}: software_agent ignored: it is only for origin tool")
+    for key in HUMAN_DETAILS:  # optional: `human` stays `human` without them; ignored for another origin
+        if key not in item:
+            continue
+        if origin != "human":
+            notices.append(f"{where}: {key} ignored: it is only for origin human")
+        elif isinstance(item[key], str) and item[key].strip():
+            claim[key] = item[key]
+        else:
+            notices.append(f"{where}: {key} ignored: it must be a non-empty string")
     return claim, notices
 
 
