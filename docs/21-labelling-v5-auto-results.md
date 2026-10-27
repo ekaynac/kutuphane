@@ -219,7 +219,7 @@ These are proposals only. `docs/11` and `kstd/reference/decide.py` do not change
 
 ### 6.6 Is a model answer through a cloud processor a `forward` of personal data?
 
-- **Gap:** sc-core-10: synthetic support tickets from a trusted vendor go to `cloud:llm.example.net`. docs/11 §5 required a legal basis for personal data only for `forward`. `decide.py` checked personal data only for `forward`, so the base and the consequential variant gave the same result. Applied (2026-10-27): an `infer` with a `destination` gets the personal-data check (conformance cases "§5 personal data in a model answer").
+- **Gap:** sc-core-10: synthetic support tickets from a trusted vendor go to `cloud:llm.example.net`. docs/11 §5 required a legal basis for personal data only for `forward`. `decide.py` checked personal data only for `forward`, so the base and the consequential variant gave the same result. Applied (2026-10-27): an `infer` to a cloud destination (`cloud` or `cloud:<host>`) gets the personal-data check, and the `local_only` route check now matches `cloud:<host>` too (conformance cases "§5 personal data in a model answer" and the route cases).
 - **Proposal:** **Yes, for personal data.** An `infer` whose `destination` is outside the node-controlled locations also gets the personal-data check of `forward`:
   - `yes` or `unknown` needs a recorded legal basis;
   - `synthetic` counts only from an issuer that is trusted for `item` statements in the scope; from any other issuer it counts as `unknown`.

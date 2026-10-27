@@ -171,8 +171,10 @@ def decide(case: dict) -> dict:
     if missing:
         results.append("deny"); reasons.append("input-unknown")
     sources = [item] + ancestors
-    # §5 personal data: `forward`, and `infer` to a model outside the node (a `destination`), need a legal basis.
-    discloses = action == "forward" or (action == "infer" and "destination" in req)
+    destination = str(req.get("destination", ""))
+    to_cloud = destination == "cloud" or destination.startswith("cloud:")  # `cloud` or `cloud:<host>`
+    # §5 personal data: `forward`, and `infer` to a model outside the node (a cloud destination), need a legal basis.
+    discloses = action == "forward" or (action == "infer" and to_cloud)
     for src in sources:
         tag, src_rights = ("" if src is item else "input-"), src["body"].get("rights", {})
         if action in ("derive", "train", "forward") and src_rights.get("license", "unknown") == "unknown":
@@ -190,7 +192,7 @@ def decide(case: dict) -> dict:
     if action == "forward" and "restricted" in {handling_of(case, s["id"], s["body"]["scope"], action, "export")
                                                 for s in sources}:
         results.append("deny"); reasons.append("handling-restricted")
-    if req.get("destination") == "cloud" and "local_only" in {
+    if to_cloud and "local_only" in {
             handling_of(case, s["id"], s["body"]["scope"], action, "route") for s in sources}:
         results.append("deny"); reasons.append("route-local-only")
     prior = req.get("prior_permit")  # rule 7: a permit is bound to exact versions and has an expiry
