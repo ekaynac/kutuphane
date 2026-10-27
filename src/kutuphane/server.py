@@ -29,15 +29,15 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import (answers, coderepo, db, feedback, gate, identity, ids, jobs, kstd, llmdap, notes, notesquery, retrieval,
-               search)
+from . import (answers, coderepo, db, feedback, gate, identity, ids, jobs, kstd, llmdap, notes, notesquery, outcomes,
+               retrieval, search)
 from .gate import Actor
 from .ids import normalize_path
 
 # Feature modules (docs/24 §16 P0). Each may define `register_mcp(mcp, deps)` (adds its MCP tools) and
 # `http_routes(deps, endpoint) -> list[Route]` (its HTTP routes). They are called in this order, after the built-in
 # tools and routes, so the tool list and the route table stay in a fixed order.
-FEATURES: tuple = (notes, coderepo, notesquery)
+FEATURES: tuple = (notes, coderepo, notesquery, outcomes)
 
 log = logging.getLogger(__name__)
 ENV = {"model": "KUTUPHANE_ANSWER_MODEL", "public_url": "KUTUPHANE_PUBLIC_URL"}
@@ -114,7 +114,7 @@ def op_citation(dsn, actor: Actor, handle: str, model_reader: bool = False, cont
         item = kstd.Rights(conn).info(c.book, c.content_id, c.path)
         return {"citation": c.handle, "page": hit.page, "line": hit.line,
                 **_text(hit.text, item, _for_model(actor, model_reader)),
-                "item": item}
+                "item": item, "outcomes": outcomes.passage_counts(conn, c)}
     return _run(dsn, go)
 
 
@@ -477,10 +477,13 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
     """The MCP server. Its tools are registered in a fixed order (built-ins, then features), so `tools/list` is
     stable. The host app mounts `mcp_http_app` of it."""
     features = FEATURES if features is None else features
+    auth = AuthSettings(issuer_url=verifier.issuer, resource_server_url=public_url,
+                        validate_token_resource=False)  # our verifier checks `aud` itself
+    if str(auth.issuer_url) != verifier.issuer:  # docs/24 §12.5: advertise exactly the issuer we verify
+        raise RuntimeError(f"issuer {verifier.issuer!r} would be advertised as {str(auth.issuer_url)!r}: "
+                           "write KUTUPHANE_OIDC_ISSUER exactly as the IdP's tokens carry it, in that normal form")
     mcp = MCPServer("kutuphane", token_verifier=_Verifier(verifier), extensions=[_ClientCredentials()],
-                    cache_hints=CACHE_HINTS,
-                    auth=AuthSettings(issuer_url=verifier.issuer, resource_server_url=public_url,
-                                      validate_token_resource=False))  # our verifier checks `aud` itself
+                    cache_hints=CACHE_HINTS, auth=auth)
 
     @mcp.tool()
     @_mcp_errors

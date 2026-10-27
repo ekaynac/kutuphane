@@ -427,7 +427,7 @@ The **dependencies** of a new note are its passage citations and its `derived_fr
 - A passage dependency uses the kstd item of its pinned file version (`kstd.Rights.info` → `allows(…, "search")`, `allows(…, "ai_input")`). Versions are immutable, so the value is stable.
 - A note dependency uses the stored `search`, `ai_input` and `source_books` of that note. Each note stores its closure, so one level of lookup gives the transitive result (a chain of derived notes keeps the restriction).
 - Book policy egress (`local_only`) is read at call time for every book in `source_books`.
-- Every read and every model call ANDs the note values with the journal's **current** `search` and `ai_input`. An administrator can only tighten a journal in R1 (`kutuphane journal restrict`); loosening needs a new journal.
+- Every read and every model call ANDs the note values with the **current** `search` and `ai_input` of every journal in the note's `source_books` (R2, §20.3). An administrator can only tighten a journal in R1 (`kutuphane journal restrict`); loosening needs a new journal.
 
 ### 6.3 Links
 
@@ -711,7 +711,7 @@ Verified against the spec changelog (<https://modelcontextprotocol.io/specificat
 | `subscriptions/listen` replaces GET streams and `resources/subscribe` | we have no subscriptions | R1 uses `since` polling with tombstones (§9.5); a feed waits for R2 |
 | sampling, roots, logging deprecated; `ping` removed | not used | none |
 | 4 MiB default body limit | our largest input is about 200 KB | none |
-| RFC 9207 `iss`, CIMD over DCR, credentials bound to the issuer | client and IdP matters | none in the resource server |
+| RFC 9207 `iss`, CIMD over DCR, credentials bound to the issuer | mostly client and IdP matters | the resource server pins the issuer and advertises it exactly (§12.5); CIMD needs nothing here (§12.6) |
 
 ### 12.2 Long operations: durable jobs
 
@@ -739,6 +739,54 @@ The IdP issues all tokens. Kütüphane stores no client secrets and accepts no s
 - `client_id` (RFC 9068) or `azp` is recorded in `write_record.client_id`. It never changes origin or rights.
 - If an IdP maps a machine client to a `user:` principal by mistake, its writes are still at most `unknown` (§5.2), and it cannot curate, because no Standing path exists on MCP or HTTP (§8.2).
 - The server advertises the extension in `server/discover`.
+
+### 12.5 Issuer binding (RFC 9207, SEP-2352) — R2
+
+2026-07-28 tells the **client** to check `iss` in the authorization response (RFC 9207) and to keep its credentials per issuer (SEP-2352). The resource server has two duties of its own:
+
+- **One issuer, compared exactly.** An installation trusts one IdP. The verifier compares the token's `iss` with `KUTUPHANE_OIDC_ISSUER` by simple string comparison (RFC 3986 §6.2.1): no case folding, no trailing-slash, port or percent-encoding normalization, no prefix or substring match. Any other value is 401, also when a key in our JWKS signed the token. This applies to client-credentials tokens as to all others: a client's credentials are valid only at the IdP that issued them, and the token is valid here only if that IdP is ours. `PyJWT>=2.10.1`, because 2.10.0 compared `iss` as a substring (CVE-2024-53861).
+- **Advertise the same string.** The protected-resource metadata lists exactly that issuer as its only `authorization_servers` entry. A client records the issuer from there for its RFC 9207 check, and the IdP's tokens carry the configured form. The SDK stores the issuer as a parsed URL (lowercase host, default port removed). If that form differs from the configured issuer, the server refuses to start, with the reason; it never advertises one issuer and verifies another.
+
+Tests: `tests/test_identity.py::test_issuer_is_compared_exactly`, `tests/test_server.py::test_resource_metadata_advertises_exactly_the_pinned_issuer`, `::test_an_issuer_the_sdk_would_rewrite_is_refused_at_start`.
+
+### 12.6 Client ID Metadata Documents (CIMD) — R2 finding
+
+CIMD replaces Dynamic Client Registration for interactive clients: the `client_id` is an HTTPS URL, and the **authorization server** fetches that document and checks its `client_id` and `redirect_uris`. The resource server takes no part.
+
+- **SDK:** `mcp` 2.3 has CIMD on the client side (`OAuthClientProvider(client_metadata_url=…)`, used when the authorization server metadata has `client_id_metadata_document_supported`). Our server uses only the resource-server part of the SDK (`TokenVerifier`, `AuthSettings`); that part has nothing for CIMD.
+- **IdP:** Keycloak (the proposed IdP, D38) has CIMD from 26.6 as an experimental feature. Headless clients (ADC, nöbetçi) use client credentials as pre-registered confidential clients (§12.4); CIMD does not apply to them.
+- **Our side:** a CIMD client's token carries the URL in `client_id`/`azp`. The verifier accepts any non-empty string and `write_record.client_id` is `text`, so the URL is recorded as it is. It never changes rights or origin (§5.1).
+- **Decision:** no code. Test: `tests/test_identity.py::test_a_cimd_client_id_url_is_accepted_as_it_is`.
+
+### 12.7 A scoped, non-admin test client (ADC stage-2 T3) — R2
+
+ADC's T3 needs a client-credentials token that can call `search_library` and `open_citation` on one book and on nothing else. The existing commands give it; no new command. The principal is `agent:adc-t3`; replace `<book>` with the book slug.
+
+1. **Token, local (development auth only):**
+   ```
+   export KUTUPHANE_DEV=1
+   kutuphane dev-keys ./dev-auth        # once; set KUTUPHANE_OIDC_JWKS=./dev-auth/jwks.json for the server
+   kutuphane dev-token adc-t3 --agent --client-id adc-t3 \
+       --private-key ./dev-auth/dev-private.pem --issuer "$KUTUPHANE_OIDC_ISSUER"
+   ```
+   The token has the claims of an IdP client-credentials token (§12.4) and lives 8 hours.
+2. **Token, real IdP:** a confidential client `adc-t3` with only the client-credentials grant (no browser flow), whose mappers set `kutuphane/principal_type: agent`, `sub: adc-t3` and the audience `kutuphane` (§12.4). The client asks the IdP's token endpoint; Kütüphane stores no secret.
+3. **The right:** `kutuphane grant book:<book> read agent:adc-t3`. Nothing more: no role membership, no delegation, no `propose`. No `use` grant: no code path checks `use` today, so it would change nothing (D53).
+4. **Remove:** `kutuphane revoke book:<book> read agent:adc-t3`. The next call sees the change (rights are decided per call).
+
+With this token, `search_library` gives passages of `<book>` only, `open_citation` opens them, and a handle or a document of another book is "forbidden" (`open_citation`, `read_document`). `propose_note` is "forbidden" and `query_notes` finds nothing. Test: `tests/test_server.py::test_scoped_test_client_reads_one_book_and_nothing_else` (both protocol versions; it runs the commands of steps 1 and 3).
+
+### 12.8 T33 through the deployed proxy — result
+
+The deployed proxy is the `ingress` service: `nginx:1.27-alpine` with `deploy/nginx.conf` (`proxy_pass http://core:8080`, HTTP/1.1, no buffering). It runs without the live stack: on 2026-10-27 the same image (nginx 1.27.5) and the same file ran as a separate container (`--add-host core:host-gateway`, published on `127.0.0.1:58080`), in front of a local Core from this branch (uvicorn on the Docker bridge address, port 8080; a scratch database; development auth; no LLMDAP). The live services were not started, stopped or changed.
+
+```
+KUTUPHANE_PROBE_TOKEN=<dev token, agent:probe> python3 deploy/mcp_probe.py http://127.0.0.1:58080 --journal probe-gunluk
+```
+
+Result: **9/9 checks pass** on 2025-11-25 and 2026-07-28 (tools/list stable, `search_library` → `structuredContent.result`, `propose_note`, no token → 401 with the resource metadata, `Mcp-Name` mismatch → -32020). The proxy passes `Mcp-Method`/`Mcp-Name` and the `Host` header that the DNS-rebinding check needs. The resource metadata through the proxy names exactly the configured issuer. With the scoped test client of §12.7 (`agent:adc-t3`, `read` on `kitap` only), the same run gives 7/9: both `propose_note` checks fail with "forbidden", as they must.
+
+Still open: the same probe against the real installation (TLS on the proxy and the IdP's tokens), when it runs.
 
 ## 13. HTTP equivalents
 
@@ -880,3 +928,191 @@ Decisions on the review: no `human` origin in R1 (#2); `same_as` and clusters in
 - Each field changes one behavior. `operation` is the request field of the scenario cases. A cloud destination is `cloud` or `cloud:<host>` (a location outside the node); any other `destination` (for example `local`), or none, stays in the node: no legal basis for `infer`, and `local_only` allows it.
 - A plain `read` (a person opens an item) does not check `search`.
 - Tests: the cases under "§5 search terms" and "§5 personal data in a model answer" in `kstd/tests/decision/cases.yaml`.
+
+## 20. R2: rollback along `derived_from` (#79)
+
+### 20.1 The act
+
+```
+kutuphane note rollback <ref> --curator user:ayse --reason "…"
+```
+
+- **CLI only**, with `KUTUPHANE_CURATOR_DSN` (§8.2). The curator must hold `curate` on the book of the root now. The system events in other books need no curator right: the system only tightens (docs/09 §3.2), as in §8.3.
+- **The closure:** the root, and every note whose own `derived_from` chain reaches the root. Every `derived_from` link is a creation link (016 check), so only the write that created a note can put the note in a closure. A later link by another agent cannot attach a note to a closure. The closure crosses books. No other link type is followed (`about`, `same_as`, `supersedes`, …). Passages are not in the closure.
+- **One transaction** under the memory lock (§4).
+- **The root event** is a curator event with the reason. It keeps D68: `approved` → `retired`; `pending` → `rejected` (never accepted). A root that is already `rejected` or `retired` gets one more event with the same value. This event records the act (who, when, why) and is the cause of the system events. So a curator can roll back a note that is already rejected, for example a poisoned note that agents used while it was `pending`.
+- **Each derived note** that is `approved` or `pending` gets its own system event: `retired`, `cause_seq` = the root event, reason `derived from <root ref>`. A reader sees `retired` and the reason (docs/23 P4). A derived note that is already `rejected` or `retired` gets no event; the notes derived from it are still in the closure.
+- A rollback does not lock notes: a curator can reopen a note later (§8.2). A note written later with a `derived_from` link to a rolled-back note is not in the earlier act; a second rollback of the same root reaches it.
+- The act adds no table: the closure is a recursive query over `note_link`, the events are `standing_event` rows (016).
+
+### 20.2 The report
+
+The act prints the report. The report is computed in the same transaction, after the events.
+
+| Field | Content | Changes |
+|---|---|---|
+| `root`, `event_seq` | the root reference and the root event | the cause of every system event |
+| `notes[]` | the closure, root first, then by `seq`: `{ref, was, standing, event_seq, writers}`; `event_seq` is null for a note that the act did not change | the curator sees the whole closure; `was = approved` notes were given to readers as current |
+| `writers[]` | per note, its propose writes: `{principal, on_behalf_of, client_id}` (§4.2) | which agent and which client wrote derived text |
+| `deliveries[]` | allowed `access_event` rows that delivered a closure note: `{at, action, principal, on_behalf_of, correlation_id, memory_seq, items: [{ref, standing}]}`; `items` holds only the closure notes; `standing` is the Standing in force at the delivery | which readers got the notes, and whether as current |
+| `answers[]` | answers whose audit delivered a closure note: `{id, at, principal, on_behalf_of, refs}` | which answers to check again |
+| `exports[]` | as `deliveries`, for export actions (`export_*`, the #74 decision export) | which exported records to withdraw |
+
+- **A delivery** is an allowed `access_event` with an item `{ref, standing_seq}` (§11, AT-09). Writes (`propose`, `link`) log `{ref}` with no `standing_seq`, so they are not deliveries. Candidates in a propose receipt are deliveries (§6.1).
+- **Answers:** an `access_event` with action `answer` and the `answer` row with the same `correlation_id`. Notes are not in `ask_library` in R1 (§9.4). When a later release gives notes to answers with AT-09 items, this list fills with no change to the query.
+- **Exports:** the actions that start with `export`. `kutuphane export` refuses a journal (§14); the #74 export logs `export_decisions` with AT-09 items.
+
+### 20.3 Restriction follows derivation
+
+§6.2 stores `search`, `ai_input` and `source_books` at creation. The gap: `kutuphane journal restrict` on journal A did not reach a note in journal B that is derived from a note of A, because reads ANDed only the note's own journal.
+
+**Change (`019_note_journal.sql`):** every read and every model call ANDs the stored note values with the **current** values of every journal in `source_books`:
+
+```sql
+CREATE VIEW note_journal AS
+SELECT n.seq, j.search, j.ai_input
+  FROM note n
+ CROSS JOIN LATERAL (SELECT bool_and(search) AS search, bool_and(ai_input) AS ai_input
+                       FROM journal WHERE book = ANY(n.source_books)) j;
+```
+
+| Field | Changes |
+|---|---|
+| `note_journal.search` | the `text` filter, relevance order and candidates of the note: off when any journal of its closure has search off |
+| `note_journal.ai_input` | the note text for model readers, and the note as a dependency of a new note (§6.2): off when any journal of its closure has AI input off |
+
+`source_books` always holds the note's own journal, so the values are never null. The app role needs `SELECT` on the view: run `deploy/db-roles.sql` after `migrate`, as for every new table.
+
+**Sensitivity and egress:** no change. `source_books` holds every book of the closure, and the egress of each book is read at call time (§6.2). `restricted` is never `cloud_ok` (policy check), so a note derived from `restricted` or `local_only` text never goes to a cloud route. A journal is never exported (§14).
+
+**kstd:** the closure of §20.1 is the "reach of a withdrawal" of docs/11 (`Inputs`): it reaches every recorded descendant, and the recorded inputs of a note are its creation `derived_from` links and its passage citations.
+
+### 20.4 Tests
+
+| # | Test |
+|---|---|
+| T39 | Rollback of a seeded approved note: the root `retired` by the curator; every note on a `derived_from` chain (also in another journal) `retired` by the system with `cause_seq` = the root event; a note with a later or creation `about` link, and a later `same_as` link, unchanged. |
+| T40 | A `pending` root becomes `rejected`; a `rejected` root gets one more `rejected` event; an already `rejected` derived note gets no event, its derived note is retired. |
+| T41 | The report lists the closure with writers, the `query_notes`, `open_citation` and propose-candidate deliveries, the answers and the exports that held a closure note; not the writes, not a refused event, not a delivery of another note. |
+| T42 | A curator without `curate` on the root's book is refused and no event is written; the CLI needs the curator credential. |
+| T43 | `journal restrict --no-ai-input` on a source journal withholds the text of a derived note in another journal from model readers, and a new note derived from it gets `ai_input` false. |
+
+## 21. R2 #74: outcome feedback and the decision export
+
+**Basis:** issue #74; `docs/23` §5 (export: JSONL decision records), §7 (R2). Migration `020_outcome.sql`.
+
+### 21.1 `record_outcome` (MCP) / `POST /v1/outcomes` (HTTP)
+
+```
+record_outcome(ref: str,            # a note reference book@nt_… or a passage handle book@ct_…/pf_…/path#ordinal
+               task_ref: str,       # the orchestrator's task or run, [A-Za-z0-9._:/#@+-]{1,200}
+               result: str,         # passed | failed | reverted | reopened
+               idempotency_key: str) -> {"ref", "task_ref", "result", "origin"}
+```
+
+- Both reference forms name one exact version: a note id is the digest of its bytes; a passage handle names its content version. An outcome never moves to another version.
+- **Rights:** `propose` **and** `read` on the item's book, decided before and again in one statement at commit (`gate.guard_many`). `read` is also necessary: without it, the answer (found or `not found`) tells a propose-only caller that a note with the given bytes exists. §6.1 never gives that to a propose-only caller.
+- **Origin** comes from the write path, with the rules of §5.2 and no `origin` argument: an agent path stores `model`; a direct user over HTTP stores `unknown`.
+- **Append-only.** The app role has no `UPDATE` or `DELETE` on `outcome`. A later outcome for the same task (for example `passed`, then `reverted`) is a new row.
+- **Idempotency:** the key is **required**, because a retried outcome that counts twice makes a false label. The rules are those of §6.4: scope `(principal, on_behalf_of)`; a retry with the same request returns the first receipt (HTTP 200, else 201); the same key with another request → 409.
+- The outcome counts in the daily write limit of §6.1 step 4 (`KUTUPHANE_NOTE_WRITES_PER_DAY`).
+- Every outcome takes `seq` from `memory_seq` under the memory advisory lock (§4).
+- **Standing does not change.** No outcome writes a Standing event, and the "current" predicate (§9.2) does not read outcomes. An outcome is a measurement; only a curator changes authority (R1: uncertainty never increases authority).
+
+### 21.2 Where outcomes are shown
+
+| Read | Shows |
+|---|---|
+| `query_notes`, `neighbours`, `open_citation` (note) | item key `outcomes`: the non-zero counts per result, rows with `seq ≤ w`, in the order `passed, failed, reverted, reopened`. `as_of` gives the old counts; for `since`, a new outcome is a memory event of its note. |
+| `open_citation` (passage) | the same `outcomes` key for that passage at its version |
+| `kutuphane decisions export` | the outcome rows of each decision note (§21.4) |
+
+### 21.3 Decision fields and the `train` right
+
+- `propose_note` takes an optional `decision: {options: [str], choice: str}`, only for kind `decision_proposal`: 2–20 different options of 1–500 characters (NFC, no control characters) in the order offered, and the choice, which is one of them. The secret scan reads them too. The pair is in the canonical body (key `decision`, present only when given), so another choice is another note. A note without the field keeps its id.
+- **`train`.** A decision record is training data, and kstd `ai_use.train` controls that use. A journal now states `train` (`kutuphane journal create --train y|n`, default `n`: missing = deny; `journal restrict --no-train`). A note's `train` = `journal.train` AND every dependency allows `train` (the rule of §6.2). Journals and notes made before 020 get `train = false`.
+- **`train` follows derivation (§20.3).** 020 replaces the view `note_journal` with one more column, `train`: the AND of the current `train` of every journal in the note's `source_books`. The export and the dependency rule read `note.train AND note_journal.train`, so `journal restrict --no-train` on a source journal also withholds the text of the decisions derived from it in other journals, and a new note derived from them gets `train = false`.
+
+### 21.4 `kutuphane decisions export`
+
+```
+kutuphane decisions export <principal> --out FILE [--book B]... [--on-behalf-of U]
+```
+
+- One JSON object per line for each `decision_proposal` note with `seq ≤ w`, in the order (book, seq). Every Standing is exported, with its value: a rejected decision is a label too.
+- **Rights:** `read` on each book, by the gate of `gate.guard_many` (before and at the end). Without `--book`: every journal that the principal may read. Each book gets one `access_event` with `action = export_decisions` and `items = [{ref, standing_seq}]`, so the #79 report finds an export of a retired note.
+- **Text gate:** the text, the options and the choice are in a record only when the note's `ai_input` and `train` are both `y` (note AND journal now). Else the record has only references and hashes (`text_sha256`, `options_sha256`, `choice_sha256`), and `withheld` gives the reason. The hashes are always present, so a consumer can join records.
+- Passage citations and links into books that the principal may not read are left out (as §9.1).
+- The file is created new (`O_EXCL`). The command prints `{out, records, withheld, books, watermark}`.
+
+```json
+{"ref": "adc-memory@nt_…", "book": "adc-memory", "written_at": "…", "standing": "approved",
+ "context": {"text": "…", "text_sha256": "…", "class_key": null, "scope": null, "commit": null,
+             "citations": ["kitap@ct_…/pf_…/a.md#0"], "links": [{"type": "about", "ref": "…"}]},
+ "options": ["retry", "fail fast"], "choice": "fail fast",
+ "options_sha256": ["…", "…"], "choice_sha256": "…",
+ "actor": {"principal": "agent:adc", "on_behalf_of": null, "client_id": "adc", "origin": "model"},
+ "outcomes": [{"task_ref": "adc:run/41", "result": "passed", "at": "…", "principal": "agent:adc",
+               "on_behalf_of": null, "origin": "model"}],
+ "ai_use": {"search": "y", "ai_input": "y", "train": "y"}, "withheld": null}
+```
+
+### 21.5 `020_outcome.sql`
+
+```sql
+ALTER TABLE journal ADD COLUMN train boolean NOT NULL DEFAULT false;
+ALTER TABLE note ADD COLUMN train boolean NOT NULL DEFAULT false,
+                 ADD COLUMN options text[], ADD COLUMN choice text,
+                 ADD CONSTRAINT note_decision CHECK ((options IS NULL) = (choice IS NULL) AND (options IS NULL OR
+                     (kind = 'decision_proposal' AND cardinality(options) BETWEEN 2 AND 20 AND choice = ANY(options))));
+
+CREATE TABLE outcome (
+    seq             bigint PRIMARY KEY DEFAULT nextval('memory_seq'),
+    at              timestamptz NOT NULL DEFAULT now(),
+    correlation_id  text NOT NULL,
+    book            text NOT NULL,
+    note_seq        bigint,                                                 -- a note, or
+    content_id      text, profile_id text, path text, ordinal integer,      -- a passage at its version
+    task_ref        text NOT NULL CHECK (task_ref ~ '^[A-Za-z0-9._:/#@+-]{1,200}$'),
+    result          text NOT NULL CHECK (result IN ('passed', 'failed', 'reverted', 'reopened')),
+    principal       text NOT NULL,
+    on_behalf_of    text,
+    channel         text NOT NULL CHECK (channel IN ('mcp', 'http')),
+    client_id       text,
+    origin          text NOT NULL CHECK (origin IN ('model', 'unknown')),
+    idempotency_key text NOT NULL CHECK (idempotency_key ~ '^[A-Za-z0-9._:-]{8,128}$'),
+    request_sha256  bytea NOT NULL,
+    FOREIGN KEY (note_seq, book) REFERENCES note (seq, book),
+    FOREIGN KEY (book, content_id, profile_id, path, ordinal) REFERENCES chunk (book, content_id, profile_id, path, ordinal),
+    CHECK ((note_seq IS NULL) <> (content_id IS NULL)),
+    CHECK (content_id IS NULL OR (profile_id IS NOT NULL AND path IS NOT NULL AND ordinal IS NOT NULL)),
+    CHECK (origin = 'model' OR (principal LIKE 'user:%' AND on_behalf_of IS NULL AND channel = 'http'))
+);
+```
+
+| Field | Changes |
+|---|---|
+| `journal.train`, `note.train`, `note_journal.train` | the decision export gives text only with `train` (and `ai_input`), ANDed over the journals of the note's closure now |
+| `note.options`, `note.choice` | the export's `options` and `choice`; part of the note identity |
+| `outcome.book`, `note_seq` / passage columns | the item version; the rights check; the counts on that item |
+| `task_ref` | the outcome link in the export |
+| `result` | the counts; the export |
+| `principal`, `on_behalf_of`, `channel`, `client_id`, `origin` | the stored origin (§5); the daily limit; the idempotency scope; the export's actor of an outcome |
+| `idempotency_key`, `request_sha256` | a retry returns the first receipt; a reuse with another request is refused |
+| `seq` | `as_of` and `since` of the counts |
+| `at`, `correlation_id` | the export; the audit join |
+
+### 21.6 Tests (consumer-visible)
+
+| # | Test |
+|---|---|
+| O1 | An agent records `passed` on a note over MCP: origin `model`, a row; `query_notes` shows `outcomes: {passed: 1}`; Standing and `current` do not change, also after `failed` and `reverted`. |
+| O2 | The same key and request: the same receipt, one row; the same key with another result → 409. |
+| O3 | No `propose`, or no `read`, on the item's book: refused and logged, no row. |
+| O4 | A passage handle: recorded; `open_citation` shows the counts; a missing passage → not found. |
+| O5 | A direct user over HTTP stores `unknown`; the app role cannot update or delete an outcome. |
+| O6 | `as_of` gives the old counts; `since` lists a note that got an outcome. |
+| O7 | A `decision` on a non-decision kind, a choice that is not an option, or a credential in an option: refused. |
+| O8 | Export: a journal with `ai_input` and `train`: text, options and choice; with `train: n` (or a dependency without `train`): hashes only, never the text; the outcome rows, the actor and the rights are in each record; one `access_event` per book with the items. |
+| O9 | Migration 020 applies to a database at 018 with notes; old journals and notes get `train = false`; old note ids do not change. |
+| O10 | `journal restrict --no-train` on a source journal: the export of a decision derived from it in another journal has hashes only, and a new note derived from that decision gets `train = false` (`test_rollback.py`). The #79 report lists a real `decisions export` of a decision note in the closure (T41). |

@@ -86,15 +86,24 @@ A note starts `pending`; only a curator changes its Standing, and only on the co
 .venv/bin/kutuphane grant book:adc-memory propose agent:adc
 .venv/bin/kutuphane grant book:adc-memory curate user:ayse      # users only; never delegated
 KUTUPHANE_CURATOR_DSN=… .venv/bin/kutuphane note standing adc-memory@nt_… approved --curator user:ayse --reason "…"
+# a poisoned note: retire it and every note derived from it; prints who read, answered or exported them
+KUTUPHANE_CURATOR_DSN=… .venv/bin/kutuphane note rollback adc-memory@nt_… --curator user:ayse --reason "…"
 ```
 
 Database roles: the server and every process an agent can reach connect as `kutuphane_app`
 (`KUTUPHANE_APP_DB_PASSWORD` in `.env`), which cannot write Standing. `KUTUPHANE_CURATOR_DSN` is the owner role
-(`kutuphane migrate`, `kutuphane note standing`); keep it out of every environment an agent can read. Create the
-app role once (`CREATE ROLE kutuphane_app LOGIN PASSWORD '…'`), then apply `deploy/db-roles.sql` as the owner
-after every `kutuphane migrate`. Without `KUTUPHANE_CURATOR_DSN`, `migrate` uses `KUTUPHANE_DSN` (one-role
-development databases). `KUTUPHANE_NOTE_WRITES_PER_DAY` (500) limits writes per principal;
-`KUTUPHANE_NOTE_DUP_SIMILARITY` (0.90) is the vector candidate threshold.
+(`kutuphane migrate`, `kutuphane note standing`, `kutuphane note rollback`); keep it out of every environment an
+agent can read. Create the app role once (`CREATE ROLE kutuphane_app LOGIN PASSWORD '…'`), then apply
+`deploy/db-roles.sql` as the owner after every `kutuphane migrate`. Without `KUTUPHANE_CURATOR_DSN`, `migrate`
+uses `KUTUPHANE_DSN` (one-role development databases). `KUTUPHANE_NOTE_WRITES_PER_DAY` (500) limits writes (notes,
+links, outcomes) per principal; `KUTUPHANE_NOTE_DUP_SIMILARITY` (0.90) is the vector candidate threshold.
+
+Outcomes and decision records (R2 #74, `docs/24` §21): `record_outcome` / `POST /v1/outcomes` records
+`passed`, `failed`, `reverted` or `reopened` for a task on one exact note or passage version (needs `propose` and
+`read` on its book, and an `idempotency_key`). Reads show the counts; Standing never changes. A `decision_proposal`
+note can carry `decision: {options, choice}`. `kutuphane decisions export <principal> --out FILE` writes JSONL
+decision records; their text, options and choice are present only when the note allows `ai_input` and `train`
+(`journal create --train y`, default `n`), else only references and hashes.
 
 Identity and egress (M1c) are configured by environment:
 `KUTUPHANE_OIDC_ISSUER`, `KUTUPHANE_OIDC_AUDIENCE`, `KUTUPHANE_OIDC_JWKS` (path to a JWKS file);
@@ -114,6 +123,10 @@ API key.
   `act.sub` = the agent; the agent also needs a live delegation from the person, as for any agent.
 - The token's `client_id` (RFC 9068), else `azp`, is recorded as the client. It never changes rights or origin.
   `kutuphane dev-token <sub> --client-id <id>` makes such a development token.
+- `KUTUPHANE_OIDC_ISSUER` is the IdP's issuer exactly as its tokens carry it: `iss` is compared without any
+  normalization, and the protected-resource metadata advertises the same string. An issuer the MCP SDK would
+  rewrite (an uppercase host, a default port) stops the server at start (docs/24 §12.5).
+- A scoped, non-admin test client (one book, read only): docs/24 §12.7.
 
 MCP (`/mcp`) is stateless and serves 2025-11-25 clients (with `initialize`) and 2026-07-28 clients (no `initialize`;
 the reverse proxy must pass the `Mcp-Method` and `Mcp-Name` headers). `server/discover` advertises the
@@ -121,9 +134,9 @@ the reverse proxy must pass the `Mcp-Method` and `Mcp-Name` headers). `server/di
 versions through the proxy (`KUTUPHANE_PROBE_TOKEN`; `--journal <book>` also proposes a note).
 MCP tools, in `tools/list` order: `search_library`, `open_citation`, `ask_library`, `reopen_answer`,
 `read_document`, `record_runbook_feedback`, `job_status`, `job_result`, `job_cancel`, `propose_note`, `link_notes`,
-`verify_citations`, `query_notes`, `neighbours`. `query_notes` lists notes (`sets`: `current`, `open`, `history`;
-context `repo`/`branch`/`path`/`commit`; `collapse` merges only `same_as` groups) with no model call; HTTP
-`GET /v1/notes` and `GET /v1/notes/{book}/{id}/neighbours`.
+`verify_citations`, `query_notes`, `neighbours`, `record_outcome`. `query_notes` lists notes (`sets`: `current`,
+`open`, `history`; context `repo`/`branch`/`path`/`commit`; `collapse` merges only `same_as` groups) with no model
+call; HTTP `GET /v1/notes` and `GET /v1/notes/{book}/{id}/neighbours`.
 
 Hybrid search (optional): `KUTUPHANE_LLMDAP_EMBED_ROUTE` (an LLMDAP `surface: "embeddings"` route, openai schema),
 `KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS`, `KUTUPHANE_EMBED_MODEL` (the route's pinned model, e.g. `bge-m3`). `ingest` and
