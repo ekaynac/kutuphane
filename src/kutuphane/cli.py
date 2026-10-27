@@ -426,12 +426,40 @@ def cmd_curator_passkeys(conn, args) -> int:
 
 
 def cmd_curator_revoke_passkey(conn, args) -> int:
-    done = conn.execute("UPDATE passkey SET revoked_at = clock_timestamp() WHERE credential_id = %s "
-                        "AND revoked_at IS NULL RETURNING principal", (passkey.unb64u(args.id),)).fetchone()
+    """A revoked passkey signs nothing, and its sessions end now (docs/25 §3.4)."""
+    cred = passkey.unb64u(args.id)
+    with conn.transaction():
+        done = conn.execute("UPDATE passkey SET revoked_at = clock_timestamp() WHERE credential_id = %s "
+                            "AND revoked_at IS NULL RETURNING principal", (cred,)).fetchone()
+        ended = conn.execute("UPDATE curator_session SET ended_at = clock_timestamp() WHERE credential_id = %s "
+                             "AND ended_at IS NULL", (cred,)).rowcount if done else 0
     if done is None:
         print("error: no live passkey with this id", file=sys.stderr)
         return 2
-    _print({"revoked": args.id, "principal": done[0]})
+    _print({"revoked": args.id, "principal": done[0], "sessions_ended": ended})
+    return 0
+
+
+def cmd_curator_end_sessions(conn, args) -> int:
+    """End every live session of a person (a stolen cookie; the passkeys stay)."""
+    ended = conn.execute("UPDATE curator_session SET ended_at = clock_timestamp() WHERE principal = %s "
+                         "AND ended_at IS NULL AND clock_timestamp() < expires_at", (args.principal,)).rowcount
+    _print({"principal": args.principal, "ended": ended})
+    return 0
+
+
+def cmd_curator_cancel_enrollment(conn, args) -> int:
+    """A leaked enrollment code: cancel it before it registers a passkey; its session ends."""
+    with conn.transaction():
+        done = conn.execute("UPDATE curator_enrollment e SET cancelled_at = clock_timestamp() WHERE id = %s "
+                            "AND cancelled_at IS NULL AND NOT EXISTS (SELECT 1 FROM passkey p WHERE p.enrollment = e.id) "
+                            "RETURNING principal", (args.id,)).fetchone()
+        ended = conn.execute("UPDATE curator_session SET ended_at = clock_timestamp() WHERE enrollment = %s "
+                             "AND ended_at IS NULL", (args.id,)).rowcount if done else 0
+    if done is None:
+        print("error: no open enrollment with this id (used: revoke its passkey instead)", file=sys.stderr)
+        return 2
+    _print({"cancelled": args.id, "principal": done[0], "sessions_ended": ended})
     return 0
 
 
@@ -689,9 +717,16 @@ def parser() -> argparse.ArgumentParser:
     cp = cusub.add_parser("passkeys", help="the registered passkeys (synced or device-bound, last act)")
     cp.add_argument("principal", nargs="?")
     cp.set_defaults(fn=cmd_curator_passkeys, curator_db=True)
-    cr = cusub.add_parser("revoke-passkey", help="a revoked passkey signs nothing (a lost phone: revoke, then enroll)")
+    cr = cusub.add_parser("revoke-passkey", help="a revoked passkey signs nothing and its sessions end (a lost phone: "
+                                                 "revoke, then enroll)")
     cr.add_argument("id", help="the passkey id from `curator passkeys`")
     cr.set_defaults(fn=cmd_curator_revoke_passkey, curator_db=True)
+    cx = cusub.add_parser("end-sessions", help="end every live session of a person (a stolen cookie)")
+    cx.add_argument("principal", help="user:<name>")
+    cx.set_defaults(fn=cmd_curator_end_sessions, curator_db=True)
+    cc = cusub.add_parser("cancel-enrollment", help="cancel an unused enrollment code (a leaked code)")
+    cc.add_argument("id", help="the enrollment id (en_…) that `curator enroll` printed")
+    cc.set_defaults(fn=cmd_curator_cancel_enrollment, curator_db=True)
     cv = cusub.add_parser("verify-acts", help="check every stored act again: statement, signature with UV, effects")
     cv.add_argument("--since", type=int, default=0, help="only acts with a higher seq")
     cv.set_defaults(fn=cmd_curator_verify_acts, curator_db=True)

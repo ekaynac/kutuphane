@@ -164,40 +164,45 @@ def enroll(conn, principal: str, *, created_by: str) -> tuple[str, str]:
     return eid, code
 
 
-def _new_session(conn, principal: str, login: str, *, login_challenge=None, ttl: str = SESSION_TTL) -> str:
+def _new_session(conn, principal: str, login: str, *, login_challenge=None, credential_id=None, enrollment=None,
+                 ttl: str = SESSION_TTL) -> str:
     token = b64u(secrets.token_bytes(32))
     now = _now(conn)
-    conn.execute("INSERT INTO curator_session (id_sha256, principal, login, login_challenge, created_at, expires_at) "
-                 f"VALUES (%s, %s, %s, %s, %s, %s::timestamptz + interval '{ttl}')",
-                 (digest(token), principal, login, login_challenge, now, now))
+    conn.execute("INSERT INTO curator_session (id_sha256, principal, login, login_challenge, credential_id, enrollment, "
+                 f"created_at, expires_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s::timestamptz + interval '{ttl}')",
+                 (digest(token), principal, login, login_challenge, credential_id, enrollment, now, now))
     return token
 
 
+_LIVE_ENROLLMENT = ("clock_timestamp() < e.expires_at AND e.cancelled_at IS NULL "
+                    "AND NOT EXISTS (SELECT 1 FROM passkey p WHERE p.enrollment = e.id)")
+
+
 def enrollment_session(conn, code: str) -> tuple[str, str]:
-    """(cookie value, principal) for a live, unused code. The session may only register, until the code expires."""
+    """(cookie value, principal) for a live, unused code. The session may only register a passkey for this code,
+    until the code expires."""
     if not isinstance(code, str) or not 1 <= len(code) <= 64:
         raise CeremonyRefused("unknown, used or expired code")
-    row = conn.execute("SELECT principal, expires_at - clock_timestamp() FROM curator_enrollment e "
-                       "WHERE code_sha256 = %s AND clock_timestamp() < expires_at "
-                       "AND NOT EXISTS (SELECT 1 FROM passkey p WHERE p.enrollment = e.id)",
-                       (digest(code),)).fetchone()
+    row = conn.execute(f"SELECT id, principal, expires_at - clock_timestamp() FROM curator_enrollment e "
+                       f"WHERE code_sha256 = %s AND {_LIVE_ENROLLMENT}", (digest(code),)).fetchone()
     if row is None:
         raise CeremonyRefused("unknown, used or expired code")
-    token = _new_session(conn, row[0], "enrollment", ttl=f"{max(1, int(row[1].total_seconds()))} seconds")
-    return token, row[0]
+    token = _new_session(conn, row[1], "enrollment", enrollment=row[0],
+                         ttl=f"{max(1, int(row[2].total_seconds()))} seconds")
+    return token, row[1]
 
 
-def _enrollment_of(conn, principal: str) -> str:
-    row = conn.execute("SELECT id FROM curator_enrollment e WHERE principal = %s AND clock_timestamp() < expires_at "
-                       "AND NOT EXISTS (SELECT 1 FROM passkey p WHERE p.enrollment = e.id) ORDER BY created_at DESC "
-                       "LIMIT 1", (principal,)).fetchone()
+def _enrollment_of(conn, session: bytes) -> str:
+    """The live enrollment of this enrollment session (docs/25 §3.4: one code, one passkey)."""
+    row = conn.execute(f"SELECT e.id FROM curator_session s JOIN curator_enrollment e ON e.id = s.enrollment "
+                       f"WHERE s.id_sha256 = %s AND {_LIVE_ENROLLMENT}", (session,)).fetchone()
     if row is None:
         raise CeremonyRefused("no live enrollment")
     return row[0]
 
 
 def registration_options(conn, cfg: Config, session: bytes, principal: str) -> tuple[str, dict]:
-    enrollment = _enrollment_of(conn, principal)
+    enrollment = _enrollment_of(conn, session)
     handle = bytes(conn.execute("SELECT user_handle FROM curator_person WHERE principal = %s",
                                 (principal,)).fetchone()[0])
     cid, _, challenge = _store(conn, cfg, session=session, principal=principal, action="register",
@@ -270,16 +275,22 @@ def _assert(conn, cfg: Config, credential: dict, challenge: bytes, *, principal=
 def login(conn, cfg: Config, cid: str, credential: dict) -> tuple[str, str]:
     """(cookie value, principal). The assertion must carry the person's user handle."""
     _, challenge = _challenge(conn, cid, session=None, principal=None, action="login")
-    principal, _, _ = _assert(conn, cfg, credential, challenge, need_handle=True)
-    return _new_session(conn, principal, "passkey", login_challenge=cid), principal
+    principal, cred_id, _ = _assert(conn, cfg, credential, challenge, need_handle=True)
+    return _new_session(conn, principal, "passkey", login_challenge=cid, credential_id=cred_id), principal
 
 
 def session(conn, token) -> tuple[bytes, str, str] | None:
-    """(id digest, principal, login) of a live session, or None."""
+    """(id digest, principal, login) of a live session, or None. A passkey session lives only while its passkey is
+    not revoked; an enrollment session only while its enrollment is live (not cancelled, not used)."""
     if not isinstance(token, str) or not token:
         return None
-    row = conn.execute("SELECT id_sha256, principal, login FROM curator_session WHERE id_sha256 = %s "
-                       "AND ended_at IS NULL AND clock_timestamp() < expires_at", (digest(token),)).fetchone()
+    row = conn.execute(
+        "SELECT s.id_sha256, s.principal, s.login FROM curator_session s WHERE s.id_sha256 = %s "
+        "AND s.ended_at IS NULL AND clock_timestamp() < s.expires_at "
+        "AND (s.login <> 'passkey' OR EXISTS (SELECT 1 FROM passkey p WHERE p.credential_id = s.credential_id "
+        "                                     AND p.revoked_at IS NULL)) "
+        f"AND (s.login <> 'enrollment' OR EXISTS (SELECT 1 FROM curator_enrollment e WHERE e.id = s.enrollment "
+        f"                                        AND {_LIVE_ENROLLMENT}))", (digest(token),)).fetchone()
     return (bytes(row[0]), row[1], row[2]) if row else None
 
 
@@ -335,11 +346,15 @@ def verify_act(conn, cfg: Config, session_id: bytes, principal: str, cid: str, c
 # --- the offline check (docs/25 §5.6) -------------------------------------------------------------------------------
 
 def _standing_effects(conn, act: int, payload: dict) -> bool:
+    """The act's events are its items, and the system events that they cause are its signed `retires`."""
     want = sorted((i["ref"], i["to"], payload["reason"]) for i in payload.get("items", []))
     got = sorted(tuple(r) for r in conn.execute(
         "SELECT n.book || '@' || n.id, e.value, e.reason FROM standing_event e JOIN note n ON n.seq = e.note_seq "
         "WHERE e.act = %s", (act,)).fetchall())
-    return want == got
+    caused = sorted(tuple(r) for r in conn.execute(
+        "SELECT n.book || '@' || n.id, s.value FROM standing_event s JOIN note n ON n.seq = s.note_seq "
+        "JOIN standing_event c ON c.seq = s.cause_seq WHERE c.act = %s", (act,)).fetchall())
+    return want == got and caused == sorted((r["ref"], "retired") for r in payload.get("retires", []))
 
 
 EFFECTS = {"standing": _standing_effects}  # slices R and D add their actions

@@ -9,6 +9,14 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Security review #16 fixes (curator web)
+
+- Fixed: approving a rule on the phone retired the rules that it supersedes without showing them. The signed statement now lists them (`retires`), the act retires exactly those or is refused (409), and `curator verify-acts` also checks the retirements ([#116](https://github.com/ekaynac/kutuphane/pull/116)).
+- Fixed: the database role of curator web could write any system Standing value. It can now write only a `retired` event that the act's statement lists, in the act's transaction ([#116](https://github.com/ekaynac/kutuphane/pull/116)).
+- Fixed: a session stayed open after its passkey was revoked. `revoke-passkey` now ends its sessions; new commands `kutuphane curator end-sessions <user>` and `kutuphane curator cancel-enrollment <id>`. An enrollment session registers only for its own code ([#116](https://github.com/ekaynac/kutuphane/pull/116)).
+- Fixed: `deploy/curator_probe.py` reported PASS when docker failed or could not see the containers ([#116](https://github.com/ekaynac/kutuphane/pull/116)).
+- Migration `026_curator_review16.sql`. Open curator sessions end when it runs. After `migrate`, apply `deploy/db-roles-curator.sql` again ([#116](https://github.com/ekaynac/kutuphane/pull/116)).
+
 ### Curator web with passkeys (D72, docs/25 slice P)
 
 - New: curator web, the phone page of the curator. A curator approves or rejects pending notes and signs each decision with a passkey (WebAuthn, user verification required). The passkey signs the exact statement: the notes and their digests, the Standing in force, the new values and the reason. Install: [install.md](install.md#curator-web); use: [operations.md](operations.md), section 7. The CLI path (`note standing`) stays and works as before ([#115](https://github.com/ekaynac/kutuphane/pull/115)).

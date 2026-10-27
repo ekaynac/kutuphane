@@ -16,8 +16,10 @@ GRANT UPDATE (ended_at) ON curator_session TO kutuphane_curator_web;
 DROP POLICY IF EXISTS standing_event_web ON standing_event;
 CREATE POLICY standing_event_web ON standing_event FOR INSERT TO kutuphane_curator_web
     WITH CHECK (act IS NOT NULL
-                OR (set_by = 'system' AND EXISTS (       -- docs/24 §8.3: the supersession of a rule it approved
+                OR (set_by = 'system' AND value = 'retired' AND EXISTS (  -- docs/24 §8.3: a retirement its act signs
                         SELECT 1 FROM standing_event c
                           JOIN note_link l ON l.src = c.note_seq AND l.type = 'supersedes' AND l.creation
                          WHERE c.seq = standing_event.cause_seq AND c.act IS NOT NULL AND c.value = 'approved'
                            AND l.dst_note = standing_event.note_seq)));
+-- Migration 026 (trigger standing_event_retires_signed) adds: the target is in the `retires` list of the cause's act
+-- statement, and the cause event is of this transaction.

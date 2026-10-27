@@ -99,18 +99,23 @@ Curator web (`kutuphane curator web`) is the phone page of the curator. Design: 
   book file. A Tailscale sidecar gives it its own host name with HTTPS; Funnel stays off.
 - **Enrollment.** Only the owner credential makes a curator and a one-time code (`kutuphane curator enroll`, 15
   minutes, one passkey). Registration needs user verification. The curator web role cannot make a person or an
-  enrollment, and cannot revoke or un-revoke a passkey.
+  enrollment, and cannot revoke or un-revoke a passkey. An enrollment session registers only for its own code; the
+  owner can cancel an unused code (`curator cancel-enrollment`).
 - **The act.** Each decision is a WebAuthn assertion with user verification over a stored statement: the challenge
   is `SHA-256("kutuphane/curator-act/v1\n" ‖ canonical JSON)` of the action, the note references and digests, the
   Standing in force, the new values, the reason, a fresh 32-byte nonce and the expiry (5 minutes). One act per
   challenge, in the same session. The database accepts a Standing event of the web role only as an item of its
-  act's statement, with `set_by` = the signer (migration 023: keys, a trigger and row-level security).
+  act's statement, with `set_by` = the signer (migration 023: keys, a trigger and row-level security). When the
+  approval of a rule retires the rules that it supersedes, the statement lists them (`retires`); the act writes
+  exactly those, and the database accepts a system event caused by an act only as a `retired` event of a listed
+  note, in the same transaction (migration 026).
 - **Checks of every ceremony.** The exact origin and the full-host RP ID; user verification; no `crossOrigin` and no
   `topOrigin`; the signature counter must increase when it is not 0. The note digest is computed again from all its
   stored parts before a person sees or signs it. Rights and the Standing in force are decided again in the act
   transaction.
 - **Session.** A passkey login gives a `__Host-` cookie (`Secure`, `HttpOnly`, `SameSite=Strict`), 8 hours, no
-  renewal. A session shows the pending notes; only an act changes anything. Every state-changing request needs this
+  renewal. A session shows the pending notes; only an act changes anything. A session names the passkey of its
+  login: when that passkey is revoked, the session ends (`curator end-sessions` ends all sessions of a person). Every state-changing request needs this
   origin and JSON.
 - **Trusted base and limits.** Curator web is in the trusted base, as the CLI host is: the authenticator does not
   show the statement, so the page that shows it also chooses what the person signs. `kutuphane curator verify-acts`

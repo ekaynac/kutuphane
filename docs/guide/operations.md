@@ -519,8 +519,10 @@ PIN. Then she taps **Sign in with passkey**.
 The page shows each pending note of the books where she holds `curate` and `read`: the text first (hidden Unicode
 characters are shown as marks such as `⟦U+202E⟧`), then the kind, the scope and who wrote it. She picks a reason,
 taps **Approve** or **Reject**, reads the statement, and taps **Sign with passkey**. The passkey signs that exact
-statement: the note, its digest, the Standing in force, the new value and the reason. If another curator acted on
-the note in between, the page says so and reloads.
+statement: the note, its digest, the Standing in force, the new value and the reason. When she approves a rule-role
+note that supersedes a current rule of the same scope, the statement also lists that rule as retired (`retires`),
+and the act retires exactly those notes. If another curator acted on the note or on a listed rule in between, the
+page says so and reloads.
 
 Rules of one act: 1–50 notes, one reason, at most one rule-role note (`decision_proposal`, `convention`) approved,
 never two notes joined by `contradicts` approved together. The transitions are the ones in the table above. iPhone
@@ -529,12 +531,20 @@ and iCloud passkeys are synced; that is allowed, and each act records it.
 ```sh
 KUTUPHANE_CURATOR_DSN=… kutuphane curator passkeys [user:ayse]     # the passkeys: synced or not, last act
 KUTUPHANE_CURATOR_DSN=… kutuphane curator revoke-passkey <id>      # a lost phone: revoke, then enroll again
+KUTUPHANE_CURATOR_DSN=… kutuphane curator end-sessions user:ayse    # a stolen cookie: end all her sessions
+KUTUPHANE_CURATOR_DSN=… kutuphane curator cancel-enrollment <en_…>  # a leaked code: cancel it before it is used
 KUTUPHANE_CURATOR_DSN=… KUTUPHANE_WEBAUTHN_RP_ID=… KUTUPHANE_WEBAUTHN_ORIGIN=… kutuphane curator verify-acts
 ```
 
+`revoke-passkey` also ends every session of that passkey at once; a session of a revoked passkey is refused in any
+case. `cancel-enrollment` takes the enrollment id that `curator enroll` printed; the code then opens no session, and
+an open enrollment session of that code ends. A used code cannot be cancelled: revoke its passkey. An enrollment
+session registers a passkey only for its own code.
+
 After each enrollment, check `curator passkeys`: one new passkey per enrollment that you made. `verify-acts` checks
 every stored act again, offline: the statement gives the challenge, the signature verifies with user verification
-against the stored passkey, and the Standing events of the act are exactly the items of its statement. It exits 1
+against the stored passkey, the Standing events of the act are exactly the items of its statement, and the
+retirements that they caused are exactly its `retires`. It exits 1
 and lists the act when a check fails.
 
 ## 8. Outcomes and decision export
@@ -696,7 +706,9 @@ Disk encryption is a deployment duty at the volume level (D48). The application 
 | `skill clear` | Lift the scan block of one skill as a curator (`KUTUPHANE_CURATOR_DSN`). |
 | `curator enroll` | Print a one-time enrollment URL (15 minutes, one passkey) for a curator (`KUTUPHANE_CURATOR_DSN`). |
 | `curator passkeys` | List the registered passkeys: synced or not, last act. |
-| `curator revoke-passkey` | Revoke a passkey; it signs nothing more. |
+| `curator revoke-passkey` | Revoke a passkey; it signs nothing more, and its sessions end. |
+| `curator end-sessions` | End every live session of a curator. |
+| `curator cancel-enrollment` | Cancel an unused enrollment code; its session ends. |
 | `curator verify-acts` | Check every stored phone act again: statement, signature with user verification, effects. |
 | `curator web` | Serve curator web (`KUTUPHANE_CURATOR_WEB_DSN`, `KUTUPHANE_WEBAUTHN_RP_ID`, `KUTUPHANE_WEBAUTHN_ORIGIN`). |
 
