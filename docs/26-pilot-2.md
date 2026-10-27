@@ -189,16 +189,23 @@ also ran 3 to 5 more times with each code. Counts only; the answers are in the p
   gives the reason. `main` answers "the passages do not state why"; the branch gives the same content (twice) or
   `not_in_library` (twice, with an earlier prompt wording). The gap is in retrieval (G19), not in the answer step.
 
-**Re-index (not done).** No book of the main database was ingested again. A read-only comparison of the stored
-content with chunker 5:
+**Re-index (done, 2026-10-27).** `inframedic-canon` and the radar documents were ingested again from the same
+sources, with the same policy and `kstd.yaml`, through LLMDAP with the local embedder. The bytes did not change, so
+the content ids stay the same and only the profile is new. The old passages and vectors stay. The embedded counts
+are the same as the read-only forecast. No call failed.
 
-| Book | Files that change | Passages | Shorter than 50 characters | Vectors to embed (others copied) |
-|---|---|---|---|---|
-| `inframedic-canon` | 26 of 33 | 668 → 585 | 33 → 0 | 77 of 585 |
-| radar documents | 57 of 83 | 2,601 → 2,321 | 102 → 1 (a one-line file) | 481 of 2,321 |
-| radar briefs, radar news, `ornek` | 0 | the same | 0 | 0 |
+| Book | Files that change | Passages | Shorter than 50 characters | Vectors embedded (others copied) | Time |
+|---|---|---|---|---|---|
+| `inframedic-canon` | 26 of 33 | 668 → 585 | 33 → 0 | 77 of 585 | 121 s (first ingest: 581 s) |
+| radar documents | 57 of 83 | 2,601 → 2,321 | 102 → 1 (a one-line file) | 481 of 2,321 | 484 s |
+| radar briefs, radar news, `ornek` | 0 | not ingested again | — | — | — |
 
-An ingest of any book gives a new profile id, so every passage handle changes; old handles still open. The 12
-passage citations of the journal stay on the old passages, so `neighbours` from a new handle does not find those
-notes. The longest new passage is 4,825 characters: a heading can make a passage longer than `MAX_CHUNK_CHARS`
-(4,800) by its own length.
+Every passage handle of the two books changed (new profile id); old handles still open. The 12 passage citations of
+the journal stay on the old passages, so `neighbours` from a new handle does not find those notes. The longest new
+passage is 4,825 characters: a heading can make a passage longer than `MAX_CHUNK_CHARS` (4,800) by its own length.
+
+A check with Pilot 1 questions 1–3 (`docs/18`, one run each, after the re-index) gave 1 answer as good as Pilot 1
+(question 2: a partial answer, better than `not_in_library`) and 2 worse: question 1 was `not_in_library` with the
+same 8 passages as Pilot 1 (3 more runs: 3 answered), and question 3 did not get the advisory record. Its
+first-stage pool does not hold that record with the old or the new radar documents profile, so the re-cut is not
+the cause that the check shows.
