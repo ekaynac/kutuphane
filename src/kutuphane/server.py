@@ -26,14 +26,14 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import answers, db, feedback, gate, identity, kstd, llmdap, retrieval, search
+from . import answers, db, feedback, gate, identity, kstd, llmdap, notesquery, retrieval, search
 from .gate import Actor
 from .ids import normalize_path
 
 # Feature modules (docs/24 §16 P0). Each may define `register_mcp(mcp, deps)` (adds its MCP tools) and
 # `http_routes(deps, endpoint) -> list[Route]` (its HTTP routes). They are called in this order, after the built-in
 # tools and routes, so the tool list and the route table stay in a fixed order.
-FEATURES: tuple = ()
+FEATURES: tuple = (notesquery,)
 
 log = logging.getLogger(__name__)
 ENV = {"model": "KUTUPHANE_ANSWER_MODEL", "public_url": "KUTUPHANE_PUBLIC_URL"}
@@ -98,7 +98,12 @@ def op_search(dsn, stages, actor: Actor, query: str, k: int, model_reader: bool 
     return _run(dsn, go)
 
 
-def op_citation(dsn, actor: Actor, handle: str, model_reader: bool = False) -> dict:
+def op_citation(dsn, actor: Actor, handle: str, model_reader: bool = False, context: dict | None = None) -> dict:
+    """A passage handle, or a note reference with the optional context (docs/24 §9.4)."""
+    if notesquery.is_note_ref(handle):
+        return _run(dsn, lambda c: notesquery.open_note(c, actor, for_model=_for_model(actor, model_reader),
+                                                        ref=handle, **(context or {})))
+
     def go(conn):
         hit = search.open_citation(conn, actor, parse_citation(handle))
         c = hit.citation
@@ -273,7 +278,9 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
                                                                 False, scope)})
 
     async def h_citation(request, actor):
-        return JSONResponse(await run_in_threadpool(op_citation, dsn, actor, request.query_params.get("handle", "")))
+        q = request.query_params
+        context = {k: q[k] for k in ("repo", "branch", "path", "commit") if k in q}
+        return JSONResponse(await run_in_threadpool(op_citation, dsn, actor, q.get("handle", ""), False, context))
 
     async def h_ask(request, actor):
         if bridge is None or not model:
@@ -403,9 +410,12 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
 
     @mcp.tool()
     @_mcp_errors
-    async def open_citation(handle: str) -> dict:
-        """Open a citation handle: the exact passage of that version, if you may read it now."""
-        return await run_in_threadpool(op_citation, dsn, _mcp_actor(), handle, True)
+    async def open_citation(handle: str, repo: str | None = None, branch: str | None = None,
+                            path: str | None = None, commit: str | None = None) -> dict:
+        """Open a citation handle: the exact passage of that version, if you may read it now. A note reference
+        (book@nt_…) gives the note, with `current` in the optional context (repo, branch, path, commit)."""
+        context = {"repo": repo, "branch": branch, "path": path, "commit": commit}
+        return await run_in_threadpool(op_citation, dsn, _mcp_actor(), handle, True, context)
 
     @mcp.tool()
     @_mcp_errors
