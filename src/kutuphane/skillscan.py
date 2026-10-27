@@ -236,16 +236,9 @@ def run(tool: Tool, skill_path: str, files: dict[str, bytes]) -> Scan:
         return _report(digest, tool, raw, root, skill_path)
 
 
-def _under(skill_path: str, path: str) -> str | None:
-    """The path relative to the skill folder, or None when the file is not inside it."""
-    if skill_path == ".":
-        return path
-    return path[len(skill_path) + 1:] if path.startswith(skill_path + "/") else None
-
-
 def skill_files(skill_path: str, files) -> dict:
     """{relative path: file} of the files (anything with .path) inside one skill folder."""
-    return {rel: f for f in files if (rel := _under(skill_path, f.path)) is not None}
+    return {rel: f for f in files if (rel := agentfiles.relative(skill_path, f.path)) is not None}
 
 
 def scan_files(files) -> list[tuple[str, Scan]]:
@@ -405,7 +398,7 @@ def rescan(conn, book: str | None = None) -> list[dict]:
                                 "CROSS JOIN LATERAL jsonb_array_elements(c.manifest) AS m(entry) "
                                 "WHERE c.book = %s AND c.id = %s", (slug, content_id)).fetchall()
         skills = agentfiles.skill_dirs(p for p, _ in manifest)
-        inside = [(p, h) for p, h in manifest if any(_under(s, p) is not None for s in skills)]
+        inside = [(p, h) for p, h in manifest if any(agentfiles.relative(s, p) is not None for s in skills)]
         blobs = dict(conn.execute("SELECT sha256, data FROM blob WHERE sha256 = ANY(%s)",
                                   ([h for _, h in inside],)).fetchall())
         files = [_Blob(p, h, bytes(blobs[h])) for p, h in inside]

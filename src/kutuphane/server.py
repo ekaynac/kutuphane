@@ -6,6 +6,8 @@
 - Errors are short and uniform (401/403/404/400/409/429/502); no stack traces or internals in responses.
 - MCP: the SDK v2 `MCPServer`, stateless; it serves 2025-11-25 clients (with `initialize`) and 2026-07-28 clients
   (without) from one app (docs/24 §12.1). A long `ask_library` can run as a durable job (`jobs`, §12.2).
+- MCP Skills (SEP-2640, #80): `skills/list`, `skills/get` and `skill://` reads (`skills.py`); the read tools put the
+  handling labels under `_meta["kutuphane/handling"]` (`handling.py`).
 """
 import contextlib
 import dataclasses
@@ -14,14 +16,22 @@ import logging
 import os
 import urllib.parse
 import uuid
+from typing import Annotated
 
+import pydantic_core
 from mcp.server import CacheHint, MCPServer
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
-from mcp.server.extension import Extension
+from mcp.server.extension import Extension, MethodBinding
+from mcp.server.lowlevel.helper_types import ReadResourceContents
+from mcp.server.mcpserver import require_client_extension
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.shared.exceptions import MCPError
+from mcp_types import (INTERNAL_ERROR, INVALID_PARAMS, CallToolResult, PaginatedRequestParams, RequestParams,
+                       TextContent)
+from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
@@ -29,8 +39,8 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import (answers, coderepo, confirm, db, feedback, gate, identity, ids, jobs, kstd, llmdap, notes, notesquery,
-               outcomes, retrieval, search)
+from . import (answers, coderepo, confirm, db, feedback, gate, handling, identity, ids, jobs, kstd, llmdap, notes,
+               notesquery, outcomes, retrieval, search, skills)
 from .gate import Actor
 from .ids import normalize_path
 
@@ -92,7 +102,8 @@ def _check_query(query) -> None:
 
 
 def op_search(dsn, stages, actor: Actor, query: str, k: int, model_reader: bool = False,
-              scope: search.Scope = search.Scope()) -> list[dict]:
+              scope: search.Scope = search.Scope(), labels_out: dict | None = None) -> list[dict]:
+    """`labels_out`, if given, gets the handling labels of the hits (handling.py), from the same connection."""
     _check_query(query)
 
     def go(conn):
@@ -103,20 +114,33 @@ def op_search(dsn, stages, actor: Actor, query: str, k: int, model_reader: bool 
             item = rights.info(h.citation.book, h.citation.content_id, h.citation.path)
             out.append({"citation": h.citation.handle, "page": h.page, "line": h.line, "score": round(h.score, 4),
                         **_text(h.text, item, ai), "item": item})
+        if labels_out is not None:
+            cited = [h.citation for h in hits]
+            labels_out.update(handling.labels(conn, [c.book for c in cited],
+                                              [(c.book, c.content_id, c.path) for c in cited]))
         return out
     return _run(dsn, go)
 
 
-def op_citation(dsn, actor: Actor, handle: str, model_reader: bool = False, context: dict | None = None) -> dict:
-    """A passage handle, or a note reference with the optional context (docs/24 §9.4)."""
+def op_citation(dsn, actor: Actor, handle: str, model_reader: bool = False, context: dict | None = None,
+                labels_out: dict | None = None) -> dict:
+    """A passage handle, or a note reference with the optional context (docs/24 §9.4). `labels_out`: as op_search;
+    a note's labels cover its journal and its `source_books`."""
     if notesquery.is_note_ref(handle):
-        return _run(dsn, lambda c: notesquery.open_note(c, actor, for_model=_for_model(actor, model_reader),
-                                                        ref=handle, **(context or {})))
+        def note(conn):
+            out = notesquery.open_note(conn, actor, for_model=_for_model(actor, model_reader), ref=handle,
+                                       **(context or {}))
+            if labels_out is not None:
+                labels_out.update(handling.labels(conn, handling.note_books(conn, [out["citation"]])))
+            return out
+        return _run(dsn, note)
 
     def go(conn):
         hit = search.open_citation(conn, actor, parse_citation(handle))
         c = hit.citation
         item = kstd.Rights(conn).info(c.book, c.content_id, c.path)
+        if labels_out is not None:
+            labels_out.update(handling.labels(conn, [c.book], [(c.book, c.content_id, c.path)]))
         return {"citation": c.handle, "page": hit.page, "line": hit.line,
                 **_text(hit.text, item, _for_model(actor, model_reader)),
                 "item": item, "outcomes": outcomes.passage_counts(conn, c)}
@@ -172,7 +196,7 @@ def op_job_cancel(dsn, actor: Actor, job_id: str) -> dict:
 
 
 def op_file(dsn, actor: Actor, book: str, content_id: str, path: str,
-             model_reader: bool = False) -> tuple[bytes, str]:
+            model_reader: bool = False, labels_out: dict | None = None) -> tuple[bytes, str]:
     def go(conn):
         norm = normalize_path(path)
         item = kstd.Rights(conn).info(book, content_id, norm)
@@ -184,6 +208,8 @@ def op_file(dsn, actor: Actor, book: str, content_id: str, path: str,
         entry = conn.execute("SELECT m.entry->>'media_type' FROM content_version c CROSS JOIN LATERAL "
                              "jsonb_array_elements(c.manifest) AS m(entry) WHERE c.book = %s AND c.id = %s "
                              "AND m.entry->>'path' = %s", (book, content_id, norm)).fetchone()
+        if labels_out is not None:
+            labels_out.update(handling.labels(conn, [book], [(book, content_id, norm)]))
         return data, entry[0] if entry else "application/octet-stream"
     return _run(dsn, go)
 
@@ -295,6 +321,10 @@ class Deps:
     @staticmethod
     def mcp_errors(tool):
         return _mcp_errors(tool)
+
+    @staticmethod
+    def handled(value, labels: dict, *, structured: bool = False) -> CallToolResult:
+        return _handled(value, labels, structured=structured)
 
 
 def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge | None, model: str | None,
@@ -450,6 +480,108 @@ class _ClientCredentials(Extension):
     identifier = "io.modelcontextprotocol/oauth-client-credentials"
 
 
+class _ListSkillsParams(PaginatedRequestParams):
+    pass
+
+
+class _GetSkillParams(RequestParams):
+    uri: str
+
+
+def _method_error(exc: Exception) -> MCPError:
+    """A JSON-RPC error with the same short messages as HTTP: an expected refusal or an unknown skill or file is
+    -32602 (Invalid params, as SEP-2640 and `resources/read` use for what the server does not serve); anything else
+    is logged and is `internal error`."""
+    known = _classify(exc)
+    if known is None:
+        log.exception("MCP skills request failed")
+        return MCPError(code=INTERNAL_ERROR, message="internal error")
+    status, message = known
+    return MCPError(code=INVALID_PARAMS if status < 500 else INTERNAL_ERROR, message=message)
+
+
+def _cacheable(ctx) -> dict:
+    """SEP-2549 list caching on 2026-07-28 (the entries are per caller and rights change: never reuse them)."""
+    return {"ttlMs": 0, "cacheScope": "private"} if ctx.protocol_version in MODERN_PROTOCOL_VERSIONS else {}
+
+
+class _Skills(Extension):
+    """SEP-2640 (#80): `skills/list` and `skills/get` for a client that declares `io.modelcontextprotocol/skills`;
+    the files are `skill://` resources (`_Server.read_resource`). The `extensions` capability is 2026-07-28 wire
+    (the SDK drops it from a 2025-11-25 `initialize`, and a stateless server sees no `initialize` on the next
+    request): on 2025-11-25 the capabilities are unknown, so the call itself is the client's declaration. The gate
+    is the same on both versions (skills.py)."""
+    identifier = skills.EXTENSION_ID
+
+    def __init__(self, dsn: str):
+        self.dsn = dsn
+
+    def methods(self):
+        return [MethodBinding("skills/list", _ListSkillsParams, self._list),
+                MethodBinding("skills/get", _GetSkillParams, self._get)]
+
+    @staticmethod
+    def _declared(ctx) -> None:
+        if ctx.session.client_capabilities is not None:
+            require_client_extension(ctx, skills.EXTENSION_ID)
+
+    async def _list(self, ctx, params: _ListSkillsParams) -> dict:
+        self._declared(ctx)
+        if params.cursor is not None:
+            raise MCPError(code=INVALID_PARAMS, message="unknown cursor: skills/list has one page")
+        try:
+            actor = _mcp_actor()
+            entries = await run_in_threadpool(_run, self.dsn, lambda c: skills.listing(c, actor))
+        except Exception as exc:
+            raise _method_error(exc) from None
+        return {"skills": entries, **_cacheable(ctx)}
+
+    async def _get(self, ctx, params: _GetSkillParams) -> dict:
+        self._declared(ctx)
+        try:
+            actor = _mcp_actor()
+            entry = await run_in_threadpool(_run, self.dsn, lambda c: skills.get(c, actor, params.uri))
+        except Exception as exc:
+            raise _method_error(exc) from None
+        return {"skill": entry, **_cacheable(ctx)}
+
+
+class _Server(MCPServer):
+    """`resources/read` also reads `skill://` files (SEP-2640) through the skill gate, with the file's own media type
+    and the handling labels in the content `_meta`. Every other URI goes to the SDK."""
+
+    def __init__(self, *args, dsn: str, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._dsn = dsn
+
+    async def read_resource(self, uri, context=None):
+        if not str(uri).startswith(f"{skills.SCHEME}://"):
+            return await super().read_resource(uri, context)
+        try:
+            actor = _mcp_actor()
+            data, media_type, labels = await run_in_threadpool(_run, self._dsn,
+                                                               lambda c: skills.read(c, actor, str(uri)))
+        except Exception as exc:
+            raise _method_error(exc) from None
+        content: str | bytes = data
+        if skills.is_text(media_type):
+            try:
+                content = data.decode("utf-8")
+            except UnicodeDecodeError:
+                pass  # sent as a blob: the bytes, and so the digest, stay exact
+        return [ReadResourceContents(content=content, mime_type=media_type, meta={handling.KEY: labels})]
+
+
+def _handled(value, labels: dict, *, structured: bool = False) -> CallToolResult:
+    """The result the SDK makes of a tool's return value (one JSON text block per list item, or the text itself;
+    `structuredContent` {"result": …} for a tool with an output schema), with the handling labels in `_meta` (#80)."""
+    blocks = [TextContent(type="text", text=v if isinstance(v, str) else
+                          pydantic_core.to_json(v, fallback=str, indent=2).decode())
+              for v in (value if isinstance(value, list) else [value])]
+    return CallToolResult(content=blocks, structured_content={"result": value} if structured else None,
+                          _meta={handling.KEY: labels})
+
+
 # docs/24 §12.1: the tool list is the same for every caller and changes only with a deployment.
 CACHE_HINTS = {"tools/list": CacheHint(ttl_ms=300_000, scope="public"),
                "server/discover": CacheHint(ttl_ms=300_000, scope="public")}
@@ -488,28 +620,30 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
     if str(auth.issuer_url) != verifier.issuer:  # docs/24 §12.5: advertise exactly the issuer we verify
         raise RuntimeError(f"issuer {verifier.issuer!r} would be advertised as {str(auth.issuer_url)!r}: "
                            "write KUTUPHANE_OIDC_ISSUER exactly as the IdP's tokens carry it, in that normal form")
-    mcp = MCPServer("kutuphane", token_verifier=_Verifier(verifier), extensions=[_ClientCredentials()],
-                    cache_hints=CACHE_HINTS, auth=auth)
+    mcp = _Server("kutuphane", dsn=dsn, token_verifier=_Verifier(verifier),
+                  extensions=[_ClientCredentials(), _Skills(dsn)], cache_hints=CACHE_HINTS, auth=auth)
 
     @mcp.tool()
     @_mcp_errors
     async def search_library(query: str, k: int = search.DEFAULT_K, book: list[str] | None = None,
                              path: str | None = None, origin: list[str] | None = None,
-                             current_only: bool = False) -> list[dict]:
+                             current_only: bool = False) -> Annotated[CallToolResult, list[dict]]:
         """Search the books you may read now. Results carry citation handles for open_citation.
         Optional filters narrow the evidence before ranking: `book` (slugs), `path` (prefix, e.g. "data/"),
         `origin` (kstd origins: human, assisted, model, tool, unknown), `current_only` (kstd validity includes now)."""
-        scope = search.Scope.of(book, path, origin, current_only)
-        return await run_in_threadpool(op_search, dsn, stages, _mcp_actor(), query, k, True, scope)
+        scope, labels = search.Scope.of(book, path, origin, current_only), {}
+        hits = await run_in_threadpool(op_search, dsn, stages, _mcp_actor(), query, k, True, scope, labels)
+        return _handled(hits, labels, structured=True)
 
     @mcp.tool()
     @_mcp_errors
     async def open_citation(handle: str, repo: str | None = None, branch: str | None = None,
-                            path: str | None = None, commit: str | None = None) -> dict:
+                            path: str | None = None, commit: str | None = None) -> CallToolResult:
         """Open a citation handle: the exact passage of that version, if you may read it now. A note reference
         (book@nt_…) gives the note, with `current` in the optional context (repo, branch, path, commit)."""
-        context = {"repo": repo, "branch": branch, "path": path, "commit": commit}
-        return await run_in_threadpool(op_citation, dsn, _mcp_actor(), handle, True, context)
+        context, labels = {"repo": repo, "branch": branch, "path": path, "commit": commit}, {}
+        cited = await run_in_threadpool(op_citation, dsn, _mcp_actor(), handle, True, context, labels)
+        return _handled(cited, labels)
 
     @mcp.tool()
     @_mcp_errors
@@ -535,12 +669,13 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
 
     @mcp.tool()
     @_mcp_errors
-    async def read_document(book: str, content_id: str, path: str) -> str:
+    async def read_document(book: str, content_id: str, path: str) -> Annotated[CallToolResult, str]:
         """Read a text document of a specific version (agent instructions need an activate grant)."""
-        data, media_type = await run_in_threadpool(op_file, dsn, _mcp_actor(), book, content_id, path, True)
+        labels = {}
+        data, media_type = await run_in_threadpool(op_file, dsn, _mcp_actor(), book, content_id, path, True, labels)
         if media_type not in TEXT_TYPES:
             raise BadRequest("not a text document; use search_library and open_citation for its passages")
-        return data.decode("utf-8")
+        return _handled(data.decode("utf-8"), labels, structured=True)
 
     @mcp.tool()
     @_mcp_errors

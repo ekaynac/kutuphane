@@ -953,14 +953,18 @@ def _for_model(actor: Actor, model_reader: bool) -> bool:
 
 
 def register_mcp(mcp, deps) -> None:
+    from mcp_types import CallToolResult
     from starlette.concurrency import run_in_threadpool
 
-    from . import db
+    from . import db, handling
 
-    def run(fn, **kw):
+    def run(fn, labels_out: dict | None = None, **kw):
         actor = deps.mcp_actor()
         with db.connect(deps.dsn) as conn:
-            return fn(conn, actor, for_model=_for_model(actor, True), **kw)
+            out = fn(conn, actor, for_model=_for_model(actor, True), **kw)
+            if labels_out is not None:  # #80: the journals and source books of the notes shown
+                labels_out.update(handling.labels(conn, handling.note_books(conn, [e["ref"] for e in out["items"]])))
+            return out
 
     @mcp.tool()
     @deps.mcp_errors
@@ -972,12 +976,12 @@ def register_mcp(mcp, deps) -> None:
                           written_before: str | None = None, since: int | None = None, text: str | None = None,
                           unfixed: bool = False, collapse: bool = False, include_unverified: bool = False,
                           order: str = "newest", budget_tokens: int = 2000, max_bytes: int = 32768,
-                          as_of: int | None = None, cursor: str | None = None) -> dict:
+                          as_of: int | None = None, cursor: str | None = None) -> CallToolResult:
         """List agent notes in the journals you may read: fast SQL filters, no model call. `sets`: current
         (approved, in your context), open (pending, not accepted), history. Context: repo, branch, path, commit.
         Use `since` with the last watermark to get changes and `left` tombstones; `cursor` for the next page."""
-        args = {k: v for k, v in locals().items() if k in _PARAMS[_QUERY]}  # the tool arguments
-        return await run_in_threadpool(lambda: run(_QUERY, **args))
+        args, labels = {k: v for k, v in locals().items() if k in _PARAMS[_QUERY]}, {}  # the tool arguments
+        return deps.handled(await run_in_threadpool(lambda: run(_QUERY, labels, **args)), labels)
 
     @mcp.tool()
     @deps.mcp_errors
