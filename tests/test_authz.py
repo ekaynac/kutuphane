@@ -294,3 +294,77 @@ def test_access_log_records_policy_in_force_at_delivery(conn, conn2, book, okf_d
     gate.deliver_file(conn, actor, BOOK, book, DOC)
     logged = events(conn, actor.correlation_id)[0][5]
     assert logged == catalog.current_policy(conn, BOOK) != before
+
+
+# --- guard_many (docs/24 §6.1): one decision for several books around a write -----------------------------------
+
+OTHER = "book:ikinci"
+
+
+@pytest.fixture
+def two_books(conn, book, okf_dir):
+    catalog.publish(conn, book="ikinci", title="ikinci", files=read_source(okf_dir),
+                    policy=make_policy(sensitivity="normal", egress="local_only", protection="standard"),
+                    profile=catalog.whole_profile())
+    conn.execute("CREATE TABLE probe_write (n integer)")
+    authz.grant(conn, OBJ, "read", U)
+    authz.grant(conn, OTHER, "read", U)
+    return conn
+
+
+def _writes(conn):
+    return conn.execute("SELECT count(*) FROM probe_write").fetchone()[0]
+
+
+def _logged(conn, actor):
+    return conn.execute("SELECT object, mode, allowed, reason, items FROM access_event WHERE correlation_id = %s "
+                        "ORDER BY id", (actor.correlation_id,)).fetchall()
+
+
+def test_guard_many_decides_every_book_and_logs_each(two_books):
+    conn = two_books
+    actor = Actor(U)
+    out = gate.guard_many(conn, actor, {OBJ: {"read"}, OTHER: {"read"}},
+                          lambda: conn.execute("INSERT INTO probe_write VALUES (1) RETURNING n").fetchone()[0],
+                          action="propose", items={OBJ: ["a"]})
+    assert out == 1 and _writes(conn) == 1
+    assert [(o, m, ok, items) for o, m, ok, _r, items in _logged(conn, actor)] == \
+        [(OTHER, "read", True, None), (OBJ, "read", True, ["a"])]
+
+
+def test_guard_many_refuses_before_the_work_when_one_book_is_missing(two_books):
+    conn = two_books
+    authz.revoke(conn, OTHER, "read", U)
+    actor, ran = Actor(U), []
+    with pytest.raises(Denied, match="no current right on book:ikinci"):
+        gate.guard_many(conn, actor, {OBJ: {"read"}, OTHER: {"read"}}, lambda: ran.append(1), action="propose")
+    assert ran == [] and _writes(conn) == 0
+    assert [(o, ok) for o, _m, ok, _r, _i in _logged(conn, actor)] == [(OTHER, False)]
+
+
+def test_guard_many_loss_on_the_final_decision_rolls_back_and_logs(two_books, conn2):
+    conn = two_books
+    did = authz.delegate(conn, delegator=U, delegate_to=A, obj=OTHER, mode="read", expires_at=soon())
+    authz.delegate(conn, delegator=U, delegate_to=A, obj=OBJ, mode="read", expires_at=soon())
+
+    def write_then_lose_one_book():
+        conn.execute("INSERT INTO probe_write VALUES (1)")
+        authz.revoke_delegation(conn2, did)  # committed by another session after the first decision
+    actor = Actor(A, on_behalf_of=U)
+    with pytest.raises(Denied, match="revoked before delivery"):
+        gate.guard_many(conn, actor, {OBJ: {"read"}, OTHER: {"read"}}, write_then_lose_one_book, action="propose")
+    assert _writes(conn) == 0                                              # the write was rolled back
+    logged = _logged(conn, actor)                                          # the refusal survived the rollback
+    assert [(o, ok) for o, _m, ok, _r, _i in logged] == [(OTHER, False)]
+    assert logged[0][3].startswith("revoked before delivery")
+
+
+def test_guard_many_needs_at_least_one_book(conn):
+    with pytest.raises(ValueError):
+        gate.guard_many(conn, Actor(U), {}, lambda: None, action="propose")
+
+
+def test_actor_channel_is_checked():
+    assert Actor(U).channel == "cli" and Actor(U).client_id is None
+    with pytest.raises(ValueError):
+        Actor(U, channel="browser")

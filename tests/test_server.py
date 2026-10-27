@@ -292,3 +292,52 @@ def test_http_search_embeds_the_query_through_llmdap(conn, okf_dir, verifier, fa
     path, headers = fake.hits[-1]
     assert path.endswith("/v1/embeddings") and headers["x-llmdap-purpose"] == "search"
     assert headers["x-llmdap-for-subject"] == U
+
+
+def _probe_feature(seen: list):
+    """A feature module as slices add them (docs/24 §16 P0): one MCP tool and one HTTP route."""
+    import types
+
+    from starlette.routing import Route
+
+    def register_mcp(mcp, deps):
+        @mcp.tool()
+        @deps.mcp_errors
+        async def probe_channel(fail: bool = False) -> dict:
+            """Who is calling, and through which entry point."""
+            actor = deps.mcp_actor()
+            if fail:
+                raise server.gate.Denied("INTERNAL_DETAIL")
+            seen.append(("mcp", deps.dsn))
+            return {"principal": actor.principal, "channel": actor.channel}
+
+    def http_routes(deps, endpoint):
+        async def h_probe(_request, actor):
+            seen.append(("http", deps.dsn))
+            return server.JSONResponse({"principal": actor.principal, "channel": actor.channel})
+        return [Route("/v1/probe", endpoint(h_probe))]
+
+    return types.SimpleNamespace(register_mcp=register_mcp, http_routes=http_routes)
+
+
+def test_feature_hooks_add_tools_and_routes_with_the_server_gate(app_env, keys, verifier):  # docs/24 §16 P0
+    _app, _, dsn = app_env
+    seen = []
+    feature = _probe_feature(seen)
+    app = server.create_app(dsn=dsn, verifier=verifier, bridge=None, model=None, public_url=PUBLIC,
+                            features=(feature,))
+    with TestClient(app, base_url=PUBLIC) as client:
+        assert client.get("/v1/probe").status_code == 401                         # the server's own auth
+        r = client.get("/v1/probe", headers={**bearer(keys), "x-kutuphane-channel": "mcp"})
+        assert r.json() == {"principal": U, "channel": "http"}                    # the entry point sets it
+        tools = client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                            headers={**MCP_HEADERS, **bearer(keys)})
+        names = [t["name"] for t in json.loads([ln[5:] for ln in tools.text.splitlines()
+                                                 if ln.startswith("data:")][-1])["result"]["tools"]]
+        assert names[-1] == "probe_channel" and names[0] == "search_library"    # built-ins first, fixed order
+        out = mcp_tool_over_http(client, bearer(keys, act={"sub": "kobra-7"}), "probe_channel", {})
+        assert json.loads(out["content"][0]["text"]) == {"principal": A, "channel": "mcp"}
+        failed = mcp_tool_over_http(client, bearer(keys), "probe_channel", {"fail": True})
+        assert failed["isError"] and "forbidden" in failed["content"][0]["text"]
+        assert "INTERNAL_DETAIL" not in json.dumps(failed)                        # the uniform MCP errors
+    assert seen == [("http", dsn), ("mcp", dsn)]

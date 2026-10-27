@@ -6,6 +6,7 @@
 - Errors are short and uniform (401/403/404/400/409/502); no stack traces or internals in responses.
 """
 import contextlib
+import dataclasses
 import functools
 import logging
 import os
@@ -28,6 +29,11 @@ from starlette.staticfiles import StaticFiles
 from . import answers, db, feedback, gate, identity, kstd, llmdap, retrieval, search
 from .gate import Actor
 from .ids import normalize_path
+
+# Feature modules (docs/24 §16 P0). Each may define `register_mcp(mcp, deps)` (adds its MCP tools) and
+# `http_routes(deps, endpoint) -> list[Route]` (its HTTP routes). They are called in this order, after the built-in
+# tools and routes, so the tool list and the route table stay in a fixed order.
+FEATURES: tuple = ()
 
 log = logging.getLogger(__name__)
 ENV = {"model": "KUTUPHANE_ANSWER_MODEL", "public_url": "KUTUPHANE_PUBLIC_URL"}
@@ -216,14 +222,35 @@ class SecurityHeaders:
         await self.app(scope, receive, send_with_headers)
 
 
+@dataclasses.dataclass(frozen=True)
+class Deps:
+    """What the server gives a feature module: the configuration, and the MCP helpers every tool must use (the
+    caller from the verified token, and the uniform errors)."""
+    dsn: str
+    bridge: llmdap.Bridge | None
+    model: str | None
+    stages: retrieval.Stages
+
+    @staticmethod
+    def mcp_actor() -> Actor:
+        return _mcp_actor()
+
+    @staticmethod
+    def mcp_errors(tool):
+        return _mcp_errors(tool)
+
+
 def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge | None, model: str | None,
                public_url: str, ui_dir: str | None = None,
-               stages: retrieval.Stages = retrieval.Stages()) -> Starlette:
+               stages: retrieval.Stages = retrieval.Stages(), features: tuple | None = None) -> Starlette:
+    features = FEATURES if features is None else features
+    deps = Deps(dsn, bridge, model, stages)
+
     def actor_of(request: Request) -> Actor:
         scheme, _, token = request.headers.get("authorization", "").partition(" ")
         if scheme.lower() != "bearer":
             raise identity.AuthenticationError("bearer token required")
-        return verifier.verify(token.strip())
+        return dataclasses.replace(verifier.verify(token.strip()), channel="http")  # set here, never by the client
 
     def endpoint(work):
         async def handler(request: Request) -> Response:
@@ -287,7 +314,8 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
     async def h_whoami(_request, actor):
         return JSONResponse({"principal": actor.principal, "on_behalf_of": actor.on_behalf_of})
 
-    mcp = build_mcp(dsn=dsn, verifier=verifier, bridge=bridge, model=model, public_url=public_url, stages=stages)
+    mcp = build_mcp(dsn=dsn, verifier=verifier, bridge=bridge, model=model, public_url=public_url, stages=stages,
+                    features=features)
 
     @contextlib.asynccontextmanager
     async def lifespan(_app):
@@ -304,6 +332,7 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
         Route("/v1/answers/{answer_id}", endpoint(h_answer)),
         Route("/v1/files/{book}/{content_id}/{path:path}", endpoint(h_file)),
         Route("/v1/feedback", endpoint(h_feedback), methods=["GET", "POST"]),
+        *(route for f in features if hasattr(f, "http_routes") for route in f.http_routes(deps, endpoint)),
         Mount("/", app=mcp.streamable_http_app()),  # serves /mcp and the protected-resource metadata
     ], lifespan=lifespan)
     app.add_middleware(SecurityHeaders)
@@ -348,11 +377,12 @@ def _mcp_actor() -> Actor:
     if token is None or not token.claims:
         raise identity.AuthenticationError("no verified token")
     return Actor(token.claims["kutuphane_principal"], token.claims["kutuphane_on_behalf_of"],
-                 correlation_id=uuid.uuid4().hex)
+                 correlation_id=uuid.uuid4().hex, channel="mcp")
 
 
 def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_url: str,
-              stages: retrieval.Stages = retrieval.Stages()) -> FastMCP:
+              stages: retrieval.Stages = retrieval.Stages(), features: tuple | None = None) -> FastMCP:
+    features = FEATURES if features is None else features
     public = urllib.parse.urlsplit(public_url)
     security = TransportSecuritySettings(enable_dns_rebinding_protection=True, allowed_hosts=[public.netloc],
                                          allowed_origins=[f"{public.scheme}://{public.netloc}"])
@@ -412,6 +442,10 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
                                        {"book": book, "content_id": content_id, "path": path, "outcome": outcome,
                                         "tested_on": tested_on, "note": note})
 
+    deps = Deps(dsn, bridge, model, stages)
+    for f in features:
+        if hasattr(f, "register_mcp"):
+            f.register_mcp(mcp, deps)
     return mcp
 
 

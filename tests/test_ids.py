@@ -29,3 +29,12 @@ def test_paths_are_normalized_nfc():
 def test_unsafe_paths_rejected(bad):
     with pytest.raises(ValueError):
         ids.normalize_path(bad)
+
+
+def test_request_digest_ignores_key_order_and_tracks_every_value():  # docs/24 §6.4: idempotent retries
+    a = ids.request_digest({"book": "b", "citations": ["x", "y"], "scope": {"repo": "r", "paths": ["s/**"]}})
+    b = ids.request_digest({"scope": {"paths": ["s/**"], "repo": "r"}, "citations": ["x", "y"], "book": "b"})
+    assert a == b and isinstance(a, bytes) and len(a) == 32
+    assert ids.request_digest({"book": "b", "citations": ["y", "x"], "scope": {"repo": "r", "paths": ["s/**"]}}) != a
+    assert ids.request_digest({"text": "İ"}) != ids.request_digest({"text": "i"})
+    assert ids.request_digest({"x": None}) != ids.request_digest({})
