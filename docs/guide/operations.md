@@ -1,0 +1,553 @@
+# Operations
+
+This guide is for the operator. It shows how to run Kütüphane from the command line (`kutuphane`).
+For the concepts, read [concepts.md](concepts.md). For the installation, read [install.md](install.md).
+
+Every command prints JSON on stdout. Errors go to stderr.
+
+| Exit code | Meaning |
+|---|---|
+| `0` | The command succeeded. |
+| `1` | `index`: no embeddings route is set. `show`: no such book. `kstd-check`: the check failed or there is no `kstd.yaml`. |
+| `2` | An error (bad input, policy error, database error), or `KUTUPHANE_CURATOR_DSN` is not set for a curator command. |
+| `3` | `read`, `reopen`, `decisions export`, `note standing`, `note rollback`: access denied. `ingest`, `approve-import`, `index`: the version is live, but its index is incomplete. |
+| `4` | `whoami`: the token is not valid. |
+| `5` | `receive`: the package is not verified. |
+
+## 1. Environment
+
+### Database connections
+
+| Variable | Role | Used by |
+|---|---|---|
+| `KUTUPHANE_DSN` | The app role `kutuphane_app`. This role cannot write Standing. | The server and every command, except the curator commands. |
+| `KUTUPHANE_CURATOR_DSN` | The owner role. | `migrate`, `note standing`, `note rollback`. |
+
+Keep `KUTUPHANE_CURATOR_DSN` out of every environment that an agent can read.
+The `core` container in `compose.yaml` gets only `KUTUPHANE_DSN`.
+
+Without `KUTUPHANE_CURATOR_DSN`, `migrate` uses `KUTUPHANE_DSN`. Use this only for a one-role development database.
+`note standing` and `note rollback` stop with exit code 2 when `KUTUPHANE_CURATOR_DSN` is not set:
+
+```
+error: KUTUPHANE_CURATOR_DSN is not set (the curator credential)
+```
+
+To set up the app role:
+
+1. Create the role once as the owner: `CREATE ROLE kutuphane_app LOGIN PASSWORD '…'`.
+2. Put the password in `.env` as `KUTUPHANE_APP_DB_PASSWORD`.
+3. After every `kutuphane migrate`, apply the grants as the owner:
+
+```sh
+kutuphane migrate
+psql "$KUTUPHANE_CURATOR_DSN" -v ON_ERROR_STOP=1 -f deploy/db-roles.sql
+```
+
+The server does not start when the database schema does not match the code. Run `migrate` first.
+
+### Variables
+
+All `KUTUPHANE_*` variables that the code, `compose.yaml` and `deploy/` read:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `KUTUPHANE_DSN` | none (compose: app role at `postgres:5432/kutuphane`) | Database connection as the app role. Required. |
+| `KUTUPHANE_CURATOR_DSN` | none | Owner connection for `migrate`, `note standing`, `note rollback`. |
+| `KUTUPHANE_DB_PASSWORD` | none (compose stops without it) | Password of the Postgres owner `kutuphane` in compose. |
+| `KUTUPHANE_APP_DB_PASSWORD` | empty | Password of `kutuphane_app` in the compose `KUTUPHANE_DSN`. |
+| `KUTUPHANE_PUBLIC_URL` | none | Public URL of the server. The server does not start without it. |
+| `KUTUPHANE_BIND` | `127.0.0.1` | Host address of the ingress port `8080` in compose. |
+| `KUTUPHANE_UI_DIR` | none | Directory of the web UI files that the server serves. Optional. |
+| `KUTUPHANE_OIDC_ISSUER` | none | IdP issuer, exactly as the tokens carry it. Required by the server and `whoami`. |
+| `KUTUPHANE_OIDC_AUDIENCE` | compose: `kutuphane` | Expected token audience. Required. |
+| `KUTUPHANE_OIDC_JWKS` | compose: `/run/kutuphane/jwks.json` | Path of the JWKS file. Required. |
+| `KUTUPHANE_OIDC_JWKS_FILE` | `./deploy/jwks.json` | Compose only: the host file that is mounted as the JWKS. |
+| `KUTUPHANE_LLMDAP_URL` | compose: `http://llmdap:8787` | LLMDAP gateway URL. Without it, the server has no model bridge. |
+| `KUTUPHANE_LLMDAP_KEY` | none | Core's LLMDAP subject key. |
+| `KUTUPHANE_LLMDAP_ROUTE` | none | LLMDAP route for answers and question translation. |
+| `KUTUPHANE_LLMDAP_ROUTE_CLASS` | compose: `local` | `local` or `cloud`. A `local_only` book never goes to a `cloud` route. |
+| `KUTUPHANE_ANSWER_MODEL` | none | Answer model on `KUTUPHANE_LLMDAP_ROUTE`. Required by the server. `ask --model` sets it for the CLI. |
+| `KUTUPHANE_LLMDAP_EMBED_ROUTE` | none | LLMDAP embeddings route. Without it, search is full text only. |
+| `KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS` | compose: `local` | Route class of the embeddings route. |
+| `KUTUPHANE_EMBED_MODEL` | none | Pinned embedding model of the route, for example `BAAI/bge-m3`. |
+| `KUTUPHANE_LLMDAP_RERANK_ROUTE` | none | LLMDAP rerank route. Without it, there is no reranking. |
+| `KUTUPHANE_LLMDAP_RERANK_ROUTE_CLASS` | compose: `local` | Route class of the rerank route. |
+| `KUTUPHANE_RERANK_MODEL` | none | Pinned rerank model, for example `BAAI/bge-reranker-v2-m3`. |
+| `KUTUPHANE_INDEX_BATCH` | `8` | Passages per embedding call. |
+| `KUTUPHANE_INDEX_BATCH_CHARS` | `8000` | Embedded characters per call. A longer passage goes alone. |
+| `KUTUPHANE_INDEX_CONCURRENCY` | `1` (at most 4) | Embedding calls in flight. |
+| `KUTUPHANE_JOB_WORKERS` | `1` | Background answer workers in the server process. `0` runs no jobs. |
+| `KUTUPHANE_NOTE_WRITES_PER_DAY` | `500` | Writes (notes, links, outcomes) per principal per day. |
+| `KUTUPHANE_NOTE_DUP_SIMILARITY` | `0.90` | Vector similarity threshold for duplicate note candidates. |
+| `KUTUPHANE_REPO_ROOTS` | compose: `/srv/repos` | Absolute directories, `:`-separated, that can hold code mirrors. |
+| `KUTUPHANE_REPO_DIR` | `./deploy/repos` | Compose only: host directory mounted read-only at `/srv/repos`. |
+| `KUTUPHANE_SIGNING_KEY` | none | Path of this installation's Ed25519 package signing key (`export`). |
+| `KUTUPHANE_DEV` | none | `1` enables `dev-keys` and `dev-token`. Set it on a development machine only. |
+| `KUTUPHANE_PROBE_TOKEN` | none | Access token for `deploy/mcp_probe.py`. The probe never prints it. |
+
+## 2. Ingest a folder into a book
+
+```sh
+kutuphane ingest <folder> --book <slug> \
+  --sensitivity normal --egress local_only --protection standard
+kutuphane show <slug>
+```
+
+| Option | Values | Meaning |
+|---|---|---|
+| `path` | a folder or a single file | The source. |
+| `--book` | a slug, for example `kvkk` | The book. Required. |
+| `--title` | text | The book title. |
+| `--sensitivity` | `normal`, `restricted` | Required. |
+| `--egress` | `local_only`, `cloud_ok` | Required. `local_only` text never goes to a `cloud` route. |
+| `--protection` | `standard` | Required. |
+| `--profile` | `chunked`, `whole` | The reading profile. |
+| `--accept-finding` | `PATH@sha256:DIGEST:RULE` | Accept one reviewed credential-scan finding. Repeatable. |
+
+Each `ingest` publishes a new version of the book. `show` lists the current versions and files of a book.
+
+### What is searched
+
+- Markdown.
+- PDF text layers.
+- `.txt`, `.json`, `.yaml`, `.toml`, `.sh`, `.py`, `.js`, `.ts`, `.xml`, `.csv` and `.mdc` as plain text.
+- `.jsonl` and `.ndjson`: one passage for each record.
+- `.html`: the visible text only. Scripts and styles stay out.
+
+A file is text only if it is UTF-8 without NUL bytes. Text passages record their start `line`.
+Kütüphane stores other files. People can read them, but search does not find them.
+
+### What is quarantined
+
+Kütüphane stores a file that it cannot extract, but it does not index the file. Examples:
+
+- a PDF without a text layer;
+- an unreadable or encrypted PDF;
+- a text file that is not UTF-8.
+
+`ingest` and `approve-import` report the file in `quarantined` and on stderr:
+
+```
+quarantined (stored, not indexed): <path>: <reason>
+```
+
+`show` lists the file. A new version that fixes the file indexes it.
+
+### What is refused
+
+These problems refuse the whole book:
+
+- an invalid `kstd.yaml`;
+- a symlink, a path violation or a size violation;
+- markdown that is not UTF-8 or has invalid frontmatter;
+- a credential-like file name (`credentials.json`, `*.env`, `id_rsa`, key stores, `settings.local.json`);
+- credential-like text (keys, tokens, passwords, private key blocks).
+
+The scan reads the original text and the extracted text. Placeholders (`${PASSWORD}`, `<your-key>`, `changeme`) and semantic constants (`token: refresh_token`) are not credentials.
+The error gives the path, the line and the rule (for example `assigned-credential` or `api-key`). It never shows the matched text.
+
+### Accept a reviewed finding
+
+If a finding is a false positive, review it. Then accept it for exactly that file content:
+
+```sh
+sha256sum <folder>/<path>
+kutuphane ingest <folder> --book <slug> --sensitivity normal --egress local_only --protection standard \
+  --accept-finding '<path>@sha256:<digest>:<rule>'
+```
+
+- The acceptance covers the findings of that rule in that file content only.
+- A changed file has a new digest. Kütüphane then refuses it again.
+- An acceptance that matches no finding refuses the ingest.
+- The publication records the accepted findings (`accepted_findings` in the result and in `show`). Stderr shows each one.
+- `kstd-init` and `kstd-check` scan in the same way. Give them the same `--accept-finding` values.
+- `receive` accepts nothing. The receiving installation scans again.
+
+### Hidden paths
+
+Hidden paths stay out (`.git/`, `.env*`, dotfiles). These agent folders are the exception:
+
+- `.claude/` (`agents`, `commands`, `rules`, `skills`, `hooks`, and `CLAUDE.md`);
+- `.cursor/rules/`;
+- `.github/` (`copilot-instructions.md`, `instructions/`, `prompts/`, `agents/`, `chatmodes/`);
+- `.agents/` and `.codex/`.
+
+### Agent instructions (K3)
+
+Kütüphane marks these files as agent instructions:
+
+- files in the agent folders above;
+- files in a skill folder (next to a `SKILL.md`);
+- files whose names start with `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `SKILL.md` or `copilot-instructions.md`;
+- Cursor `.mdc` rules;
+- Copilot `.instructions.md`, `.prompt.md`, `.agent.md` and `.chatmode.md` files;
+- files with a frontmatter type such as `skill`.
+
+People read them with `read`. An agent also needs the `activate` mode.
+
+### kstd manifest
+
+A folder can have a `kstd.yaml` manifest. It gives the rights, origin and validity of the files. Kütüphane enforces and shows them. Read [kstd.md](kstd.md).
+
+```sh
+kutuphane kstd-init <folder> --issuer 'ACME <kb@acme.example>'
+kutuphane kstd-check <folder>
+```
+
+`kstd-init` and `kstd-check` do not use the database.
+
+### Profile versions and re-ingest
+
+A book that an older reader published keeps its old index. Ingest the book again to get the new reader (a new profile id).
+Migration 011 marks the stored passages that the wider K3 rule makes instructions. These passages need `activate` at once.
+
+## 3. Indexing
+
+Hybrid search is optional. Set `KUTUPHANE_LLMDAP_EMBED_ROUTE`, `KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS` and `KUTUPHANE_EMBED_MODEL`.
+Then `ingest` and `approve-import` embed the new version. `index` adds missing vectors:
+
+```sh
+kutuphane index <book> [--batch N] [--batch-chars N] [--concurrency N]
+```
+
+Without the embeddings route, `index` stops with exit code 1: `no embeddings route: set KUTUPHANE_LLMDAP_EMBED_ROUTE`.
+
+- **Only changed passages are embedded (G17).** A vector records the sha256 of the embedded text. A new version copies the vector of each passage whose text, model and vector width did not change, in the same book and profile. Vectors never go from one book to another. The result shows `vectors_added` and `vectors_reused`.
+- **The book is live when it is published (G12).** An embedding settings error stops `ingest` and `approve-import` before the publication. If indexing fails after the publication, the command prints the publication result, adds `index_error` or `failed` and `not_attempted`, and exits with code 3. Run `kutuphane index <book>` later. `index` also exits with code 3 while passages are missing vectors.
+- **Retries.** Kütüphane tries a failed embedding call 2 more times (after 5 s and 10 s). It reports a batch that still fails and continues. After 3 failed batches in a row, it stops and reports the rest as not attempted.
+- **Indexing load (G18).** The local CPU embedder runs one request at a time. A search waits for the index call in front of it. `--batch`, `--batch-chars` and `--concurrency` override the `KUTUPHANE_INDEX_*` variables.
+
+To index at a low priority, publish first. Then index later with smaller calls:
+
+```sh
+env -u KUTUPHANE_LLMDAP_EMBED_ROUTE kutuphane ingest <dir> --book <slug> …   # live now, full text search
+KUTUPHANE_INDEX_BATCH=4 KUTUPHANE_INDEX_BATCH_CHARS=4000 kutuphane index <slug> # later, or at a quiet time
+```
+
+Smaller calls make the wait of a search shorter. They do not make indexing faster.
+Keep the concurrency at 1 on the CPU embedder. `nice` and `ionice` do not help, because the embedder container does the work.
+
+### Reranking
+
+Reranking is optional. Set `KUTUPHANE_LLMDAP_RERANK_ROUTE`, `KUTUPHANE_LLMDAP_RERANK_ROUTE_CLASS` and `KUTUPHANE_RERANK_MODEL`.
+The reranker reorders the top 30 hybrid hits. It reads the first 1,200 characters of each passage (G26).
+
+## 4. Search and ask from the CLI
+
+```sh
+kutuphane search <principal> '<query>' [-k K] [--on-behalf-of user:<name>]
+kutuphane ask <principal> '<question>' --model <model> [--on-behalf-of user:<name>]
+kutuphane reopen <principal> <answer_id>
+kutuphane read <principal> <book> <content_id> <path>
+```
+
+- The principal is `user:<name>` or `agent:<name>`. For an agent that acts for a person, give `--on-behalf-of user:<name>`.
+- `search` returns `citation`, `page`, `line`, `score`, `text` and `item` (the kstd rights). `-k` is 8 by default, from 1 to 50.
+- `ask` needs the LLMDAP variables. It prints the answer and its `correlation_id`.
+- `reopen` shows a stored answer and its evidence again. It does not call a model.
+- `read` writes the file bytes to stdout through the authorization gate.
+
+### Scope filters (G14)
+
+`search` and `ask` take the same filters. The filters narrow the evidence before ranking.
+
+| Option | Meaning |
+|---|---|
+| `--book <slug>` | Only this book. Repeatable. |
+| `--path <prefix>` | Only files whose path starts with the prefix, for example `data/`. |
+| `--origin <origin>` | Only files with this kstd origin: `human`, `assisted`, `model`, `tool`, `unknown`. Repeatable. A book without `kstd.yaml` counts as `unknown`. |
+| `--current-only` | Only files whose kstd validity includes now. |
+
+A filter never adds a book. A book that the caller cannot read gives the same empty result as a book that does not exist.
+
+### Answers
+
+- The answer is in the language of the question (Turkish or English; G20). It is short (about 150 words).
+- The answer model gets the first 2,400 characters of each passage. The stored sources and citations keep the whole passage (G26).
+- A reference names one or more passages: `[2]`, `[2,3]`, `[2-4]`, `[2–4]` (G21). One unknown number or one malformed group (`[1-2-3]`) refuses the answer.
+
+### Two languages (G19)
+
+When the passages are in Turkish and in English, the answer model translates the question. Only the question goes to the model.
+A second search runs with the translation. Kütüphane authorizes the merged passages again. Each passage is reranked against the question in its own language.
+Without a translation, up to 2 passages in the other language from the hybrid top 8 keep a place.
+
+### Recent things (G22)
+
+A question with words such as "recent", "latest", "son" or "en yeni" ranks the 16 most relevant passages by relevance and date.
+The date is the kstd `valid_from`. If there is none, it is the first date or ISO week in the path (`brief-2026-W40.json`). If there is none, it is the `classified_at` field of a JSONL record.
+Kütüphane never uses a date from the text. It ignores a date later than tomorrow.
+
+kstd `valid_from` and `valid_to` keep their time. `2026-10-27T23:59:00Z` is not current at noon that day. A date alone means 00:00 UTC.
+
+### Limits
+
+- A question or query is at most 1,000 characters.
+- Each process keeps query vectors in memory (256 queries, 4 MiB at most). A repeated query needs no embedding call.
+
+## 5. Trust, grants and delegations
+
+### Grants
+
+```sh
+kutuphane grant book:<slug> <mode> <subject>
+kutuphane revoke book:<slug> <mode> <subject>
+kutuphane grant role:<name> member user:<name>
+```
+
+| Mode | Meaning |
+|---|---|
+| `discover` | Reserved. You can grant it, but no code path checks it today. |
+| `read` | Read and search the book. |
+| `use` | Reserved. You can grant it, but no code path checks it today. |
+| `activate` | An agent can use agent instructions (K3) from the book. |
+| `propose` | Write notes, links and outcomes in a journal. |
+| `curate` | Change the Standing of notes. Give it to users only. It is never delegated. |
+| `member` | With `role:<name>`: add the subject to the role. |
+
+The subject is `user:<name>`, `agent:<name>` or `role:<name>#member`.
+`grant` prints the grant `id`. `revoke` prints `revoked`.
+
+### Delegations
+
+An agent that acts for a person needs a live delegation from that person:
+
+```sh
+kutuphane delegate user:<name> agent:<name> book:<slug> read --hours 8 --purpose '<why>'
+kutuphane undelegate <id>
+```
+
+A delegation is time-boxed and has one level. `delegate` prints the `id` and `expires_at`.
+A delegation can carry `discover`, `read`, `use`, `activate` or `propose`. The CLI and the database refuse a delegation of `curate`.
+
+### Signing keys
+
+```sh
+kutuphane keygen <private_key>
+kutuphane trust <public_key> --fingerprint <fingerprint> --name <name> --by user:admin
+kutuphane untrust <fingerprint>
+```
+
+Confirm the fingerprint out of band before you run `trust`.
+
+### Development tokens
+
+`dev-keys` and `dev-token` need `KUTUPHANE_DEV=1`. Use them on a development machine only.
+
+```sh
+KUTUPHANE_DEV=1 kutuphane dev-keys <directory>
+KUTUPHANE_DEV=1 kutuphane dev-token <sub> --private-key <key> --issuer <issuer> [--audience <aud>] [--agent] [--act <agent>] [--client-id <id>]
+```
+
+`dev-keys` writes a private key (mode 600) and the matching JWKS. Point `KUTUPHANE_OIDC_JWKS` at the JWKS.
+Read [security.md](security.md) for the production identity setup.
+
+## 6. Journals
+
+A journal is a book whose items are agent notes. Read [agent-memory.md](agent-memory.md).
+
+```sh
+kutuphane journal create adc-memory --search y --ai-input y \
+  --sensitivity normal --egress local_only --protection standard --by user:admin
+kutuphane grant book:adc-memory propose agent:adc
+kutuphane grant book:adc-memory curate user:ayse
+```
+
+| Option | Meaning |
+|---|---|
+| `book` | The journal slug. |
+| `--title` | The title. The default is the slug. |
+| `--search {y,n}` | Notes get full text and vectors. Required. |
+| `--ai-input {y,n}` | Note text can go to models. Required. |
+| `--train {y,n}` | Note text can be exported as training data. The default is `n`. |
+| `--sensitivity`, `--egress`, `--protection` | The policy, as for `ingest`. Required. |
+| `--by` | The administrator, for example `user:admin`. Required. |
+
+`journal restrict <book>` tightens a journal with `--no-search`, `--no-ai-input` and `--no-train`. To loosen a journal, create a new journal.
+
+## 7. Curation by CLI
+
+A note starts `pending`. Only a curator changes its Standing, and only on the command line.
+Both commands need `KUTUPHANE_CURATOR_DSN`. The curator needs `curate` on the book.
+
+```sh
+KUTUPHANE_CURATOR_DSN=… kutuphane note standing adc-memory@nt_<64 hex> approved --curator user:ayse --reason '…'
+KUTUPHANE_CURATOR_DSN=… kutuphane note rollback adc-memory@nt_<64 hex> --curator user:ayse --reason '…'
+```
+
+`note standing` sets `approved`, `pending`, `rejected` or `retired`. The allowed changes are:
+
+| From | To |
+|---|---|
+| `pending` | `approved`, `rejected` |
+| `approved` | `retired` |
+| `rejected` | `pending` |
+| `retired` | `pending` |
+
+`note rollback` is for a poisoned note. It retires the note and every note derived from it in one transaction.
+A root note that was ever approved becomes `retired`. A pending root becomes `rejected`.
+Derived notes that are `approved` or `pending` become `retired`.
+
+Rollback prints:
+
+| Field | Content |
+|---|---|
+| `root` | The note reference. |
+| `event_seq` | The Standing event of the root. |
+| `notes` | Each note: `ref`, `was`, `standing`, `event_seq`, `writers` (`principal`, `on_behalf_of`, `client_id`). |
+| `deliveries` | Reads that held the notes: `at`, `action`, `principal`, `on_behalf_of`, `correlation_id`, `memory_seq`, `items`. |
+| `answers` | Answers that used the notes: `id`, `at`, `principal`, `on_behalf_of`, `refs`. |
+| `exports` | Exports that held the notes, in the same form as `deliveries`. |
+
+Use this report to tell the users and agents that used the notes.
+
+## 8. Outcomes and decision export
+
+Agents record outcomes with `record_outcome` (MCP) or `POST /v1/outcomes`. There is no CLI command for this. Read [mcp.md](mcp.md) and [http-api.md](http-api.md).
+
+- An outcome is `passed`, `failed`, `reverted` or `reopened` for a task on one exact note or passage version.
+- The writer needs `propose` and `read` on the book and an `idempotency_key`.
+- Reads show the counts in an `outcomes` field: for example `{"passed": 2, "failed": 1}`. Only non-zero counts show.
+- An outcome never changes the Standing.
+
+Export decision records:
+
+```sh
+kutuphane decisions export <principal> --out decisions.jsonl [--book <journal>] [--on-behalf-of user:<name>]
+```
+
+- `--out` must be a new file. The command creates it with mode 600.
+- Without `--book`, the export includes every journal that the principal can read.
+- The text, options and choice are present only when the note allows `ai_input` and `train` (`journal create --train y`). Otherwise the record has only references and hashes.
+
+## 9. Code repositories
+
+A journal can cite code in a Git repository. Kütüphane never fetches.
+
+```sh
+kutuphane repo add <journal> <slug> /srv/repos/<name>.git --ref 'refs/heads/*' --by user:admin
+kutuphane repo remove <journal> <slug>
+```
+
+- `git_dir` is the absolute path of a bare mirror. Its path has no symlink.
+- `--ref` is a ref pattern whose commits can be cited. Repeatable, at most 10. Only commits that these patterns reach can be cited.
+- The mirror must be inside `KUTUPHANE_REPO_ROOTS`. Compose mounts `KUTUPHANE_REPO_DIR` (default `./deploy/repos`) read-only at `/srv/repos`.
+- The mirror has no alternates, no `commondir` and no promisor pack. Its `config` has only plain `core.*`, `extensions.objectformat` and `remote.*` url/fetch/mirror keys.
+- `repo remove` stops new scopes and citations. Verification of old citations then gives `unverifiable`.
+- The server needs git 2.45 or later. The container image checks this at build time.
+
+Keep the mirror current yourself, for example with cron:
+
+```cron
+*/15 * * * * git --git-dir=/srv/kutuphane/repos/app.git fetch --prune --quiet
+```
+
+## 10. Packages
+
+A package is a signed copy of a book's current version. Read [kstd.md](kstd.md).
+
+On the sending installation:
+
+```sh
+KUTUPHANE_SIGNING_KEY=/path/key.pem kutuphane export <book> --out <book>.pkg [--legal-basis 'eu-gdpr:A6-1-b']
+```
+
+`--legal-basis` is required when `kstd.yaml` marks files as personal data `yes` or `unknown`.
+
+On the receiving installation:
+
+```sh
+kutuphane receive <book>.pkg
+kutuphane imports
+kutuphane approve-import <id> --by user:admin --sensitivity normal --egress local_only --protection standard
+kutuphane reject-import <id> --by user:admin --reason '…'
+```
+
+- `receive` quarantines and verifies the package. It publishes nothing. It exits with code 5 if the status is not `verified`.
+- `imports` lists the last 50 received packages and their verdicts.
+- `approve-import` publishes the package with this installation's policy. It indexes like `ingest` (exit code 3 if the index is incomplete).
+- `reject-import` refuses the package. Kütüphane keeps the record.
+
+## 11. Audit and logs
+
+```sh
+echo "$TOKEN" | kutuphane whoami
+kutuphane explain <correlation_id> --llmdap-export audit.jsonl
+kutuphane explain <answer_id> --answer --llmdap-export audit.jsonl
+```
+
+- `whoami` reads the token from stdin, never from the command line. It prints `principal` and `on_behalf_of`.
+- `explain` prints the unified audit for a correlation id: `access`, `model_calls` and `complete`. With `--answer`, the id is an answer id.
+- `--llmdap-export` takes the JSONL from `llmdap-audit-export`. `complete` is `false` when a model call has no LLMDAP record.
+- `ask` prints the `correlation_id` of each answer.
+
+Kütüphane stores audit records in the database: `access_event` (access and deliveries), `model_call` (model calls), `answer` (answers) and `standing_event` (Standing changes).
+LLMDAP keeps its signed audit chain in the `llmdap-audit` volume. Back it up.
+
+Service logs:
+
+```sh
+docker compose --profile app logs -f core
+docker compose --profile app logs llmdap ingress
+```
+
+## 12. Backups
+
+Kütüphane has no backup command. Back up the Postgres database. It holds the books, notes and audit records.
+
+```sh
+docker compose exec -T postgres pg_dump -U kutuphane kutuphane > backup.sql
+```
+
+Restore into an empty database:
+
+```sh
+docker compose exec -T postgres psql -U kutuphane -c 'CREATE DATABASE kutuphane_restore'
+docker compose exec -T postgres psql -U kutuphane -d kutuphane_restore -v ON_ERROR_STOP=1 < backup.sql
+```
+
+Then point `KUTUPHANE_DSN` at the restored database, or rename the databases while the app is stopped.
+Also back up the `llmdap-audit` volume, the signing key, the JWKS file and the code mirrors.
+
+Disk encryption is a deployment duty at the volume level (D48). The application does not encrypt.
+
+## 13. CLI reference
+
+| Command | Purpose |
+|---|---|
+| `migrate` | Apply database migrations (owner role). |
+| `ingest` | Publish a folder or a single file as a book version. |
+| `index` | Give a book's current chunks a vector: copy unchanged ones, embed the rest. |
+| `show` | Show the current versions and files of a book. |
+| `grant` | Give a mode, or a role membership, to a subject. |
+| `revoke` | Revoke a grant or membership. |
+| `delegate` | Give a time-boxed user-to-agent delegation (one level). |
+| `undelegate` | Revoke a delegation. |
+| `repo add` | Register a bare mirror inside `KUTUPHANE_REPO_ROOTS` for a journal. |
+| `repo remove` | Stop new scopes and citations for a repository. |
+| `read` | Read a file through the authorization gate. |
+| `search` | Search the books the principal can read now. |
+| `ask` | Answer from the library with citations, through LLMDAP. |
+| `reopen` | Show a stored answer and its evidence again (no model call). |
+| `dev-keys` | Development only: write a signing key and JWKS (`KUTUPHANE_DEV=1`). |
+| `dev-token` | Development only: sign a token (`KUTUPHANE_DEV=1`). |
+| `keygen` | Create this installation's Ed25519 package signing key. |
+| `trust` | Trust a signing key with a fingerprint confirmed out of band. |
+| `untrust` | Revoke a trusted signing key. |
+| `export` | Write a signed package of a book's current version. |
+| `receive` | Quarantine and verify a package; publish nothing. |
+| `approve-import` | Publish a verified package with this installation's policy. |
+| `reject-import` | Refuse a verified package (kept on record). |
+| `imports` | List received packages and their verdicts. |
+| `kstd-init` | Write a starting `kstd.yaml` for a folder (no database). |
+| `kstd-check` | Validate a folder's `kstd.yaml` (no database). |
+| `whoami` | Verify an access token read from stdin. |
+| `explain` | Print the unified audit for a correlation id or an answer id. |
+| `journal create` | Create a journal. |
+| `journal restrict` | Tighten a journal. |
+| `note standing` | Set the Standing of a note as a curator. |
+| `note rollback` | Retire a note and its derived notes; report who used them. |
+| `decisions export` | Write JSONL decision records that the principal can read. |
+
+For problems, read [troubleshooting.md](troubleshooting.md).

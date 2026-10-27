@@ -1,220 +1,137 @@
 # Kütüphane
 
-Versioned, explainable knowledge access for people and LLM agents, on-prem and air-gapped.
-Decisions: `docs/01-direction-decisions.md`. Product: `docs/05`–`07`. Code: Apache-2.0 (`LICENSE`); specification text: CC-BY-4.0 (`NOTICE`).
+**Kütüphane is the place where people and AI agents keep what they know, with a record of who wrote it, who
+accepted it, and who may use it for what.** It is a governed knowledge catalog and an agent memory layer. Agents
+reach it through MCP; RAG platforms and orchestrators use it as their governed source. It runs on-prem and
+air-gapped. It is not a RAG platform, a chat UI, a code graph or a run-state store (`docs/23-vision-v1.md`).
 
-## Development (M1a)
+Five promises (each one is a behavior that you can check):
+
+| # | Promise |
+|---|---|
+| P1 | **Knowledge with an owner.** Each item shows who issued it, who accepted it, and whether it is current. |
+| P2 | **An agent can never pass as a person.** Origin comes from the write path, not from the writer's claim. |
+| P3 | **A model never sees what it may not see.** Rights and personal data are checked before every embedding, rerank and answer. |
+| P4 | **Memory that does not rot.** Duplicates are found, contradictions kept, stale code citations flagged, poisoned notes rolled back with everything derived from them. |
+| P5 | **Cheap and fast for agent loops.** Deterministic, filtered reads with no model call; a model answer only on request. |
+
+## Who it is for
+
+- **Coding orchestrators** (ADC, nöbetçi-mcp): shared memory for decisions, findings, lessons and conventions.
+- **Organizations with a RAG platform:** a governed source that gives only the passages that the caller and the
+  model may use, with their rights attached.
+- **Curators:** people who accept or reject what agents propose.
+
+## Quick start (development)
+
+You need Docker with Compose v2 and Python 3.11 or later. These commands run Postgres in Docker and the server on
+the host, with development tokens and no model service.
 
 ```sh
+# 1. Install, start Postgres, apply the migrations
 python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 printf 'KUTUPHANE_DB_PASSWORD=%s\n' "$(python3 -c 'import secrets;print(secrets.token_urlsafe(24))')" > .env
 docker compose up -d --wait postgres
-docker compose exec -T postgres psql -U kutuphane -c 'CREATE DATABASE kutuphane_test'
-
 set -a; . ./.env; set +a
 export KUTUPHANE_DSN="postgresql://kutuphane:${KUTUPHANE_DB_PASSWORD}@127.0.0.1:55432/kutuphane"
-export KUTUPHANE_TEST_DSN="${KUTUPHANE_DSN}_test"
-.venv/bin/python -m pytest -q
+export PATH="$PWD/.venv/bin:$PATH"
+kutuphane migrate
 
-.venv/bin/kutuphane migrate
-.venv/bin/kutuphane ingest tests/fixtures/okf-kitap --book ornek \
+# 2. A book, a journal and the rights
+kutuphane ingest tests/fixtures/okf-kitap --book ornek \
   --sensitivity normal --egress local_only --protection standard
-.venv/bin/kutuphane show ornek
-```
-
-What `ingest` takes from a folder (`src/kutuphane/source.py`, `profiles.py`, `agentfiles.py`, `secretscan.py`):
-
-- **Searched:** markdown; PDF text layers; `.txt`, `.json`, `.jsonl`/`.ndjson` (one passage per record), `.yaml`,
-  `.toml`, `.sh`, `.py`, `.js`, `.ts`, `.xml`, `.csv`, `.mdc` as plain text; `.html` by its visible text only (no
-  scripts or styles). A file is text only if it is UTF-8 without NUL bytes. Text passages carry their start `line`.
-  Other files are stored and can be read, but are not searched.
-- **Quarantined, not refused:** a file that cannot be extracted (a PDF without a text layer, an unreadable or
-  encrypted PDF, a text file that is not UTF-8) is stored and listed but not indexed. `ingest` and `approve-import`
-  report it in `quarantined` (and on stderr), `show` lists it. The version that fixes the file indexes it.
-- **Refused (the whole book):** an invalid `kstd.yaml`; a symlink, a path or size violation; markdown that is not
-  UTF-8 or has invalid frontmatter; a credential-like file name (`credentials.json`, `*.env`, `id_rsa`, key stores,
-  `settings.local.json`) or credential-like text (keys, tokens, passwords, private key blocks). The scan reads the
-  original text and the extracted text that is cut into passages (HTML with entities decoded, PDF text layers),
-  JSON/JSONL key-value pairs with escapes decoded, and quoted literals whatever characters they hold. Placeholders
-  (`${PASSWORD}`, `<your-key>`, `changeme`) and semantic constants (`token: refresh_token`) are not credentials. The
-  error names the path, the line and the rule (e.g. `assigned-credential`, `api-key`), never the matched text.
-- **A reviewed false positive** can be accepted, narrowly: `ingest … --accept-finding <path>@sha256:<digest>:<rule>`
-  (repeatable; `<digest>` is `sha256sum <file>`). It covers that rule's findings in exactly that file content; a
-  changed file has another digest and is refused again, and an acceptance that matches no finding refuses the
-  ingest. Accepted findings are recorded in the publication (`accepted_findings` in the result and in `show`) and
-  printed on stderr. `kstd-init` and `kstd-check` scan the same way and take the same `--accept-finding` values.
-  Package receipt accepts nothing: the receiving node scans again.
-- **Hidden paths** stay out (`.git/`, `.env*`, dotfiles), except the agent folders `.claude/` (`agents`,
-  `commands`, `rules`, `skills`, `hooks`, and `CLAUDE.md`), `.cursor/rules/`, `.github/` (`copilot-instructions.md`,
-  `instructions/`, `prompts/`, `agents/`, `chatmodes/`), `.agents/` and `.codex/`.
-- **Agent instructions** (K3): files in those folders, files in a skill folder (next to a `SKILL.md`), files whose
-  names start with `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `SKILL.md` or `copilot-instructions.md`, Cursor `.mdc`
-  rules, Copilot `.instructions.md`/`.prompt.md`/`.agent.md`/`.chatmode.md`, and frontmatter types such as `skill`.
-  People read them with `read`; an agent also needs `activate`.
-
-A book published by an older reader keeps its old index until it is ingested again (a new profile id). Migration
-011 marks the stored passages that the wider K3 rule makes instructions, so they need `activate` at once.
-
-A folder can carry a `kstd.yaml` manifest (the kstd standard, L0): rights, origin and validity of its files, which
-Kütüphane then enforces and shows. See `kstd/README.md` (`kutuphane kstd-init`, `kutuphane kstd-check`).
-
-Disk encryption is a deployment requirement at the volume level (D48); the application does not encrypt.
-
-Run the API + MCP server (M1e) behind the ingress proxy, with core isolated on an internal network:
-
-```sh
-KUTUPHANE_PUBLIC_URL=http://127.0.0.1:8080 KUTUPHANE_OIDC_ISSUER=<issuer> KUTUPHANE_ANSWER_MODEL=<model> \
-KUTUPHANE_OIDC_JWKS_FILE=<jwks.json> docker compose --profile app up -d --build
-docker compose --profile app exec -T core python -I - < deploy/egress_probe.py   # AT-10 network check
-```
-
-Real local models (D61; nothing leaves the machine): Qwen3.8-27B on the host's vLLM for answers, bge-m3 and
-bge-reranker-v2-m3 on CPU for vectors and reranking. Download the pinned weights once (`deploy/llmdap/README.md`), then:
-
-```sh
-docker compose -f compose.yaml -f deploy/compose.local-models.yaml \
-  --profile app --profile decision-models --profile local-models up -d --build
-```
-
-Agent memory (R1, `docs/24`): a **journal** is a book whose items are notes that agents write with `propose_note`
-(MCP) or `POST /v1/notes`, and link with `link_notes` / `POST /v1/notes/links`. Writers need the `propose` mode.
-A note starts `pending`; only a curator changes its Standing, and only on the command line:
-
-```sh
-.venv/bin/kutuphane journal create adc-memory --search y --ai-input y \
+kutuphane journal create team-memory --search y --ai-input y \
   --sensitivity normal --egress local_only --protection standard --by user:admin
-.venv/bin/kutuphane grant book:adc-memory propose agent:adc
-.venv/bin/kutuphane grant book:adc-memory curate user:ayse      # users only; never delegated
-KUTUPHANE_CURATOR_DSN=… .venv/bin/kutuphane note standing adc-memory@nt_… approved --curator user:ayse --reason "…"
-# a poisoned note: retire it and every note derived from it; prints who read, answered or exported them
-KUTUPHANE_CURATOR_DSN=… .venv/bin/kutuphane note rollback adc-memory@nt_… --curator user:ayse --reason "…"
+kutuphane grant book:ornek read agent:adc
+kutuphane grant book:team-memory read agent:adc
+kutuphane grant book:team-memory propose agent:adc
+kutuphane grant book:team-memory curate user:ayse
+kutuphane search agent:adc "politika"
+
+# 3. A development token and the server (KUTUPHANE_DEV=1 only on a development machine)
+export KUTUPHANE_DEV=1
+kutuphane dev-keys deploy/dev
+export TOKEN="$(kutuphane dev-token adc --agent --client-id adc \
+  --private-key deploy/dev/dev-private.pem --issuer http://127.0.0.1:8090/dev)"
+KUTUPHANE_PUBLIC_URL=http://127.0.0.1:8090 KUTUPHANE_OIDC_ISSUER=http://127.0.0.1:8090/dev \
+KUTUPHANE_OIDC_AUDIENCE=kutuphane KUTUPHANE_OIDC_JWKS=deploy/dev/jwks.json KUTUPHANE_ANSWER_MODEL=none \
+  uvicorn --factory kutuphane.server:app_from_env --host 127.0.0.1 --port 8090 &
+
+# 4. Connect an MCP client, write a note, accept it
+KUTUPHANE_PROBE_TOKEN="$TOKEN" python3 deploy/mcp_probe.py http://127.0.0.1:8090 --journal team-memory
+claude mcp add --transport http kutuphane http://127.0.0.1:8090/mcp --header "Authorization: Bearer $TOKEN"
+curl -s -X POST http://127.0.0.1:8090/v1/notes -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"book":"team-memory","kind":"lesson","text":"Run migrate first.","idempotency_key":"quickstart-0001"}'
+KUTUPHANE_CURATOR_DSN="$KUTUPHANE_DSN" kutuphane note standing 'team-memory@nt_<id from the receipt>' approved \
+  --curator user:ayse --reason "checked"
+curl -s -H "Authorization: Bearer $TOKEN" 'http://127.0.0.1:8090/v1/notes?book=team-memory'
 ```
 
-Database roles: the server and every process an agent can reach connect as `kutuphane_app`
-(`KUTUPHANE_APP_DB_PASSWORD` in `.env`), which cannot write Standing. `KUTUPHANE_CURATOR_DSN` is the owner role
-(`kutuphane migrate`, `kutuphane note standing`, `kutuphane note rollback`); keep it out of every environment an
-agent can read. Create the app role once (`CREATE ROLE kutuphane_app LOGIN PASSWORD '…'`), then apply
-`deploy/db-roles.sql` as the owner after every `kutuphane migrate`. Without `KUTUPHANE_CURATOR_DSN`, `migrate`
-uses `KUTUPHANE_DSN` (one-role development databases). `KUTUPHANE_NOTE_WRITES_PER_DAY` (500) limits writes (notes,
-links, outcomes) per principal; `KUTUPHANE_NOTE_DUP_SIMILARITY` (0.90) is the vector candidate threshold.
+Any MCP client that speaks streamable HTTP with a bearer token works; `claude mcp add` is one example. Without a
+model service, search is full text only and `ask_library` is not available. For the full stack (ingress, LLMDAP,
+local models, two database roles) read `docs/guide/install.md`.
 
-Outcomes and decision records (R2 #74, `docs/24` §21): `record_outcome` / `POST /v1/outcomes` records
-`passed`, `failed`, `reverted` or `reopened` for a task on one exact note or passage version (needs `propose` and
-`read` on its book, and an `idempotency_key`). Reads show the counts; Standing never changes. A `decision_proposal`
-note can carry `decision: {options, choice}`. `kutuphane decisions export <principal> --out FILE` writes JSONL
-decision records; their text, options and choice are present only when the note allows `ai_input` and `train`
-(`journal create --train y`, default `n`), else only references and hashes.
+## MCP tools
 
-Identity and egress (M1c) are configured by environment:
-`KUTUPHANE_OIDC_ISSUER`, `KUTUPHANE_OIDC_AUDIENCE`, `KUTUPHANE_OIDC_JWKS` (path to a JWKS file);
-`KUTUPHANE_LLMDAP_URL`, `KUTUPHANE_LLMDAP_KEY` (Core's LLMDAP subject key; LLMDAP runs with
-`GATEWAY_AUTH_MODE=subject-keys` and grants that subject `llm:invoke` on the routes), `KUTUPHANE_LLMDAP_ROUTE`,
-`KUTUPHANE_LLMDAP_ROUTE_CLASS` (`local` or `cloud`; local_only books never go to a cloud route).
+The endpoint is `/mcp`. It is stateless and serves MCP 2025-11-25 and 2026-07-28 clients. Reference:
+`docs/guide/mcp.md`.
 
-Authentication (docs/24 §12.4): the IdP issues every token; Kütüphane stores no client secret and accepts no static
-API key.
+| Tool | What it does |
+|---|---|
+| `search_library` | search the books that you may read now (full text, plus vectors and rerank when configured) |
+| `open_citation` | open a passage handle or a note reference at its exact version |
+| `ask_library` | answer with `[n]` citations, or `not_in_library`; can run as a background job |
+| `reopen_answer` | show a stored answer and its evidence again, with no model call |
+| `read_document` | read one text document of one version (agent instructions need `activate`) |
+| `record_runbook_feedback` | record `worked`, `failed` or `changed` for one runbook version |
+| `job_status`, `job_result`, `job_cancel` | follow, read or cancel a background `ask_library` job |
+| `propose_note` | write a note into a journal; it starts `pending` |
+| `link_notes` | link a note to a note or passage (`same_as`, `contradicts`, `about`, `fixed_by`, …) |
+| `verify_citations` | check code citations against a branch or commit |
+| `query_notes` | fast, deterministic, filtered note reads with no model call |
+| `neighbours` | the notes linked to a note or passage (depth 1 or 2) |
+| `record_outcome` | record `passed`, `failed`, `reverted` or `reopened` for a task on one exact item |
 
-- A person: an interactive login; the principal is `user:<sub>`.
-- A headless client on its own rights (an orchestrator): OAuth client credentials at the IdP (a client secret or
-  `private_key_jwt`). The IdP mapper sets `kutuphane/principal_type: agent` and `sub` = the agent name, so the
-  principal is `agent:<name>`. Grant it what it needs directly (`kutuphane grant book:<slug> read agent:<name>`).
-- A headless client for a person: an RFC 8693 token exchange at the IdP (the person's token from a one-time
-  interactive consent, the client-credentials token as the actor token). The token has `sub` = the person and
-  `act.sub` = the agent; the agent also needs a live delegation from the person, as for any agent.
-- The token's `client_id` (RFC 9068), else `azp`, is recorded as the client. It never changes rights or origin.
-  `kutuphane dev-token <sub> --client-id <id>` makes such a development token.
-- `KUTUPHANE_OIDC_ISSUER` is the IdP's issuer exactly as its tokens carry it: `iss` is compared without any
-  normalization, and the protected-resource metadata advertises the same string. An issuer the MCP SDK would
-  rewrite (an uppercase host, a default port) stops the server at start (docs/24 §12.5).
-- A scoped, non-admin test client (one book, read only): docs/24 §12.7.
+## HTTP API
 
-MCP (`/mcp`) is stateless and serves 2025-11-25 clients (with `initialize`) and 2026-07-28 clients (no `initialize`;
-the reverse proxy must pass the `Mcp-Method` and `Mcp-Name` headers). `server/discover` advertises the
-`io.modelcontextprotocol/oauth-client-credentials` extension. `python3 deploy/mcp_probe.py <ingress URL>` checks both
-versions through the proxy (`KUTUPHANE_PROBE_TOKEN`; `--journal <book>` also proposes a note).
-MCP tools, in `tools/list` order: `search_library`, `open_citation`, `ask_library`, `reopen_answer`,
-`read_document`, `record_runbook_feedback`, `job_status`, `job_result`, `job_cancel`, `propose_note`, `link_notes`,
-`verify_citations`, `query_notes`, `neighbours`, `record_outcome`. `query_notes` lists notes (`sets`: `current`,
-`open`, `history`; context `repo`/`branch`/`path`/`commit`; `collapse` merges only `same_as` groups) with no model
-call; HTTP `GET /v1/notes` and `GET /v1/notes/{book}/{id}/neighbours`.
+Every MCP tool has an HTTP route under `/v1/` (for example `GET /v1/search`, `POST /v1/notes`, `GET /v1/notes`).
+The web UI is at `/ui/`. Reference: `docs/guide/http-api.md`.
 
-Hybrid search (optional): `KUTUPHANE_LLMDAP_EMBED_ROUTE` (an LLMDAP `surface: "embeddings"` route, openai schema),
-`KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS`, `KUTUPHANE_EMBED_MODEL` (the route's pinned model, e.g. `bge-m3`). `ingest` and
-`approve-import` then embed the new version; `kutuphane index <book>` fills in missing vectors.
+## Security model
 
-- **Only changed passages are embedded (G17).** A vector records the sha256 of the text that was embedded. A new
-  version copies the vector of each passage whose embedded text, model and vector width are unchanged in the same
-  book and profile; vectors never go from one book to another. The result shows `vectors_added` and `vectors_reused`.
-- **The book is live when it is published (G12).** An embedding settings error stops `ingest`/`approve-import`
-  before the publication. When indexing fails after the publication, the command still prints the publication
-  result, adds `index_error` or `failed` (path, ordinal, error) and `not_attempted`, and exits with code 3;
-  `kutuphane index <book>` adds the missing vectors later (it also exits with code 3 while passages are missing).
-  A failed embedding call is tried 2 more times (after 5 s and 10 s); a batch that still fails is reported and
-  indexing continues. After 3 failed batches in a row the embedder is taken as down and the rest is not attempted.
-- **Indexing load (G18).** The local CPU embedder runs one request at a time, so a search waits for the index call
-  in front of it. `KUTUPHANE_INDEX_BATCH` (passages per call, default 8), `KUTUPHANE_INDEX_BATCH_CHARS` (embedded
-  characters per call, default 8,000; a longer passage goes alone) and `KUTUPHANE_INDEX_CONCURRENCY` (calls in
-  flight, default 1, at most 4) set the load; `index --batch/--batch-chars/--concurrency` override them.
-  To index at a low priority, publish first and index later with smaller calls:
+- The IdP issues every token; the issuer is compared exactly; there are no static API keys.
+- One gate decides every read before the work and again at delivery; every decision is audited.
+- `ai_input: n` text never reaches a model; a `local_only` book never reaches a cloud route; all model calls go through LLMDAP.
+- Origin comes from the write path; only a curator with a separate database credential changes Standing.
+- Secrets are refused at ingest and in notes; code citations read confined bare mirrors only.
 
-  ```bash
-  env -u KUTUPHANE_LLMDAP_EMBED_ROUTE kutuphane ingest <dir> --book <slug> …   # live now, full text search
-  KUTUPHANE_INDEX_BATCH=4 KUTUPHANE_INDEX_BATCH_CHARS=4000 kutuphane index <slug> # later, or at a quiet time
-  ```
+Details: `docs/guide/security.md`.
 
-  Smaller calls make the wait of a search shorter; they do not make indexing faster. Keep the concurrency at 1 on
-  the CPU embedder: more calls in flight only wait in the embedder in front of the searches. `nice`/`ionice` on the
-  `kutuphane` process do not help, because the embedding work runs in the embedder container.
+## Documentation
 
-Reranking (optional): `KUTUPHANE_LLMDAP_RERANK_ROUTE` (an LLMDAP `surface: "rerank"` route), `_RERANK_ROUTE_CLASS`,
-`KUTUPHANE_RERANK_MODEL` (e.g. `bge-reranker-v2-m3`); the top 30 hybrid hits are reordered. The reranker reads the
-first 1,200 characters of each passage (the target passage size; G26).
-`echo "$TOKEN" | kutuphane whoami` verifies a token; `kutuphane explain <correlation-id> --llmdap-export audit.jsonl`
-prints the unified audit.
+| Read | For |
+|---|---|
+| `docs/guide/index.md` | the map and the reading order |
+| `docs/guide/concepts.md` | books, versions, journals, notes, Standing, origin, rights, grants, delegation |
+| `docs/guide/install.md` | development, full stack, local models, database roles, upgrades |
+| `docs/guide/operations.md` | the CLI: ingest, index, grants, journals, curation, exports, repositories, backups |
+| `docs/guide/mcp.md`, `docs/guide/http-api.md` | the interfaces |
+| `docs/guide/agent-memory.md` | a how-to for orchestrators |
+| `docs/guide/security.md`, `docs/guide/kstd.md` | the security model and the kstd manifest |
+| `docs/guide/troubleshooting.md`, `docs/guide/changelog.md` | errors and changes |
 
-Code repositories of a journal (docs/24 §10): `kutuphane repo add <journal> <slug> <git_dir> --ref 'refs/heads/*'
---by user:admin` registers a bare mirror; `kutuphane repo remove <journal> <slug>` stops its use. Kütüphane never
-fetches: keep the mirror current yourself (for example a cron `git fetch`). The mirror must be inside
-`KUTUPHANE_REPO_ROOTS` (absolute directories, `:`-separated; compose mounts `KUTUPHANE_REPO_DIR`, default
-`./deploy/repos`, read-only at `/srv/repos`), with no symlink in its path, no alternates, no `commondir`, no promisor
-pack and only plain `core.*`, `extensions.objectformat` and `remote.*` url/fetch/mirror keys in its `config`. Only
-commits that the `--ref` patterns reach can be cited. `verify_citations` (MCP) and `POST /v1/citations/verify`
-(`{"book", "citations", "at"}`, `at` = a branch name or a full commit id) report `verified`, `stale` (with
-`moved_to`), `missing` or `unverifiable` with a reason, and never return code text. The server needs git ≥ 2.45.
+Design and decisions: `docs/01-direction-decisions.md`, `docs/23-vision-v1.md`, `docs/24-r1-agent-memory-design.md`.
 
-Search and answers (`kutuphane search`, `kutuphane ask`, `GET /v1/search`, `POST /v1/ask`, MCP `search_library`
-and `ask_library`):
+## Status
 
-- **Scope filters (G14)** narrow the evidence before ranking: `--book <slug>` (repeatable), `--path <prefix>`
-  (`data/` = the files below `data/`), `--origin <kstd origin>` (repeatable: `human`, `assisted`, `model`, `tool`,
-  `unknown`; a book without `kstd.yaml` counts as `unknown`), `--current-only` (the kstd validity includes now).
-  HTTP: the query parameters `book`, `path`, `origin` (repeatable) and `current_only=true`; `POST /v1/ask` takes the
-  same names in its JSON body. MCP: the same tool arguments. A filter never adds a book: a book that the caller
-  cannot read gives the same empty result as a book that does not exist.
-- **Answers** are in the language of the question (Turkish or English; G20) and short (about 150 words). Each
-  passage goes to the answer model by its first 2,400 characters; the stored sources and the citations keep the
-  whole passage (G26). A reference can name one or more passages: `[2]`, `[2,3]`, `[2-4]`, `[2–4]` (G21). Every
-  number is checked before a range is expanded; one unknown number or one malformed group (`[1-2-3]`) refuses the
-  answer.
-- **Background answers (docs/24 §12.2).** `ask_library(…, background: true)` and `POST /v1/ask` with
-  `"background": true` (202) return `{job_id, status: "queued"}` at once. Then `job_status` / `GET /v1/jobs/{id}`,
-  `job_result` / `GET /v1/jobs/{id}/result` (the stored answer, as `reopen_answer` shows it, with current rights) and
-  `job_cancel` / `POST /v1/jobs/{id}/cancel`. An `idempotency_key` (8–128 characters of `A-Z a-z 0-9 . _ : -`) makes a
-  retried submission return the same job (200); the same key with another request is refused (409). Only the same
-  principal acting for the same user, or that user directly, sees a job; anyone else gets 404. At most 3 open jobs
-  per principal (429). The server runs `KUTUPHANE_JOB_WORKERS` workers (default 1; 0 runs none). A job whose worker
-  stopped is `failed: interrupted` when its lease ends and never runs again. Finished jobs are deleted after 7 days;
-  their answers stay.
-- **Two languages (G19).** When the passages found are in Turkish and in English, the answer model translates the
-  question (`KUTUPHANE_ANSWER_MODEL` on `KUTUPHANE_LLMDAP_ROUTE`; `ask --model`). Only the question goes to the
-  model. A second search runs with the translation, the merged passages are authorized again in one statement (a
-  book the caller lost meanwhile drops out), and each passage is reranked against the question in its own
-  language. Without a translation, up to 2 passages in the other language from the hybrid top 8 keep a place.
-- **Recent things (G22).** A question with "recent", "latest", "son", "en yeni" and similar words ranks the 16 most
-  relevant passages by relevance rank + date rank. The date is the kstd `valid_from`, else the first date or ISO week
-  in the path (`brief-2026-W40.json`), else the `classified_at` field of a JSONL record. A date elsewhere in the
-  text is never used, and a date later than tomorrow is ignored.
-- kstd `valid_from`/`valid_to` keep their time: `2026-10-27T23:59:00Z` is not current at noon that day; a date alone
-  means 00:00 UTC.
-- A question or query is at most 1,000 characters; it is checked before it is embedded. Query vectors are kept in
-  memory per process (256 queries, 4 MiB at most), so a repeated query needs no embedding call (G26).
+Version 0.1.0, under active development; interfaces can change. Built: file books with kstd L0, hybrid search,
+answers with citations, signed packages, agent memory R1 (notes, fast reads, code citations, MCP 2026-07-28,
+headless auth) and R2 rollback, outcomes and decision export. Open: the curator queue (#77), delegated curate
+(#78), the light install without LLMDAP (#76), bulk import (#75) and MCP Skills (#80). See
+`docs/guide/changelog.md`.
+
+## Licence
+
+The code is licensed under Apache-2.0 (`LICENSE`). The kstd specification text in `docs/` and `kstd/` is
+licensed under CC-BY-4.0 (`NOTICE`). Contributions: `CONTRIBUTING.md`.
