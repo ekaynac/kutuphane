@@ -35,3 +35,11 @@ def lowest(origins) -> str | None:
     """The shown origin of a note: the lowest of the stored origins of its propose writes (model < unknown)."""
     present = set(origins)
     return next((o for o in STORED if o in present), None)
+
+
+def shown(conn, seqs, w: int) -> dict:
+    """{note seq: (origin, entered_by, confirmed_by)} at `w` (docs/25 §7.6). STAND-IN of slice R's contract (§13):
+    the write-path value only, the lowest over the propose writes with seq <= w; slice R adds the confirmation."""
+    rows = conn.execute("SELECT note_seq, array_agg(DISTINCT origin) FROM write_record WHERE action = 'propose' "
+                        "AND note_seq = ANY(%s) AND seq <= %s GROUP BY note_seq", (list(seqs), w)).fetchall()
+    return {seq: (lowest(found), None, None) for seq, found in rows}
