@@ -11,10 +11,10 @@ For the terms, read [concepts.md](concepts.md).
 
 ### Light install (#76)
 
-- New: `deploy/compose.light.yaml` starts Postgres, Core and the ingress proxy with no LLMDAP and no model server; only open source parts. Search is full text only. Steps and what is lost (answers, vectors, rerank, the model audit): [install.md](install.md#light-install) ([#76](https://github.com/ekaynac/kutuphane/issues/76)).
-- Without LLMDAP, `ask_library` and `POST /v1/ask` give `503` `answers are not available: this install has no model gateway (LLMDAP); search is full text only` (before: `502` `model service unavailable or refused`). `background: true` makes no job ([#76](https://github.com/ekaynac/kutuphane/issues/76)).
-- The server needs `KUTUPHANE_ANSWER_MODEL` only when `KUTUPHANE_LLMDAP_URL` is set. An embedding or rerank route without LLMDAP still stops the start: Core calls a model only through LLMDAP ([#76](https://github.com/ekaynac/kutuphane/issues/76)).
-- `deploy/egress_probe.py --light` checks that Core reaches Postgres and nothing else ([#76](https://github.com/ekaynac/kutuphane/issues/76)).
+- New: `deploy/compose.light.yaml` starts Postgres, Core and the ingress proxy with no LLMDAP and no model server; only open source parts. Search is full text only. Steps and what is lost (answers, vectors, rerank, the model audit): [install.md](install.md#light-install) ([#111](https://github.com/ekaynac/kutuphane/pull/111)).
+- Without LLMDAP, `ask_library` and `POST /v1/ask` give `503` `answers are not available: this install has no model gateway (LLMDAP); search is full text only` (before: `502` `model service unavailable or refused`). `background: true` makes no job ([#111](https://github.com/ekaynac/kutuphane/pull/111)).
+- The server needs `KUTUPHANE_ANSWER_MODEL` only when `KUTUPHANE_LLMDAP_URL` is set. An embedding or rerank route without LLMDAP still stops the start: Core calls a model only through LLMDAP ([#111](https://github.com/ekaynac/kutuphane/pull/111)).
+- `deploy/egress_probe.py --light` checks that Core reaches Postgres and nothing else ([#111](https://github.com/ekaynac/kutuphane/pull/111)).
 
 ### Security fixes (Astra review #15)
 
