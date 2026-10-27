@@ -35,8 +35,9 @@ def wait_for(client, auth, job_id, states=("succeeded", "failed", "cancelled"), 
 
 
 def run_ask(fake):
-    def ask(conn, actor, question, scope, check):
-        return answers.ask(conn, fake.bridge(), actor, question, model="qwen", scope=scope, check=check)["id"]
+    def ask(conn, actor, question, scope, check, commit):
+        return answers.ask(conn, fake.bridge(), actor, question, model="qwen", scope=scope, check=check,
+                           commit=commit)["id"]
     return ask
 
 
@@ -104,6 +105,65 @@ def test_cancel_after_the_model_call_stores_no_answer(app_env, conn, fake):  # ย
     jobs.run(conn, dsn, claimed, run_ask(fake), server._safe_error)
     assert jobs.status(conn, actor, job["job_id"])["status"] == "cancelled"
     assert model_calls(fake) == 1 and conn.execute("SELECT count(*) FROM answer").fetchone()[0] == 0
+
+
+def test_a_cancel_that_lands_before_the_store_wins(app_env, conn, fake, monkeypatch):  # Astra review #13 (5)
+    _app, _, dsn = app_env
+    fake.reply = REPLY
+    actor = Actor(U)
+    job, _ = jobs.submit(conn, actor, Q, server.search.Scope())
+    claimed = jobs.claim(conn)
+    real = answers._store
+
+    def racing(*args, **kw):  # the worker's last check passed; a cancel commits before the insert
+        with db.connect(dsn) as other:
+            assert jobs.cancel(other, actor, job["job_id"])["status"] == "running"
+        return real(*args, **kw)
+    monkeypatch.setattr(answers, "_store", racing)
+    jobs.run(conn, dsn, claimed, run_ask(fake), server._safe_error)
+    state = jobs.status(conn, actor, job["job_id"])
+    assert state["status"] == "cancelled" and state["finished_at"]
+    assert model_calls(fake) == 1 and conn.execute("SELECT count(*) FROM answer").fetchone()[0] == 0
+
+
+def test_an_expired_and_failed_job_stores_no_answer(app_env, conn, fake):  # Astra review #13 (6)
+    _app, _, dsn = app_env
+    fake.reply = REPLY
+    actor = Actor(U)
+    job, _ = jobs.submit(conn, actor, Q, server.search.Scope())
+    claimed = jobs.claim(conn)
+
+    def expired():  # while the model "thinks", the lease ends and another process fails the job
+        with db.connect(dsn) as other:
+            other.execute("UPDATE ask_job SET lease_until = now() - interval '1 second' WHERE id = %s",
+                          (job["job_id"],))
+            jobs.expire(other)
+    fake.on_request = expired
+    jobs.run(conn, dsn, claimed, run_ask(fake), server._safe_error)
+    state = jobs.status(conn, actor, job["job_id"])
+    assert (state["status"], state["error"]) == ("failed", "interrupted")
+    assert conn.execute("SELECT count(*) FROM answer").fetchone()[0] == 0
+
+
+def test_renewal_never_revives_an_expired_lease(app_env, conn, fake):  # Astra review #13 (6)
+    _app, _, dsn = app_env
+    fake.reply = REPLY
+    actor = Actor(U)
+    job, _ = jobs.submit(conn, actor, Q, server.search.Scope())
+    claimed = jobs.claim(conn, lease_seconds=0.3)
+
+    def lapse():  # the lease ends (no process has failed the job yet); the heartbeat runs meanwhile
+        with db.connect(dsn) as other:
+            other.execute("UPDATE ask_job SET lease_until = now() - interval '1 second' WHERE id = %s",
+                          (job["job_id"],))
+        time.sleep(0.5)
+    fake.on_request = lapse
+    jobs.run(conn, dsn, claimed, run_ask(fake), server._safe_error, lease_seconds=0.3)
+    state = jobs.status(conn, actor, job["job_id"])
+    assert (state["status"], state["error"]) == ("failed", "interrupted")
+    assert conn.execute("SELECT count(*) FROM answer").fetchone()[0] == 0
+    lease = conn.execute("SELECT lease_until FROM ask_job WHERE id = %s", (job["job_id"],)).fetchone()[0]
+    assert lease is None
 
 
 def test_retry_with_the_same_key_gives_the_same_job_and_one_model_call(app_env, verifier, keys, fake):  # T35, ยง6.4

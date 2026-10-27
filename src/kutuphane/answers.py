@@ -119,10 +119,22 @@ def _needs(actor: Actor, sources: list[dict], instruction_of) -> dict:
     return needs
 
 
+def _keep(conn, commit, store) -> dict:
+    """`store()` inserts the answer; `commit(answer id)`, if given, runs in the same transaction right after it and
+    raises to roll the answer back."""
+    with conn.transaction():
+        stored = store()
+        if commit is not None:
+            commit(stored["id"])
+    return stored
+
+
 def ask(conn, bridge: llmdap.Bridge, actor: Actor, question: str, *, model: str, k: int = search.DEFAULT_K,
-        stages: retrieval.Stages = retrieval.Stages(), scope: search.Scope = search.Scope(), check=None) -> dict:
-    """`check`, if given, runs before the model call and before the answer is stored; it raises to stop the ask
-    (a background job's cancel, docs/24 §12.2)."""
+        stages: retrieval.Stages = retrieval.Stages(), scope: search.Scope = search.Scope(), check=None,
+        commit=None) -> dict:
+    """`check`, if given, runs before the model call and before the answer is stored; it raises to stop the ask.
+    `commit(answer id)`, if given, runs in the transaction that inserts the answer (see `_keep`): a background job
+    fences its cancel and its lease and records its success there (docs/24 §12.2)."""
     check = check or (lambda: None)
     found = retrieval.retrieve(conn, actor, question, k, stages, scope)
     rights = kstd.Rights(conn)  # kstd: a passage whose rights do not allow ai_input never reaches the answer model
@@ -130,7 +142,8 @@ def ask(conn, bridge: llmdap.Bridge, actor: Actor, question: str, *, model: str,
     withheld = len(found) - len(hits)
     if not hits:
         check()
-        return {**_store(conn, actor, question, "not_in_library", None, [], [], None), "withheld": withheld}
+        stored = _keep(conn, commit, lambda: _store(conn, actor, question, "not_in_library", None, [], [], None))
+        return {**stored, "withheld": withheld}
     sources = [_ref(n, h) for n, h in enumerate(hits, start=1)]
     passages = "\n\n".join(f"[{n}] ({h.citation.book}/{h.citation.path})\n{_shown(h.text)}"
                            for n, h in enumerate(hits, 1))
@@ -151,7 +164,8 @@ def ask(conn, bridge: llmdap.Bridge, actor: Actor, question: str, *, model: str,
                     action="answer", items={f"book:{r['book']}": [_handle(c) for c in cited if c["book"] == r["book"]]
                                             for r in sources})
     check()
-    stored = _store(conn, actor, question, status, body if status == "answered" else None, cited, sources, model)
+    stored = _keep(conn, commit, lambda: _store(conn, actor, question, status, body if status == "answered" else None,
+                                                 cited, sources, model))
     citations = [{**c, "item": rights.info(c["book"], c["content_id"], c["path"])} for c in stored["citations"]]
     return {**stored, "citations": citations, "withheld": withheld}
 

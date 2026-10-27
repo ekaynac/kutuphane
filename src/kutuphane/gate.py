@@ -125,15 +125,18 @@ def check_many(conn, actor: Actor, needs: dict, *, action: str, items: dict | No
         policies_out.update(final.policies)
 
 
-def guard_many(conn, actor: Actor, needs: dict, work, *, action: str, items: dict | None = None):
+def guard_many(conn, actor: Actor, needs: dict, work, *, action: str, items: dict | None = None, finish=None):
     """`guard` for work that depends on several books (docs/24 §6.1, a write such as a note that cites other books).
     `needs`: {object: {modes}}. Every object and mode is decided in ONE statement before the work, so a refused
     request does nothing. The work runs in a transaction, and every object and mode is decided again in ONE
     statement inside it: if any right was lost meanwhile, the work is rolled back and nothing is handed out. Each
-    decision is logged; a refusal is logged after the rollback, so it stays on record."""
+    decision is logged; a refusal is logged after the rollback, so it stays on record.
+    `finish(final, data) -> data`, if given, runs in the transaction right after that final decision (which then
+    also decides `read` on every book): what the work built from optional rights outside `needs` is cut to it."""
     if not needs:
         raise ValueError("guard_many needs at least one object")
-    modes = sorted({m for ms in needs.values() for m in ms}, key=authz.MODES.index)
+    wanted = {m for ms in needs.values() for m in ms} | ({"read"} if finish else set())
+    modes = sorted(wanted, key=authz.MODES.index)
 
     def lost(verdict: authz.Allowed) -> list[tuple[str, str]]:
         return [(o, m) for o in sorted(needs) for m in sorted(needs[o], key=modes.index)
@@ -154,6 +157,8 @@ def guard_many(conn, actor: Actor, needs: dict, work, *, action: str, items: dic
             final = authz.allowed(conn, actor.principal, actor.on_behalf_of, modes)
             if missing := lost(final):
                 raise _Rollback
+            if finish is not None:
+                data = finish(final, data)
     except _Rollback:
         refuse(final, missing, "revoked before delivery: no current right")
         raise Denied(f"{action}: revoked before delivery") from None

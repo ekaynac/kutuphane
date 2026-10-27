@@ -48,10 +48,12 @@ CONFIG_KEYS = frozenset({"core.repositoryformatversion", "core.bare", "core.file
                          "core.precomposeunicode", "core.logallrefupdates", "extensions.objectformat"})
 REMOTE_KEYS = frozenset({"url", "fetch", "mirror"})
 # Built from nothing, never inherited: so GIT_DIR, GIT_OBJECT_DIRECTORY, GIT_ALTERNATE_OBJECT_DIRECTORIES and
-# GIT_COMMON_DIR never reach git, and no lazy fetch, prompt, lock or protocol can happen.
+# GIT_COMMON_DIR never reach git, and no lazy fetch, prompt, lock or protocol can happen. GIT_GRAFT_FILE points at an
+# empty file, so `info/grafts` (which rewrites ancestry; GIT_NO_REPLACE_OBJECTS does not cover it) is never read.
 GIT_ENV = {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "HOME": "/nonexistent", "GIT_CONFIG_NOSYSTEM": "1",
-           "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_NO_REPLACE_OBJECTS": "1", "GIT_NO_LAZY_FETCH": "1",
-           "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0", "GIT_PROTOCOL_FROM_USER": "0", "GIT_ALLOW_PROTOCOL": ""}
+           "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_NO_REPLACE_OBJECTS": "1", "GIT_GRAFT_FILE": "/dev/null",
+           "GIT_NO_LAZY_FETCH": "1", "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0",
+           "GIT_PROTOCOL_FROM_USER": "0", "GIT_ALLOW_PROTOCOL": ""}
 BATCH_CHECK = re.compile(rb"(?P<oid>[0-9a-f]{40}(?:[0-9a-f]{24})?) (?P<type>[a-z]+) (?P<size>[0-9]{1,12})\n")
 
 
@@ -172,7 +174,7 @@ def check_git_dir(git_dir: str) -> None:
     if not (os.path.isfile(os.path.join(git_dir, "HEAD")) and os.path.isfile(os.path.join(git_dir, "config"))
             and os.path.isdir(os.path.join(git_dir, "objects"))):
         refuse("not a bare repository (HEAD, config and objects/ are needed)")
-    for name in ("commondir", "objects/info/alternates", "objects/info/http-alternates"):
+    for name in ("commondir", "info/grafts", "objects/info/alternates", "objects/info/http-alternates"):
         if os.path.lexists(os.path.join(git_dir, name)):
             refuse(f"{name} is not accepted")
     if glob.glob(os.path.join(glob.escape(git_dir), "objects", "pack", "*.promisor")):
@@ -415,25 +417,38 @@ def resolve_targets(conn, books: list[str], repo: str | None, branch: str | None
     return out
 
 
+class Verifier:
+    """The verification of one request (docs/24 §10.3, §10.4): one reader, so one cache, for every batch of it.
+    `targets` as `resolve_targets` returns them."""
+
+    def __init__(self, conn, targets: dict):
+        self.reader = _Reader(conn)
+        self.targets = targets
+
+    def verify(self, cites: list[tuple[str, CodeCitation, bytes | None]]) -> list[Status]:
+        """One Status per `(book, citation, stored excerpt hash)`, in order; at most MAX_CITATIONS per call. A stored
+        hash of None is computed from the citation's own commit (verify_citations). No target for (book, repo):
+        `not_checked`."""
+        if len(cites) > MAX_CITATIONS:
+            raise CitationRefused("invalid", f"at most {MAX_CITATIONS} citations per request")
+        out = []
+        for book, cite, stored in cites:
+            target = self.targets.get((book, cite.repo))
+            if target is None:
+                out.append(Status("not_checked"))
+            elif isinstance(target, Status):
+                out.append(target)
+            else:
+                try:
+                    out.append(_verify(self.reader, book, cite, stored, target))
+                except CitationRefused as exc:
+                    out.append(_unverifiable(exc))
+        return out
+
+
 def verify_many(conn, targets: dict, cites: list[tuple[str, CodeCitation, bytes | None]]) -> list[Status]:
-    """One Status per `(book, citation, stored excerpt hash)` (docs/24 §10.4), in order. A stored hash of None is
-    computed from the citation's own commit (verify_citations). No target for (book, repo): `not_checked`."""
-    if len(cites) > MAX_CITATIONS:
-        raise CitationRefused("invalid", f"at most {MAX_CITATIONS} citations per request")
-    reader = _Reader(conn)
-    out = []
-    for book, cite, stored in cites:
-        target = targets.get((book, cite.repo))
-        if target is None:
-            out.append(Status("not_checked"))
-        elif isinstance(target, Status):
-            out.append(target)
-        else:
-            try:
-                out.append(_verify(reader, book, cite, stored, target))
-            except CitationRefused as exc:
-                out.append(_unverifiable(exc))
-    return out
+    """`Verifier.verify` for one batch."""
+    return Verifier(conn, targets).verify(cites)
 
 
 def _unverifiable(exc: CitationRefused) -> Status:

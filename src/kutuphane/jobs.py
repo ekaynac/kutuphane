@@ -4,10 +4,13 @@
   (principal, on_behalf_of), makes a retry return the original job; the same key with another request is refused.
   At most `MAX_OPEN` queued or running jobs per principal.
 - Workers run in the server process. They claim with `FOR UPDATE SKIP LOCKED`, renew the lease while the ask runs,
-  and run `answers.ask` with the job's principal and on_behalf_of, so the rights at run time apply.
-- A running job whose lease ended becomes `failed: interrupted`. It never runs again (model cost).
-- A cancel stops a queued job at once; a running job checks it before the model call and before it stores the
-  answer.
+  and run `answers.ask` with the job's principal and on_behalf_of, so the rights at run time apply. A lease is renewed
+  only while it is running and unexpired: an ended lease is never revived.
+- A running job whose lease ended becomes `failed: interrupted`. It never runs again (model cost), and its worker
+  stores no answer.
+- A cancel stops a queued job at once; a running job checks it (and its lease) before the model call and before it
+  stores the answer. The answer's insert, a last check under the job-row lock and the success update are one
+  transaction, so a cancel or an expiry that commits before it wins and the answer is rolled back.
 - Status, result and cancel have the visibility of `answers.reopen`; anyone else gets "not found". The result is
   `answers.reopen` of the stored answer, so current rights decide it.
 - Finished jobs are deleted after `RETENTION`, with their idempotency keys; the answer and its audit stay.
@@ -48,6 +51,10 @@ def workers_from_env() -> int:
 
 class Cancelled(Exception):
     pass
+
+
+class Expired(Exception):
+    """The job's lease ended (or another process already failed the job): the worker stops."""
 
 
 def _scope_doc(scope: search.Scope) -> dict:
@@ -147,36 +154,60 @@ def claim(conn, lease_seconds: float = LEASE_SECONDS):
         "RETURNING id, principal, on_behalf_of, correlation_id, question, scope", (lease_seconds,)).fetchone()
 
 
+def renew(conn, job_id: str, lease_seconds: float = LEASE_SECONDS) -> bool:
+    """Extend the lease of a running job whose lease has not ended. False when it ended: never revived."""
+    return conn.execute("UPDATE ask_job SET lease_until = now() + make_interval(secs => %s) "
+                        "WHERE id = %s AND status = 'running' AND lease_until > clock_timestamp() RETURNING 1",
+                        (lease_seconds, job_id)).fetchone() is not None
+
+
 def run(conn, dsn: str, job, ask, safe_error, lease_seconds: float = LEASE_SECONDS) -> None:
-    """Run one claimed job. `ask(conn, actor, question, scope, check) -> answer id`; `safe_error(exc)` is the short
-    message stored for a failure (the HTTP error classes)."""
+    """Run one claimed job. `ask(conn, actor, question, scope, check, commit) -> answer id` is `answers.ask` with
+    both hooks: `check()` before the model call and before the store, `commit(answer id)` in the transaction that
+    stores the answer, which records the success. `safe_error(exc)` is the short message stored for a failure (the
+    HTTP error classes)."""
     job_id, principal, on_behalf_of, correlation_id, question, scope = job
     actor = Actor(principal, on_behalf_of, correlation_id=correlation_id)
     done = threading.Event()
 
-    def renew():
+    def heartbeat_loop():
         with db.connect(dsn) as c:
             while not done.wait(lease_seconds / 3):
-                c.execute("UPDATE ask_job SET lease_until = now() + make_interval(secs => %s) "
-                          "WHERE id = %s AND status = 'running'", (lease_seconds, job_id))
+                if not renew(c, job_id, lease_seconds):
+                    return  # the lease ended; the worker's next check stops it
+
+    def fence(lock: bool) -> None:
+        """The job must still be running, uncancelled, under an unexpired lease."""
+        row = conn.execute("SELECT status, cancel_requested_at, lease_until > clock_timestamp() FROM ask_job "
+                           f"WHERE id = %s{' FOR UPDATE' if lock else ''}", (job_id,)).fetchone()
+        if row is None or row[1] is not None:
+            raise Cancelled(job_id)
+        if row[0] != "running" or not row[2]:
+            raise Expired(job_id)
 
     def check():
-        row = conn.execute("SELECT cancel_requested_at FROM ask_job WHERE id = %s", (job_id,)).fetchone()
-        if row is None or row[0] is not None:
-            raise Cancelled(job_id)
+        fence(lock=False)
 
-    heartbeat = threading.Thread(target=renew, name=f"lease-{job_id}", daemon=True)
+    def commit(answer_id: str):  # in the answer's transaction: the job row is locked until it commits
+        fence(lock=True)
+        conn.execute("UPDATE ask_job SET status = 'succeeded', answer_id = %s, error = NULL, finished_at = now(), "
+                     "lease_until = NULL WHERE id = %s", (answer_id, job_id))
+
+    heartbeat = threading.Thread(target=heartbeat_loop, name=f"lease-{job_id}", daemon=True)
     heartbeat.start()
     try:
         try:
-            outcome = ("succeeded", ask(conn, actor, question, _scope(scope), check), None)
+            ask(conn, actor, question, _scope(scope), check, commit)
+            return  # succeeded: recorded with the answer
         except Cancelled:
-            outcome = ("cancelled", None, None)
+            outcome = ("cancelled", None)
+        except Expired:
+            outcome = ("failed", INTERRUPTED)
         except Exception as exc:  # stored as a short, safe message; the details only in the server log
             log.warning("ask job %s failed", job_id, exc_info=True)
-            outcome = ("failed", None, safe_error(exc)[:500])
-        conn.execute("UPDATE ask_job SET status = %s, answer_id = %s, error = %s, finished_at = now(), "
-                     "lease_until = NULL WHERE id = %s AND status = 'running'", (*outcome, job_id))
+            outcome = ("failed", safe_error(exc)[:500])
+        conn.execute("UPDATE ask_job SET status = %s, error = %s, finished_at = now(), lease_until = NULL "
+                     "WHERE id = %s AND status = 'running'", (*outcome, job_id))
     finally:
         done.set()
         heartbeat.join()
