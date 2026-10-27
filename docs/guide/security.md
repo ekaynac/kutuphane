@@ -58,7 +58,7 @@ adds a book.
 | `ai_use.search` | not `y`: the file or note is not indexed and not in text filters |
 | `ai_use.ai_input` | not `y`: no embedding, no rerank, not in an answer prompt; model readers get `text: null` and `withheld` |
 | `ai_use.train` | not `y`: a decision export has only hashes |
-| `activate` | an agent gets agent-instruction passages only with `activate` on the book; each delivery is logged. A skill that a scan blocks is refused to agents even with `activate` (see below) |
+| `activate` | an agent gets agent-instruction passages only with `activate` on the book; each delivery is logged. A skill that a scan blocks is refused to agents even with `activate` (see below). MCP Skills (`skills/list`, `skills/get`, `skill://` reads) need `read` and `activate` for every principal, people too |
 | personal data | `export` of a file with `personal_data` not `no`/`synthetic` needs `--legal-basis` (DPV codes) |
 
 In a manifest, an absent term is "not stated" and counts as `n`. A file with no manifest follows its book policy
@@ -177,10 +177,12 @@ from its own environment. It never imports, copies or ships it. Install and comm
   surrogate, NaN or infinity) is a failed scan too, and the ingest continues.
 
 The block applies to `read_document`, `kutuphane read`, `open_citation`, agent search (the passages are left out
-before ranking), and `ask_library`/`reopen_answer` for agents. It is in force in the same transaction that
-publishes the version. Each refusal is an `access_event` (`activate`, refused, "skill blocked by a scan"). The
-last rights check before a delivery and the block check are one database statement, so a change between them
-(for example, a right revoked and a block cleared in one transaction) cannot give a delivery.
+before ranking), `ask_library`/`reopen_answer` for agents, and MCP Skills: a skill with a blocked file is not in
+`skills/list`, and `skills/get` and `resources/read` refuse it, also a skill that holds a blocked skill in a
+subfolder ([mcp.md](mcp.md#10-skills-sep-2640)). It is in force in the same transaction that publishes the version.
+Each refusal is an `access_event` (`activate`, refused, "skill blocked by a scan"). The last rights check before a
+delivery and the block check are one database statement, so a change between them (for example, a right revoked and
+a block cleared in one transaction) cannot give a delivery.
 
 **The block follows the bytes.** A block belongs to the skill's files (the input digest), not to one version of
 the book. When a new version of the book has the same skill files, every block that is not cleared is copied
@@ -214,6 +216,21 @@ dependencies, `deploy/skillspector/build-requirements.txt`) as wheels only, with
 SkillSpector with that backend, without build isolation. No step gets a package that has no hash. Use Python 3.12
 or 3.13: a pinned dependency (yara-python) has no wheel for 3.14, and the installer builds nothing from source.
 SkillSpector is one layer, not proof: it does not read images or binaries, and attacks against it are researched.
+
+## MCP Skills and handling labels (#80)
+
+- **Skills over MCP (SEP-2640).** Skill folders reach a model through `skills/list`, `skills/get` and
+  `resources/read` of `skill://` URIs only through the gate of `read_document`, with stricter rules: `read` and
+  `activate` for every principal, `ai_input` for every file of the skill, and no blocked file in the skill. The
+  list and the entries hold the frontmatter and the digests only; a file goes out only on its own `resources/read`.
+  The digests are the SHA-256 of the stored bytes (the content manifest), but the same server gives the digests and
+  the bytes: a host must not take a digest match as proof of trust (SEP-2640). Treat skill content as untrusted
+  model input. Details: [mcp.md](mcp.md#10-skills-sep-2640).
+- **Handling labels.** `search_library`, `open_citation`, `read_document`, `query_notes` and the skill reads give
+  the Sensitivity and Egress of each book in the result, the strictest of them, and the skill-scan records that
+  apply, in `_meta["kutuphane/handling"]` ([mcp.md](mcp.md#44-handling-labels-in-_meta)). The labels inform the
+  client; the server still enforces Egress itself (LLMDAP, `local_only`) and Sensitivity (export). They are not a
+  right and not a proof.
 
 ## Secret scan
 

@@ -55,9 +55,11 @@ def log_event(conn, actor: Actor, action: str, obj: str, mode: str, d: authz.Dec
 
 
 def guard(conn, actor: Actor, obj: str, modes: list[str], fetch, *, action: str, content_id=None, path=None,
-          profile_id=None, items=None):
+          profile_id=None, items=None, blocks_of=None):
     """Decide, fetch, decide again, then log and hand out. Every single-object content path goes through here.
-    An agent's `activate` on a file inside a skill that a scan blocks (D71) is refused in that final step."""
+    An agent's `activate` on a file inside a skill that a scan blocks (D71) is refused in that final step.
+    `blocks_of(data)`, if given: the (book, content_id, path) files whose skill block refuses this delivery (a
+    whole skill, #80); by default the file `content_id`/`path` when `activate` is asked."""
     def log(mode, d, policy_id, reason=None):
         log_event(conn, actor, action if mode == "read" else mode, obj, mode, d, policy_id, content_id, path, reason,
              profile_id, items if d.allowed else None)
@@ -74,9 +76,9 @@ def guard(conn, actor: Actor, obj: str, modes: list[str], fetch, *, action: str,
         with conn.transaction():
             data = fetch()
             # Again, right before handing anything out: one statement for every mode, the policy in force and, for
-            # `activate`, the skill block of this file.
-            skills = [(obj.removeprefix("book:"), content_id, path)] \
-                if "activate" in modes and content_id is not None else []
+            # `activate`, the skill block of this file (or of every file `blocks_of` names).
+            skills = blocks_of(data) if blocks_of is not None else \
+                [(obj.removeprefix("book:"), content_id, path)] if "activate" in modes and content_id is not None else []
             final = authz.decide(conn, actor.principal, actor.on_behalf_of, obj, modes, skills=skills)
             revoked = next(((m, d) for m, d in final.decisions.items() if not d.allowed), None)
             blocked = revoked is None and bool(final.blocked_files)

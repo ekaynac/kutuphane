@@ -65,6 +65,13 @@ def skill_dirs(paths: Iterable[str]) -> frozenset[str]:
     return frozenset(str(PurePosixPath(p).parent) for p in paths if PurePosixPath(p).name.casefold() == SKILL_FILE)
 
 
+def relative(folder: str, path: str) -> str | None:
+    """The path relative to a skill folder ("." for the book root), or None when the file is not inside it."""
+    if folder == ".":
+        return path
+    return path[len(folder) + 1:] if path.startswith(folder + "/") else None
+
+
 def is_instruction(entry: dict, skills: frozenset[str] = frozenset()) -> bool:
     """`entry`: a manifest entry (path, okf_type). `skills`: skill_dirs() of every path in the same version."""
     path = PurePosixPath(entry["path"])

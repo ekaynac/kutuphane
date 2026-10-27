@@ -9,6 +9,12 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### MCP Skills (SEP-2640) and handling labels (#80)
+
+- New: the MCP server serves the skill folders of the current book versions with the Skills extension `io.modelcontextprotocol/skills` (SEP-2640, Final): `skills/list`, `skills/get`, and `resources/read` of `skill://<book>/<folder>/<file>`. A skill is served only to a principal with `read` and `activate` on the book (people too), when kstd allows AI input for all its files and a scan blocks none of them. Each file has its SHA-256 (`sha256:` + the digest in the content manifest) and size; the bytes go out only on `resources/read`. On 2026-07-28 the client must declare the extension (else `-32021`). `read_document` stays the path for other clients ([mcp.md](mcp.md#10-skills-sep-2640)) ([#123](https://github.com/ekaynac/kutuphane/pull/123)).
+- New: `search_library`, `open_citation`, `read_document` and `query_notes` give the Sensitivity and Egress of each book in the result, the strictest of them, and the skill-scan records that apply, in `_meta["kutuphane/handling"]`. The guide records how these map to the experimental trust-annotations extension (SEP-1913) when it is stable ([mcp.md](mcp.md#44-handling-labels-in-_meta)) ([#123](https://github.com/ekaynac/kutuphane/pull/123)).
+- `deploy/mcp_probe.py --skill <SKILL.md URI>` checks the Skills extension and the digests through the proxy; the probe also checks the handling labels of `search_library` ([mcp.md](mcp.md#9-check-the-server-with-deploymcp_probepy)) ([#123](https://github.com/ekaynac/kutuphane/pull/123)).
+
 ### Retrieval re-check (Pilot 1 questions 1–3)
 
 - Fixed: for a question with passages in Turkish and in English, the question translation was sampled. An English question could get a Turkish word of another sense, or an answer in place of a translation, and the second search then missed the passage with the answer (G19). The translation now uses greedy decoding (`temperature` 0). Pilot 1 question 2 in English: the literal translation in 3 of 3 runs, before 1 of 3 ([operations.md](operations.md), section 4; results in [../18-pilot-radar.md](../18-pilot-radar.md), section 4.2) ([#122](https://github.com/ekaynac/kutuphane/pull/122)).

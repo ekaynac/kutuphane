@@ -27,7 +27,7 @@ For example: `https://kutuphane.example/mcp`.
 | `Accept` | `application/json, text/event-stream` | Always. |
 | `MCP-Protocol-Version` | `2025-11-25` or `2026-07-28` | Every request after `initialize` (2025-11-25), or every request (2026-07-28). |
 | `Mcp-Method` | The JSON-RPC method, for example `tools/call` | 2026-07-28 only. |
-| `Mcp-Name` | The tool name of a `tools/call` | 2026-07-28 only. |
+| `Mcp-Name` | The tool name of a `tools/call`, or the URI of a `resources/read` | 2026-07-28 only. |
 
 The response is JSON, or a `text/event-stream` with the JSON-RPC message in a `data:` line.
 Read both forms.
@@ -43,7 +43,7 @@ The MCP SDK does these checks before a tool runs.
 | The `Host` header is not the host of `KUTUPHANE_PUBLIC_URL`. | `421` | `Invalid Host header` |
 | An `Origin` header is present and is not the origin of `KUTUPHANE_PUBLIC_URL`. | `403` | `Invalid Origin header` |
 | The body is larger than 4 MiB (SDK limit). | `413` | `Request body too large` |
-| 2026-07-28: `Mcp-Name` is not the same as the tool name in the body. | `400` | JSON-RPC error code `-32020` |
+| 2026-07-28: `Mcp-Name` is not the same as the tool name (or the `resources/read` URI) in the body. | `400` | JSON-RPC error code `-32020` |
 
 The `Host` and `Origin` checks protect against DNS rebinding. Set `KUTUPHANE_PUBLIC_URL` to the URL that clients
 use. The reverse proxy must pass the `Host` header unchanged.
@@ -76,7 +76,8 @@ this.
 
 - Do not send `initialize`.
 - Put the protocol data in `params._meta` of each request.
-- Send the headers `MCP-Protocol-Version: 2026-07-28`, `Mcp-Method`, and (for `tools/call`) `Mcp-Name`.
+- Send the headers `MCP-Protocol-Version: 2026-07-28`, `Mcp-Method`, and `Mcp-Name` (the tool name for
+  `tools/call`, the URI for `resources/read`).
 - The reverse proxy must pass `Mcp-Method` and `Mcp-Name`. The server refuses a request when `Mcp-Name` and the
   body do not agree (`-32020`).
 
@@ -90,9 +91,13 @@ this.
 
 `clientInfo` is not authenticated. Kütüphane never uses it for rights or origin.
 
-**`server/discover`** (2026-07-28) gives the server capabilities. Its `capabilities.extensions` contains
-`io.modelcontextprotocol/oauth-client-credentials`. This tells headless clients that they get tokens with OAuth
-client credentials at the identity provider (IdP).
+**`server/discover`** (2026-07-28) gives the server capabilities. Its `capabilities.extensions` contains:
+
+- `io.modelcontextprotocol/oauth-client-credentials`: headless clients get tokens with OAuth client credentials at
+  the identity provider (IdP).
+- `io.modelcontextprotocol/skills`: the server serves skills (section 10).
+
+A 2025-11-25 `initialize` result has no `extensions`: that field is 2026-07-28 wire.
 
 **Cache hints.** The results of `tools/list` and `server/discover` carry `ttlMs: 300000` and
 `cacheScope: "public"`. A client can keep them for 5 minutes.
@@ -160,6 +165,10 @@ host or a default port). Write `KUTUPHANE_OIDC_ISSUER` exactly as the IdP's toke
 | A list (`search_library`) | `result.structuredContent.result`, and as JSON text in `result.content`. |
 | A string (`read_document`) | `result.structuredContent.result`, and as text in `result.content[0].text`. |
 
+The results of `search_library`, `open_citation`, `read_document` and `query_notes` also have the handling labels
+in `result._meta` (section 4.4). On 2026-07-28, `result._meta` also has the SDK's
+`io.modelcontextprotocol/serverInfo`.
+
 ### 4.2 Text for a model
 
 Every MCP caller puts what it reads into a model's context. So the kstd rights of each item apply: when the kstd
@@ -186,6 +195,47 @@ A tool error is a result with `isError: true`. The text is
 | `internal error` | An unexpected failure. The server log has the details. | `500` |
 
 An argument of the wrong type is refused by the MCP SDK before the tool runs. That message comes from the SDK.
+
+### 4.4 Handling labels in `_meta`
+
+The results of the read tools tell the client how to handle their content. The labels are in
+`result._meta["kutuphane/handling"]` of `search_library`, `open_citation`, `read_document` and `query_notes`. They
+are also in each skill entry and in each `skill://` read (section 10).
+
+```json
+{"_meta": {"kutuphane/handling": {
+  "books": {"runbooks": {"sensitivity": "normal", "egress": "local_only"},
+            "adc-memory": {"sensitivity": "restricted", "egress": "local_only"}},
+  "sensitivity": "restricted", "egress": "local_only",
+  "skill_scans": [{"book": "runbooks", "content_id": "ct_9f…", "skill_path": "skills/backup", "scan_id": 42,
+                   "status": "scanned", "recommendation": "SAFE", "blocking": false}]}}}
+```
+
+| Key | Value |
+|---|---|
+| `books` | The E5 policy now (Sensitivity, Egress) of each book whose content is in the result: the book of each passage or file, the journal of each note, and the `source_books` of each note (the books that its text came from). |
+| `sensitivity`, `egress` | The strictest value of `books`: `restricted` before `normal`, `local_only` before `cloud_ok`. Apply one rule to the whole result with them. They are not there when the result has no content: that is no claim, not `normal`. |
+| `skill_scans` | Only when a scan record applies. For each skill folder that holds a file or passage of the result: its latest scan record. `scan_id` is the `id` in `kutuphane skill show <book>`. A record is a proposal of a tool, never an approval ([security.md](security.md#skill-scan-skillspector)). |
+
+The labels describe the content. They give no right and refuse nothing: the gate decided before.
+The HTTP API does not have them.
+
+**Trust annotations (SEP-1913).** The Tool Annotations Interest Group develops the experimental
+`io.modelcontextprotocol/trust-annotations` extension (a "Draft skeleton"). It puts `sensitive` and `untrusted`
+(booleans) and an optional `evidenceRef` pointer (`type`, `digest`, `canonicalization`, `schema`, `ref`) under
+`_meta["io.modelcontextprotocol/trust-annotations"]` of a tool result. Kütüphane does not use that draft now. When
+the extension is stable, the plan is to add it next to `kutuphane/handling`, which stays:
+
+| `kutuphane/handling` | `trust-annotations` |
+|---|---|
+| `sensitivity: restricted` | `sensitive: true` |
+| `sensitivity: normal` | no `sensitive` (no claim; a draft rule: absent never means "false") |
+| `egress` | no field in the draft; it stays in `kutuphane/handling` and in an `evidenceRef` record |
+| `books` (per-book E5 policy) | an `evidenceRef` with `type: "data-class.v1"` and the digest of the canonical (`jcs/rfc8785`) record |
+| `skill_scans` | an `evidenceRef` with a Kütüphane `type` (an open string in the draft) and the `ref` of the scan record |
+| model-written note text, a skill file | a candidate for `untrusted: true`; not decided |
+
+Comments on the drafts follow [../14-contributions.md](../14-contributions.md).
 
 ## 5. Tools
 
@@ -254,6 +304,8 @@ never gets passages of a skill that a SkillSpector scan blocks ([security.md](se
 | `text` | The passage text, or `null` with `withheld` (section 4.2). |
 | `item` | The kstd item information of the file, or `null` when the version has no `kstd.yaml`. |
 
+The result `_meta` has the handling labels of the hits (section 4.4).
+
 **Errors:** `400` (query, `k` or filter not valid; a journal in `book`), `409`. When the optional embedding,
 translation or reranking route fails, the search continues without that stage. It does not fail.
 
@@ -289,6 +341,8 @@ be in a skill that a scan blocks.
 
 **Result for a note reference:** `{"citation", "note", "targets", "watermark"}`. `note` is one note item, as in
 `query_notes` (section 5.13).
+
+The result `_meta` has the handling labels (section 4.4). For a note, they cover its journal and its source books.
 
 **Errors:** `400` (`malformed citation handle`, or a context value not valid), `403`, `404`, `409`.
 
@@ -392,7 +446,10 @@ file must allow AI input.
 | `content_id` | string | yes | — | The content version id (`ct_…`). |
 | `path` | string | yes | — | A relative path. No `.` or `..` segments. |
 
-**Result:** the file text, in `structuredContent.result`.
+**Result:** the file text, in `structuredContent.result`. The result `_meta` has the handling labels (section 4.4).
+
+A client that supports MCP Skills can also load a skill folder with `skills/list`, `skills/get` and
+`resources/read` (section 10). `read_document` stays the path for every other client.
 
 **Errors:** `400` (`not a text document; use search_library and open_citation for its passages` when the media
 type is not `text/markdown` or `text/plain`; an unsafe path), `403` (no right, or the kstd rights do not allow AI
@@ -681,6 +738,7 @@ The sets:
 - `books` lists the journals that you may read now. Drop cached notes of other books.
 - `excluded` counts the notes that this page passed over because of the code rule or a missing context.
 - Keep calling with `cursor` until `next_cursor` is `null`.
+- The result `_meta` has the handling labels of the items: their journals and source books (section 4.4).
 
 **Errors:** `400` (`invalid cursor`, `cursor implies its own as_of`, `order relevance needs text`, limits), `409`.
 
@@ -862,12 +920,15 @@ An idempotent retry of `propose_note` or `record_outcome` does not count again.
 standard library only. Run it on the host against the ingress.
 
 ```sh
-KUTUPHANE_PROBE_TOKEN=<access token> python3 deploy/mcp_probe.py http://127.0.0.1:8080 [--journal <book>]
+KUTUPHANE_PROBE_TOKEN=<access token> python3 deploy/mcp_probe.py http://127.0.0.1:8080 [--journal <book>] \
+    [--skill skill://<book>/<folder>/SKILL.md]
 ```
 
 - The script reads the token from `KUTUPHANE_PROBE_TOKEN`. It never prints the token.
 - Give `--journal <book>` to also test `propose_note`. The token needs `propose` on that journal.
   The probe writes a real `test_result` note.
+- Give `--skill <SKILL.md URI>` to also test the Skills extension (section 10). The token needs `read` and
+  `activate` on the book. The probe declares the extension.
 
 For each protocol version, it checks:
 
@@ -875,7 +936,11 @@ For each protocol version, it checks:
 |---|---|
 | `tools/list stable` | Two calls give the same tools in the same order. |
 | `search_library structuredContent.result` | `search_library` with the query `probe` answers with a list in `structuredContent.result`. |
+| `search_library _meta kutuphane/handling` | The same result has the handling labels (section 4.4). |
 | `propose_note` | Only with `--journal`. The call is not an error. |
+| `skills/list has <uri>` | Only with `--skill`. The list has the skill one time. |
+| `skills/get gives the listed entry` | Only with `--skill`. The entry is the same as in the list. |
+| `resources/read <uri> size and sha256` | Only with `--skill`. For each file of the entry: the bytes have its `size` and `digest`. |
 | `no token -> 401 with resource metadata` | `tools/list` without a token gets `401` and `resource_metadata=` in `WWW-Authenticate`. |
 
 For 2026-07-28 only, it also checks `Mcp-Name mismatch -> -32020`: an `Mcp-Name` header that is not the same as
@@ -885,5 +950,114 @@ Each check prints `ok` or `FAIL`. The exit code is `0` only when every check pas
 and `2` when the URL or the token is missing.
 
 With a token that has no `propose` right, the two `propose_note` checks fail with `forbidden`. This is correct.
+With a token that has no `activate` right, the `--skill` checks fail: the list is empty. This is correct.
 
 For other problems, read [troubleshooting.md](troubleshooting.md).
+
+## 10. Skills (SEP-2640)
+
+Kütüphane serves the skill folders of its books with the MCP Skills extension (`io.modelcontextprotocol/skills`,
+[SEP-2640](https://modelcontextprotocol.io/seps/2640-skills-extension), Final). A host that supports the extension
+can list the skills that you may load and read their files on demand. Few hosts support it now (the
+[client matrix](https://modelcontextprotocol.io/extensions/client-matrix) shows ChatGPT, fast-agent and MCP Inspector
+as "Partial"). Every other client reads the same files with `read_document` (section 5.5), under the same gate.
+
+### 10.1 What is a skill here
+
+A skill is a folder with a `SKILL.md` in the current version of a book, when:
+
+- the file name is exactly `SKILL.md`, and its frontmatter has `name` and `description` (Agent Skills format);
+- `name` is 1–64 characters of `a-z`, `0-9` and single hyphens, and it is the name of the folder (the book slug for
+  a `SKILL.md` at the book root);
+- `description` is 1–1024 characters;
+- the folder has at most 512 files and 16 MiB.
+
+Other agent instruction files (`AGENTS.md`, rules, prompts) and folders that do not meet these rules are not skills
+here. `read_document` still reads them. A skill includes every file below its folder, also the files of a skill in a
+subfolder.
+
+### 10.2 URIs
+
+`skill://<book>/<folder>/<file>`, with each path segment percent-encoded. Example:
+`skill://runbooks/skills/backup/SKILL.md` and `skill://runbooks/skills/backup/references/restore.md`.
+A URI names the file in the current version of the book. After a new version, the same URI gives the new bytes,
+and a new entry gives the new digests.
+
+### 10.3 Gate
+
+The gate is the same for `skills/list`, `skills/get` and `resources/read`:
+
+- `read` and `activate` on the book, for every principal. A person needs `activate` too: a skill is for a model to
+  load. An agent that acts for a user needs the delegation of both modes.
+- The kstd rights of every file of the skill allow AI input.
+- No file of the skill is in a skill that a scan blocks ([security.md](security.md#skill-scan-skillspector)). A
+  skill that holds a blocked skill in a subfolder is not served either. The rights and the blocks are read in one
+  statement at the end, as for every read.
+
+A skill that fails the gate is not in the list. `skills/get` and `resources/read` refuse it with `forbidden`.
+Every decision is in `access_event`: `skills_list` and `skills_get` (mode `read`, the skill URIs as items),
+`activate`, and `read` for each file read. A blocked skill in the list gives one refused `activate` event for its
+`SKILL.md`.
+
+### 10.4 Declaration
+
+On 2026-07-28, put the extension in the client capabilities of each request:
+`"io.modelcontextprotocol/clientCapabilities": {"extensions": {"io.modelcontextprotocol/skills": {}}}`.
+Without it, `skills/list` and `skills/get` give error `-32021` (a required client capability is missing).
+On 2025-11-25, `extensions` is not on the wire, so the server cannot see a declaration: it answers a client that
+calls the methods. `resources/read` of a `skill://` URI needs no declaration on either version.
+
+### 10.5 `skills/list`
+
+```json
+{"jsonrpc": "2.0", "id": 4, "method": "skills/list", "params": {}}
+```
+
+The result has every skill that you may load now, in one page (no `nextCursor`; a `cursor` gives `-32602`).
+On 2026-07-28 it also has `ttlMs: 0` and `cacheScope: "private"`: the list depends on your rights now.
+
+```json
+{"skills": [{
+  "uri": "skill://runbooks/skills/backup/SKILL.md",
+  "frontmatter": {"name": "backup", "description": "Back up a database the way this team does it"},
+  "resources": [
+    {"uri": "skill://runbooks/skills/backup/SKILL.md", "digest": "sha256:5c1f…", "size": 2314},
+    {"uri": "skill://runbooks/skills/backup/references/restore.md", "digest": "sha256:a07b…", "size": 962}],
+  "_meta": {"kutuphane/source": {"book": "runbooks", "content_id": "ct_9f…", "path": "skills/backup/SKILL.md"},
+            "kutuphane/handling": {…}}}]}
+```
+
+| Key | Value |
+|---|---|
+| `frontmatter` | The YAML frontmatter of `SKILL.md` as JSON, every field. A YAML date is ISO 8601 text. |
+| `resources` | Every file of the skill, in path order. `digest` is `sha256:` and the SHA-256 of the file in the content manifest: the bytes that the content id covers. `size` is its length in bytes. |
+| `_meta.kutuphane/source` | The book, the content version (`content_id`) and the path of `SKILL.md`. |
+| `_meta.kutuphane/handling` | The handling labels of the skill (section 4.4). |
+
+The list and the entries never contain file content. The server sends the bytes of a file only for a
+`resources/read` of that file (SEP-2640: no fetch ahead of need).
+
+### 10.6 `skills/get`
+
+```json
+{"jsonrpc": "2.0", "id": 5, "method": "skills/get", "params": {"uri": "skill://runbooks/skills/backup/SKILL.md"}}
+```
+
+The result is `{"skill": <entry>}`, the same entry as in the list (with `ttlMs` and `cacheScope` on 2026-07-28).
+Use it to refresh the digests of one skill. A URI that is not the `SKILL.md` of a served skill gives `-32602` with
+`not found`; a skill that fails the gate gives `-32602` with `forbidden`.
+
+### 10.7 `resources/read`
+
+```json
+{"jsonrpc": "2.0", "id": 6, "method": "resources/read",
+ "params": {"uri": "skill://runbooks/skills/backup/references/restore.md"}}
+```
+
+The result has one item with the file's media type. Text is in `text`; other files are in `blob` (base64). The
+item's `_meta["kutuphane/handling"]` has the handling labels. The hash of the bytes (the UTF-8 bytes of `text`)
+is the `digest` of the entry. A file that is not in a served skill gives `-32602` with `not found`. A
+`resources/read` only reads: loading a skill is the host's act.
+
+`resources/list` does not list skill files, and the server declares no `resources/directory/read`
+(`directoryRead` is not set): the entry lists every file.

@@ -93,6 +93,10 @@ The endpoint is `/mcp`. It is stateless and serves MCP 2025-11-25 and 2026-07-28
 | `query_notes` | fast, deterministic, filtered note reads with no model call |
 | `neighbours` | the notes linked to a note or passage (depth 1 or 2) |
 | `record_outcome` | record `passed`, `failed`, `reverted` or `reopened` for a task on one exact item |
+| `skills/list`, `skills/get`, `resources/read` of `skill://` | MCP Skills (SEP-2640): the skill folders that you may `activate`, with a SHA-256 for each file; the files only on demand |
+
+`search_library`, `open_citation`, `read_document` and `query_notes` give the Sensitivity and Egress of their
+content in `_meta["kutuphane/handling"]`.
 
 ## HTTP API
 
@@ -106,7 +110,7 @@ The web UI is at `/ui/`. Reference: `docs/guide/http-api.md`.
 - `ai_input: n` text never reaches a model; a `local_only` book never reaches a cloud route; all model calls go through LLMDAP.
 - Origin comes from the write path; only a curator changes Standing: with a separate database credential on the CLI, or on the phone with a passkey act that signs the exact notes and reason (curator web, D72).
 - Secrets are refused at ingest and in notes; code citations read confined bare mirrors only.
-- Optional SkillSpector scan of skills at ingest: a `DO_NOT_INSTALL`, partial or failed scan blocks the skill for agents until a curator clears it; `SAFE` grants nothing.
+- Optional SkillSpector scan of skills at ingest: a `DO_NOT_INSTALL`, partial or failed scan blocks the skill for agents (and in MCP Skills for everyone) until a curator clears it; `SAFE` grants nothing.
 
 Details: `docs/guide/security.md`.
 
