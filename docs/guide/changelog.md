@@ -9,6 +9,10 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Retrieval re-check (Pilot 1 questions 1–3)
+
+- Fixed: for a question with passages in Turkish and in English, the question translation was sampled. An English question could get a Turkish word of another sense, or an answer in place of a translation, and the second search then missed the passage with the answer (G19). The translation now uses greedy decoding (`temperature` 0). Pilot 1 question 2 in English: the literal translation in 3 of 3 runs, before 1 of 3 ([operations.md](operations.md), section 4; results in [../18-pilot-radar.md](../18-pilot-radar.md), section 4.2).
+
 ### Security review #17 fixes (curator slices R, D, Q)
 
 - Fixed: the decider runner role could choose its own sample. It could roll back a sampled use and try again, pick the note for a forced sample, and set the `seq` of a use or a suggestion. The database now sets `seq`, the time and `sampled` (column grants and triggers), draws the sample as an HMAC of the delegation and the note under a key that only the owner reads (a retry draws the same), accepts a use only for the oldest eligible note of the class with a suggestion committed before it, and checks the creator's `curate` right and the runner's authorship in the trigger. A suggestion after a Standing event is refused, so it cannot count as shadow evidence ([security.md](security.md#delegated-curate-d73)) ([#120](https://github.com/ekaynac/kutuphane/pull/120)).

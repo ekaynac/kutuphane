@@ -88,8 +88,9 @@ class FakeBridge:
                         [{"index": i, "embedding": fake_vector(t)} for i, t in enumerate(body["input"])]
                     answer = json.dumps({"data": data}).encode()
                 else:
+                    content = fake.reply(body) if callable(fake.reply) else fake.reply  # a reply may read the request
                     answer = json.dumps({"choices": [{"message": {"role": "assistant",
-                                                                  "content": fake.reply}}]}).encode()
+                                                                  "content": content}}]}).encode()
                 if self.path.startswith("/badjson"):
                     answer = b"{not json"
                 self.send_response(200)

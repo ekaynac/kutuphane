@@ -239,6 +239,21 @@ def test_no_translation_for_a_one_language_pool_or_a_bad_translation(conn, fake,
     assert ranked[-1].citation.path == "tr.md"                                   # the language reserve still holds
 
 
+def test_the_query_translation_is_greedy(conn, fake, tmp_path):  # G19, pilot radar re-check 2026-10-27
+    """A sampled translation may take another sense of a word or answer the question; the passage in the other
+    language is then searched and reranked with the wrong query. The translation is asked for greedily."""
+    _bilingual(conn, tmp_path, {**ENGLISH, **TURKISH})
+    literal, sampled = "Yedekler ve loglar için ne yapılır?", "Arşivler nasıl saklanır?"  # the second: another sense
+    fake.rerank_reply = _blind
+    fake.reply = lambda body: literal if body.get("temperature") == 0 else sampled
+    stages = retrieval.Stages(reranker=fake.reranker(), translator=llmdap.Routed(fake.bridge(), "qwen"))
+    ranked = retrieval.retrieve(conn, Actor(U), "logs of the backup", k=4, stages=stages)
+    assert ranked[0].citation.path == "tr.md" and ranked[0].score > 0                  # reranked with the literal one
+    assert literal in {b["query"] for p, b in fake.requests if p.endswith("/v1/rerank")}
+    asked = next(b for p, b in fake.requests if p.endswith("/chat/completions"))
+    assert asked.get("temperature") == 0 and asked["model"] == "qwen"
+
+
 def test_a_grant_change_between_the_two_searches_lets_no_passage_of_the_removed_book_through(conn, fake, tmp_path,
                                                                                              monkeypatch):
     # Astra review #12: rights move from book A to book B while the query is translated; the first search saw A, the

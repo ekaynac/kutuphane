@@ -12,10 +12,10 @@
    on record in `model_call`. Reranking only reorders passages the search already authorized and logged (the
    pool is logged as read on the caller's behalf, since its text goes to the reranker).
    Two languages (G19): when the pool holds passages in both Turkish and English, the answer model translates the
-   query (`translator`), a second hybrid search runs with the translation, the two pools are merged, and each
-   passage is reranked against the query in its own language. Rights may change between the two searches, so the
-   merged pool is authorized again in one statement (`search.authorize`) before any model sees it or it is
-   delivered; a passage of a book the caller may no longer read is dropped (Astra review #12). Without a
+   query (`translator`, greedy decoding), a second hybrid search runs with the translation, the two pools are
+   merged, and each passage is reranked against the query in its own language. Rights may change between the two
+   searches, so the merged pool is authorized again in one statement (`search.authorize`) before any model sees it
+   or it is delivered; a passage of a book the caller may no longer read is dropped (Astra review #12). Without a
    translation, passages in the other language that the hybrid search ranked in its top k keep up to
    LANGUAGE_RESERVE places.
 4. A question about recent things prefers newer passages among the most relevant ones (G22, `_prefer_recent`).
@@ -48,6 +48,11 @@ LANGUAGE_RESERVE = 2
 OTHER_LANGUAGE = {"tr": "en", "en": "tr"}
 TRANSLATE = {"tr": "Translate the user's question into Turkish. Write only the translated question.",
              "en": "Translate the user's question into English. Write only the translated question."}
+# G19 (pilot radar re-check, 2026-10-27): with the model's default sampling, question 2 in English ("rings") got the
+# literal Turkish noun in only 3 of 8 translations; the others used other words ("bracelets", "wristbands", "circles")
+# or answered the question instead of translating it, and the second search then missed the passage with the reason.
+# Greedy decoding gave the literal translation in every run. A translation is a search query, not prose: no sampling.
+TRANSLATE_OPTIONS = {"temperature": 0}
 ANSWER_MODEL_ENV = "KUTUPHANE_ANSWER_MODEL"
 
 # Language detection for the two languages of the library (G19, G20): common function words, plus the letters that
@@ -254,8 +259,9 @@ def translate(conn, translator: llmdap.Routed | None, actor: Actor, query: str,
     target = OTHER_LANGUAGE[lang]
     try:
         payload = llmdap.chat(conn, translator.bridge, actor, model=translator.model, source_books=[],
-                              purpose="translate", messages=[{"role": "system", "content": TRANSLATE[target]},
-                                                             {"role": "user", "content": query}])
+                              purpose="translate", options=TRANSLATE_OPTIONS,
+                              messages=[{"role": "system", "content": TRANSLATE[target]},
+                                        {"role": "user", "content": query}])
         text = payload["choices"][0]["message"]["content"]
     except (llmdap.EgressError, KeyError, IndexError, TypeError) as exc:
         log.warning("query translation failed, reranking with the question only: %s", exc)
