@@ -54,7 +54,7 @@ kutuphane dev-keys deploy/dev
 export TOKEN="$(kutuphane dev-token adc --agent --client-id adc \
   --private-key deploy/dev/dev-private.pem --issuer http://127.0.0.1:8090/dev)"
 KUTUPHANE_PUBLIC_URL=http://127.0.0.1:8090 KUTUPHANE_OIDC_ISSUER=http://127.0.0.1:8090/dev \
-KUTUPHANE_OIDC_AUDIENCE=kutuphane KUTUPHANE_OIDC_JWKS=deploy/dev/jwks.json KUTUPHANE_ANSWER_MODEL=none \
+KUTUPHANE_OIDC_AUDIENCE=kutuphane KUTUPHANE_OIDC_JWKS=deploy/dev/jwks.json \
   uvicorn --factory kutuphane.server:app_from_env --host 127.0.0.1 --port 8090 &
 
 # 4. Connect an MCP client, write a note, accept it
@@ -69,8 +69,9 @@ curl -s -H "Authorization: Bearer $TOKEN" 'http://127.0.0.1:8090/v1/notes?book=t
 ```
 
 Any MCP client that speaks streamable HTTP with a bearer token works; `claude mcp add` is one example. Without a
-model service, search is full text only and `ask_library` is not available. For the full stack (ingress, LLMDAP,
-local models, two database roles) read `docs/guide/install.md`.
+model service, search is full text only and `ask_library` is not available. To run the same in containers with no
+LLMDAP and only open source parts, use the light install (`deploy/compose.light.yaml`). For the full stack (ingress,
+LLMDAP, local models, two database roles) read `docs/guide/install.md`.
 
 ## MCP tools
 
@@ -128,8 +129,8 @@ Design and decisions: `docs/01-direction-decisions.md`, `docs/23-vision-v1.md`, 
 
 Version 0.1.0, under active development; interfaces can change. Built: file books with kstd L0, hybrid search,
 answers with citations, signed packages, agent memory R1 (notes, fast reads, code citations, MCP 2026-07-28,
-headless auth) and R2 rollback, outcomes and decision export. Open: the curator queue (#77), delegated curate
-(#78), the light install without LLMDAP (#76), bulk import (#75) and MCP Skills (#80). See
+headless auth), R2 rollback, outcomes and decision export, and a light install without LLMDAP (#76). Open: the
+curator queue (#77), delegated curate (#78), bulk import (#75) and MCP Skills (#80). See
 `docs/guide/changelog.md`.
 
 ## Licence

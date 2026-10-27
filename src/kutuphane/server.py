@@ -40,8 +40,13 @@ from .ids import normalize_path
 FEATURES: tuple = (notes, coderepo, notesquery, outcomes)
 
 log = logging.getLogger(__name__)
-ENV = {"model": "KUTUPHANE_ANSWER_MODEL", "public_url": "KUTUPHANE_PUBLIC_URL"}
+ENV = {"model": "KUTUPHANE_ANSWER_MODEL", "public_url": "KUTUPHANE_PUBLIC_URL"}  # the model: only with LLMDAP
 TEXT_TYPES = ("text/markdown", "text/plain")
+NO_ANSWERS = "answers are not available: this install has no model gateway (LLMDAP); search is full text only"
+
+
+class AnswersUnavailable(RuntimeError):
+    """No LLMDAP bridge (the light install, #76): Core reaches no model, so it cannot answer."""
 
 
 class BadRequest(ValueError):
@@ -208,6 +213,7 @@ ERRORS = [  # order matters: subclasses first
     (search.SearchChanged, 409, "authorization changed during the request; retry"),
     (gate.Denied, 403, "forbidden"),
     (gate.NotFound, 404, "not found"),
+    (AnswersUnavailable, 503, NO_ANSWERS),
     (llmdap.EgressError, 502, "model service unavailable or refused"),
     (ids.IdempotencyConflict, 409, None),
     (ids.LimitExceeded, 429, None),
@@ -331,7 +337,7 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
 
     async def h_ask(request, actor):
         if bridge is None or not model:
-            raise llmdap.EgressError("no model route configured")
+            raise AnswersUnavailable()
         try:
             body = await request.json()
         except ValueError:
@@ -514,7 +520,7 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
         search_library. With `background: true` it returns {job_id, status: queued} at once: poll job_status, then
         job_result. An `idempotency_key` (8-128 characters) makes a retried submission return the same job."""
         if bridge is None or not model:
-            raise llmdap.EgressError("no model route configured")
+            raise AnswersUnavailable()
         scope = search.Scope.of(book, path, origin, current_only)
         if _background(background, idempotency_key):
             job, _created = await run_in_threadpool(op_submit, dsn, _mcp_actor(), question, scope, idempotency_key)
@@ -581,15 +587,16 @@ def mcp_http_app(mcp: MCPServer, public_url: str) -> Starlette:
 
 def app_from_env() -> Starlette:
     """uvicorn --factory kutuphane.server:app_from_env"""
-    missing = [v for v in ENV.values() if not os.environ.get(v)]
+    with_models = bool(os.environ.get(llmdap.ENV["url"]))
+    missing = [v for k, v in ENV.items() if not os.environ.get(v) and (k != "model" or with_models)]
     if missing:
         raise RuntimeError(f"server not configured: set {', '.join(missing)}")
-    bridge = llmdap.Bridge.from_env() if os.environ.get(llmdap.ENV["url"]) else None
+    bridge = llmdap.Bridge.from_env() if with_models else None
     with db.connect(os.environ[db.DSN_ENV]) as conn:  # refuse to serve a schema the code does not match
         waiting = db.pending(conn)
     if waiting:
         raise RuntimeError(f"database needs migrations ({', '.join(waiting)}): run `kutuphane migrate`")
     ui_dir = os.environ.get("KUTUPHANE_UI_DIR") or None
     return create_app(dsn=os.environ[db.DSN_ENV], verifier=identity.Verifier.from_env(), bridge=bridge,
-                      model=os.environ[ENV["model"]], public_url=os.environ[ENV["public_url"]], ui_dir=ui_dir,
+                      model=os.environ.get(ENV["model"]), public_url=os.environ[ENV["public_url"]], ui_dir=ui_dir,
                       stages=retrieval.Stages.from_env(), job_workers=jobs.workers_from_env())

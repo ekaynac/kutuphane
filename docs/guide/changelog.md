@@ -9,6 +9,13 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Light install (#76)
+
+- New: `deploy/compose.light.yaml` starts Postgres, Core and the ingress proxy with no LLMDAP and no model server; only open source parts. Search is full text only. Steps and what is lost (answers, vectors, rerank, the model audit): [install.md](install.md#light-install) ([#76](https://github.com/ekaynac/kutuphane/issues/76)).
+- Without LLMDAP, `ask_library` and `POST /v1/ask` give `503` `answers are not available: this install has no model gateway (LLMDAP); search is full text only` (before: `502` `model service unavailable or refused`). `background: true` makes no job ([#76](https://github.com/ekaynac/kutuphane/issues/76)).
+- The server needs `KUTUPHANE_ANSWER_MODEL` only when `KUTUPHANE_LLMDAP_URL` is set. An embedding or rerank route without LLMDAP still stops the start: Core calls a model only through LLMDAP ([#76](https://github.com/ekaynac/kutuphane/issues/76)).
+- `deploy/egress_probe.py --light` checks that Core reaches Postgres and nothing else ([#76](https://github.com/ekaynac/kutuphane/issues/76)).
+
 ### Security fixes (Astra review #15)
 
 - A skill block now follows the skill's bytes: a new version of a book with the same skill files keeps every block that a curator did not clear, also when the new scan says `SAFE`, an earlier scan failed, or no scanner is configured now. `kutuphane skill show` shows the copy (`carried_from`), and one `skill clear` lifts all copies. Migration `022_skill_block_carry.sql`; after `migrate`, run `kutuphane skill rescan` once ([#110](https://github.com/ekaynac/kutuphane/pull/110)).

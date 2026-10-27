@@ -67,6 +67,7 @@ const MESSAGES: Record<number, string> = {
   404: "Bulunamadı.",
   409: "Yetkiler istek sırasında değişti; tekrar deneyin.",
   502: "Model hizmetine ulaşılamadı.",
+  503: "Bu kurulumda yanıt yok: model geçidi (LLMDAP) yapılandırılmamış. Arama yalnızca tam metin.",
 };
 
 async function call<T>(token: string, path: string, init?: RequestInit): Promise<T> {

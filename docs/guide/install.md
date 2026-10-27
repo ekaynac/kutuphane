@@ -1,14 +1,13 @@
 # Install
 
-This page tells you how to install Kütüphane. There are three ways:
+This page tells you how to install Kütüphane. There are four ways:
 
 | Way | For | Model calls |
 |---|---|---|
 | [Development](#development-install) | a developer laptop, tests, the quick start | none, or the stub models |
+| [Light install](#light-install) | Postgres, Core and the ingress proxy; no LLMDAP, only open source parts (#76) | none: full-text search, no answers |
 | [Full stack](#full-stack) | one server (D15): Postgres, Core, the ingress proxy, LLMDAP | through LLMDAP |
 | [Local models](#local-models-overlay) | the full stack with real models on the same machine (D61) | nothing leaves the machine |
-
-The [light install](#light-install-status) (no LLMDAP, one container) is not ready yet (#76).
 
 ## Requirements
 
@@ -77,7 +76,8 @@ Put these in `.env` (git-ignored). Do not put secrets anywhere else.
 | `KUTUPHANE_REPO_DIR` | optional: the host folder of bare git mirrors (default `./deploy/repos`) |
 | `KUTUPHANE_BIND` | optional: the address that the ingress publishes on (default `127.0.0.1`) |
 
-The server refuses to start when `KUTUPHANE_ANSWER_MODEL`, `KUTUPHANE_PUBLIC_URL` or an OIDC setting is missing.
+The server refuses to start when `KUTUPHANE_PUBLIC_URL` or an OIDC setting is missing, and when
+`KUTUPHANE_LLMDAP_URL` is set without `KUTUPHANE_ANSWER_MODEL`.
 It also refuses an issuer that the MCP SDK would rewrite (an uppercase host, a default port). See `security.md`.
 The full list of settings is in `operations.md`.
 
@@ -172,17 +172,91 @@ book.
 hosted call needs an `llm:egress` grant in `policy.csv`. Core's own routes stay `local` unless you set a
 `*_ROUTE_CLASS` to `cloud`. A `local_only` book never goes to a `cloud` route.
 
-## Light install status
+## Light install
 
-Issue #76 (open) asks for one container with Postgres, Kütüphane and a local embedder, with no LLMDAP. It is not
-built. What works today:
+The light install has no LLMDAP and no model server (#76). An orchestrator can use Kütüphane over MCP with no
+proprietary part. The compose file `deploy/compose.light.yaml` (project `kutuphane-light`) starts three containers:
 
-- The server starts without `KUTUPHANE_LLMDAP_URL`. Then it makes no model call: `search_library` and the note tools
-  work (full-text search only). `ask_library` fails, and `POST /v1/ask` returns 502 "model service unavailable or
-  refused".
-  `KUTUPHANE_ANSWER_MODEL` must still have a value.
-- The `core` service in `compose.yaml` always sets `KUTUPHANE_LLMDAP_URL` (default `http://llmdap:8787`). So in
-  compose, use the full stack. Without compose, run the server on the host as in the quick start.
+| Service | Networks | Purpose |
+|---|---|---|
+| `postgres` | `db`, `dev` | pgvector/pgvector 0.8.0 on PostgreSQL 17; `127.0.0.1:${KUTUPHANE_DB_PORT:-55432}` for the CLI on the host |
+| `core` | `db`, `web` | the API, MCP server and web UI, built from this repository; no model settings |
+| `ingress` | `edge`, `web` | nginx; publishes `${KUTUPHANE_BIND:-127.0.0.1}:${KUTUPHANE_PORT:-8080}` |
+
+Core reaches only Postgres. It makes no model call.
+
+### What works and what is lost
+
+| Function | Light install |
+|---|---|
+| `search_library`, `GET /v1/search` | Full text only. No vector search, no rerank, no question translation. |
+| `open_citation`, `read_document`, notes, links, outcomes, decisions, feedback, code citations | The same as in the full stack. |
+| `ask_library`, `POST /v1/ask` | Not available. HTTP `503` and the MCP tool error `answers are not available: this install has no model gateway (LLMDAP); search is full text only`. Also with `background: true`: no job is made. |
+| Model audit | No model call, so no `model_call` row and no LLMDAP audit chain. |
+
+What you lose:
+
+- **Answers.** No `ask_library` answers with `[n]` citations, and no background ask jobs. The agent reads the passages
+  itself with `search_library` and `open_citation`.
+- **Vectors and rerank.** Search ranks by full text only. A question that uses other words than the text, or another
+  language (a Turkish question for an English passage), finds less.
+- **The model audit.** LLMDAP grants each model call (`policy.csv`) and signs its audit chain (AT-09). The light
+  install has no model call to grant or audit.
+
+**No local embedder.** Core calls a model only through LLMDAP (D3, `src/kutuphane/llmdap.py`). A direct call from
+Core to the `embedder` container would skip the LLMDAP grant and the signed audit chain. So the light install has no
+embedder. The server refuses to start when an embedding or rerank route is set without `KUTUPHANE_LLMDAP_URL`
+(`LLMDAP not configured: set KUTUPHANE_LLMDAP_URL, …`). For vectors and rerank on local models, use the
+[full stack](#full-stack) with the [local models overlay](#local-models-overlay).
+
+### Steps
+
+1. Put these in `.env`: `KUTUPHANE_DB_PASSWORD`, `KUTUPHANE_APP_DB_PASSWORD`, `KUTUPHANE_PUBLIC_URL`,
+   `KUTUPHANE_OIDC_ISSUER` and `KUTUPHANE_OIDC_JWKS_FILE` (as in the full stack, step 1). Optional:
+   `KUTUPHANE_OIDC_AUDIENCE`, `KUTUPHANE_DB_PORT`, `KUTUPHANE_PORT`, `KUTUPHANE_BIND`, `KUTUPHANE_REPO_DIR`.
+   - Give `KUTUPHANE_OIDC_JWKS_FILE` and `KUTUPHANE_REPO_DIR` as absolute paths. Compose reads a relative path from
+     `deploy/`.
+   - A variable in your shell overrides the same variable in `.env`. Start compose from a shell that does not export
+     the variables of another installation.
+   - The compose file gives Core no `KUTUPHANE_LLMDAP_*` and no `KUTUPHANE_ANSWER_MODEL` setting.
+2. Start Postgres, make the app role (once), and migrate:
+
+   ```sh
+   docker compose -f deploy/compose.light.yaml --env-file .env up -d --wait postgres
+   set -a; . ./.env; set +a
+   docker compose -f deploy/compose.light.yaml --env-file .env exec -T postgres psql -U kutuphane -d kutuphane \
+     -v ON_ERROR_STOP=1 -c "CREATE ROLE kutuphane_app LOGIN PASSWORD '${KUTUPHANE_APP_DB_PASSWORD}'"
+   export KUTUPHANE_CURATOR_DSN="postgresql://kutuphane:${KUTUPHANE_DB_PASSWORD}@127.0.0.1:${KUTUPHANE_DB_PORT:-55432}/kutuphane"
+   .venv/bin/kutuphane migrate
+   docker compose -f deploy/compose.light.yaml --env-file .env exec -T postgres psql -U kutuphane -d kutuphane \
+     -v ON_ERROR_STOP=1 < deploy/db-roles.sql
+   ```
+
+   After every upgrade, run `migrate` and `db-roles.sql` again (full stack, step 2).
+3. Add books, journals and rights with the CLI on the host, as in the `README.md` quick start (step 2). Use the
+   database port `KUTUPHANE_DB_PORT` in `KUTUPHANE_DSN`. Do not set `KUTUPHANE_LLMDAP_*` in that shell.
+4. Start Core and the ingress proxy:
+
+   ```sh
+   docker compose -f deploy/compose.light.yaml --env-file .env up -d --build --wait
+   ```
+
+5. Check:
+
+   ```sh
+   curl -s http://127.0.0.1:8080/healthz
+   docker compose -f deploy/compose.light.yaml --env-file .env exec -T core python -I - --light < deploy/egress_probe.py
+   KUTUPHANE_PROBE_TOKEN=<access token> python3 deploy/mcp_probe.py http://127.0.0.1:8080 --journal <journal>
+   ```
+
+   With `--light`, `egress_probe.py` exits 0 only if Core reaches Postgres and nothing else (not LLMDAP either).
+
+Tokens come from your IdP. For a test, use development tokens (README quick start, step 3): set
+`KUTUPHANE_OIDC_ISSUER` to `<KUTUPHANE_PUBLIC_URL>/dev` and `KUTUPHANE_OIDC_JWKS_FILE` to the `jwks.json` of
+`kutuphane dev-keys`.
+
+The light install has its own volume (`kutuphane-light_pgdata`). It shares no data with `compose.yaml`. To add
+models later, move to the full stack and run `kutuphane index <book>` for each book.
 
 ## Optional: SkillSpector
 
@@ -209,7 +283,8 @@ export KUTUPHANE_SKILLSPECTOR_PROXY=http://127.0.0.1:9  # optional: block its OS
 
 - No service in the compose files has a `restart:` policy. After a host reboot, start the stack again with the
   same `docker compose … up -d` command.
-- The database (`pgdata`) and the LLMDAP audit chain (`llmdap-audit`) are named volumes. They stay.
+- The database (`pgdata`; `kutuphane-light_pgdata` in the light install) and the LLMDAP audit chain
+  (`llmdap-audit`) are named volumes. They stay.
 - Start the host's vLLM before you use the local-models overlay. Without it, `ask_library` fails; search and notes
   still work.
 - A background job that was running when the server stopped becomes `failed: interrupted` when its lease ends
@@ -220,7 +295,8 @@ export KUTUPHANE_SKILLSPECTOR_PROXY=http://127.0.0.1:9  # optional: block its OS
 
 1. Pull or check out the new version.
 2. Run `kutuphane migrate` with the owner DSN, then apply `deploy/db-roles.sql` (step 2).
-3. Rebuild and start: `docker compose --profile app up -d --build`.
+3. Rebuild and start: `docker compose --profile app up -d --build` (light install:
+   `docker compose -f deploy/compose.light.yaml --env-file .env up -d --build --wait`).
 4. If you use SkillSpector and the pin changed, install the new pin into a new folder, point
    `KUTUPHANE_SKILLSPECTOR_BIN` at it, and run `kutuphane skill rescan`.
 5. Read `changelog.md` for changes that need an action, for example a re-ingest or a re-index.

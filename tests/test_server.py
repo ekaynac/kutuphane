@@ -12,7 +12,7 @@ from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from starlette.testclient import TestClient
 
-from kutuphane import authz, catalog, profiles, retrieval, server
+from kutuphane import authz, catalog, llmdap, profiles, retrieval, server
 from kutuphane.identity import Verifier
 from kutuphane.policy import make_policy
 from kutuphane.source import read_source
@@ -198,6 +198,63 @@ def test_server_refuses_a_schema_it_does_not_match(conn, monkeypatch, verifier, 
     monkeypatch.setenv("KUTUPHANE_OIDC_AUDIENCE", AUD)
     monkeypatch.setenv("KUTUPHANE_OIDC_JWKS", str(tmp_path / "unused.json"))
     with pytest.raises(RuntimeError, match="kutuphane migrate"):
+        server.app_from_env()
+
+
+def _light_env(monkeypatch, tmp_path):
+    """The light install (#76): no LLMDAP, no model route, no answer model."""
+    for name in (*llmdap.ENV.values(), *llmdap.EMBED_ENV.values(), *llmdap.RERANK_ENV.values(),
+                 "KUTUPHANE_ANSWER_MODEL"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("KUTUPHANE_DSN", os.environ["KUTUPHANE_TEST_DSN"])
+    monkeypatch.setenv("KUTUPHANE_PUBLIC_URL", PUBLIC)
+    monkeypatch.setenv("KUTUPHANE_OIDC_ISSUER", ISS)
+    monkeypatch.setenv("KUTUPHANE_OIDC_AUDIENCE", AUD)
+    monkeypatch.setenv("KUTUPHANE_OIDC_JWKS", str(tmp_path / "jwks.json"))  # written by the verifier fixture
+
+
+def test_light_install_searches_full_text_and_refuses_answers(conn, monkeypatch, verifier, tmp_path, keys, okf_dir):
+    catalog.publish(conn, book="kitap", title="kitap", files=read_source(okf_dir),
+                    policy=make_policy(sensitivity="normal", egress="local_only", protection="standard"),
+                    profile=profiles.spec("chunked"))
+    authz.grant(conn, "book:kitap", "read", U)
+    _light_env(monkeypatch, tmp_path)
+    app = server.app_from_env()                  # starts without LLMDAP and without KUTUPHANE_ANSWER_MODEL
+    with TestClient(app) as client:
+        h = bearer(keys)
+        hits = client.get("/v1/search", params={"q": "kayıtlar saklanır"}, headers=h).json()["results"]
+        assert hits and all(r["citation"].startswith("kitap@") for r in hits)
+        for body in ({"question": "Kayıtlar ne kadar saklanır?"},
+                     {"question": "Kayıtlar ne kadar saklanır?", "background": True}):
+            r = client.post("/v1/ask", json=body, headers=h)
+            assert r.status_code == 503 and r.json() == {"error": server.NO_ANSWERS}
+    assert conn.execute("SELECT count(*) FROM model_call").fetchone()[0] == 0
+    assert conn.execute("SELECT count(*) FROM ask_job").fetchone()[0] == 0
+    mcp = server.build_mcp(dsn=os.environ["KUTUPHANE_TEST_DSN"], verifier=verifier, bridge=None, model=None,
+                           public_url=PUBLIC)
+    claims = asyncio.run(server._Verifier(verifier).verify_token(token(keys))).claims
+    with pytest.raises(Exception, match="no model gateway"):
+        call_tool(mcp, claims, "ask_library", {"question": "Kayıtlar ne kadar saklanır?"})
+    _content, structured = call_tool(mcp, claims, "search_library", {"query": "kayıtlar saklanır"})
+    assert [r["citation"] for r in structured["result"]] == [r["citation"] for r in hits]
+
+
+def test_light_install_has_no_direct_model_path(conn, monkeypatch, verifier, tmp_path):
+    """A model route without LLMDAP is refused at start: Core never calls an embedder or a reranker directly (D3)."""
+    _light_env(monkeypatch, tmp_path)
+    for env, route, model in ((llmdap.EMBED_ENV, "emb", "BAAI/bge-m3"),
+                              (llmdap.RERANK_ENV, "rerank", "BAAI/bge-reranker-v2-m3")):
+        with monkeypatch.context() as m:
+            m.setenv(env["route"], route)
+            m.setenv(env["model"], model)
+            with pytest.raises(RuntimeError, match="LLMDAP not configured: set KUTUPHANE_LLMDAP_URL"):
+                server.app_from_env()
+
+
+def test_server_needs_the_answer_model_with_a_model_gateway(conn, monkeypatch, verifier, tmp_path):
+    _light_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("KUTUPHANE_LLMDAP_URL", "http://llmdap:8787")
+    with pytest.raises(RuntimeError, match="server not configured: set KUTUPHANE_ANSWER_MODEL"):
         server.app_from_env()
 
 
