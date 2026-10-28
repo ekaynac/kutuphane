@@ -69,9 +69,9 @@ curl -s -H "Authorization: Bearer $TOKEN" 'http://127.0.0.1:8090/v1/notes?book=t
 ```
 
 Any MCP client that speaks streamable HTTP with a bearer token works; `claude mcp add` is one example. Without a
-model service, search is full text only and `ask_library` is not available. To run the same in containers with no
-LLMDAP and only open source parts, use the light install (`deploy/compose.light.yaml`). For the full stack (ingress,
-LLMDAP, local models, two database roles) read `docs/guide/install.md`.
+model service, search is full text only, and `tools/list` has no `ask_library` and no job tools. To run the same in
+containers with no LLMDAP and only open source parts, use the light install (`deploy/compose.light.yaml`). For the
+full stack (ingress, LLMDAP, local models, two database roles) read `docs/guide/install.md`.
 
 ## MCP tools
 
@@ -80,13 +80,13 @@ The endpoint is `/mcp`. It is stateless and serves MCP 2025-11-25 and 2026-07-28
 
 | Tool | What it does |
 |---|---|
-| `search_library` | search the books that you may read now (full text, plus vectors and rerank when configured) |
+| `search_library` | search the books that you may read now (full text, plus vectors and rerank when configured); `max_chars` gives a short snippet per hit for agent loops |
 | `open_citation` | open a passage handle or a note reference at its exact version |
-| `ask_library` | answer with `[n]` citations, or `not_in_library`; can run as a background job |
+| `ask_library` | answer with `[n]` citations, or `not_in_library`; can run as a background job (only with LLMDAP) |
 | `reopen_answer` | show a stored answer and its evidence again, with no model call |
 | `read_document` | read one text document of one version (agent instructions need `activate`) |
 | `record_runbook_feedback` | record `worked`, `failed` or `changed` for one runbook version |
-| `job_status`, `job_result`, `job_cancel` | follow, read or cancel a background `ask_library` job |
+| `job_status`, `job_result`, `job_cancel` | follow, read or cancel a background `ask_library` job (only with LLMDAP) |
 | `propose_note` | write a note into a journal; it starts `pending` |
 | `link_notes` | link a note to a note or passage (`same_as`, `contradicts`, `about`, `fixed_by`, …) |
 | `verify_citations` | check code citations against a branch or commit |
@@ -94,6 +94,8 @@ The endpoint is `/mcp`. It is stateless and serves MCP 2025-11-25 and 2026-07-28
 | `neighbours` | the notes linked to a note or passage (depth 1 or 2) |
 | `record_outcome` | record `passed`, `failed`, `reverted` or `reopened` for a task on one exact item |
 | `skills/list`, `skills/get`, `resources/read` of `skill://` | MCP Skills (SEP-2640): the skill folders that you may `activate`, with a SHA-256 for each file; the files only on demand |
+
+The tool list is the same for every caller. Each tool description names the grant that it needs.
 
 `search_library`, `open_citation`, `read_document` and `query_notes` give the Sensitivity and Egress of their
 content in `_meta["kutuphane/handling"]`.

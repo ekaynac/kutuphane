@@ -40,7 +40,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from . import (answers, catalog, coderepo, confirm, db, feedback, gate, handling, identity, ids, jobs, kstd, llmdap,
-               notes, notesquery, outcomes, retrieval, search, skills)
+               notes, notesquery, outcomes, retrieval, search, skills, snippets)
 from .gate import Actor
 from .ids import normalize_path
 
@@ -102,18 +102,25 @@ def _check_query(query) -> None:
 
 
 def op_search(dsn, stages, actor: Actor, query: str, k: int, model_reader: bool = False,
-              scope: search.Scope = search.Scope(), labels_out: dict | None = None) -> list[dict]:
-    """`labels_out`, if given, gets the handling labels of the hits (handling.py), from the same connection."""
+              scope: search.Scope = search.Scope(), labels_out: dict | None = None,
+              max_chars: int | None = None) -> list[dict]:
+    """`labels_out`, if given, gets the handling labels of the hits (handling.py), from the same connection.
+    `max_chars` (#121): each delivered text becomes a snippet of at most that size, with `truncated`; the hits, their
+    order and the gates do not change, and a withheld text stays withheld."""
     _check_query(query)
+    snippets.check(max_chars)
 
     def go(conn):
         hits, rights, ai = retrieval.retrieve(conn, actor, query, k, stages, scope), kstd.Rights(conn), \
             _for_model(actor, model_reader)
-        out = []
-        for h in hits:
-            item = rights.info(h.citation.book, h.citation.content_id, h.citation.path)
-            out.append({"citation": h.citation.handle, "page": h.page, "line": h.line, "score": round(h.score, 4),
-                        **_text(h.text, item, ai), "item": item})
+        items = [rights.info(h.citation.book, h.citation.content_id, h.citation.path) for h in hits]
+        texts = [_text(h.text, item, ai) for h, item in zip(hits, items)]
+        if max_chars is not None:
+            shown = [t for t in texts if t["text"] is not None]
+            for t, (text, truncated) in zip(shown, snippets.cut(conn, query, [t["text"] for t in shown], max_chars)):
+                t.update(text=text, truncated=truncated)
+        out = [{"citation": h.citation.handle, "page": h.page, "line": h.line, "score": round(h.score, 4), **t,
+                "item": item} for h, item, t in zip(hits, items, texts)]
         if labels_out is not None:
             cited = [h.citation for h in hits]
             labels_out.update(handling.labels(conn, [c.book for c in cited],
@@ -359,10 +366,14 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
             k = int(p.get("k", search.DEFAULT_K))
         except ValueError:
             raise BadRequest("k must be an integer") from None
+        try:
+            max_chars = int(p["max_chars"]) if "max_chars" in p else None
+        except ValueError:
+            raise BadRequest("max_chars must be an integer") from None
         scope = search.Scope.of(p.getlist("book"), p.get("path"), p.getlist("origin"), _flag(p.get("current_only")))
         return JSONResponse({"correlation_id": actor.correlation_id,
                              "results": await run_in_threadpool(op_search, dsn, stages, actor, p.get("q", ""), k,
-                                                                False, scope)})
+                                                                False, scope, None, max_chars)})
 
     async def h_citation(request, actor):
         q = request.query_params
@@ -617,7 +628,9 @@ def _mcp_actor() -> Actor:
 def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_url: str,
               stages: retrieval.Stages = retrieval.Stages(), features: tuple | None = None) -> MCPServer:
     """The MCP server. Its tools are registered in a fixed order (built-ins, then features), so `tools/list` is
-    stable. The host app mounts `mcp_http_app` of it."""
+    stable. The list depends on the deployment only, never on the caller (#121: grants change during a session, and
+    the list has public cache hints): without LLMDAP it has no `ask_library` and no job tools. Each description names
+    the grant the tool needs. The host app mounts `mcp_http_app` of it."""
     features = FEATURES if features is None else features
     auth = AuthSettings(issuer_url=verifier.issuer, resource_server_url=public_url,
                         validate_token_resource=False)  # our verifier checks `aud` itself
@@ -631,50 +644,57 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
     @_mcp_errors
     async def search_library(query: str, k: int = search.DEFAULT_K, book: list[str] | None = None,
                              path: str | None = None, origin: list[str] | None = None,
-                             current_only: bool = False) -> Annotated[CallToolResult, list[dict]]:
-        """Search the books you may read now. Results carry citation handles for open_citation.
-        Optional filters narrow the evidence before ranking: `book` (slugs), `path` (prefix, e.g. "data/"),
-        `origin` (kstd origins: human, assisted, model, tool, unknown), `current_only` (kstd validity includes now)."""
+                             current_only: bool = False, max_chars: int | None = None,
+                             ) -> Annotated[CallToolResult, list[dict]]:
+        """Search the books you may read now (needs read; agents also need activate for instruction passages).
+        Results carry citation handles for open_citation. Optional filters narrow the evidence before ranking:
+        `book` (slugs), `path` (prefix, e.g. "data/"), `origin` (kstd origins: human, assisted, model, tool, unknown),
+        `current_only` (kstd validity includes now). `max_chars` (80-4800) makes each text a snippet around the
+        match with `truncated`; open_citation gives the full passage. Use it in agent loops."""
         scope, labels = search.Scope.of(book, path, origin, current_only), {}
-        hits = await run_in_threadpool(op_search, dsn, stages, _mcp_actor(), query, k, True, scope, labels)
+        hits = await run_in_threadpool(op_search, dsn, stages, _mcp_actor(), query, k, True, scope, labels,
+                                       max_chars)
         return _handled(hits, labels, structured=True)
 
     @mcp.tool()
     @_mcp_errors
     async def open_citation(handle: str, repo: str | None = None, branch: str | None = None,
                             path: str | None = None, commit: str | None = None) -> CallToolResult:
-        """Open a citation handle: the exact passage of that version, if you may read it now. A note reference
-        (book@nt_…) gives the note, with `current` in the optional context (repo, branch, path, commit)."""
+        """Open a citation handle: the exact passage of that version, if you may read it now (needs read on the
+        book; agents also need activate for an instruction passage). A note reference (book@nt_…) gives the note,
+        with `current` in the optional context (repo, branch, path, commit)."""
         context, labels = {"repo": repo, "branch": branch, "path": path, "commit": commit}, {}
         cited = await run_in_threadpool(op_citation, dsn, _mcp_actor(), handle, True, context, labels)
         return _handled(cited, labels)
 
-    @mcp.tool()
-    @_mcp_errors
-    async def ask_library(question: str, book: list[str] | None = None, path: str | None = None,
-                          origin: list[str] | None = None, current_only: bool = False, background: bool = False,
-                          idempotency_key: str | None = None) -> dict:
-        """Answer from the library with [n] citations, or status not_in_library. The optional filters are those of
-        search_library. With `background: true` it returns {job_id, status: queued} at once: poll job_status, then
-        job_result. An `idempotency_key` (8-128 characters) makes a retried submission return the same job."""
-        if bridge is None or not model:
-            raise AnswersUnavailable()
-        scope = search.Scope.of(book, path, origin, current_only)
-        if _background(background, idempotency_key):
-            job, _created = await run_in_threadpool(op_submit, dsn, _mcp_actor(), question, scope, idempotency_key)
-            return job
-        return await run_in_threadpool(op_ask, dsn, bridge, model, stages, _mcp_actor(), question, scope)
+    answering = bridge is not None and bool(model)  # the deployment has LLMDAP and an answer model
+    if answering:
+        @mcp.tool()
+        @_mcp_errors
+        async def ask_library(question: str, book: list[str] | None = None, path: str | None = None,
+                              origin: list[str] | None = None, current_only: bool = False, background: bool = False,
+                              idempotency_key: str | None = None) -> dict:
+            """Answer from the library with [n] citations, or status not_in_library (needs read on the books it
+            uses). The optional filters are those of search_library. With `background: true` it returns {job_id,
+            status: queued} at once: poll job_status, then job_result. An `idempotency_key` (8-128 characters) makes
+            a retried submission return the same job."""
+            scope = search.Scope.of(book, path, origin, current_only)
+            if _background(background, idempotency_key):
+                job, _created = await run_in_threadpool(op_submit, dsn, _mcp_actor(), question, scope,
+                                                        idempotency_key)
+                return job
+            return await run_in_threadpool(op_ask, dsn, bridge, model, stages, _mcp_actor(), question, scope)
 
     @mcp.tool()
     @_mcp_errors
     async def reopen_answer(answer_id: str) -> dict:
-        """Show a stored answer and its evidence again (no model call; current rights apply)."""
+        """Show your stored answer and its evidence again (needs read on its books now; no model call)."""
         return await run_in_threadpool(op_reopen, dsn, _mcp_actor(), answer_id, True)
 
     @mcp.tool()
     @_mcp_errors
     async def read_document(book: str, content_id: str, path: str) -> Annotated[CallToolResult, str]:
-        """Read a text document of a specific version (agent instructions need an activate grant)."""
+        """Read a text document of a specific version (needs read on the book; agent instructions need activate)."""
         labels = {}
         data, media_type = await run_in_threadpool(op_file, dsn, _mcp_actor(), book, content_id, path, True, labels)
         if media_type not in TEXT_TYPES:
@@ -685,28 +705,32 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
     @_mcp_errors
     async def record_runbook_feedback(book: str, content_id: str, path: str, outcome: str,
                                       tested_on: str | None = None, note: str | None = None) -> dict:
-        """Record how applying a runbook went: outcome is worked, failed or changed (for that exact version)."""
+        """Record how applying a runbook went: outcome is worked, failed or changed (for that exact version; needs
+        read on the book)."""
         return await run_in_threadpool(op_feedback, dsn, _mcp_actor(),
                                        {"book": book, "content_id": content_id, "path": path, "outcome": outcome,
                                         "tested_on": tested_on, "note": note})
 
-    @mcp.tool()
-    @_mcp_errors
-    async def job_status(job_id: str) -> dict:
-        """The state of a background ask_library job: queued, running, succeeded, failed or cancelled."""
-        return await run_in_threadpool(op_job_status, dsn, _mcp_actor(), job_id)
+    if answering:
+        @mcp.tool()
+        @_mcp_errors
+        async def job_status(job_id: str) -> dict:
+            """The state of your background ask_library job (no grant; your own jobs only): queued, running,
+            succeeded, failed or cancelled."""
+            return await run_in_threadpool(op_job_status, dsn, _mcp_actor(), job_id)
 
-    @mcp.tool()
-    @_mcp_errors
-    async def job_result(job_id: str) -> dict:
-        """The answer of a succeeded job, as reopen_answer shows it (current rights apply)."""
-        return await run_in_threadpool(op_job_result, dsn, _mcp_actor(), job_id, True)
+        @mcp.tool()
+        @_mcp_errors
+        async def job_result(job_id: str) -> dict:
+            """The answer of your succeeded job, as reopen_answer shows it (needs read on its books now)."""
+            return await run_in_threadpool(op_job_result, dsn, _mcp_actor(), job_id, True)
 
-    @mcp.tool()
-    @_mcp_errors
-    async def job_cancel(job_id: str) -> dict:
-        """Cancel a background job: a queued job stops at once; a running one before its model call or its result."""
-        return await run_in_threadpool(op_job_cancel, dsn, _mcp_actor(), job_id)
+        @mcp.tool()
+        @_mcp_errors
+        async def job_cancel(job_id: str) -> dict:
+            """Cancel your background job (no grant; your own jobs only): a queued job stops at once; a running one
+            before its model call or its result."""
+            return await run_in_threadpool(op_job_cancel, dsn, _mcp_actor(), job_id)
 
     deps = Deps(dsn, bridge, model, stages)
     for f in features:
