@@ -214,7 +214,8 @@ def test_the_export_gives_text_only_with_ai_input_and_train(env, monkeypatch, ca
     restricted.mkdir()
     (restricted / "not.md").write_text("# Not\n\nEğitim yok.\n", encoding="utf-8")
     manifest = kstd.init(read_source(restricted), "ACME <kb@acme.example>").replace(  # init states no term (D74)
-        "# ai_use: {search: y|n, ai_input: y|n, train: y|n}", "ai_use: {search: y, ai_input: y, train: n}")
+        "# ai_use: {search: y|n, ai_input: y|n, train: y|n}", "ai_use: {search: y, ai_input: y, train: n}").replace(
+        "license: unknown", "license: CC-BY-4.0", 1)  # #143: a note derived from license unknown is not exported
     (restricted / kstd.MANIFEST).write_text(manifest)
     catalog.publish(env, book="egitim", title="egitim", files=read_source(restricted), policy=CLOUD,
                     profile=profiles.spec("chunked"))

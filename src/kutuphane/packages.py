@@ -20,7 +20,13 @@ import time
 
 from psycopg.types.json import Jsonb
 
-from . import agentfiles, catalog, ids, kstd, profiles, signing, skillscan
+from starlette.concurrency import run_in_threadpool
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.routing import Route
+
+from . import agentfiles, authz, catalog, db, gate, ids, kstd, profiles, signing, skillscan
+from .gate import Actor
 from .policy import check_policy
 from .source import MAX_FILE_BYTES, MAX_SOURCE_BYTES, TEXT_TYPES, AcceptedFinding, SourceError, read_file
 
@@ -46,7 +52,8 @@ def export(conn, book: str, key, legal_basis: str | None = None) -> bytes:
     kstd: a file whose personal_data is not `no` or `synthetic` leaves the node only with a recorded legal basis
     (DPV codes, docs/11 §5); the basis goes into the signed manifest. Files with origin `model`/`unknown` are listed
     as `ai_generated`; `assisted` files are listed in `reviewed` with their reviewer (EU AI Act Art. 50(4)); `tool`
-    files are listed in `tool_made` with their software agent and carry no AI mark (docs/17)."""
+    files are listed in `tool_made` with their software agent and carry no AI mark (docs/17). A file with
+    `license: unknown` is never exported (#143, docs/11 §5.2): the export is refused."""
     issuer = signing.fingerprint(key.public_key())
     state = catalog.book_state(conn, book)
     if state is None:
@@ -58,6 +65,11 @@ def export(conn, book: str, key, legal_basis: str | None = None) -> bytes:
     rights = kstd.Rights(conn)
     infos = {e["path"]: info for e in state["files"]
              if (info := rights.info(book, state["content_id"], e["path"])) is not None}
+    unlicensed = sorted(p for p, i in infos.items() if i["license"] == "unknown")
+    if unlicensed:  # docs/11 §5.2, #143: derivation stays in this installation; forwarding needs a license
+        raise PackageError(f"{len(unlicensed)} file(s) have license unknown ({', '.join(unlicensed[:3])}"
+                           f"{', …' if len(unlicensed) > 3 else ''}); export and forwarding need a license: "
+                           f"set rights.license in {kstd.MANIFEST}")
     personal = [p for p, i in infos.items() if i["personal_data"] not in kstd.NO_LEGAL_BASIS_NEEDED]
     basis = None
     if personal:
@@ -257,21 +269,31 @@ def _diff(conn, book: str, files) -> dict:
             "changed": sorted(p for p in after.keys() & before.keys() if after[p] != before[p])}
 
 
-def receive(conn, data: bytes) -> dict:
-    """Quarantine + verify + scan + diff. Never touches the catalog. Every outcome is recorded."""
+def _submitter(actor: Actor | None) -> tuple:
+    if actor is None:  # the CLI: the operator at the console
+        return None, None, None, None
+    return actor.principal, actor.on_behalf_of, actor.channel, actor.client_id
+
+
+def receive(conn, data: bytes, submitter: Actor | None = None) -> dict:
+    """Quarantine + verify + scan + diff. Never touches the catalog. Every outcome is recorded. `submitter`: the
+    verified caller of `submit` (HTTP or MCP, #139); None for the CLI."""
+    who = _submitter(submitter)
     try:
         manifest, files = _verify(conn, _members(data))
     except PackageError as exc:
         kept = data if len(data) <= MAX_PACKAGE_BYTES else b""  # an oversized input is not stored, only refused
-        pid = conn.execute("INSERT INTO package_import (status, package, reasons) VALUES ('rejected', %s, %s) "
-                           "RETURNING id", (kept, Jsonb([str(exc)]))).fetchone()[0]
+        pid = conn.execute("INSERT INTO package_import (status, package, reasons, submitted_by, submitted_for, "
+                           "submitted_channel, submitted_client_id) VALUES ('rejected', %s, %s, %s, %s, %s, %s) "
+                           "RETURNING id", (kept, Jsonb([str(exc)]), *who)).fetchone()[0]
         return {"id": pid, "status": "rejected", "reasons": [str(exc)]}
     findings, diff = _scan(files), _diff(conn, manifest["book"], files)
     pid = conn.execute(
-        "INSERT INTO package_import (status, issuer, book, sequence, content_id, manifest, package, findings, diff) "
-        "VALUES ('verified', %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        "INSERT INTO package_import (status, issuer, book, sequence, content_id, manifest, package, findings, diff, "
+        "submitted_by, submitted_for, submitted_channel, submitted_client_id) "
+        "VALUES ('verified', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
         (manifest["issuer"], manifest["book"], manifest["sequence"], manifest["content_id"], Jsonb(manifest), data,
-         Jsonb(findings), Jsonb(diff))).fetchone()[0]
+         Jsonb(findings), Jsonb(diff), *who)).fetchone()[0]
     return {"id": pid, "status": "verified", "book": manifest["book"], "sequence": manifest["sequence"],
             "findings": findings, "diff": diff, "policy_suggestion": manifest.get("policy_suggestion"),
             "legal_basis": manifest.get("legal_basis"), "ai_generated": manifest.get("ai_generated"),
@@ -347,3 +369,138 @@ def revoke_key(conn, fingerprint: str) -> bool:
     row = conn.execute("UPDATE trusted_key SET revoked_at = now() WHERE fingerprint = %s AND revoked_at IS NULL "
                        "RETURNING fingerprint", (fingerprint,)).fetchone()
     return row is not None
+
+
+# --- submit over HTTP and MCP (#139) -------------------------------------------------------------------------
+# A consumer application (e.g. InfraMedic) sends a package that it signed; the receipt is the CLI `receive`, and a
+# person still approves with `approve-import` (no route or tool approves). The caller needs `propose` on the book
+# that the manifest names: the right to propose content for a person to accept (D53: it also gates the status).
+# The issuer of the files is the verified signature and the origins come from the signed kstd.yaml (D74); the
+# caller is only recorded (D70: a client-credentials principal is an agent, and it does not become the issuer).
+
+SUBMIT_MODE = "propose"
+SUBMIT_ACTION = "submit_package"
+# The status that a submitter reads: a verified package with findings waits for a person who reads them.
+STATUS = {"published": "approved", "rejected": "refused"}
+
+
+class PackageTooLarge(ValueError):
+    pass
+
+
+def _target(data: bytes) -> str:
+    """The book that the manifest names, read before anything is stored (a caller without the right stores
+    nothing). The full verification runs in receive()."""
+    if len(data) > MAX_PACKAGE_BYTES:
+        raise PackageTooLarge("package too large")
+    try:
+        members = _members(data)
+        if MANIFEST not in members:
+            raise PackageError("manifest missing")
+        book = _manifest(members[MANIFEST])["book"]
+    except PackageError as exc:
+        raise ValueError(f"not a readable package: {exc}") from None
+    if not authz.OBJECT.match(f"book:{book}"):
+        raise ValueError("the manifest book is not a book slug")
+    return book
+
+
+def submit(conn, actor: Actor, data: bytes) -> dict:
+    """Authorize `propose` on the manifest's book, then receive() with the caller recorded. Returns the status."""
+    book = _target(data)
+    obj = f"book:{book}"
+    if conn.execute("SELECT 1 FROM journal WHERE book = %s", (book,)).fetchone():
+        raise ValueError(f"{book} is a journal: a package publishes a content book, never a journal")
+    verdict = authz.decide(conn, actor.principal, actor.on_behalf_of, obj, [SUBMIT_MODE])
+    decision = verdict.decisions[SUBMIT_MODE]
+    gate.log_event(conn, actor, SUBMIT_ACTION, obj, SUBMIT_MODE, decision, verdict.policy_id, None, None)
+    if not decision.allowed:
+        raise gate.Denied(f"{SUBMIT_ACTION}: no current right on {obj}")
+    return status(conn, actor, receive(conn, data, actor)["id"])
+
+
+def status(conn, actor: Actor, import_id) -> dict:
+    """The import status for the caller that submitted it (anyone else: not found): received, findings (verified,
+    with findings for the person who approves), approved (published) or refused (with the reasons)."""
+    if type(import_id) is not int or not 1 <= import_id < 2**63:
+        raise gate.NotFound("no such import")
+    row = conn.execute(
+        "SELECT id, status, issuer, book, sequence, content_id, findings, diff, reasons, received_at, decided_at "
+        "FROM package_import WHERE id = %s AND submitted_by = %s AND submitted_for IS NOT DISTINCT FROM %s",
+        (import_id, actor.principal, actor.on_behalf_of)).fetchone()
+    if row is None:
+        raise gate.NotFound("no such import")
+    pid, state, issuer, book, sequence, content_id, findings, diff, reasons, received, decided = row
+    shown = STATUS.get(state) or ("findings" if findings else "received")
+    return {"id": pid, "status": shown, "issuer": issuer, "book": book, "sequence": sequence,
+            "content_id": content_id, "findings": findings, "diff": diff, "reasons": reasons,
+            "received_at": received.isoformat(), "decided_at": decided.isoformat() if decided else None}
+
+
+def op_submit(dsn, actor: Actor, data: bytes) -> dict:
+    with db.connect(dsn) as conn:
+        return submit(conn, actor, data)
+
+
+def op_status(dsn, actor: Actor, import_id) -> dict:
+    with db.connect(dsn) as conn:
+        return status(conn, actor, import_id)
+
+
+def _from_base64(text) -> bytes:
+    if not isinstance(text, str):
+        raise ValueError("package_base64 must be a string")
+    if len(text) > (MAX_PACKAGE_BYTES + 2) // 3 * 4:
+        raise PackageTooLarge("package too large")
+    try:
+        return base64.b64decode(text, validate=True)
+    except ValueError:
+        raise ValueError("package_base64 is not base64") from None
+
+
+def register_mcp(mcp, deps) -> None:
+    @mcp.tool()
+    @deps.mcp_errors
+    async def submit_package(package_base64: str) -> dict:
+        """Submit a signed Kütüphane package (base64 of the tar that `kutuphane export` writes; needs propose on the
+        book that its manifest names). The same checks as `kutuphane receive` run: a trusted, unrevoked key, the
+        signature, every digest, a newer sequence. Nothing is published: a person approves it with
+        `kutuphane approve-import`. Returns the import status: received, findings, approved or refused."""
+        return await run_in_threadpool(op_submit, deps.dsn, deps.mcp_actor(), _from_base64(package_base64))
+
+    @mcp.tool()
+    @deps.mcp_errors
+    async def package_status(import_id: int) -> dict:
+        """The status of a package that you submitted (no grant; your own submissions only): received, findings (a person reads them before approval),
+        approved (published) or refused (with the reasons)."""
+        return await run_in_threadpool(op_status, deps.dsn, deps.mcp_actor(), import_id)
+
+
+async def _package_body(request: Request) -> bytes:
+    """The raw body, read up to the size limit: a larger body is refused before it is all read."""
+    declared = request.headers.get("content-length")
+    if declared is not None and declared.isdigit() and int(declared) > MAX_PACKAGE_BYTES:
+        raise PackageTooLarge("package too large")
+    data = bytearray()
+    async for part in request.stream():
+        data += part
+        if len(data) > MAX_PACKAGE_BYTES:
+            raise PackageTooLarge("package too large")
+    return bytes(data)
+
+
+def http_routes(deps, endpoint) -> list[Route]:
+    async def h_submit(request, actor):
+        try:
+            data = await _package_body(request)
+        except PackageTooLarge:
+            return JSONResponse({"error": f"package too large (limit {MAX_PACKAGE_BYTES} bytes)"}, status_code=413)
+        return JSONResponse(await run_in_threadpool(op_submit, deps.dsn, actor, data), status_code=201)
+
+    async def h_status(request, actor):
+        raw = request.path_params["import_id"]
+        import_id = int(raw) if raw.isdigit() and len(raw) < 20 else 0
+        return JSONResponse(await run_in_threadpool(op_status, deps.dsn, actor, import_id))
+
+    return [Route("/v1/packages", endpoint(h_submit), methods=["POST"]),
+            Route("/v1/packages/{import_id}", endpoint(h_status), methods=["GET"])]

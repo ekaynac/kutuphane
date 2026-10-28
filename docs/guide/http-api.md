@@ -111,10 +111,13 @@ The ingress proxy (`deploy/nginx.conf`) accepts a body of at most 1 MiB (`413` a
 | `GET` | `/v1/notes/{book}/{id}/neighbours` | bearer | The notes linked to a note. | `200` |
 | `GET` | `/v1/notes/{book}/{id}/confirmation` | bearer | The "my words" confirmation state of a note and its page URL. | `200` |
 | `POST` | `/v1/outcomes` | bearer | Record how a note or passage worked in a task. | `201`, `200` |
+| `POST` | `/v1/packages` | bearer | Submit a signed package for a person to approve. | `201` |
+| `GET` | `/v1/packages/{id}` | bearer | The status of a package that you submitted. | `200` |
 | `POST` | `/mcp` | bearer | The MCP endpoint ([mcp.md](mcp.md)). | `200` |
 | `GET` | `/.well-known/oauth-protected-resource` | none | OAuth protected-resource metadata (RFC 9728). | `200` |
 
-No route changes Standing or origin. No route ingests, indexes or approves an import. These are command-line
+No route changes Standing or origin. No route ingests, indexes or approves an import (`POST /v1/packages` only
+receives a package). These are command-line
 actions ([operations.md](operations.md)), and curator web acts with a passkey (Standing and the origin confirmation).
 
 ## 3. Health and identity
@@ -643,5 +646,42 @@ The body names the resource (`KUTUPHANE_PUBLIC_URL`) and has one `authorization_
 ```sh
 curl -s "$KUTUPHANE_PUBLIC_URL/.well-known/oauth-protected-resource"
 ```
+
+## 13. Packages
+
+A consumer application sends a package that it signed with `kutuphane export`. The guide for the whole flow is in
+[operations.md](operations.md#packages-from-an-application-http-and-mcp-139).
+
+### 13.1 `POST /v1/packages`
+
+Receive a signed package. The checks are the same as `kutuphane receive`: a trusted and unrevoked key, the
+signature, every digest, the content id, the origin lists, a sequence newer than any approved one. Then the scan
+and the diff. Nothing is published: a person approves it with `kutuphane approve-import`.
+MCP: `submit_package` ([mcp.md](mcp.md#517-submit_package)).
+
+**Body:** the package bytes (the tar file). Any content type; `application/x-tar` is usual. At most the package
+limit (`MAX_PACKAGE_BYTES`: the source limit + 1 MiB).
+
+**Needs:** `propose` on the book that the manifest names. Without it: `403`, and nothing is stored.
+
+**Response:** `201`. The body is the import status (section 13.2). A package that fails a check is kept and its
+status is `refused`, with the `reasons`.
+
+**Errors:** `400` (`not a readable package: …`, the manifest book is a journal), `401`, `403`, `413` (too large).
+
+### 13.2 `GET /v1/packages/{id}`
+
+The status of an import that you submitted (the same principal and the same user acted for). For anyone else:
+`404`.
+
+| Field | Meaning |
+|---|---|
+| `status` | `received` (verified, no findings), `findings` (verified; a person reads the findings), `approved` (published), `refused` (failed a check, or a person rejected it). |
+| `issuer` | The fingerprint of the key that signed it. `null` when the package was refused before verification. |
+| `book`, `sequence`, `content_id` | From the verified manifest. |
+| `findings` | The scan results for the person who approves. |
+| `diff` | `{"added", "removed", "changed"}` against the current version of the book. |
+| `reasons` | Why it was refused. |
+| `received_at`, `decided_at` | ISO 8601 times. |
 
 For problems, read [troubleshooting.md](troubleshooting.md).

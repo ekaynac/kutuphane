@@ -268,6 +268,8 @@ does not spend a turn to find it out. The **Needs:** line of each tool below has
 | 14 | [`neighbours`](#514-neighbours) | The notes linked to a note or a passage. | `GET /v1/notes/{book}/{id}/neighbours` |
 | 15 | [`record_outcome`](#515-record_outcome) | Record how a note or passage worked in a task. | `POST /v1/outcomes` |
 | 16 | [`confirm_origin`](#516-confirm_origin) | Ask the person to confirm whose words a note holds. | `GET /v1/notes/{book}/{id}/confirmation` |
+| 17 | [`submit_package`](#517-submit_package) | Submit a signed package for a person to approve. | `POST /v1/packages` |
+| 18 | [`package_status`](#518-package_status) | The status of a package that you submitted. | `GET /v1/packages/{id}` |
 
 No tool changes Standing or origin. Only a curator changes Standing, on the command line or in curator web
 ([operations.md](operations.md)). Only a person confirms an origin, in curator web with a passkey (section 5.16).
@@ -628,6 +630,7 @@ its sources. Read [agent-memory.md](agent-memory.md).
 | `standing` | The real Standing now. For a re-proposal it can be `rejected`. |
 | `origin_notice` | `origin-claim-refused` when the requested origin was refused, else `null`. |
 | `confirmation` | Only when you asked for `human` or `assisted`: `{"url", "expires_at"}`. Show the URL to the person. On that page, the person can confirm the words with a passkey until `expires_at` (24 hours). `url` is `null` when the operator did not set `KUTUPHANE_CURATOR_URL`. Section 5.16. |
+| `licence_notice` | Only when the note is derived from a file with `license: unknown` (a cited passage, a `derived_from` passage, or through a `derived_from` note): `{"paths": ["<book>/<path>", …], "note"}`. The write is permitted in this installation; the note is never exported (#143). |
 | `candidates` | Possible duplicates: `normalized` (same text after case and white space folding), `vector` (similarity at or above `KUTUPHANE_NOTE_DUP_SIMILARITY`, default 0.90), `class` (same `class_key` in the book). At most 5 per match type. Only from books you may read. The server never merges notes. Use `link_notes` to decide. |
 | `recurrence` | The number of propose writes over the `same_as` cluster of the note. |
 | `class_count` | The number of distinct clusters of evidence notes (`finding`, `lesson`, `dead_end`, `test_result`) with this `class_key` in the book. A `convention` or `decision_proposal` with the key does not count: it answers the class, it does not repeat it. |
@@ -635,7 +638,7 @@ its sources. Read [agent-memory.md](agent-memory.md).
 | `vector` | `stored`, `skipped:search`, `skipped:ai_input`, `skipped:no_route`, `skipped:egress`, `skipped:error` or `skipped:dimensions`. A skipped vector does not stop the write. |
 
 **Minimal receipt** (no `read` on the journal): `{"ref", "status": "recorded", "origin", "origin_notice"}`, and
-`confirmation` as above.
+`confirmation` and `licence_notice` as above.
 It does not tell if the note existed.
 
 **Errors:** `400` (validation; `text refused: credential-like content (<rules>)`; a code citation refused, for
@@ -899,6 +902,33 @@ person who confirmed can withdraw the confirmation; then the origin is the write
 {"jsonrpc": "2.0", "id": 17, "method": "tools/call",
  "params": {"name": "confirm_origin", "arguments": {"ref": "adc-memory@nt_3f…"}}}
 ```
+
+### 5.17 `submit_package`
+
+Submit a package that you signed with `kutuphane export`. The checks are the same as `kutuphane receive`. Nothing is
+published: a person approves it with `kutuphane approve-import` ([operations.md](operations.md#packages-from-an-application-http-and-mcp-139)).
+
+**Needs:** `propose` on the book that the manifest names. Without it, nothing is stored.
+
+| Argument | Type | Required | Default | Limits |
+|---|---|---|---|---|
+| `package_base64` | string | yes | — | The package bytes in base64, at most the package limit. |
+
+**Result:** the import status, as `GET /v1/packages/{id}` ([http-api.md](http-api.md#132-get-v1packagesid)):
+`{"id", "status", "issuer", "book", "sequence", "content_id", "findings", "diff", "reasons", "received_at",
+"decided_at"}`. `status` is `received`, `findings` or `refused`.
+
+**Errors:** `400` (not base64, not a readable package, a journal), `403`, too large.
+
+### 5.18 `package_status`
+
+The status of a package that you submitted: `received`, `findings`, `approved` or `refused`.
+
+**Needs:** no grant. You submitted it (the same principal and user acted for). Otherwise: not found.
+
+| Argument | Type | Required | Default | Limits |
+|---|---|---|---|---|
+| `import_id` | integer | yes | — | The `id` from `submit_package`. |
 
 ## 6. Background jobs
 

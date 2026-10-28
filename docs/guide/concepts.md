@@ -65,7 +65,7 @@ A folder can carry a `kstd.yaml` manifest (see `kstd.md`). It states, per file:
 | `ai_use.search` | `y`, `n`, absent | not `y`: the file is not indexed |
 | `ai_use.ai_input` | `y`, `n`, absent | not `y`: the text never reaches a model (no embedding, no rerank, no answer); model readers get `text: null` and `withheld` |
 | `ai_use.train` | `y`, `n`, absent | for journals: controls the text in decision exports |
-| `license` | SPDX id or `unknown` | shown with results; `unknown` gives no permission |
+| `license` | SPDX id or `unknown` | shown with results; `unknown`: notes can be derived from the file in this installation (the note receipt has a `licence_notice`), but `export` refuses the file, and the decision export leaves out every note derived from it |
 | `personal_data` | `yes`, `no`, `synthetic`, `unknown` | not `no` or `synthetic`: `export` needs `--legal-basis` |
 
 In a manifest, an absent `ai_use` term is shown as "not stated", and every decision treats it as `n`. A file with no
@@ -185,7 +185,7 @@ the principal. Rights are decided per call, so a revoke applies to the next call
 |---|---|
 | `read` | search, open and read the book; read notes |
 | `activate` | an agent may receive agent instructions (see below) |
-| `propose` | write notes, links and outcomes into a journal |
+| `propose` | write notes, links and outcomes into a journal; on a content book: submit a signed package for a person to approve (`POST /v1/packages`, `submit_package`) |
 | `curate` | the user can be named as curator by the CLI. Users only, granted directly, never delegated |
 | `discover`, `use` | reserved: you can grant them, but no code path checks them today |
 | `member` | on `role:<name>`: puts a subject in the role |

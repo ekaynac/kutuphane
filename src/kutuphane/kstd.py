@@ -21,7 +21,8 @@ A book whose files contain `kstd.yaml` at the root follows it. Validation has th
 
 A book without `kstd.yaml` behaves as before: only its book policy applies. `ai_use` keeps three states: an
 absent term is "not stated" and is reported as absent, but every decision treats it as `n`; an unknown license
-gives no permission (docs/11 §4 rule 3, §5). The `kstd.yaml` issuer publishes into this node, so its `synthetic`
+gives no permission to export or forward: derivation inside this installation is allowed with a notice, and an item
+derived from it is never exported (docs/11 §4 rule 3, §5.2, #143). The `kstd.yaml` issuer publishes into this node, so its `synthetic`
 declaration is trusted here.
 
 The SPDX identifiers in `spdx_ids.txt` come from https://github.com/spdx/license-list-data (`json/licenses.json`).
@@ -320,7 +321,8 @@ def check(manifest: dict, files: dict[str, str]) -> tuple[list[str], list[str]]:
     if not isinstance(manifest.get("rights"), dict) or "ai_use" not in manifest["rights"]:
         warnings.append("no default ai_use: files without their own ai_use are neither searchable nor sent to models")
     if not isinstance(manifest.get("rights"), dict) or manifest["rights"].get("license", "unknown") == "unknown":
-        warnings.append("no default license: derivation and forwarding need a license for each file")
+        warnings.append("no default license: a file without its own license may be derived from in this installation "
+                        "(with a notice), but it and every note derived from it are never exported or forwarded")
     return errors, warnings
 
 
@@ -406,6 +408,11 @@ class Rights:
 
     def allows(self, book: str, content_id: str, path: str, use: str) -> bool:
         return allows(self.info(book, content_id, path), use)
+
+    def license_unknown(self, book: str, content_id: str, path: str) -> bool:
+        """The file has `license: unknown` in its manifest (a file without a manifest follows its book policy only)."""
+        info = self.info(book, content_id, path)
+        return info is not None and info["license"] == "unknown"
 
 
 def _quoted(value: str) -> str:

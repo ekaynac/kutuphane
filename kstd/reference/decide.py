@@ -203,8 +203,11 @@ def decide(case: dict) -> dict:
     discloses = action == "forward" or (action == "infer" and to_cloud)
     for src in sources:
         tag, src_rights = ("" if src is item else "input-"), src["body"].get("rights", {})
-        if action in ("derive", "train", "forward") and src_rights.get("license", "unknown") == "unknown":
-            results.append("deny"); reasons.append(f"{tag}rights-unknown")  # rule 3
+        if src_rights.get("license", "unknown") == "unknown":  # rule 3, the license profile (§5.2)
+            if action in ("train", "forward"):
+                results.append("deny"); reasons.append(f"{tag}rights-unknown")
+            elif action == "derive":  # inside this node only, with a notice; its forward is denied (input-…)
+                notices.append(f"{tag}rights-unknown")
         ai_use = src_rights.get("ai_use", {})
         if req.get("operation") == "search" and ai_use.get("search") != "y":  # an embedding search needs no ai_input
             results.append("deny"); reasons.append(f"{tag}rights-reserved:search")
