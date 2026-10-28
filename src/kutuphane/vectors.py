@@ -85,7 +85,9 @@ class Indexed:
         return not self.failed and not self.not_attempted
 
     def report(self) -> dict:
-        return {"vectors_added": self.embedded + self.reused, "vectors_reused": self.reused,
+        """`vectors_embedded`: new vectors from the embedder; `vectors_reused`: vectors copied from an unchanged
+        passage (no embedding call). Their sum is every vector that this run wrote."""
+        return {"vectors_embedded": self.embedded, "vectors_reused": self.reused,
                 "failed": self.failed, "not_attempted": self.not_attempted}
 
 

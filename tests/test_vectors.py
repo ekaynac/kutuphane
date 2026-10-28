@@ -38,7 +38,7 @@ def test_index_embeds_through_llmdap_once(conn, fake, okf_dir):
     publish(conn, okf_dir)
     total = conn.execute("SELECT count(*) FROM chunk WHERE book = 'kitap'").fetchone()[0]
     assert vectors.index(conn, fake.embedder(), "kitap").embedded == total
-    assert vectors.index(conn, fake.embedder(), "kitap").report()["vectors_added"] == 0  # nothing twice
+    assert vectors.index(conn, fake.embedder(), "kitap").report()["vectors_embedded"] == 0  # nothing twice
     path, headers = fake.hits[-1]
     assert path == "/bridge/local/v1/embeddings" and headers["x-llmdap-purpose"] == "index"
     calls = conn.execute("SELECT principal, source_books, error FROM model_call").fetchall()
@@ -190,7 +190,7 @@ def test_index_stops_trying_when_the_embedder_is_down(conn, fake, okf_dir):  # G
     result = vectors.index(conn, fake.embedder(), "kitap", settings)
     assert len(result.failed) == 2 and result.not_attempted == total - 2
     assert len(embedded_inputs(fake)) == 2 * (1 + settings.retries)
-    assert result.report()["vectors_added"] == 0
+    assert result.report()["vectors_embedded"] == 0
 
 
 def test_ingest_prints_the_publication_when_indexing_fails(conn, fake, okf_dir, monkeypatch, capsys):  # G12
@@ -207,13 +207,13 @@ def test_ingest_prints_the_publication_when_indexing_fails(conn, fake, okf_dir, 
     out = capsys.readouterr()
     report = json.loads(out.out)
     assert report["content_id"] == catalog.book_state(conn, "kitap")["content_id"]  # published and printed
-    assert report["failed"] and report["vectors_added"] == 0
+    assert report["failed"] and report["vectors_embedded"] == 0
     assert "is published and live" in out.err and "kutuphane index kitap" in out.err
     assert cli.main(["index", "kitap"]) == cli.INDEX_INCOMPLETE                    # still down: reported, not raised
     capsys.readouterr()
     fake.embed_status = None
     assert cli.main(["index", "kitap", "--batch", "2"]) == 0
-    assert json.loads(capsys.readouterr().out)["vectors_added"] == len(current_texts(conn))
+    assert json.loads(capsys.readouterr().out)["vectors_embedded"] == len(current_texts(conn))
     monkeypatch.delenv(llmdap.EMBED_ENV["route_class"])                           # pilot: published, then this error
     (okf_dir / "yeni.md").write_text("Yeni sayfa.\n", encoding="utf-8")
     assert cli.main(ingest) == 2
@@ -261,6 +261,20 @@ def test_a_new_chunker_reuses_the_vectors_of_unchanged_passages(conn, fake, okf_
     assert result.embedded == 1 and result.reused == len(current_texts(conn)) - 1 > 0
     publish(conn, okf_dir, book="ikinci")
     assert vectors.index(conn, fake.embedder(), "ikinci").reused == 0  # still never across books
+
+
+def test_the_report_does_not_count_a_copied_vector_as_embedded(conn, fake, okf_dir, monkeypatch):  # pilot 2: 585/585
+    with monkeypatch.context() as m:                                    # the same cut, an older chunker version
+        m.setattr(profiles, "CHUNKER_VERSION", profiles.CHUNKER_VERSION - 1)
+        publish(conn, okf_dir)
+        first = vectors.index(conn, fake.embedder(), "kitap").report()
+    since = len(fake.requests)
+    publish(conn, okf_dir)                                              # new profile: every passage keeps its text
+    again = vectors.index(conn, fake.embedder(), "kitap").report()
+    total = len(current_texts(conn))
+    assert (first["vectors_embedded"], first["vectors_reused"]) == (total, 0)
+    assert (again["vectors_embedded"], again["vectors_reused"]) == (0, total) and not embedded_inputs(fake, since)
+    assert "vectors_added" not in again
 
 
 def test_migration_014_gives_old_vectors_the_reuse_key(conn, fake, okf_dir):  # G17: the radar books keep theirs
