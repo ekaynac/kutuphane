@@ -371,10 +371,14 @@ be in a skill that a scan blocks.
 
 ```json
 {"citation": "runbooks@ct_9f…/pf_41…/backup.md#3", "page": null, "line": 40,
- "text": "…", "item": {…}, "outcomes": {"passed": 2}}
+ "text": "…", "item": {…}, "outcomes": {"passed": 2}, "status": "moved",
+ "moved_to": "runbooks@ct_9f…/pf_77…/backup.md#2", "match": "exact"}
 ```
 
-`outcomes` has the non-zero counts of `record_outcome` for this passage.
+`outcomes` has the non-zero counts of `record_outcome` for this passage. `status` says where the passage is in the
+book's current version (#140): `current`; `moved`, with `moved_to` (the passage of the same path that replaces it)
+and `match` (`exact`: the same text; `overlap`: it holds at least half of the word pairs); or `stale` (no passage
+replaces it). The text is always the text of the handle that you opened.
 
 **Result for a note reference:** `{"citation", "note", "targets", "watermark"}`. `note` is one note item, as in
 `query_notes` (section 5.13).
@@ -765,11 +769,14 @@ The sets:
             "scope": {"repo": "adc", "branch": "main", "paths": ["src/db/**"]}, "observed_commit": "…",
             "written_at": "2026-10-27T10:00:00Z", "recurrence": 3, "links": {"contradicts": 1},
             "outcomes": {"passed": 2}, "citations": [{"ref": "adc@…:src/db/q.py:40-52", "status": "stale",
-            "moved_to": 61}]}],
+            "moved_to": 61}, {"ref": "runbooks@ct_9f…/pf_41…/backup.md#3", "status": "moved",
+            "moved_to": "runbooks@ct_9f…/pf_77…/backup.md#2", "match": "exact"}]}],
  "left": [], "books": ["adc-memory"], "watermark": 81234, "next_cursor": null,
  "excluded": {"code": 2, "needs_context": 1}, "targets": {"adc-memory/adc": "3f2c…"}}
 ```
 
+- A passage citation keeps the handle that the note stores and has `status`, as a passage in `open_citation`
+  (section 5.2): `current`, `moved` (with `moved_to` and `match`) or `stale`. A re-index never drops a citation.
 - A retired item has `successor`: the note that supersedes it, or `null`.
 - `origin` is the shown origin. With a live confirmation (section 5.16), the item also has `entered_by` (the writer
   of the request) and `confirmed_by` (the person who confirmed).
@@ -823,6 +830,10 @@ are in `sets` in your context are nodes. An edge to an excluded node is dropped.
 the notes linked to the passage (`about`, `derived_from`) and the notes that cite it (edge type `cites`, after the
 links). The same gates apply to both: a node must be readable and in `sets`. `direction: out` gives no nodes for a
 passage. `truncated` is `true` when `max_nodes` or the size limits cut the graph.
+
+After a re-index, a passage handle also stands for the passages that the passage map joins to it: from a new handle
+you get the notes on the old passages that it replaces, and from an old handle the notes on its successor. Such an
+edge has `dst` = your handle and `original`: the handle that the note stores (#140).
 
 **Errors:** `400`, `403`, `404`, `409`.
 

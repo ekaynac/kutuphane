@@ -230,8 +230,11 @@ Open a passage handle, or a note reference. MCP: `open_citation` ([mcp.md](mcp.m
 
 ```json
 {"citation": "runbooks@ct_9f…/pf_41…/backup.md#3", "page": null, "line": 40, "text": "…", "item": null,
- "outcomes": {"passed": 2}}
+ "outcomes": {"passed": 2}, "status": "current"}
 ```
+
+`status` is `current`, `moved` (with `moved_to` and `match`) or `stale`: where the passage is in the book's current
+version after a re-index ([mcp.md](mcp.md#52-open_citation)). A passage citation of a note item has the same keys.
 
 **Response `200` for a note:** `{"citation", "note", "targets", "watermark"}`. `note` is a note item, as in
 `GET /v1/notes`.

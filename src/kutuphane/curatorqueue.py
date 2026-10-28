@@ -20,7 +20,7 @@ import re
 import statistics
 from datetime import datetime, timedelta
 
-from . import authz, canonical, gate, notes, notesquery, origin, outcomes
+from . import authz, canonical, gate, notes, notesquery, origin, outcomes, passagemap
 
 PAGE_GROUPS = 20
 MAX_PAGE_GROUPS = 100
@@ -192,21 +192,23 @@ def _excerpt(text: str | None) -> str | None:
 
 
 def _citations(conn, seqs, readable: set) -> dict:
-    """{seq: [citation]}: a code citation {kind, ref, path}; a readable passage {kind, ref, path, excerpt}; a passage
-    in a book that the person cannot read now {kind, hidden} (no book name, no path, no text)."""
+    """{seq: [citation]}: a code citation {kind, ref, path}; a readable passage {kind, ref, path, excerpt, status
+    [, moved_to, match]} (its state now, #140: the excerpt stays the cited text); a passage in a book that the person
+    cannot read now {kind, hidden} (no book name, no path, no text)."""
     rows = conn.execute(
         "SELECT note_seq, kind, cite_book, content_id, profile_id, path, ordinal, repo, commit, line_start, "
         "line_end, symbol FROM note_citation WHERE note_seq = ANY(%s) ORDER BY note_seq, n", (list(seqs),)).fetchall()
-    texts = _passage_texts(conn, [(r[2], r[3], r[4], r[5], r[6]) for r in rows if r[1] != "code" and r[2] in readable])
+    keys = [tuple(r[2:7]) for r in rows if r[1] != "code" and r[2] in readable]
+    texts, moved = _passage_texts(conn, keys), passagemap.resolve(conn, keys)
     out = {}
     for seq, kind, book, cid, pid, path, ordinal, repo, commit, start, end, symbol in rows:
         if kind == "code":
             ref = f"{repo}@{commit}:{path}:{start}-{end}" + (f"#{symbol}" if symbol else "")
             out.setdefault(seq, []).append({"kind": "code", "ref": ref, "path": path})
         elif book in readable:
-            out.setdefault(seq, []).append({"kind": "passage", "ref": _handle(book, cid, pid, path, ordinal),
-                                            "path": path,
-                                            "excerpt": _excerpt(texts.get((book, cid, pid, path, ordinal)))})
+            key = (book, cid, pid, path, ordinal)
+            out.setdefault(seq, []).append({"kind": "passage", "ref": _handle(*key), "path": path,
+                                            "excerpt": _excerpt(texts.get(key)), **moved[key].out()})
         else:
             out.setdefault(seq, []).append({"kind": "passage", "hidden": UNREADABLE_PASSAGE})
     return out
@@ -226,8 +228,9 @@ def _passage_texts(conn, keys) -> dict:
 
 def _links(conn, seqs, readable: set, w: int) -> dict:
     """Every link of the notes at w, out and in, in link seq order, with the target's text (a note or a passage):
-    the creation links are part of what the person approves (review #16 finding 1). A target in a book that the
-    person cannot read now is only "a note (passage) in a book you cannot read"."""
+    the creation links are part of what the person approves (review #16 finding 1). A passage target also has its
+    state now (as in `_citations`). A target in a book that the person cannot read now is only "a note (passage) in a
+    book you cannot read"."""
     rows = conn.execute(
         "SELECT l.seq, l.src, l.type, l.creation, l.dst_note, l.dst_book, l.dst_content_id, l.dst_profile_id, "
         "l.dst_path, l.dst_ordinal FROM note_link l WHERE l.seq <= %(w)s "
@@ -236,7 +239,8 @@ def _links(conn, seqs, readable: set, w: int) -> dict:
     info = {r[0]: r for r in conn.execute("SELECT seq, book, id, kind, body FROM note WHERE seq = ANY(%s)",
                                           (list(others),)).fetchall()}
     standing = notes.effective_standing(conn, others, w)
-    passages = _passage_texts(conn, [tuple(r[5:]) for r in rows if r[4] is None and r[5] in readable])
+    keys = [tuple(r[5:]) for r in rows if r[4] is None and r[5] in readable]
+    passages, moved = _passage_texts(conn, keys), passagemap.resolve(conn, keys)
     out = {}
     for _lseq, src, type_, creation, dst, dbook, cid, pid, path, ordinal in rows:
         for this, other, direction in ((src, dst, "out"), (dst, src, "in")):
@@ -244,9 +248,9 @@ def _links(conn, seqs, readable: set, w: int) -> dict:
                 continue
             link = {"type": type_, "direction": direction, "creation": creation}
             if other is None:  # a passage target
-                link.update({"ref": _handle(dbook, cid, pid, path, ordinal), "path": path,
-                             "text": passages.get((dbook, cid, pid, path, ordinal))} if dbook in readable
-                            else {"hidden": UNREADABLE_PASSAGE})
+                key = (dbook, cid, pid, path, ordinal)
+                link.update({"ref": _handle(*key), "path": path, "text": passages.get(key), **moved[key].out()}
+                            if dbook in readable else {"hidden": UNREADABLE_PASSAGE})
             elif info[other][1] in readable:
                 _s, obook, oid, okind, text = info[other]
                 link.update({"ref": f"{obook}@{oid}", "kind": okind, "standing": standing[other][0], "text": text})

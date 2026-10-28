@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 
 from psycopg.types.json import Jsonb
 
-from . import agentfiles, ids, kstd, profiles, skillscan
+from . import agentfiles, ids, kstd, passagemap, profiles, skillscan
 from .policy import check_policy
 from .source import SourceFile
 
@@ -42,6 +42,7 @@ class Published:
     accepted_findings: list[dict] = field(default_factory=list)  # [{path, sha256, rule}]: reviewed scan findings
     data_findings: list[dict] = field(default_factory=list)  # [{path, sha256, rule, lines}]: open datascan findings
     skill_scans: list[dict] = field(default_factory=list)  # skillscan.summary() of the scans recorded + blocks carried
+    passage_map: dict = field(default_factory=dict)  # passagemap.map_book() counts: the references that follow (#140)
 
 
 def manifest_of(files: list[SourceFile]) -> list[dict]:
@@ -137,12 +138,13 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
                                                for q in quarantined])
         conn.execute("UPDATE book SET title = %s, current_content = %s, current_profile = %s, current_policy = %s, "
                      "updated_at = now() WHERE slug = %s", (title, content_id, profile_id, policy_id, book))
+        mapped = passagemap.map_book(conn, book)  # #140: cited and linked passages of earlier versions follow to it
         conn.execute("INSERT INTO publication (book, content_id, profile_id, policy_id, accepted_findings, "
                      "data_findings) VALUES (%s, %s, %s, %s, %s, %s)",
                      (book, content_id, profile_id, policy_id, Jsonb(accepted), Jsonb(found)))
     return Published(book, content_id, profile_id, policy_id, new_content=current[0] != content_id,
                      new_policy=current[1] != policy_id, quarantined=quarantined, accepted_findings=accepted,
-                     data_findings=found, skill_scans=skillscan.summary(scans) + carried)
+                     data_findings=found, skill_scans=skillscan.summary(scans) + carried, passage_map=mapped)
 
 
 def book_state(conn, book: str) -> dict | None:

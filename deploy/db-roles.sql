@@ -11,6 +11,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO kutuphane
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO kutuphane_app;
 REVOKE INSERT, UPDATE, DELETE ON standing_event FROM kutuphane_app;
 REVOKE UPDATE, DELETE ON note, write_record, note_link, note_citation, outcome, note_import FROM kutuphane_app;
+-- #140 (040): a passage map row is written once (publication, note write, `kutuphane reindex-map`) and never changed.
+REVOKE UPDATE, DELETE ON passage_map FROM kutuphane_app;
 -- docs/24 §22: the app records skill scans but can never remove one or its block. skill_block is an updatable view
 -- (it would write skill_scan with the owner's rights), so it is read-only too.
 REVOKE INSERT, UPDATE, DELETE ON skill_clearance, skill_block FROM kutuphane_app;

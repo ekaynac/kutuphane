@@ -41,6 +41,7 @@ from starlette.staticfiles import StaticFiles
 
 from . import (answers, catalog, coderepo, confirm, db, feedback, gate, handling, identity, ids, jobs, kstd, llmdap,
                notes, notesquery, outcomes, packages, quotes, retrieval, search, skills, snippets)
+from . import passagemap
 from .gate import Actor
 from .ids import normalize_path
 
@@ -151,9 +152,11 @@ def op_citation(dsn, actor: Actor, handle: str, model_reader: bool = False, cont
         item = kstd.Rights(conn).info(c.book, c.content_id, c.path)
         if labels_out is not None:
             labels_out.update(handling.labels(conn, [c.book], [(c.book, c.content_id, c.path)]))
+        key = (c.book, c.content_id, c.profile_id, c.path, c.ordinal)
         return {"citation": c.handle, "page": hit.page, "line": hit.line,
                 **_text(hit.text, item, _for_model(actor, model_reader)),
-                "item": item, "outcomes": outcomes.passage_counts(conn, c)}
+                "item": item, "outcomes": outcomes.passage_counts(conn, c),
+                **passagemap.resolve(conn, [key])[key].out()}  # #140: the passage in the current version
     return _run(dsn, go)
 
 
