@@ -143,7 +143,7 @@ def quoted(conn, actor: Actor, hits: list[search.Hit], scope: search.Scope = sea
     rights, records = kstd.Rights(conn), {}
     for r in found:
         hit = search.Hit(search.Citation(*r[1:6]), r[6], r[7], r[8], r[9], 0.0, r[10])
-        if not scope.origins and not scope.current_only or scope.admits(rights.info(*r[1:3], r[4])):
+        if not scope.filters_files or scope.admits(rights.info(*r[1:3], r[4])):
             records.setdefault(bytes(r[0]), []).append(hit)
     pointers = {}
     for citation, mine in copies.items():

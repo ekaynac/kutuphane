@@ -196,7 +196,8 @@ def test_item_information_reaches_search_and_citations(conn, okf_dir, monkeypatc
     hits = server.op_search(dsn, retrieval.Stages(), Actor(U), QUERY, 5)
     runbook = next(h for h in hits if "yedek-geri-yukleme" in h["citation"])
     assert runbook["item"]["origin"] == "human" and runbook["item"]["license"] == "CC-BY-4.0"
-    assert runbook["item"]["applies_to"] == "Postgres 17" and runbook["item"]["current"] is True
+    assert runbook["item"]["applies_to"] == {"platform": ["Postgres 17"]} and runbook["item"]["current"] is True
+    assert runbook["item"]["scope"] == "needs_context"  # bounded, and the request gave no context
     cited = server.op_citation(dsn, Actor(U), runbook["citation"])
     assert cited["item"]["valid_from"] == "2026-01-01"
 

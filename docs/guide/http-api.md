@@ -208,6 +208,8 @@ Search the books that you may read now. MCP: `search_library` ([mcp.md](mcp.md#5
 | `path` | no | none | A relative path prefix. End it with `/` for a folder. |
 | `origin` | no | none | Repeat for more. `human`, `assisted`, `model`, `tool`, `unknown`. |
 | `current_only` | no | `false` | `true`, `1`, `false` or `0`. |
+| `platform` | no | none | The request context (#137): a file whose kstd `applies_to` names other platforms is left out. |
+| `version` | no | none | The request context: numbers with dots (`7.0.3`). A file whose `applies_to` version range does not hold it is left out. |
 | `max_chars` | no | none (the full text) | An integer, 80–4800. Each `text` becomes a snippet around the match. |
 
 A filter never adds a book. A book that you cannot read gives the same empty result as a book that does not exist.
@@ -304,6 +306,7 @@ Answer a question from the library, with `[n]` citations. MCP: `ask_library` ([m
 | `path` | string | no | none | As `GET /v1/search`. |
 | `origin` | string or list of strings | no | none | As `GET /v1/search`. |
 | `current_only` | boolean | no | `false` | |
+| `context` | object | no | none | `{"platform": "vcenter", "version": "7.0.3"}`, both optional, no other keys. As `platform` and `version` of `GET /v1/search`. |
 | `background` | boolean | no | `false` | `true` starts a background job. |
 | `idempotency_key` | string | no | none | 8–128 characters of `A-Z a-z 0-9 . _ : -`. Only with `"background": true`. |
 

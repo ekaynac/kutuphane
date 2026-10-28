@@ -194,10 +194,15 @@ def _scope_options(parser) -> None:
     parser.add_argument("--origin", action="append", choices=kstd.ORIGINS, help="only files with this kstd origin "
                         "(repeatable; a book without kstd.yaml counts as unknown)")
     parser.add_argument("--current-only", action="store_true", help="only files whose kstd validity includes now")
+    parser.add_argument("--platform", help="request context: leave out files whose kstd applies_to names other "
+                        "platforms")
+    parser.add_argument("--version", help="request context: leave out files whose kstd applies_to version range "
+                        "excludes this version (e.g. 7.0.3)")
 
 
 def _scope(args) -> search.Scope:
-    return search.Scope.of(args.book, args.path, args.origin, args.current_only)
+    context = {k: v for k, v in (("platform", args.platform), ("version", args.version)) if v is not None}
+    return search.Scope.of(args.book, args.path, args.origin, args.current_only, context or None)
 
 
 def cmd_search(conn, args) -> int:
@@ -205,7 +210,7 @@ def cmd_search(conn, args) -> int:
     scope = _scope(args)
     hits, found = quotes.quoted(conn, actor, retrieval.retrieve(conn, actor, args.query, args.k,
                                                                 retrieval.Stages.from_env(), scope), scope)
-    rights = kstd.Rights(conn)
+    rights = kstd.Rights(conn, scope.context)
     _print([{"citation": h.citation.handle, "page": h.page, "line": h.line, "score": round(h.score, 4),
              "text": h.text, "item": rights.info(h.citation.book, h.citation.content_id, h.citation.path),
              "quoted_records": quotes.handles(found, h.citation)}

@@ -58,11 +58,16 @@ class Expired(Exception):
 
 
 def _scope_doc(scope: search.Scope) -> dict:
-    return {k: list(v) if isinstance(v, tuple) else v for k, v in dataclasses.asdict(scope).items()}
+    """The stored request scope. An absent context is left out, so a retry of a job submitted before #137 keeps
+    its request digest."""
+    doc = {k: list(v) if isinstance(v, tuple) else v for k, v in dataclasses.asdict(scope).items()}
+    platform, version = doc.pop("platform"), doc.pop("version")
+    context = {k: v for k, v in (("platform", platform), ("version", version)) if v is not None}
+    return {**doc, "context": context} if context else doc
 
 
 def _scope(doc: dict) -> search.Scope:
-    return search.Scope.of(doc["books"], doc["path"], doc["origins"], doc["current_only"])
+    return search.Scope.of(doc["books"], doc["path"], doc["origins"], doc["current_only"], doc.get("context"))
 
 
 def submit(conn, actor: Actor, question: str, scope: search.Scope,

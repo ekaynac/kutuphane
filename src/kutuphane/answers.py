@@ -232,7 +232,7 @@ def ask(conn, bridge: llmdap.Bridge, actor: Actor, question: str, *, model: str,
     fences its cancel and its lease and records its success there (docs/24 §12.2)."""
     check = check or (lambda: None)
     found, stage = retrieval.retrieved(conn, actor, question, k, stages, scope)
-    rights = kstd.Rights(conn)  # kstd: a passage whose rights do not allow ai_input never reaches the answer model
+    rights = kstd.Rights(conn, scope.context)  # a passage whose rights do not allow ai_input never reaches the model
     hits = [h for h in found if rights.allows(h.citation.book, h.citation.content_id, h.citation.path, "ai_input")]
     withheld = len(found) - len(hits)
     if hits:

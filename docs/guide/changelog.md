@@ -9,6 +9,13 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Scope: `applies_to` and the request context (#137, #142, #138)
+
+- New: kstd `applies_to` has a mapping form: `{platform: [<names>], version: "<range>"}`, for example `{platform: [vcenter], version: ">=7.0,<8"}`. The string form stays valid and means `platform: [<string>]`. A malformed `platform` or `version` refuses the book; an unknown key is ignored with a notice (D74). `item.applies_to` now always shows the mapping form ([kstd.md](kstd.md#what-kütüphane-does-with-each-field)) ([#137](https://github.com/ekaynac/kutuphane/issues/137)).
+- New: a request context on search and ask: `--platform` and `--version` on the CLI, `platform` and `version` on `GET /v1/search`, `context: {platform, version}` on `POST /v1/ask`, `search_library` and `ask_library` (also for a background job). A file whose `applies_to` the context contradicts is left out before ranking. A file without `applies_to` always matches. A bounded file without a matching context value stays in the evidence with `item.scope: needs_context`. Each `item` has `scope`: `unbounded`, `match` or `needs_context` ([operations.md](operations.md#scope-filters-g14), [mcp.md](mcp.md#51-search_library)) ([#137](https://github.com/ekaynac/kutuphane/issues/137)).
+- New: the guide tells how to give roles one scope each with whole-book grants: one book per scope and one shared book; a test shows that a scope-A role gets no scope-B passage or note from search, ask evidence, `open_citation`, `neighbours` or `query_notes` ([operations.md](operations.md#one-book-per-scope-138)) ([#138](https://github.com/ekaynac/kutuphane/issues/138)).
+- Design and research: Pilot 2 question 6 is in the measured answer set (`docs/26` §8), not a CI gate ([#142](https://github.com/ekaynac/kutuphane/issues/142)).
+
 ### Restart policies and the dependency check (#141)
 
 - New: `postgres`, `core`, `ingress` and `llmdap` (and `embedder` and `spark-chat` in the local-models overlay; the three services of the light install) have `restart: unless-stopped`: they come back after a crash or a host reboot without a person. `reranker-gpu` has `restart: on-failure:5`, so a start that fails with a CUDA out-of-memory error is tried again ([install.md](install.md#reboot-and-restart)) ([#141](https://github.com/ekaynac/kutuphane/issues/141)).
