@@ -251,6 +251,56 @@ that the curator container publishes no port, that Core cannot reach it, and tha
 refused. Run it again after a restart of the sidecar. The overlay also attaches Postgres to the internal network
 `curator-db`; the next `up` recreates the Postgres container for that (the data volume stays).
 
+### Host install with tailscale serve
+
+Use this variant when you cannot make a tagged auth key for a sidecar. Curator web runs on the docker host as a
+systemd user service, and `tailscale serve` on the host gives it HTTPS. The RP ID is then the host name of the host
+on the tailnet (`<host>.<tailnet>.ts.net`). Every service of the host that serves on HTTPS 443 shares this name; the
+tailnet ACL controls who can reach it. Funnel stays off.
+
+**Once:**
+
+1. In the Tailscale admin console: MagicDNS and HTTPS certificates on. On the host:
+   `sudo tailscale set --operator=<user>` (then `tailscale serve` runs without sudo).
+2. The database role (step 3 above), and `deploy/db-roles.sql` before `deploy/db-roles-curator.sql`. If Core runs
+   as the owner, these scripts do not change it: the owner keeps TEMP and is not under the row policy.
+3. In `.env`, for Core and for `kutuphane curator enroll`: `KUTUPHANE_WEBAUTHN_RP_ID=<host>.<tailnet>.ts.net`,
+   `KUTUPHANE_WEBAUTHN_ORIGIN=https://<host>.<tailnet>.ts.net` and `KUTUPHANE_CURATOR_URL` (the same origin).
+4. A deploy checkout that does not move when you change branches in the work checkout:
+   `git worktree add --detach <deploy dir> origin/main`.
+5. A service env file, `~/.config/kutuphane/curator-web.env` (mode 600):
+   ```sh
+   KUTUPHANE_CURATOR_WEB_DSN=postgresql://kutuphane_curator_web:<password>@127.0.0.1:55432/kutuphane
+   KUTUPHANE_WEBAUTHN_RP_ID=<host>.<tailnet>.ts.net
+   KUTUPHANE_WEBAUTHN_ORIGIN=https://<host>.<tailnet>.ts.net
+   PYTHONPATH=<deploy dir>/src
+   ```
+6. The unit `~/.config/systemd/user/kutuphane-curator-web.service`:
+   ```ini
+   [Service]
+   WorkingDirectory=<deploy dir>
+   EnvironmentFile=%h/.config/kutuphane/curator-web.env
+   ExecStart=<venv>/bin/python -m kutuphane.cli curator web --host 127.0.0.1 --port <port>
+   Restart=always
+   UMask=0077
+
+   [Install]
+   WantedBy=default.target
+   ```
+   Then `systemctl --user daemon-reload && systemctl --user enable --now kutuphane-curator-web`. Lingering
+   (`loginctl enable-linger <user>`) keeps it running without a login.
+7. `tailscale serve --bg --https=443 http://127.0.0.1:<port>`. Check `tailscale serve status` and
+   `tailscale funnel status` (it must say "tailnet only").
+
+**Check:** `python3 deploy/curator_probe.py https://<host>.<tailnet>.ts.net`. Checks 1 (HTTPS 443 and headers) and
+4 (POST from another origin) apply. Checks 2 and 3 look for the sidecar, curator and Core containers, so they fail
+for a host service; check Funnel with `tailscale funnel status` instead. The service binds only to 127.0.0.1, so
+no container and no other device reaches it except through `tailscale serve`. The "port 80 and 8443 do not answer"
+part fails when another service of the host listens on those ports.
+
+**Upgrade:** `git -C <deploy dir> fetch && git -C <deploy dir> checkout --detach origin/main`, then
+`systemctl --user restart kutuphane-curator-web`.
+
 **Development on one machine** (no Tailscale): WebAuthn treats `http://localhost` as a secure context.
 
 ```sh

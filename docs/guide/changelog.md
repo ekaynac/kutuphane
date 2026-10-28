@@ -9,6 +9,10 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Curator web on the host with tailscale serve (#132)
+
+- New: an install variant without a sidecar: curator web runs on the host as a systemd user service bound to 127.0.0.1, and `tailscale serve` on the host gives it HTTPS 443 (tailnet only, Funnel off). It needs no tagged auth key ([install.md](install.md#host-install-with-tailscale-serve)) ([#132](https://github.com/ekaynac/kutuphane/pull/132)).
+
 ### GPU reranker (#131; G26)
 
 - New: the compose profile `gpu-rerank` runs `bge-reranker-v2-m3` (the same pinned commit) on the GPU, with the host vLLM's image and 0.04 of the GPU memory (about 1.9 GB used), behind the new LLMDAP route `rerank-gpu`. Set `KUTUPHANE_LLMDAP_RERANK_ROUTE=rerank-gpu` to use it; `rerank` (the CPU embedder) stays the fallback. On the pilot questions the rerank stage went from 11–25 s to 0.2–0.3 s with the same top 8, and `ask` from 22–31 s to 8–10 s on average ([install.md](install.md#gpu-reranker), [operations.md](operations.md#reranking), [troubleshooting.md](troubleshooting.md#ingest-and-index)) ([#131](https://github.com/ekaynac/kutuphane/pull/131)).
