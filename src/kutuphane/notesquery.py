@@ -20,7 +20,7 @@ import re
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 
-from . import authz, coderepo, gate, notes, outcomes, profiles
+from . import authz, coderepo, gate, notes, outcomes, passagemap, profiles
 from . import origin as origins
 from .gate import Actor
 from .search import SearchChanged
@@ -252,7 +252,8 @@ NOT_CHECKED = coderepo.Status("not_checked")
 
 
 def _citations(conn, items: list[Note], read: set, targets: dict) -> None:
-    """Each note's citations in order. Passage citations into a book the caller cannot read are left out. A code
+    """Each note's citations in order. Passage citations into a book the caller cannot read are left out; a readable
+    one keeps its handle and gets its state now (passagemap: current, moved with `moved_to`, or stale). A code
     citation into a repository without a target at the request is `not_checked` (no git process runs); one with a
     target waits in `checks` for `_verify`, which only the notes that a read may show need."""
     if not items:
@@ -262,11 +263,12 @@ def _citations(conn, items: list[Note], read: set, targets: dict) -> None:
         "SELECT note_seq, book, kind, cite_book, content_id, profile_id, path, ordinal, repo, commit, line_start, "
         "line_end, symbol, excerpt_sha256 FROM note_citation WHERE note_seq = ANY(%s) ORDER BY note_seq, n",
         (list(by_seq),)).fetchall()
+    moved = passagemap.resolve(conn, [r[3:8] for r in rows if r[2] == "passage" and f"book:{r[3]}" in read])
     for r in rows:
         note = by_seq[r[0]]
         if r[2] == "passage":
             if f"book:{r[3]}" in read:
-                note.citations.append(("passage", f"{r[3]}@{r[4]}/{r[5]}/{r[6]}#{r[7]}", None))
+                note.citations.append(("passage", passagemap.handle(r[3:8]), moved[tuple(r[3:8])]))
         else:
             cite = coderepo.CodeCitation(r[8], r[9], r[6], r[10], r[11], r[12])
             targeted = (r[1], cite.repo) in targets
@@ -369,7 +371,7 @@ def _item(note: Note, is_current: bool, recurrence: int, graph: Graph, for_model
 
 def _citation(kind: str, ref: str, st) -> dict:
     if kind == "passage":
-        return {"ref": ref}
+        return {"ref": ref, **st.out()}
     out = {"ref": ref, "status": st.status}
     if st.moved_to is not None:
         out["moved_to"] = st.moved_to
@@ -849,9 +851,16 @@ def neighbours(conn, actor: Actor, *, for_model: bool, ref: str, types=None, dep
         def item(n):
             return _item(n, current(n, ctx, w) is None, recurrence.get(n.seq, 0), graph, for_model,
                          counted.get(n.seq, {}))
+
+        def edge(s, t, d, p):
+            """A passage edge ends at the root; `original`: the handle that the link or citation stores, when the
+            passage map led from it to the root (#140)."""
+            if d is not None:
+                return {"src": refs[s], "type": t, "dst": refs[d]}
+            return {"src": refs[s], "type": t, "dst": passage.handle,
+                    **({"original": p} if p != passage.handle else {})}
         envelope = {"root": item(root) if root else None, "nodes": [],
-                    "edges": [{"src": refs[s], "type": t, "dst": refs[d] if d is not None else p}
-                              for _, s, t, d, p in edges],
+                    "edges": [edge(s, t, d, p) for _, s, t, d, p in edges],
                     "targets": _targets_out(targets), "watermark": w, "truncated": truncated}
         if root is not None and _size(envelope) > max_bytes:
             envelope["root"] = _cut(_size({**envelope, "root": None}), envelope["root"], max_bytes, budget_tokens)
@@ -870,19 +879,29 @@ def neighbours(conn, actor: Actor, *, for_model: bool, ref: str, types=None, dep
 
 def _links(conn, frontier, passage, direction: str, types, w: int) -> list:
     """Links at w from the frontier notes (or into a passage root), in link seq order. Into a passage root also the
-    notes that cite it (G32), as `cites` edges after the links, in note order."""
+    notes that cite it (G32), as `cites` edges after the links, in note order, one per note. A passage root stands
+    for its family (passagemap.family: the passages that the map joins to its successor now), so a re-index keeps
+    its links and citations (#140); each such edge carries the handle it stores."""
     if passage is not None:
-        key = (passage.book, passage.content_id, passage.profile_id, passage.path, passage.ordinal)
-        links = [(r[0], r[1], r[2], None, passage.handle) for r in conn.execute(
-            "SELECT seq, src, type FROM note_link WHERE seq <= %s AND dst_book = %s AND dst_content_id = %s "
-            "AND dst_profile_id = %s AND dst_path = %s AND dst_ordinal = %s AND type IN ('about', 'derived_from') "
-            "AND (%s::text[] IS NULL OR type = ANY(%s::text[])) AND %s <> 'out' ORDER BY seq",
-            (w, *key, types, types, direction))]
+        keys = [list(c) for c in zip(*passagemap.family(
+            conn, (passage.book, passage.content_id, passage.profile_id, passage.path, passage.ordinal)))]
+        family = "unnest(%s::text[], %s::text[], %s::text[], %s::text[], %s::int[]) AS k(b, c, p, path, o)"
+        links = [(r[0], r[1], r[2], None, passagemap.handle(r[3:])) for r in conn.execute(
+            "SELECT l.seq, l.src, l.type, l.dst_book, l.dst_content_id, l.dst_profile_id, l.dst_path, l.dst_ordinal "
+            f"FROM note_link l JOIN {family} ON (l.dst_book, l.dst_content_id, l.dst_profile_id, l.dst_path, "
+            "l.dst_ordinal) = (k.b, k.c, k.p, k.path, k.o) WHERE l.seq <= %s AND l.type IN ('about', 'derived_from') "
+            "AND (%s::text[] IS NULL OR l.type = ANY(%s::text[])) AND %s <> 'out' ORDER BY l.seq",
+            (*keys, w, types, types, direction))]
         if direction == "out" or (types is not None and CITES not in types):
             return links
-        return links + [((CITES, r[0]), r[0], CITES, None, passage.handle) for r in conn.execute(
-            "SELECT DISTINCT note_seq FROM note_citation WHERE kind = 'passage' AND note_seq <= %s AND cite_book = %s "
-            "AND content_id = %s AND profile_id = %s AND path = %s AND ordinal = %s ORDER BY note_seq", (w, *key))]
+        cites = {}
+        for r in conn.execute(
+                "SELECT c.note_seq, c.cite_book, c.content_id, c.profile_id, c.path, c.ordinal FROM note_citation c "
+                f"JOIN {family} ON (c.cite_book, c.content_id, c.profile_id, c.path, c.ordinal) "
+                "= (k.b, k.c, k.p, k.path, k.o) WHERE c.kind = 'passage' AND c.note_seq <= %s ORDER BY c.note_seq, c.n",
+                (*keys, w)):
+            cites.setdefault(r[0], passagemap.handle(r[1:]))
+        return links + [((CITES, seq), seq, CITES, None, h) for seq, h in cites.items()]
     if not frontier:
         return []
     out_ = direction in ("out", "both")

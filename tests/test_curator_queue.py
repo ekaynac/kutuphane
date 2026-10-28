@@ -415,11 +415,11 @@ def test_the_card_shows_every_part_of_the_note_id(books, client):  # review #16 
                                             chunk.ordinal)).fetchone()[0]
     # a citation: the source file and the start of the passage (the full text is one tap away, `/api/note`)
     assert item["citations"] == [{"kind": "passage", "ref": handle, "path": chunk.path,
-                                  "excerpt": curatorqueue._excerpt(text)}]
+                                  "excerpt": curatorqueue._excerpt(text), "status": "current"}]
     assert "\n" not in item["citations"][0]["excerpt"] and len(item["citations"][0]["excerpt"]) <= curatorqueue.EXCERPT
     # a creation link: the full target text, always on the card
     assert item["links"] == [{"type": "derived_from", "direction": "out", "creation": True, "ref": handle,
-                              "path": chunk.path, "text": text}]
+                              "path": chunk.path, "text": text, "status": "current"}]
     assert item["hidden_parts"] == 0 and item["integrity"] is None
     assert set(item) >= {"scope", "class_key", "commit"}
     assert canonical.canonical_of(env, seq_of(env, ref))[1]["decision"]["choice"] == harmful  # what the id covers

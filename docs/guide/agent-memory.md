@@ -147,6 +147,24 @@ A full `search_library` result is large (8 passages of up to 4,800 characters ea
 citation.
 `open_citation` opens one note (or passage) with its full text, Standing and `current` flag.
 
+**After a re-index.** A new profile (for example a new chunker) or a new content version gives every passage of the
+book a new handle. A note keeps the handle that it cites or links to, and that passage still opens. The reads add
+where the passage is now, in the book's current version, for the same path:
+
+| `status` | Meaning |
+|---|---|
+| `current` | the passage is in the current version |
+| `moved` | `moved_to` is the passage that replaces it; `match` is `exact` (the same text) or `overlap` (the new passage holds at least half of its word pairs) |
+| `stale` | no passage of the current version replaces it; the citation stays |
+
+Each passage citation of `query_notes`, `neighbours` and a note in `open_citation` has these keys, and so does a
+passage in `open_citation`. `neighbours` from a passage also finds the notes on the passages that it replaces, and
+from an old passage the notes on its successor. Such an edge keeps `dst` = the handle that you asked for and adds
+`original`: the handle that the note stores. A model reader gets the text of a note withheld when the skill of the
+successor passage is blocked (D71). The map is written when a version is published and when a note references an
+older passage. For a book published before migration 040, run `kutuphane reindex-map <book>` once
+([operations.md](operations.md#re-index-and-note-citations)).
+
 ## 6. Check code citations
 
 ```json

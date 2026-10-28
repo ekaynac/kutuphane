@@ -12,8 +12,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import (answers, audit, authz, catalog, coderepo, curatorqueue, datascan, db, decisions, devauth, gate,
-               gitorigin, identity, kstd, llmdap, noteimport, notes, packages, passkey, profiles, quotes, search,
-               retrieval, signing, skillscan, vectors)
+               gitorigin, identity, kstd, llmdap, noteimport, notes, packages, passagemap, passkey, profiles, quotes,
+               search, retrieval, signing, skillscan, vectors)
 from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, make_policy
 from .source import AcceptedFinding, read_source
 
@@ -59,6 +59,13 @@ def _warn_skills(scans: list[dict]) -> None:
             print(f"skill not scanned: {s['skill_path']}: {s['reason']}", file=sys.stderr)
 
 
+def _warn_stale(counts: dict) -> None:
+    """A cited or linked passage with no successor in the new version stays on record as `stale` (#140)."""
+    if counts.get("none"):
+        print(f"{counts['none']} cited or linked passages of earlier versions have no successor in this version: "
+              "notes show them as stale", file=sys.stderr)
+
+
 INDEX_INCOMPLETE = 3  # exit code: the version is published (live), but some of its passages have no vector yet
 
 
@@ -81,6 +88,7 @@ def _published_then_index(conn, published: catalog.Published, embedder: llmdap.R
     always printed; an index failure is reported with it, and the exit code is then INDEX_INCOMPLETE."""
     _warn_quarantined(published)
     _warn_skills(published.skill_scans)
+    _warn_stale(published.passage_map)
     report = {}
     if embedder:
         try:
@@ -117,6 +125,19 @@ def cmd_show(conn, args) -> int:
         print(f"no such book: {args.book}", file=sys.stderr)
         return 1
     _print(state)
+    return 0
+
+
+def cmd_reindex_map(conn, args) -> int:
+    """#140: map the cited and linked passages of earlier versions of a book to its current version (idempotent). For
+    books published before migration 040; a publication maps its book itself."""
+    with conn.transaction():
+        if not conn.execute("SELECT 1 FROM book WHERE slug = %s FOR UPDATE", (args.book,)).fetchone():
+            print(f"no such book: {args.book}", file=sys.stderr)
+            return 1
+        counts = passagemap.map_book(conn, args.book, write=not args.dry_run)
+    _print({**counts, "dry_run": args.dry_run})
+    _warn_stale(counts)
     return 0
 
 
@@ -654,6 +675,11 @@ def parser() -> argparse.ArgumentParser:
     show = sub.add_parser("show", help="current versions and files of a book")
     show.add_argument("book")
     show.set_defaults(fn=cmd_show)
+    rm = sub.add_parser("reindex-map", help="map the cited and linked passages of earlier versions of a book to its "
+                                            "current version, so notes follow a re-index (idempotent)")
+    rm.add_argument("book")
+    rm.add_argument("--dry-run", action="store_true", help="count the matches and write nothing")
+    rm.set_defaults(fn=cmd_reindex_map)
     for name, fn, text in (("grant", cmd_grant, "give a mode (or role membership) to a subject"),
                            ("revoke", cmd_revoke, "revoke a grant or membership")):
         g = sub.add_parser(name, help=text)

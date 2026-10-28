@@ -5,7 +5,9 @@ models: the context, the options offered, the choice, the actor, the outcome row
   `action = export_decisions` and `items = [{ref, standing_seq}]` (AT-09; the #79 report finds it).
 - A record holds the text, the options and the choice only when the note's `ai_input` and `train` (note AND journal
   now) are both true. Else it holds references and SHA-256 hashes only. The hashes are always present.
-- Passage citations and links into books that the reader may not read now are left out (as `query_notes`).
+- Passage citations and links into books that the reader may not read now are left out (as `query_notes`). Each
+  kept passage reference has its state now in `context.passages` {handle: {status[, moved_to, match]}} (#140: a
+  re-index moves it, or leaves it stale); the handles stay as written.
 - Both cuts use the FINAL decision of the gate (`guard_many(finish=…)`, Astra review #14): a read revoked, or a
   source journal restricted, while the records were built is applied before anything is handed out.
 - A record of a note that depends on a skill that a scan blocks (D71, SQL `note_skill_blocked`) is cut in the same
@@ -20,7 +22,7 @@ models: the context, the options offered, the choice, the actor, the outcome row
 import hashlib
 from datetime import datetime, timezone
 
-from . import authz, coderepo, gate, notes, notesquery
+from . import authz, coderepo, gate, notes, notesquery, passagemap
 from . import origin as origins
 from .gate import Actor
 
@@ -79,6 +81,12 @@ def _context_refs(conn, seqs: list[int], w: int) -> tuple[dict, dict]:
     return citations, links
 
 
+def _passage_states(conn, handles: set) -> dict:
+    """{handle: state now} of passage handles (#140: current, moved or stale)."""
+    keys = {(c.book, c.content_id, c.profile_id, c.path, c.ordinal) for c in map(notes.parse_passage, handles)}
+    return {passagemap.handle(k): s.out() for k, s in passagemap.resolve(conn, keys).items()}
+
+
 def _records(conn, actor: Actor, books: list[str]) -> tuple[list[dict], int, int]:
     w = notesquery.watermark(conn)
     found = conn.execute(_DECISIONS, (books, w)).fetchall()
@@ -130,17 +138,24 @@ def _finish(conn, final, data):
         "SELECT n.seq, n.search AND j.search, n.ai_input AND j.ai_input, n.train AND j.train "
         "FROM note n JOIN note_journal j ON j.seq = n.seq WHERE n.seq = ANY(%s)",
         ([r["_seq"] for r in records],))}
+    kept = []  # per record: the passage handles it keeps
     for r in records:
         seq = r.pop("_seq")
         search, ai_input, train = rights[seq]
-        r["context"]["citations"] = [ref for book, ref in r.pop("_citations") if book is None or f"book:{book}" in read]
+        cited = [(book, ref) for book, ref in r.pop("_citations") if book is None or f"book:{book}" in read]
+        r["context"]["citations"] = [ref for _book, ref in cited]
         r["context"]["links"] = [link for book, link in r.pop("_links") if f"book:{book}" in read]
+        kept.append([ref for book, ref in cited if book is not None]
+                    + [link["ref"] for link in r["context"]["links"] if not notesquery.is_note_ref(link["ref"])])
         r["ai_use"] = {"search": _yn(search), "ai_input": _yn(ai_input), "train": _yn(train)}
         if not (ai_input and train):
             r["context"]["text"], r["options"], r["choice"], r["withheld"] = None, None, None, WITHHELD
         elif seq in final.blocked_notes:
             r["context"]["text"], r["options"], r["choice"] = None, None, None
             r["withheld"] = gate.SKILL_WITHHELD
+    states = _passage_states(conn, {h for hs in kept for h in hs})
+    for r, hs in zip(records, kept):
+        r["context"]["passages"] = {h: states[h] for h in hs}
     return records, w, restricted
 
 

@@ -56,6 +56,13 @@ function source(path, extra) {
   return d;
 }
 
+// #140: a passage of an earlier version: where it is now (the excerpt stays the cited text)
+function passageState(c) {
+  if (c.status === "moved") return `re-indexed: ${c.match === "exact" ? "the same text" : "most of the text"} is now passage ${c.moved_to.split("#").pop()} of the current version`;
+  if (c.status === "stale") return "not in the current version";
+  return null;
+}
+
 function evidence(item) {
   if (!item.citations.length) return null;
   const s = section("evidence", "Evidence");
@@ -63,7 +70,7 @@ function evidence(item) {
     const row = el("div", "cite");
     if (c.hidden) { row.append(el("div", "muted", "A passage in a book you cannot read")); s.append(row); continue; }
     if (c.kind === "code") { row.append(source(c.path, `code in ${c.ref.split("@")[0]}, ${codeLines(c.ref)}`)); s.append(row); continue; }
-    row.append(source(c.path));
+    row.append(source(c.path, passageState(c)));
     const excerpt = noteText(c.excerpt === null ? "(the passage has no text)" : c.excerpt, "excerpt");
     const open = button("Show passage", "chip", () => openPassage(item, c.ref, excerpt, open));
     row.append(excerpt, open);
@@ -108,7 +115,7 @@ function target(l) {
   const box = el("div", "target");
   if (l.hidden) { box.append(el("div", "muted", l.hidden.replace(/^a /, "A "))); return box; }
   if (!l.kind) {  // a passage
-    box.append(source(l.path), noteText(l.text === null ? "(the passage has no text)" : l.text, "quote"));
+    box.append(source(l.path, passageState(l)), noteText(l.text === null ? "(the passage has no text)" : l.text, "quote"));
     return box;
   }
   box.append(noteText(l.text), el("div", "muted", `${kindName(l.kind)} · ${STANDING_WORDS[l.standing] || l.standing}`));

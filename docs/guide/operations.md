@@ -312,6 +312,31 @@ kutuphane kstd-check <folder>
 A book that an older reader published keeps its old index. Ingest the book again to get the new reader (a new profile id).
 Migration 011 marks the stored passages that the wider K3 rule makes instructions. These passages need `activate` at once.
 
+### Re-index and note citations
+
+A new profile or a new content version gives each passage a new handle. Notes cite passages and link to them
+(`about`, `derived_from`) by the handle, so the publication maps each cited or linked passage of an earlier version to
+the passage of the same path in the new version (#140):
+
+1. `exact`: the passage with the same text.
+2. `overlap`: else the passage that holds the largest share of its word pairs, at least half.
+3. `none`: else no successor. The notes show the citation as `stale` and keep it.
+
+The `ingest` and `approve-import` result has the counts in `passage_map` (`passages`, `added`, `exact`, `overlap`,
+`none`), and the command writes one line to stderr when a passage has no successor. The notes keep their handles;
+`query_notes`, `neighbours`, `open_citation`, the curator queue and the decision export add `status` (`current`,
+`moved`, `stale`) and, for `moved`, `moved_to` and `match` ([agent-memory.md](agent-memory.md#5-follow-links)).
+A note written later on an older passage gets its map row in the same write.
+
+For a book published before migration 040, map it once (idempotent; a stored row stays):
+
+```sh
+kutuphane reindex-map <book> [--dry-run]
+```
+
+The output has the same counts and `dry_run`; `--dry-run` counts and writes nothing (`added` is then what a run would
+add). The map is append-only for the app role: apply `deploy/db-roles.sql` again after `migrate`.
+
 ## 3. Indexing
 
 Hybrid search is optional. Set `KUTUPHANE_LLMDAP_EMBED_ROUTE`, `KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS` and `KUTUPHANE_EMBED_MODEL`.
@@ -588,9 +613,11 @@ KUTUPHANE_CURATOR_DSN=… kutuphane curator queue --curator user:ayse [--book ad
 - **Each note** shows every part that its id covers: the text, the scope, the class key, the commit, the decision
   options and choice, the citations, and the links with the target text. It also shows "why here", the writers, the
   origin, the outcome counts, and per group the recurrence and "proposed again after rejection". A readable passage
-  citation has its `path` and an `excerpt` (the first 240 characters, Markdown heading marks removed; the full text is in
-  `/api/note`); a passage link has its `path` and the full `text`. A citation or a link into a book that the curator
-  cannot read shows only "a passage (note) in a book you cannot read", with no path.
+  citation has its `path`, an `excerpt` (the first 240 characters, Markdown heading marks removed; the full text is in
+  `/api/note`) and its `status` after a re-index (`current`, `moved` with `moved_to` and `match`, or `stale`; the card
+  says "re-indexed" or "not in the current version"); a passage link has its `path`, the full `text` and the same
+  `status`. A citation or a link into a book that the curator cannot read shows only "a passage (note) in a book you
+  cannot read", with no path.
   `hidden_parts` counts these parts in the note's own citations and creation links: such a note cannot be approved
   on the phone (the curator can reject it, or get `read` on that book).
 - **No model suggestion** is in the queue, and the queue order does not use one (D67). A note that a delegation
@@ -818,6 +845,7 @@ kutuphane decisions export <principal> --out decisions.jsonl [--book <journal>] 
 - `--out` must be a new file. The command creates it with mode 600.
 - Without `--book`, the export includes every journal that the principal can read.
 - The text, options and choice are present only when the note allows `ai_input` and `train` (`journal create --train y`) and the note does not depend on a skill that a scan blocks. Otherwise the record has only references and hashes, and `withheld` gives the reason.
+- `context.passages` gives each kept passage handle (citations and links) its state now: `{"status": "current"}`, `{"status": "moved", "moved_to": …, "match": "exact"|"overlap"}` or `{"status": "stale"}` (#140). The handles in `citations` and `links` stay as written.
 - A note with a `restricted` book in its sources is not in the export. The summary counts these notes in `restricted`.
 - A note derived from a file with `license: unknown` is not in the export (#143). "Derived" means: the note cites a
   passage of that file, has a `derived_from` link to it, or has a `derived_from` link to a note that is derived from
@@ -982,6 +1010,7 @@ Disk encryption is a deployment duty at the volume level (D48). The application 
 | `ingest` | Publish a folder or a single file as a book version. |
 | `index` | Give a book's current chunks a vector: copy unchanged ones, embed the rest. |
 | `show` | Show the current versions and files of a book. |
+| `reindex-map` | Map the cited and linked passages of earlier versions of a book to its current version (idempotent; `--dry-run`). |
 | `grant` | Give a mode, or a role membership, to a subject. |
 | `revoke` | Revoke a grant or membership. |
 | `delegate` | Give a time-boxed user-to-agent delegation (one level). |

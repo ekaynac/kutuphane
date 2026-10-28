@@ -27,7 +27,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from . import authz, canonical, db, gate, ids, kstd, llmdap, origin as origins, profiles, search, secretscan, vectors
+from . import authz, canonical, db, gate, ids, kstd, llmdap, origin as origins, passagemap, profiles, search, secretscan
+from . import vectors
 from .gate import Actor, NotFound
 from .policy import check_policy
 
@@ -616,6 +617,7 @@ def _insert_parts(conn, draft: Draft, seq: int, write_seq: int, found: dict, exc
         conn.execute("INSERT INTO note_citation (note_seq, book, n, kind, cite_book, content_id, profile_id, ordinal, "
                      "path) VALUES (%s, %s, %s, 'passage', %s, %s, %s, %s, %s)",
                      (seq, draft.book, n, c.book, c.content_id, c.profile_id, c.ordinal, c.path))
+    passagemap.ensure(conn, [(c.book, c.content_id, c.profile_id, c.path, c.ordinal) for _, c in draft.passages])
     for n, c in draft.codes:
         conn.execute("INSERT INTO note_citation (note_seq, book, n, kind, path, repo, commit, line_start, line_end, "
                      "symbol, excerpt_sha256) VALUES (%s, %s, %s, 'code', %s, %s, %s, %s, %s, %s, %s)",
@@ -642,6 +644,7 @@ def _insert_link(conn, src: int, src_book: str, kind: str, target, found: dict, 
     else:
         c = target[1]
         dst = (None, None, c.book, c.content_id, c.profile_id, c.path, c.ordinal)
+        passagemap.ensure(conn, [dst[2:]])  # #140: an old passage gets its successor in the current version
     return conn.execute("INSERT INTO note_link (src, src_book, type, dst_note, dst_note_book, dst_book, "
                         "dst_content_id, dst_profile_id, dst_path, dst_ordinal, creation, write_seq) "
                         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING seq",
