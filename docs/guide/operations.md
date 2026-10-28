@@ -335,7 +335,7 @@ kutuphane read <principal> <book> <content_id> <path>
 ```
 
 - The principal is `user:<name>` or `agent:<name>`. For an agent that acts for a person, give `--on-behalf-of user:<name>`.
-- `search` returns `citation`, `page`, `line`, `score`, `text` and `item` (the kstd rights). `-k` is 8 by default, from 1 to 50.
+- `search` returns `citation`, `page`, `line`, `score`, `text`, `item` (the kstd rights) and `quoted_records` (the JSONL records that the passage repeats, [concepts.md](concepts.md#records-that-a-passage-repeats)). `-k` is 8 by default, from 1 to 50.
 - `ask` needs the LLMDAP variables. It prints the answer and its `correlation_id`.
 - `reopen` shows a stored answer and its evidence again. It does not call a model.
 - `read` writes the file bytes to stdout through the authorization gate.

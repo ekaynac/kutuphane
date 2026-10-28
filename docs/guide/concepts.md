@@ -237,6 +237,25 @@ whole skill, or a failed scan blocks the skill for agents, also with `activate`.
 and its evidence are stored. `reopen_answer` shows them again with no model call, under current rights. A long
 answer can run as a background **job** (`background: true`). See `mcp.md`.
 
+### Records that a passage repeats
+
+A report often repeats text from data records: for example a weekly brief that copies the summary of a news record.
+Kütüphane links the copy to the record, so that the answer can cite the record and not only the copy.
+
+- **A record** is one passage of a JSONL file (one line). Each string value of a record with 40 characters or more
+  (after white space is folded to one space) is stored as a sha256 at publication.
+- **A passage repeats a record** when one of its JSON string values, one of its lines, or one of its lines without
+  a markdown list, quote or heading mark has the same folded text. A value inside a longer line is not found. A
+  record never counts as a copy, and similar text (vectors) never counts.
+- **The record is the source.** Publication time does not decide, because a book that a program publishes again
+  every few hours would become newer than its own copies.
+- **Search** gives each passage `quoted_records`: the handles of the records that it repeats, from books that you
+  may read now and that pass the search filters. The copy stays in the results with its rank, because it usually
+  holds other text too.
+- **Ask** puts each such record into the evidence right before its first copy (at most 4 records; only when their
+  rights allow AI input). The copy is marked `repeats [n]` for the model, and the model is told to cite record
+  `[n]` for that text. Each citation and evidence entry has `quoted_records`: the repeated records in the evidence.
+
 ## Audit
 
 Every gate decision, allowed or refused, is an `access_event` row with the policy, the grants and the delegation

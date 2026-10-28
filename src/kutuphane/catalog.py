@@ -110,7 +110,7 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
             conn.execute("INSERT INTO blob (sha256, data) VALUES (%s, %s) ON CONFLICT DO NOTHING", (f.sha256, f.data))
         conn.execute("INSERT INTO content_version (book, id, manifest) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
                      (book, content_id, Jsonb(manifest_of(files))))
-        from . import skills  # here: skills imports gate, which imports this module
+        from . import quotes, skills  # here: both import gate (via search), which imports this module
         skills.store(conn, book, content_id, files)  # the validated SKILL.md frontmatter (review #18)
         carried = skillscan.store(conn, book, content_id, scans, files)
         conn.execute("INSERT INTO policy_version (id, doc) VALUES (%s, %s) ON CONFLICT DO NOTHING",
@@ -127,6 +127,9 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
                     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, to_tsvector(%s::regconfig, %s))",
                     [(book, content_id, profile_id, c.path, c.ordinal, c.page, c.line, c.start, c.end, c.text,
                       c.instruction, fts, c.text) for c in chunks])
+                cur.executemany(  # G23: the values a passage of another file can repeat (quotes.py)
+                    "INSERT INTO record_value (book, content_id, profile_id, path, ordinal, sha256) "
+                    "VALUES (%s, %s, %s, %s, %s, %s)", quotes.rows(book, content_id, profile_id, chunks))
                 cur.executemany(
                     "INSERT INTO quarantine (book, content_id, profile_id, path, reason) VALUES (%s, %s, %s, %s, %s) "
                     "ON CONFLICT DO NOTHING", [(book, content_id, profile_id, q["path"], q["reason"])

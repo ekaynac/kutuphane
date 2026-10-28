@@ -40,7 +40,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from . import (answers, catalog, coderepo, confirm, db, feedback, gate, handling, identity, ids, jobs, kstd, llmdap,
-               notes, notesquery, outcomes, retrieval, search, skills, snippets)
+               notes, notesquery, outcomes, quotes, retrieval, search, skills, snippets)
 from .gate import Actor
 from .ids import normalize_path
 
@@ -119,8 +119,10 @@ def op_search(dsn, stages, actor: Actor, query: str, k: int, model_reader: bool 
             shown = [t for t in texts if t["text"] is not None]
             for t, (text, truncated) in zip(shown, snippets.cut(conn, query, [t["text"] for t in shown], max_chars)):
                 t.update(text=text, truncated=truncated)
+        found = quotes.quoted(conn, actor, hits, scope)  # G23: the records each passage repeats
         out = [{"citation": h.citation.handle, "page": h.page, "line": h.line, "score": round(h.score, 4), **t,
-                "item": item} for h, item, t in zip(hits, items, texts)]
+                "item": item, "quoted_records": quotes.handles(found, h.citation)}
+               for h, item, t in zip(hits, items, texts)]
         if labels_out is not None:
             cited = [h.citation for h in hits]
             labels_out.update(handling.labels(conn, [c.book for c in cited],

@@ -330,6 +330,7 @@ Without `max_chars`, the result is as before: the full text and no `truncated` k
 | `text` | The passage text (with `max_chars`: the snippet), or `null` with `withheld` (section 4.2). |
 | `truncated` | Only with `max_chars`: `true` when `text` is a cut of the passage. Not set for a withheld passage. |
 | `item` | The kstd item information of the file, or `null` when the version has no `kstd.yaml`. |
+| `quoted_records` | The handles of the JSONL records whose text this passage repeats (G23), from books that you may read now and that pass the filters; usually `[]`. Rules: [concepts.md](concepts.md#records-that-a-passage-repeats). |
 
 The result `_meta` has the handling labels of the hits (section 4.4).
 
@@ -423,7 +424,7 @@ The server decides the rights again after the model call.
 | `id` | The answer id. Use it with `reopen_answer`. |
 | `status` | `answered` or `not_in_library`. |
 | `body` | The answer text, or `null`. |
-| `citations` | A list of `{n, book, content_id, profile_id, path, ordinal, item}` for each cited passage. |
+| `citations` | A list of `{n, book, content_id, profile_id, path, ordinal, quoted_records, item}` for each cited passage. When a passage repeats the text of a record (G23), the record is in the evidence right before the passage (at most 4 records are added), and `quoted_records` gives their handles; else `[]`. |
 | `withheld` | The number of passages found but not sent to the model (kstd rights). |
 
 **Result (`background: true`):** `{"job_id": "jb_…", "status": "queued"}` at once. A retry with the same
@@ -455,7 +456,8 @@ agent, `activate` for instruction passages). An agent is refused when a source i
 
 ```json
 {"id": "5e1c…", "question": "…", "status": "answered", "body": "… [1]",
- "evidence": [{"n": 1, "citation": "runbooks@ct_…/pf_…/backup.md#3", "text": "…", "item": null}]}
+ "evidence": [{"n": 1, "citation": "runbooks@ct_…/pf_…/backup.md#3", "text": "…", "item": null,
+               "quoted_records": []}]}
 ```
 
 An evidence entry can have `"text": null` with `withheld` (section 4.2).

@@ -181,16 +181,16 @@ is still the limit.
 | G13 | **The host CLI needs settings that only `compose.yaml` sets** (`*_ROUTE_CLASS`, default `local`). | The first ingest failed. | small |
 | G14 | **No evidence filter in `ask` and `search`** (book, path, origin). **Closed (`fix/answers-quality`):** `book` (one or more), `path` prefix, `origin` (kstd values) and `current_only` on the CLI, the HTTP API and MCP `search_library`/`ask_library`. The filters are in the pre-filter of the ranking statement, so they act before ranking and `k`. A book filter is an intersection with the readable books; tests show that a filter never shows an unreadable book. Question 3 with `--book radar-news --path data/news-classified.jsonl` cites 8 classified records only (§4, 3s). | Question 3 could not limit the evidence to classified news records. | medium |
 | G15 | **Citations in `ask` have no `line` and no record id.** `search` gives the line; `ask` gives `path` and `ordinal` only. HTML passages have no line. | A reader cannot open news record 109 from the answer; the citation must be resolved in the database. | small |
-| G16 | **Origin is per file, not per record.** One `kstd.yaml` item covers 2,533 records. Their `model` and `classified_at` fields are not shown or checked. A file with records from different models, or with some reviewed records, cannot be described. | Correct here only because one model wrote all records. | medium (G2 follow-up) |
+| G16 | **Origin is per file, not per record.** One `kstd.yaml` item covers 2,533 records. Their `model` and `classified_at` fields are not shown or checked. A file with records from different models, or with some reviewed records, cannot be described. **Decided, not built (`feat/record-origin`, §7.2):** the smallest profile (a record field that can only make the origin stricter or more specific) changes no decision and no shown origin on the pilot data (one `model` value in 2,533 records, no review field), a per-file `model` is already safe for a mixed file, and a record field can never express "reviewed" (R1). Reopen with a file that mixes producers, or with suspension per generator version. | Correct here only because one model wrote all records. | medium (G2 follow-up) |
 | G17 | **Any change re-embeds the whole book.** Vectors are keyed by `content_id`; the radar bots append records every 2 hours. [INFERENCE from the key: one appended record re-embeds all 7,560 news passages, about 37 min on CPU.] **Closed (`fix/indexing`):** a vector records the sha256 of its embedded text (migration 014, existing vectors filled in); a new version copies the vector of each passage with the same embedded text, model and width in the same book and profile. Scratch database, `radar-briefs` with one brief changed (1 of 24 files, 2 of 45 passages): the old code embeds 45 passages; the new code made 2 embedding calls for the 2 changed passages and copied 43 vectors (51 s). | No incremental update for bot-written data. | medium (with G9) |
 | G18 | **Indexing is slow on CPU and blocks queries.** About 1 passage/s. During indexing, query embedding failed with HTTP 504 and `ask` fell back to full text (question 2, first try). **Partly closed (`fix/indexing`):** `KUTUPHANE_INDEX_BATCH`, `_BATCH_CHARS` and `_CONCURRENCY` (or `index` options) set the load; the defaults are 8 passages, 8,000 characters, 1 call in flight (before: 32 passages, 24,000 characters, 1 call). README tells how to publish first and index later with smaller calls. Scratch database, all 45 brief passages, one query embedding every 3 s during indexing (idle: 0.2 s): old batching 268 s, query median 52 s, max 85 s; new defaults 234 s, query median 2.5 s, max 75 s (one outlier; [INFERENCE] other calls on the shared embedder, which reranks under the same lock). Open: the embedder has no priority for query calls; a query still waits for the call in front of it. | A 10,000-passage pilot needs about 1.5 h; questions during that time are worse. | medium (queue or priority for query calls) |
 | G19 | **A Turkish passage falls below the rerank cut for an English question.** Re-run of question 2 with the embedding route working (every `emb` call without error; no full-text fallback). English: full text has no passage of the rescue report or `docs/pulse.md` in its top 30; the hybrid list has the report at rank 7; the reranker moves it to rank 10 (score 0.005), outside the 8 passages that the answer model gets, so the answer is "not in library". Turkish ("Halkalar neden Pulse ile değiştirildi?"): the reranker puts the same passage first (score 0.52), and the answer is correct and cites the report. One question pair only: the language effect is shown for this pair, not measured. **Partly closed (`fix/answers-quality`):** measured on the 7 pilot questions with traces: question 2 in English has 6 Turkish passages in its hybrid top 30, with rerank scores 0.0002–0.005; with the Turkish question, the reranker gives the same report passage 0.52. In question 4 (English) Turkish passages score up to 0.31, so the effect depends on the question. Now, when the pool has Turkish and English passages, the answer model translates the question (2.4–5.1 s; only the question is sent), a second hybrid search runs with the translation, and each passage is reranked against the question in its own language. Without a translation, up to 2 other-language passages from the hybrid top 8 keep a place. Question 2 in English now gets the evidence of the Turkish question (report §41 first, KN-4 §7 third). The answer model still writes "not in library": its raw text names the deletion (§41) and the ring flapping (§7), but says that no passage connects them to the decision. Open: the answer step, not retrieval. **Re-check 2026-10-27 (§4.2, `fix/retrieval-regression`):** the translation was sampled and was not the literal one in 5 of 8 samples; it now uses greedy decoding, and question 2en has KN-4 in its evidence in 3 of 3 runs (before: 1 of 3). Open: the diagnosis passage does not reach the reranker (merge cut), and the answer step. | False "not in library" for a question in the other language. | medium (measure on a bilingual question set) |
 | G20 | **Answer language does not follow the question.** The system prompt is Turkish; all answers are Turkish. **Closed (`fix/answers-quality`):** the question language (Turkish/English from function words and Turkish letters) selects the system prompt and the labels; another language gets the English prompt and "answer in the language of the question". v2: the English questions 1, 3, 4, 5 get English answers; questions 2 (tr) and 6 get Turkish answers. | English users get Turkish answers. | small |
 | G21 | **A grouped reference is not read.** The stored answer to question 6 ends with `[2,3,5,6]`. `answers.CITE` reads only `[n]`, so 2, 3 and 5 are neither checked nor listed; the listed citations keep their own numbers (`n` 4, 6, 7, 8). An answer that cites only in grouped form becomes "not in library". (The first version of this row also said that a cited passage contradicted its sentence; the stored answer does not show that: passage 6 says `llama-3.1-8b` avoid → pilot.) **Closed (`fix/answers-quality`):** `[2,3,5]`, `[2, 3]` and `[2-4]` (also with an en dash) are read; every number is checked; an unknown number or a reversed range refuses the answer as before. | Part of the evidence is not shown and not checked. | small (read `[a,b]`, or ask for one number per bracket) |
 | G22 | **Recency is not understood.** "Recent weeks" did not rank the newest brief first (question 6). **Closed (`fix/answers-quality`):** a question with "recent", "latest", "son", "en yeni" and similar words ranks the top 2k passages by relevance rank + date rank. The date is the kstd `valid_from`, else the first date or ISO week in the path, else the first date in the text (a record date). v2 question 6: brief W40 is passage 1 and the answer names `hf-qwen3-8-27b-nvfp4` (W40) and `hf-minicpm5-2b` (W39). | Old evidence wins. | medium (dates as a filter or ranking signal) |
-| G23 | **Republished model text is not linked to its source.** Brief summaries are copies of `news-classified` summaries; `news-observations` repeats the titles. | Duplicate hits; question 3 cited the copy, not the record (with G11). | medium |
+| G23 | **Republished model text is not linked to its source.** Brief summaries are copies of `news-classified` summaries; `news-observations` repeats the titles. **Closed (`feat/record-origin`, §7.4):** no brief passage is a whole copy of a news passage (0 exact, 0 normalized); the copies are whole field values inside longer passages. A passage that repeats a whole string value (40 characters or more, white space folded) of a JSONL record now points to the record (`quoted_records` in search and ask), and `ask` puts the record into the evidence right before the copy. Pilot data: 7 of 45 brief passages point to 29 records; the passage of brief W35 that question 3 cited points to the advisory record. Copies are not collapsed (they hold other text). | Duplicate hits; question 3 cited the copy, not the record (with G11). | medium |
 | G24 | **The `tool` boundary is not clear for third-party text and batch statistics.** Digests copy GitHub repository names and news titles (origin of the third party unknown), and ring calibration uses quartiles of the current batch. | `tool` is a judgement here; the input rule could make every digest `model`. | decision (D64 follow-up) |
-| G25 | **`software_agent.version` is not known per file.** The briefs and digests were made by many commits of the radar; the pilot used the package version 0.1.0. | One generator version cannot be suspended exactly. | small (the generator must record it) |
+| G25 | **`software_agent.version` is not known per file.** The briefs and digests were made by many commits of the radar; the pilot used the package version 0.1.0. **Decided: no Kütüphane change (`feat/record-origin`, §7.3).** kstd already takes an exact `software_agent.version` per file; the files do not record one (the `version` field of the 8 briefs is one schema value; the digests have none), and no Kütüphane behavior suspends by version yet. The generator must write its version (for example its commit) into each output. | One generator version cannot be suspended exactly. | small (the generator must record it) |
 | G26 | **Each answer takes 48–112 s** (CPU embedding, CPU rerank, 27B answer model). `search` alone took 45 s. **Mostly closed (`fix/answers-quality`):** profile per stage in §4.1. The reranker (CPU) and the answer model (shared GPU, 2–6 tokens/s during the operator's labelling) take nearly all of the time; query embedding (0.2–1 s when the embedder is free) and hybrid search (0.1–2 s) are small. Changes: the reranker reads the first 1,200 characters of a passage (36–58 % fewer characters; the top 8 kept the evidence passages on 7 questions); query vectors are cached per process; each passage goes to the answer model by its first 2,400 characters, and the answer is asked to be short (about 150 words). Questions 1–8: mean 134 s → 63 s. Open: the reranker still takes 17–42 s on CPU. | Usable for a pilot, slow for daily use. | measure first |
 
 ## 6. Recommendations
@@ -199,7 +199,102 @@ is still the limit.
 2. Add an evidence filter (G14) and read grouped citations (G21) before the next pilot. Without the filter,
    answers about one source type cannot be trusted.
 3. Use per-record provenance for JSONL (G16): read `model` and similar fields into the item information.
+   (Decided on 2026-10-28, §7.2: not now; the pilot data gives it no behavior.)
 4. Make embedding incremental and give query calls priority over indexing (G17, G18).
 5. Test a multilingual question set with working embeddings and keep the retrieval traces; then consider query
    translation, a bilingual query or a larger rerank cut for Turkish/English books (G19).
 6. Decide G24 in the D64 follow-up: whether verbatim third-party text and batch statistics keep an output `tool`.
+
+## 7. Record origin and republished text (G16, G23, G25)
+
+Analysis of 2026-10-28, branch `feat/record-origin`. Language: ASD-STE100 Simplified Technical English. The numbers
+come from read-only queries on the pilot database (current versions only; aggregates only, no passage text).
+
+### 7.1 What the data shows
+
+| Measure | Value |
+|---|---|
+| `news-classified.jsonl` records / distinct `model` values / records with a field that names a reviewer | 2,533 / 1 / 0 |
+| `news-observations.jsonl` records with a field that names a producer or a version | 0 of 5,027 |
+| Briefs with a generator version | 0 of 8 (their `version` field has one schema value in all 8); digests: 0 of 16 |
+| Code that reads `software_agent.version` | the package export (`tool_made`) and the item information only; no suspension by version exists |
+| Current passages, all books / whole-passage duplicate groups (exact) / of them across books / more with case and white-space folding | 10,514 / 9 (9 extra copies, all inside one book) / 0 / 0 |
+| `radar-briefs` passages that are a whole copy of a `radar-news` passage: exact / normalized | 0 / 0 of 45 |
+| `radar-briefs` passages that hold a whole record value (the §7.4 rule) | 7 of 45 (6 of 24 files) |
+| Records that they repeat | 29 (15 classified, 14 observations); at most 7 per passage |
+| Pointers from the briefs labelled `tool` (W33, W39) and from the digests | 0 |
+| Question 3: the cited passage of brief W35 | repeats exactly 2 records: the advisory record that question 3s cites, and its observation record |
+
+### 7.2 G16: per-record origin — not built
+
+**The smallest mechanism.** An operation profile, not a core field (D74): the kstd item of a JSONL file names the
+record fields, for example `record_origin: {field: model, version_field: generator_version, allowed: [...]}`. Each
+record value is checked against the allow-list. Rule R1: a record field can only make the origin stricter (`tool` →
+`model`) or more specific inside `model` or `tool` (a model name, a generator version). It can never give `human`
+or `assisted`.
+
+**What it would change:** the shown origin per passage; the origin filter per passage (today it is a file list in
+the search pre-filter); the export marking stays per file and takes the strictest record; suspension per version
+(G25), if it existed.
+
+**Why it is not worth it now (D53, D74):**
+1. On the pilot data it changes nothing. One model wrote all 2,533 records, and the per-file `model` is exact. The
+   observations have no producer field.
+2. A mixed file is already safe. docs/17 §5 makes mixed content `model`. Per-record origin only adds precision to
+   the filter and the shown value, for a case that no pilot has shown.
+3. It cannot close the second case of G16. "Some records are reviewed" means `assisted`, and R1 forbids a record
+   field to raise the origin. A review needs a person's statement: a separate file with its own item, or notes with
+   an origin confirmation (docs/25 §7).
+4. A model name per record is a new field with no behavior: kstd has no model identity in the origin details, and
+   no rule reads one.
+5. Cost: a per-passage origin in the ranking pre-filter, a strictest-record rule in the export, a new manifest key
+   with its validation, and the documentation.
+
+**Reopen when** a book has a file whose records come from different producers (the `needs_split` rate of the
+labelling data is the measure), or when suspension per generator version exists (§7.3). Then build the profile
+above, with R1.
+
+### 7.3 G25: generator version — no Kütüphane change
+
+kstd already takes `software_agent: {name, version}` per item, as an exact string. The radar outputs do not record
+the version that made them (§7.1). A `version_field` would read the schema version, which is the same for every
+brief. No Kütüphane behavior suspends by version, so a per-record version would also change nothing. The fix is at
+the generator: it writes its version (for example its commit) into each output, and `kstd-init` can then propose
+it.
+
+### 7.4 G23: records that a passage repeats — built
+
+**The proposal was a `same_as` between whole passages** (by `input_sha256`, plus a normalized hash), with the copies
+collapsed. The data refutes it: no brief passage is a whole copy of a news passage, and across books there is no
+whole-passage duplicate at all. The copies are **whole field values inside longer passages**: the same brief
+passage also holds ring moves and other text. A collapse would remove that text from the evidence. (A normalized
+match is also only a candidate, never an automatic identity, docs/24 §7.) So there is no `same_as` and no collapse.
+The 9 exact duplicates inside one book (0.09 % of the passages) do not justify a collapse either.
+
+**What "source" means (the minimal rule):** the JSONL record. A record is one line and one passage, with an id and
+a line (G15). A longer text that repeats one of its whole field values was assembled from it; a record field is not
+cut out of a brief. The older publication is not the rule: the content version of a book changes at each
+publication, and the radar bots publish the news every 2 hours (G17), so the news would become newer than the
+briefs that copy it. A record never counts as a copy, so two records with the same value are not linked.
+
+**Identity is text, never a vector:** the sha256 of a string value of a record, at any depth, after white space
+(`[ \t\n\r\f\v]+`) is folded to one space; only values of 40 characters or more (shorter values are labels such as
+`event_type`). A passage repeats the value when the same digest comes from one of its units: a JSON string literal,
+a line, or a line without its markdown list, quote or heading mark. The values are stored at publication
+(`record_value`, migration 037; the migration fills the versions published before it, with the same folding). The
+lookup runs at read time against the current version of each book, so a new publication never leaves a stale link.
+
+**Behavior:**
+- `search` (CLI, HTTP, MCP): each hit has `quoted_records`, the handles of the records it repeats. Only records in
+  books that the caller may read now and that pass the same filters (book, path, origin, validity); never an
+  instruction passage. The order of the hits does not change: the copy usually has other text.
+- `ask`: each record is put into the evidence right before its first copy (at most 4; only with AI input in its
+  rights). The copy is marked `repeats [n]` in the prompt, with one note that tells the model to cite record `[n]`
+  for that text. A citation has `quoted_records` (the records in the evidence), also when the answer is opened
+  again. The record's book is a source book of the answer, so the final gate decides it with the others.
+
+**Limits:** a value inside a longer line, a paraphrase, and a translation are not found. Record-to-record copies
+are not linked (none in the pilot: no classified summary equals an observation summary).
+
+**Effect on question 3 [INFERENCE]:** the cited W35 passage brings the advisory record into the evidence before it,
+so the answer can cite the record. The answer was not run again: this work does not write to the pilot database.
