@@ -985,9 +985,10 @@ def register_mcp(mcp, deps) -> None:
                           unfixed: bool = False, collapse: bool = False, include_unverified: bool = False,
                           order: str = "newest", budget_tokens: int = 2000, max_bytes: int = 32768,
                           as_of: int | None = None, cursor: str | None = None) -> CallToolResult:
-        """List agent notes in the journals you may read: fast SQL filters, no model call. `sets`: current
-        (approved, in your context), open (pending, not accepted), history. Context: repo, branch, path, commit.
-        Use `since` with the last watermark to get changes and `left` tombstones; `cursor` for the next page."""
+        """List agent notes in the journals you may read (needs read on each journal): fast SQL filters, no model
+        call. `sets`: current (approved, in your context), open (pending, not accepted), history. Context: repo,
+        branch, path, commit. Use `since` with the last watermark to get changes and `left` tombstones; `cursor` for
+        the next page."""
         args, labels = {k: v for k, v in locals().items() if k in _PARAMS[_QUERY]}, {}  # the tool arguments
         return deps.handled(await run_in_threadpool(lambda: run(_QUERY, labels, **args)), labels)
 
@@ -998,8 +999,8 @@ def register_mcp(mcp, deps) -> None:
                          branch: str | None = None, path: str | None = None, commit: str | None = None,
                          max_nodes: int = 50, budget_tokens: int = 2000, max_bytes: int = 32768,
                          as_of: int | None = None) -> dict:
-        """The notes linked to a note reference or a passage handle (depth 1 or 2), only those you may read and
-        that are in `sets` in your context."""
+        """The notes linked to a note reference or a passage handle (depth 1 or 2), only those you may read (needs
+        read on their journals) and that are in `sets` in your context."""
         args = {k: v for k, v in locals().items() if k in _PARAMS[_NEIGHBOURS]}
         return await run_in_threadpool(lambda: run(_NEIGHBOURS, **args))
 

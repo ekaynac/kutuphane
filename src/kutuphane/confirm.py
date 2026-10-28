@@ -185,9 +185,10 @@ def register_mcp(mcp, deps) -> None:
     @mcp.tool()
     @deps.mcp_errors
     async def confirm_origin(ref: str, ctx: Context) -> dict | InputRequiredResult:
-        """Ask the person to confirm whose words a note holds (D70 R3). Only the person can confirm, in curator
-        web with a passkey; this tool never confirms. Returns {ref, origin, confirmation: {state: open, confirmed,
-        expired or none, url?, expires_at?, claim?, entered_by?, confirmed_by?}}. Show the url to the person."""
+        """Ask the person to confirm whose words a note holds (D70 R3; needs read on the note's book). Only the
+        person can confirm, in curator web with a passkey; this tool never confirms. Returns {ref, origin,
+        confirmation: {state: open, confirmed, expired or none, url?, expires_at?, claim?, entered_by?,
+        confirmed_by?}}. Show the url to the person."""
         out = await run_in_threadpool(op_confirmation, deps.dsn, deps.mcp_actor(), ref)
         if ctx.request_state is None and out["confirmation"]["state"] == "open" and out["confirmation"].get("url") \
                 and _url_mode(ctx):

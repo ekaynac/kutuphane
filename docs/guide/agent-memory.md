@@ -119,6 +119,22 @@ gives the error `journal: use query_notes …`.
 
 HTTP: `GET /v1/notes?book=adc-memory&repo=adc&branch=main&kind=finding` (list parameters repeat).
 
+**The documents (passages) in an agent loop.** Each tool result stays in the agent's context for all later turns.
+A full `search_library` result is large (8 passages of up to 4,800 characters each). In a loop, search with
+`max_chars` and open only the passages that you need:
+
+```json
+{"name": "search_library", "arguments": {"query": "retry backoff for failed jobs", "max_chars": 300}}
+```
+
+- Each `text` is a snippet of at most 300 characters around the words that match the query, with
+  `truncated: true` when it is cut. The ranking and the gates are the same as without `max_chars`.
+- The same request gives the same bytes, so the result can stay in a prompt cache.
+- Call `open_citation` with the `citation` of a hit to get its full passage.
+- On the user guide of this repository as a book, `max_chars: 300` made the median result of 8 queries 65%
+  smaller: 12,959 to 4,578 characters for 8 hits ([#121](https://github.com/ekaynac/kutuphane/issues/121)).
+  The rules are in [mcp.md](mcp.md#51-search_library).
+
 ## 5. Follow links
 
 ```json
@@ -266,4 +282,7 @@ For a project with customer-confidential material, ask the operator for a privat
 - Keep the `watermark` and read with `since`.
 - Never treat a `pending` note as a rule.
 - Use `ask_library` (a model answer, slow) only when `query_notes` and `search_library` do not answer. Neither
-  `search_library` nor `ask_library` reads notes.
+  `search_library` nor `ask_library` reads notes. A server without LLMDAP does not list `ask_library`.
+- In a loop, call `search_library` with `max_chars` (for example 300), then `open_citation` for the passages that
+  you need.
+- Each tool description names the grant that the tool needs. A tool that you have no grant for gives `forbidden`.

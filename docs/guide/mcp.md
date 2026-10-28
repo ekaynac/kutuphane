@@ -190,7 +190,7 @@ A tool error is a result with `isError: true`. The text is
 | `daily note write limit reached (<n>)` | Section 8. | `429` |
 | `at most 3 open jobs per principal` | Section 6. | `429` |
 | `model service unavailable or refused` | LLMDAP failed or refused the call. | `502` |
-| `answers are not available: this install has no model gateway (LLMDAP); search is full text only` | `ask_library` on a server without LLMDAP ([light install](install.md#light-install)). | `503` |
+| `answers are not available: this install has no model gateway (LLMDAP); search is full text only` | `POST /v1/ask` on a server without LLMDAP ([light install](install.md#light-install)). Over MCP, that server does not list `ask_library` (section 5). | `503` |
 | A validation message, for example `query must be 1..1000 characters` | The input is not valid. | `400` |
 | `internal error` | An unexpected failure. The server log has the details. | `500` |
 
@@ -242,17 +242,25 @@ Comments on the drafts follow [../14-contributions.md](../14-contributions.md).
 
 The tools are in this order in `tools/list`. The order does not change between calls.
 
+The list depends on the deployment only. It never depends on the caller: every principal gets the same list, also a
+principal with no grant. Grants can change during a session, and the list has public cache hints (section 2.2).
+A server without LLMDAP ([light install](install.md#light-install)) does not list `ask_library`, `job_status`,
+`job_result` and `job_cancel`. The other tools keep their order.
+
+Each tool description names the grant that the tool needs (for example `needs read on the book`), so an agent
+does not spend a turn to find it out. The **Needs:** line of each tool below has the details.
+
 | # | Tool | Purpose | HTTP equivalent |
 |---|---|---|---|
 | 1 | [`search_library`](#51-search_library) | Search the books you may read. | `GET /v1/search` |
 | 2 | [`open_citation`](#52-open_citation) | Open a passage handle or a note reference. | `GET /v1/citation` |
-| 3 | [`ask_library`](#53-ask_library) | Answer a question with citations. | `POST /v1/ask` |
+| 3 | [`ask_library`](#53-ask_library) | Answer a question with citations. Only with LLMDAP. | `POST /v1/ask` |
 | 4 | [`reopen_answer`](#54-reopen_answer) | Show a stored answer again. | `GET /v1/answers/{answer_id}` |
 | 5 | [`read_document`](#55-read_document) | Read a text file of one version. | `GET /v1/files/{book}/{content_id}/{path}` |
 | 6 | [`record_runbook_feedback`](#56-record_runbook_feedback) | Record how a runbook worked. | `POST /v1/feedback` |
-| 7 | [`job_status`](#57-job_status) | The state of a background job. | `GET /v1/jobs/{job_id}` |
-| 8 | [`job_result`](#58-job_result) | The answer of a succeeded job. | `GET /v1/jobs/{job_id}/result` |
-| 9 | [`job_cancel`](#59-job_cancel) | Cancel a background job. | `POST /v1/jobs/{job_id}/cancel` |
+| 7 | [`job_status`](#57-job_status) | The state of a background job. Only with LLMDAP. | `GET /v1/jobs/{job_id}` |
+| 8 | [`job_result`](#58-job_result) | The answer of a succeeded job. Only with LLMDAP. | `GET /v1/jobs/{job_id}/result` |
+| 9 | [`job_cancel`](#59-job_cancel) | Cancel a background job. Only with LLMDAP. | `POST /v1/jobs/{job_id}/cancel` |
 | 10 | [`propose_note`](#510-propose_note) | Write a note into a journal. | `POST /v1/notes` |
 | 11 | [`link_notes`](#511-link_notes) | Link a note to a note or a passage. | `POST /v1/notes/links` |
 | 12 | [`verify_citations`](#512-verify_citations) | Check code citations against a branch or commit. | `POST /v1/citations/verify` |
@@ -293,6 +301,23 @@ never gets passages of a skill that a SkillSpector scan blocks ([security.md](se
 | `path` | string | no | none | A relative path prefix. End it with `/` for a folder (`data/`). |
 | `origin` | list of strings | no | none | `human`, `assisted`, `model`, `tool`, `unknown`. A book without `kstd.yaml` counts as `unknown`. |
 | `current_only` | boolean | no | `false` | Only files whose kstd validity includes now. |
+| `max_chars` | integer | no | none (the full text) | 80–4800. Gives a snippet of each passage (below). |
+
+**Snippets (`max_chars`).** An agent loop keeps each tool result in its context for all later turns. With
+`max_chars`, each `text` is a snippet of at most that many characters, and each entry has `truncated`:
+
+- The snippet is a fixed window around the best-matching span: the words of the passage that match the query
+  words (the same text search configuration as the search). The best window has the most different query words,
+  then the most matches, then the first position. A passage with no matching word gives its start.
+- The window is cut at white space, and `…` marks each side that was cut. The snippet, with the marks, is at most
+  `max_chars` characters.
+- A passage that fits is the full text, with `truncated: false`.
+- The same request gives the same bytes: no clock, no randomness, no model. This keeps provider prompt caches valid.
+- The hits, their order and their scores do not change. The gates do not change: a withheld passage
+  (section 4.2) has `"text": null` and no snippet.
+- The `citation` stays. Call `open_citation` to get the full passage of a hit that you need.
+
+Without `max_chars`, the result is as before: the full text and no `truncated` key.
 
 **Result:** `structuredContent.result` is a list. Each entry:
 
@@ -302,17 +327,25 @@ never gets passages of a skill that a SkillSpector scan blocks ([security.md](se
 | `page` | The PDF page, or `null`. |
 | `line` | The first line of the passage in a text file, or `null`. |
 | `score` | The rank score (4 decimals). |
-| `text` | The passage text, or `null` with `withheld` (section 4.2). |
+| `text` | The passage text (with `max_chars`: the snippet), or `null` with `withheld` (section 4.2). |
+| `truncated` | Only with `max_chars`: `true` when `text` is a cut of the passage. Not set for a withheld passage. |
 | `item` | The kstd item information of the file, or `null` when the version has no `kstd.yaml`. |
 
 The result `_meta` has the handling labels of the hits (section 4.4).
 
-**Errors:** `400` (query, `k` or filter not valid; a journal in `book`), `409`. When the optional embedding,
-translation or reranking route fails, the search continues without that stage. It does not fail.
+**Errors:** `400` (query, `k`, `max_chars` or filter not valid; a journal in `book`), `409`. When the optional
+embedding, translation or reranking route fails, the search continues without that stage. It does not fail.
 
 ```json
 {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
  "params": {"name": "search_library", "arguments": {"query": "backup retention", "k": 5, "book": ["runbooks"]}}}
+```
+
+For an agent loop, scan with snippets and open only what you need:
+
+```json
+{"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+ "params": {"name": "search_library", "arguments": {"query": "backup retention", "max_chars": 300}}}
 ```
 
 ### 5.2 `open_citation`
@@ -354,8 +387,9 @@ The result `_meta` has the handling labels (section 4.4). For a note, they cover
 
 ### 5.3 `ask_library`
 
-Answer a question from the library. The answer cites passages as `[n]`. When the passages do not answer the
-question, the status is `not_in_library`. The answer is in the language of the question (Turkish or English).
+Answer a question from the library. Only on a server with LLMDAP (section 5). The answer cites passages as `[n]`.
+When the passages do not answer the question, the status is `not_in_library`. The answer is in the language of the
+question (Turkish or English).
 
 The passages go to the model in rank order, and the model is told to base the answer on passage `[1]` when that
 passage answers the question, to put each `[n]` right after its claim, and to answer the part of a question that
@@ -489,7 +523,9 @@ Record how applying a runbook went, for that exact file version.
 
 ### 5.7 `job_status`
 
-The state of a background `ask_library` job.
+The state of a background `ask_library` job. Only on a server with LLMDAP, as `job_result` and `job_cancel`.
+
+**Needs:** no grant. You see only your own jobs (section 6, Visibility).
 
 | Argument | Type | Required | Default | Limits |
 |---|---|---|---|---|
@@ -873,7 +909,7 @@ A long `ask_library` can run as a durable background job.
 | Item | Value |
 |---|---|
 | Open jobs | At most 3 `queued` or `running` jobs per principal. One more gets `429`. |
-| Workers | `KUTUPHANE_JOB_WORKERS` threads in the server process (default `1`). `0` runs no jobs. Without LLMDAP, no worker starts. |
+| Workers | `KUTUPHANE_JOB_WORKERS` threads in the server process (default `1`). `0` runs no jobs. Without LLMDAP, no worker starts, and `tools/list` has no job tools. |
 | Rights | The worker runs the ask with the principal and the user acted for of the job. So the rights at run time apply. |
 | Lease | 60 seconds. The worker renews it while the job runs. |
 | Interrupted job | When a running job's lease ends (for example, the server stopped), the job becomes `failed` with `error: interrupted`. It never runs again. |
@@ -909,6 +945,7 @@ Without a key, a retried `propose_note` is one more write, and `recurrence` goes
 | Open background jobs per principal | 3 | `429` `at most 3 open jobs per principal` |
 | Query and question length | 1–1000 characters | `400` |
 | `search_library` `k` | 1–50 | `400` |
+| `search_library` `max_chars` | 80–4800 (the largest passage of the chunked profile) | `400` |
 | Note text | 8000 characters | `400` |
 | Citations, links, scope paths, decision options per note | 20 each | `400` |
 | Code citations per `verify_citations` | 200 | `400` |

@@ -172,6 +172,7 @@ Search the books that you may read now. MCP: `search_library` ([mcp.md](mcp.md#5
 | `path` | no | none | A relative path prefix. End it with `/` for a folder. |
 | `origin` | no | none | Repeat for more. `human`, `assisted`, `model`, `tool`, `unknown`. |
 | `current_only` | no | `false` | `true`, `1`, `false` or `0`. |
+| `max_chars` | no | none (the full text) | An integer, 80–4800. Each `text` becomes a snippet around the match. |
 
 A filter never adds a book. A book that you cannot read gives the same empty result as a book that does not exist.
 Notes are not searched here (use `GET /v1/notes`): a journal that you may read in `book` gives `400`
@@ -188,12 +189,24 @@ Notes are not searched here (use `GET /v1/notes`): a journal that you may read i
 
 `item` is the kstd item information of the file, or `null` when the version has no `kstd.yaml`.
 
-**Errors:** `400` (`k must be an integer`, `k must be 1..50`, `query must be 1..1000 characters`,
-`current_only must be true or false`, a filter not valid, a journal in `book`), `401`, `409`.
+With `max_chars`, each `text` is a deterministic snippet of at most `max_chars` characters around the words that
+match the query, cut at white space, with `…` on each cut side, and each result has `truncated` (`true` when the
+text is cut). The results, their order and their scores do not change, and a withheld text stays `null`. Open the
+`citation` for the full passage. The rules are in [mcp.md](mcp.md#51-search_library). Without `max_chars`, the
+response is as before.
+
+**Errors:** `400` (`k must be an integer`, `k must be 1..50`, `max_chars must be an integer`,
+`max_chars must be 80..4800`, `query must be 1..1000 characters`, `current_only must be true or false`, a filter
+not valid, a journal in `book`), `401`, `409`.
 
 ```sh
 curl -s -G -H "Authorization: Bearer $TOKEN" "$KUTUPHANE_PUBLIC_URL/v1/search" \
   --data-urlencode "q=backup retention" -d k=5 -d book=runbooks -d current_only=true
+```
+
+```sh
+curl -s -G -H "Authorization: Bearer $TOKEN" "$KUTUPHANE_PUBLIC_URL/v1/search" \
+  --data-urlencode "q=backup retention" -d max_chars=300
 ```
 
 ### 5.2 `GET /v1/citation`

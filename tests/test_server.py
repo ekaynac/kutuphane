@@ -3,6 +3,7 @@ human (HTTP) and agent (MCP) reach the same evidence (AT-03)."""
 import asyncio
 import json
 import os
+import re
 import time
 
 import jwt
@@ -12,7 +13,7 @@ from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from starlette.testclient import TestClient
 
-from kutuphane import authz, catalog, llmdap, profiles, retrieval, server
+from kutuphane import authz, catalog, llmdap, profiles, retrieval, server, snippets
 from kutuphane.identity import Verifier
 from kutuphane.policy import make_policy
 from kutuphane.source import read_source
@@ -233,7 +234,8 @@ def test_light_install_searches_full_text_and_refuses_answers(conn, monkeypatch,
     mcp = server.build_mcp(dsn=os.environ["KUTUPHANE_TEST_DSN"], verifier=verifier, bridge=None, model=None,
                            public_url=PUBLIC)
     claims = asyncio.run(server._Verifier(verifier).verify_token(token(keys))).claims
-    with pytest.raises(Exception, match="no model gateway"):
+    assert "ask_library" not in [t.name for t in asyncio.run(mcp.list_tools())]    # #121: not listed at all
+    with pytest.raises(Exception, match="ask_library"):
         call_tool(mcp, claims, "ask_library", {"question": "Kayıtlar ne kadar saklanır?"})
     _content, structured = call_tool(mcp, claims, "search_library", {"query": "kayıtlar saklanır"})
     assert [r["citation"] for r in structured["result"]] == [r["citation"] for r in hits]
@@ -416,6 +418,9 @@ TOOLS = ["search_library", "open_citation", "ask_library", "reopen_answer", "rea
          "record_runbook_feedback", "job_status", "job_result", "job_cancel",
          "propose_note", "link_notes", "verify_citations", "query_notes", "neighbours",
          "record_outcome", "confirm_origin"]  # then FEATURES, in order
+ANSWER_TOOLS = {"ask_library", "job_status", "job_result", "job_cancel"}  # only with LLMDAP (#121)
+# #121: each description names the grant the tool needs, so an agent does not spend a turn to find it out.
+GRANT = re.compile(r"\b(needs? (read|use|activate|propose|curate)\b|no grant)", re.IGNORECASE)
 
 
 def _message(r) -> dict:
@@ -483,6 +488,33 @@ def test_both_protocol_versions_list_and_call_tools(app_env, keys, conn, monkeyp
                             version=version)
         assert failed["result"]["isError"] and "internal error" in failed["result"]["content"][0]["text"]
         assert "INTERNAL_MARKER" not in json.dumps(failed)
+
+
+@pytest.mark.parametrize("version", [LEGACY, MODERN])
+@pytest.mark.parametrize("answering", [True, False])
+def test_the_tool_list_depends_on_the_deployment_only(app_env, keys, verifier, version, answering):  # #121
+    """Without LLMDAP there is no ask_library and no job tool. The list never depends on the caller: a reader, an
+    agent and a principal with no grant get the same bytes (grants change in a session; public cache hints)."""
+    app, _, dsn = app_env
+    if not answering:
+        app = server.create_app(dsn=dsn, verifier=verifier, bridge=None, model=None, public_url=PUBLIC)
+    expected = [t for t in TOOLS if answering or t not in ANSWER_TOOLS]
+    with TestClient(app, base_url=PUBLIC) as client:
+        listed = [mcp_rpc(client, auth, "tools/list", version=version)[1]["result"]["tools"]
+                  for auth in (bearer(keys), bearer(keys, act={"sub": "kobra-7"}), bearer(keys, sub="mehmet"))]
+    assert [t["name"] for t in listed[0]] == expected
+    assert listed[1] == listed[0] and listed[2] == listed[0]
+
+
+def test_every_tool_description_names_its_grant(verifier, fake):  # #121
+    mcp = server.build_mcp(dsn="postgresql://unused", verifier=verifier, bridge=fake.bridge(), model="qwen",
+                           public_url=PUBLIC)
+    tools = asyncio.run(mcp.list_tools())
+    assert [t.name for t in tools] == TOOLS
+    assert [t.name for t in tools if not GRANT.search(" ".join(t.description.split()))] == []
+    search_tool = next(t for t in tools if t.name == "search_library")
+    assert f"{snippets.MIN_CHARS}-{snippets.MAX_CHARS}" in search_tool.description
+    assert "max_chars" in search_tool.input_schema["properties"]
 
 
 @pytest.mark.parametrize("version", [LEGACY, MODERN])

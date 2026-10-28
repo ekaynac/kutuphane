@@ -9,6 +9,12 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### A size budget for agent search results (#121)
+
+- New: `search_library` takes `max_chars` (80–4800), and `GET /v1/search` takes `max_chars` too. Each `text` becomes a deterministic snippet around the words that match the query (the search's text search configuration; the passage start when no word matches), cut at white space, with `…` on each cut side, and each result has `truncated`. The hits, their order, their scores and the gates do not change: a withheld text stays `null`. The `citation` stays, so `open_citation` gives the full passage. Without `max_chars` the result does not change. On this repository's user guide as a book, `max_chars: 300` made the median result of 8 queries 65% smaller (12,959 to 4,578 characters for 8 hits) ([mcp.md](mcp.md#51-search_library), [http-api.md](http-api.md#51-get-v1search), [agent-memory.md](agent-memory.md#4-read-memory-fast-no-model-call)) ([#127](https://github.com/ekaynac/kutuphane/pull/127)).
+- Changed: a server without LLMDAP does not list `ask_library`, `job_status`, `job_result` and `job_cancel` in `tools/list`. The list depends on the deployment only, never on the caller. `POST /v1/ask` still gives `503` there ([mcp.md](mcp.md#5-tools), [install.md](install.md#light-install)) ([#127](https://github.com/ekaynac/kutuphane/pull/127)).
+- Changed: each MCP tool description names the grant that the tool needs (for example `needs read on the book`), so an agent does not spend a turn to find it out ([mcp.md](mcp.md#5-tools)) ([#127](https://github.com/ekaynac/kutuphane/pull/127)).
+
 ### Security review #18 fixes (#118, #122, #123)
 
 - Fixed: the handling labels of a note named every book that its text came from, with its Sensitivity and Egress, also a book that the caller may not read. `books` now names only the books of the caller's read set; the others count in `unnamed_sources` and still make `sensitivity` and `egress` stricter ([mcp.md](mcp.md#44-handling-labels-in-_meta)) ([#125](https://github.com/ekaynac/kutuphane/pull/125)).
