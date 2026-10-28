@@ -9,12 +9,12 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
-### Records that a passage repeats (pilot 1 gaps G23; G16 and G25 decided)
+### Records that a passage repeats (#128; pilot 1 gaps G23, G16, G25)
 
-- New: a passage that repeats a whole string value of a JSONL record (40 characters or more, white space folded; a JSON string, a line, or a line without its markdown mark) points to that record. `search_library`, `GET /v1/search` and `kutuphane search` give each hit `quoted_records`: the handles of those records, only from books that you may read now and that pass the filters. The order of the hits does not change ([concepts.md](concepts.md#records-that-a-passage-repeats), [mcp.md](mcp.md#51-search_library), [http-api.md](http-api.md)) (PR_LINK).
-- Changed: `ask_library`, `POST /v1/ask` and `kutuphane ask` put each such record into the evidence right before its first copy (at most 4 records; only with AI input in their rights) and tell the model to cite the record for the repeated text. Each citation, and each evidence entry of `reopen_answer`, has `quoted_records` (PR_LINK).
-- Migration `037_record_value.sql`: it stores the values of the record passages of every current and earlier version. After `migrate`, apply `deploy/db-roles.sql` again (PR_LINK).
-- Design and research: `docs/18` §7. Per-record origin (G16) is not built: on the pilot data it changes no decision, and a record field can never show a review. G25 needs the generator to record its version; Kütüphane needs no change (PR_LINK).
+- New: a passage that repeats a whole string value of a JSONL record (40 characters or more, white space folded; a JSON string, a line, or a line without its markdown mark) points to that record. `search_library`, `GET /v1/search` and `kutuphane search` give each hit `quoted_records`: the handles of those records, only from books that you may read now and that pass the filters. The order of the hits does not change ([concepts.md](concepts.md#records-that-a-passage-repeats), [mcp.md](mcp.md#51-search_library), [http-api.md](http-api.md)) ([#128](https://github.com/ekaynac/kutuphane/pull/128)).
+- Changed: `ask_library`, `POST /v1/ask` and `kutuphane ask` put each such record into the evidence right before its first copy (at most 4 records; only with AI input in their rights) and tell the model to cite the record for the repeated text. Each citation, and each evidence entry of `reopen_answer`, has `quoted_records` ([#128](https://github.com/ekaynac/kutuphane/pull/128)).
+- Migration `037_record_value.sql`: it stores the values of the record passages of every current and earlier version. After `migrate`, apply `deploy/db-roles.sql` again ([#128](https://github.com/ekaynac/kutuphane/pull/128)).
+- Design and research: `docs/18` §7. Per-record origin (G16) is not built: on the pilot data it changes no decision, and a record field can never show a review. G25 needs the generator to record its version; Kütüphane needs no change ([#128](https://github.com/ekaynac/kutuphane/pull/128)).
 
 ### A size budget for agent search results (#121)
 
