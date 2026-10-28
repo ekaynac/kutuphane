@@ -73,6 +73,7 @@ def test_submit_over_http_then_a_person_approves_and_only_changed_passages_embed
                                                                                 okf_dir, signer, fake):
     app, pkg, issuer = setup
     authz.grant(conn_b, "book:runbooks", "propose", AGENT)
+    authz.grant(conn_b, "book:runbooks", "read", AGENT)  # the diff names catalog files: it needs read
     with TestClient(app) as client:
         auth = agent_auth(keys)
         r = client.post("/v1/packages", content=pkg, headers={**auth, "content-type": "application/x-tar"})
@@ -119,6 +120,20 @@ def test_submit_over_http_then_a_person_approves_and_only_changed_passages_embed
         assert sent and set(sent) <= {t for p, _, t in rows if p == changed}
         assert result.embedded == len(sent) and result.reused == len(rows) - len(sent) > 0
         assert found()                                                           # approved: search sees it
+
+
+def test_propose_without_read_gets_no_catalog_diff(setup, keys, conn_b):  # noqa: F811
+    """Astra review #20: the diff lists the receiving catalog's files (removed) and is an equality oracle (changed):
+    `propose` alone gets the status without it; a current `read` shows it."""
+    app, pkg, _ = setup
+    authz.grant(conn_b, "book:runbooks", "propose", AGENT)
+    with TestClient(app) as client:
+        auth = agent_auth(keys)
+        receipt = client.post("/v1/packages", content=pkg, headers=auth).json()
+        assert receipt["status"] in ("received", "findings") and receipt["diff"] is None
+        assert client.get(f"/v1/packages/{receipt['id']}", headers=auth).json()["diff"] is None
+        authz.grant(conn_b, "book:runbooks", "read", AGENT)
+        assert client.get(f"/v1/packages/{receipt['id']}", headers=auth).json()["diff"]["added"]
 
 
 def test_a_failed_verification_is_kept_and_reported_refused(setup, keys, conn_b):  # noqa: F811

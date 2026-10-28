@@ -6,7 +6,10 @@ note (audit), and the old passage still opens. The map adds the successor of an 
 current now, for the same path:
 
 - `exact`: a passage with the same text (so the same embedded text, `vectors.input_sha256`);
-- `overlap`: else the passage that holds the largest share of the old passage's word pairs, at least OVERLAP_MIN;
+- `overlap`: else, when the content version is the same (only the profile cuts differently, so the source text is
+  the same), the passage that holds the largest share of the old passage's word pairs, at least OVERLAP_MIN; when
+  the content changed, only a passage that holds the whole old text (Astra review #20: a changed word, `enable` to
+  `disable`, can keep most word pairs and change the meaning);
 - `none`: else no successor. The reads show the citation as `stale`; nothing is dropped.
 
 The reads show a passage reference as `current` (in the current version), `moved` (with `moved_to` and `match`) or
@@ -53,15 +56,24 @@ def _grams(text: str) -> Counter:
     return Counter(zip(words, words[1:])) if len(words) > 1 else Counter((w,) for w in words)
 
 
-def choose(text: str, ordinal: int, candidates: list[tuple[int, str]]) -> tuple[int | None, str]:
+def _flat(text: str) -> str:
+    return " ".join(_WORD.findall(text.casefold()))
+
+
+def choose(text: str, ordinal: int, candidates: list[tuple[int, str]], *,
+           same_content: bool = True) -> tuple[int | None, str]:
     """(successor ordinal or None, match) of an old passage among the passages of the same path in the target
-    version ([(ordinal, text)]). Ties go to the ordinal nearest the old one, then the lower ordinal."""
+    version ([(ordinal, text)]). Ties go to the ordinal nearest the old one, then the lower ordinal. Across a
+    changed content version (`same_content` false), an overlap must hold the whole old text."""
     def near(o: int) -> tuple[int, int]:
         return abs(o - ordinal), o
 
     exact = [o for o, t in candidates if t == text]
     if exact:
         return min(exact, key=near), "exact"
+    if not same_content:
+        flat = _flat(text)
+        candidates = [(o, t) for o, t in candidates if flat and f" {flat} " in f" {_flat(t)} "]
     old = _grams(text)
     total = sum(old.values())
     best = None
@@ -80,16 +92,17 @@ def _current(conn, books) -> dict:
 
 
 def _stored(conn, keys, current: dict) -> dict:
-    """{key: (to_ordinal, match)} of the stored rows from `keys` to the current version of their book."""
-    rows = [k for k in keys if k[0] in current]
+    """{key: (to_ordinal, match)} of the stored rows from `keys` to the version in `current` (the version that the
+    caller read, never the live book row: a publication between the two reads must not mix versions)."""
+    rows = [(*k, *current[k[0]]) for k in keys if k[0] in current]
     if not rows:
         return {}
     cols = [list(c) for c in zip(*rows)]
     return {tuple(r[:5]): (r[5], r[6]) for r in conn.execute(
         "SELECT m.book, m.content_id, m.profile_id, m.path, m.ordinal, m.to_ordinal, m.match FROM passage_map m "
-        "JOIN book b ON b.slug = m.book AND b.current_content = m.to_content_id AND b.current_profile = m.to_profile_id "
-        "JOIN unnest(%s::text[], %s::text[], %s::text[], %s::text[], %s::int[]) AS k(b, c, p, path, o) "
-        "  ON (m.book, m.content_id, m.profile_id, m.path, m.ordinal) = (k.b, k.c, k.p, k.path, k.o)", cols)}
+        "JOIN unnest(%s::text[], %s::text[], %s::text[], %s::text[], %s::int[], %s::text[], %s::text[]) "
+        "  AS k(b, c, p, path, o, tc, tp) ON (m.book, m.content_id, m.profile_id, m.path, m.ordinal, "
+        "  m.to_content_id, m.to_profile_id) = (k.b, k.c, k.p, k.path, k.o, k.tc, k.tp)", cols)}
 
 
 def _compute(conn, keys, current: dict) -> dict:
@@ -104,13 +117,15 @@ def _compute(conn, keys, current: dict) -> dict:
         "  ON (c.book, c.content_id, c.profile_id, c.path, c.ordinal) = (k.b, k.ci, k.pi, k.p, k.o)", cols)}
     out, candidates = {}, {}
     for key in sorted(keys):
-        book, _c, _p, path, ordinal = key
+        book, old_content, _p, path, ordinal = key
         if (book, path) not in candidates:
             content_id, profile_id = current[book]
             candidates[(book, path)] = conn.execute(
                 "SELECT ordinal, text FROM chunk WHERE book = %s AND content_id = %s AND profile_id = %s AND path = %s "
                 "ORDER BY ordinal", (book, content_id, profile_id, path)).fetchall()
-        out[key] = choose(texts[key], ordinal, candidates[(book, path)]) if key in texts else (None, "none")
+        same = old_content == current[book][0]
+        out[key] = choose(texts[key], ordinal, candidates[(book, path)], same_content=same) if key in texts \
+            else (None, "none")
     return out
 
 

@@ -5,7 +5,7 @@ import pytest
 from kutuphane import catalog, decisions, kstd, notes, packages, profiles, signing
 from kutuphane.source import read_source
 from test_kstd import POLICY, write_manifest
-from test_notes import J, U, allow, journal, mcp, propose
+from test_notes import J, U, allow, http, journal, mcp, propose
 from test_outcomes import decide
 
 UNKNOWN_POLICY_FILE = {"rights": {"license": "unknown"}}
@@ -63,6 +63,20 @@ def test_a_note_derived_from_license_unknown_is_written_with_a_notice(conn, okf_
                     citations=[passage(conn, "runbook/yedek-geri-yukleme.md")])
     assert "licence_notice" not in clean
     assert notes.unknown_licence(conn, []) == {}
+
+
+def test_the_notice_never_names_a_file_the_caller_cannot_read(conn, okf_dir):
+    """Astra review #20: a reader of the journal derives from a note whose source book it cannot read; the notice
+    keeps the inherited rule but names no path in that book."""
+    publish(conn, okf_dir, policy_item=UNKNOWN_POLICY_FILE)
+    journal(conn)
+    allow(conn, J, "read", "propose")
+    cited = propose(conn, mcp(), text="Retention is in the policy", citations=[passage(conn, PATH)])
+    allow(conn, J, "read", "propose", user="user:mehmet", agent=None)
+    derived = propose(conn, http("user:mehmet"), text="Derived from the note",
+                      links=[{"type": "derived_from", "ref": cited["ref"]}])
+    assert derived["licence_notice"]["paths"] == [] and derived["licence_notice"]["unreadable"] == 1
+    assert derived["licence_notice"]["note"] == notes.LICENCE_NOTICE
 
 
 def test_the_decision_export_leaves_out_notes_derived_from_license_unknown(conn, okf_dir):

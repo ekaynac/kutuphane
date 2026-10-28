@@ -421,7 +421,9 @@ def submit(conn, actor: Actor, data: bytes) -> dict:
 
 def status(conn, actor: Actor, import_id) -> dict:
     """The import status for the caller that submitted it (anyone else: not found): received, findings (verified,
-    with findings for the person who approves), approved (published) or refused (with the reasons)."""
+    with findings for the person who approves), approved (published) or refused (with the reasons). The `diff`
+    compares with the receiving catalog, so it is given only with a current `read` on the book; else it is null
+    (Astra review #20: `propose` alone must not list the catalog's files)."""
     if type(import_id) is not int or not 1 <= import_id < 2**63:
         raise gate.NotFound("no such import")
     row = conn.execute(
@@ -431,6 +433,9 @@ def status(conn, actor: Actor, import_id) -> dict:
     if row is None:
         raise gate.NotFound("no such import")
     pid, state, issuer, book, sequence, content_id, findings, diff, reasons, received, decided = row
+    if diff is not None and not authz.decide(conn, actor.principal, actor.on_behalf_of, f"book:{book}",
+                                             ["read"]).decisions["read"].allowed:
+        diff = None
     shown = STATUS.get(state) or ("findings" if findings else "received")
     return {"id": pid, "status": shown, "issuer": issuer, "book": book, "sequence": sequence,
             "content_id": content_id, "findings": findings, "diff": diff, "reasons": reasons,
