@@ -65,6 +65,46 @@ def test_choose_prefers_the_same_text_then_the_largest_overlap_then_none():
     assert choose(old, 0, [(4, "Servisi bakım kipine")]) == (None, "none")  # 2 of 6
 
 
+def test_a_changed_content_version_maps_by_overlap_only_when_the_old_text_is_whole():
+    """Astra review #20: one changed word keeps most word pairs and changes the meaning."""
+    old = "Operators must enable audit logging before starting the production service"
+    flipped = old.replace("enable", "disable")
+    assert choose(old, 0, [(0, flipped)]) == (0, "overlap")  # a re-cut of the same content: as before
+    assert choose(old, 0, [(0, flipped)], same_content=False) == (None, "none")
+    assert choose(old, 0, [(0, "# Audit\n\n" + old + ". Then check it.")], same_content=False) == (0, "overlap")
+
+
+def test_a_changed_word_in_a_new_content_version_leaves_the_citation_stale(mem, okf_dir):
+    old = handle(mem)
+    cited = propose(mem, "Bir adıma atıf", citations=[old])
+    key = passagemap.successor_key(old, passagemap.Successor("moved", old, "exact"))
+    text = mem.execute("SELECT text FROM chunk WHERE (book, content_id, profile_id, path, ordinal) = "
+                       "(%s, %s, %s, %s, %s)", key).fetchone()[0]
+    word = max(text.split(), key=len)  # one word changes: most word pairs stay
+    source = (okf_dir / RUNBOOK).read_text(encoding="utf-8")
+    assert word in source
+    (okf_dir / RUNBOOK).write_text(source.replace(word, word + "X"), encoding="utf-8")
+    publish(mem, okf_dir)
+    assert cites(mem, cited) == [{"ref": old, "status": "stale"}]
+    assert neighbours(mem, handle(mem))["nodes"] == []
+
+
+def test_resolve_reads_the_map_of_the_version_it_read_not_the_live_row(mem, okf_dir, monkeypatch):
+    """Astra review #20: a publication between the reads of resolve() must not mix the stored row of V3 with the
+    version V2 that resolve() read."""
+    old = handle(mem)
+    propose(mem, "Yarış", citations=[old])
+    monkeypatch.setattr(profiles, "CHUNKER_VERSION", profiles.CHUNKER_VERSION + 1)
+    publish(mem, okf_dir)
+    v2, v2_handle = mem.execute("SELECT current_content, current_profile FROM book WHERE slug = %s",
+                                (BOOK,)).fetchone(), handle(mem)
+    (okf_dir / RUNBOOK).write_text("# Yeni süreç\n\nTamamen farklı bir içerik burada.\n", encoding="utf-8")
+    publish(mem, okf_dir)  # V3: the cited text is gone, so its row maps to none
+    monkeypatch.setattr(passagemap, "_current", lambda _conn, books: {BOOK: tuple(v2)})  # V2 read, V3 committed
+    key = passagemap.successor_key(old, passagemap.Successor("moved", old, "exact"))
+    assert passagemap.resolve(mem, [key])[key] == passagemap.Successor("moved", v2_handle, "exact")
+
+
 # --- a re-index under a new profile ------------------------------------------------------------------------------
 
 def test_a_reindex_moves_citations_and_links_and_neighbours_follow(mem, okf_dir, monkeypatch):

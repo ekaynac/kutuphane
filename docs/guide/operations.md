@@ -319,7 +319,9 @@ A new profile or a new content version gives each passage a new handle. Notes ci
 the passage of the same path in the new version (#140):
 
 1. `exact`: the passage with the same text.
-2. `overlap`: else the passage that holds the largest share of its word pairs, at least half.
+2. `overlap`: else the passage that holds the largest share of its word pairs, at least half. This applies when only
+   the profile changed (the same content, cut differently). When the content changed, `overlap` needs a passage that
+   holds the whole old text: one changed word (`enable` to `disable`) keeps most word pairs and changes the meaning.
 3. `none`: else no successor. The notes show the citation as `stale` and keep it.
 
 The `ingest` and `approve-import` result has the counts in `passage_map` (`passages`, `added`, `exact`, `overlap`,

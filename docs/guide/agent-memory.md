@@ -154,7 +154,7 @@ where the passage is now, in the book's current version, for the same path:
 | `status` | Meaning |
 |---|---|
 | `current` | the passage is in the current version |
-| `moved` | `moved_to` is the passage that replaces it; `match` is `exact` (the same text) or `overlap` (the new passage holds at least half of its word pairs) |
+| `moved` | `moved_to` is the passage that replaces it; `match` is `exact` (the same text) or `overlap` (the new passage holds at least half of its word pairs when only the profile changed, or the whole old text when the content changed) |
 | `stale` | no passage of the current version replaces it; the citation stays |
 
 Each passage citation of `query_notes`, `neighbours` and a note in `open_citation` has these keys, and so does a

@@ -735,7 +735,7 @@ The status of an import that you submitted (the same principal and the same user
 | `issuer` | The fingerprint of the key that signed it. `null` when the package was refused before verification. |
 | `book`, `sequence`, `content_id` | From the verified manifest. |
 | `findings` | The scan results for the person who approves. |
-| `diff` | `{"added", "removed", "changed"}` against the current version of the book. |
+| `diff` | `{"added", "removed", "changed"}` against the current version of the book. Only with a current `read` on the book; else `null` (`propose` alone does not list the catalog's files). |
 | `reasons` | Why it was refused. |
 | `received_at`, `decided_at` | ISO 8601 times. |
 

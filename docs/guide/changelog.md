@@ -9,6 +9,14 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Astra review #20 fixes
+
+- Changed: the package status (`POST /v1/packages`, `GET /v1/packages/{id}`, `submit_package`, `package_status`) gives `diff` only with a current `read` on the book; else `diff` is `null`. Before, `propose` alone listed the files of the receiving catalog ([http-api.md](http-api.md#132-get-v1packagesid)).
+- Changed: the note receipt's `licence_notice` names no path in a book that you may not read; `unreadable` gives their number. The note is still never exported ([mcp.md](mcp.md)).
+- Changed: across a new content version, an `overlap` successor must hold the whole old passage text. One changed word (`enable` to `disable`) no longer joins a note to a passage of another meaning; such a citation is `stale`. A re-index with the same content is not changed ([operations.md](operations.md#re-index-and-note-citations)).
+- Fixed: a publication during a read could give a `moved_to` handle that mixed two versions.
+- Migration `044_passage_map_overlap.sql` removes the `overlap` rows of a changed content version. After `migrate`, run `kutuphane reindex-map <book>` for each book whose passages notes cite. On the main database, a read-only count gives the same `overlap` answer for all 6 such rows.
+
 ### Scope: `applies_to` and the request context (#137, #142, #138)
 
 - New: kstd `applies_to` has a mapping form: `{platform: [<names>], version: "<range>"}`, for example `{platform: [vcenter], version: ">=7.0,<8"}`. The string form stays valid and means `platform: [<string>]`. A malformed `platform` or `version` refuses the book; an unknown key is ignored with a notice (D74). `item.applies_to` now always shows the mapping form ([kstd.md](kstd.md#what-kütüphane-does-with-each-field)) ([#137](https://github.com/ekaynac/kutuphane/issues/137)).

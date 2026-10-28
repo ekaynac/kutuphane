@@ -534,6 +534,17 @@ def _licence_notice(conn, draft: Draft, found: dict) -> dict:
     return {"licence_notice": {"paths": sorted(paths), "note": LICENCE_NOTICE}}
 
 
+def _readable_notice(licence: dict, readable) -> dict:
+    """The licence notice as the final decision allows it: a path in a book the caller may not read is not named,
+    only counted (`unreadable`), so the notice never tells of a file the caller cannot see (Astra review #20)."""
+    if not licence:
+        return {}
+    paths = licence["licence_notice"]["paths"]
+    named = [p for p in paths if f"book:{p.split('/', 1)[0]}" in readable]
+    hidden = {"unreadable": len(paths) - len(named)} if len(named) < len(paths) else {}
+    return {"licence_notice": {"paths": named, **hidden, "note": LICENCE_NOTICE}}
+
+
 def _excerpts(conn, draft: Draft) -> dict:
     """Step 7: {n: excerpt sha256} of every code citation; a scope names a live repository of the journal."""
     if draft.scope is not None and not conn.execute(
@@ -772,13 +783,14 @@ def propose(conn, actor: Actor, args: dict, embedder: llmdap.Routed | None = Non
         depends on a blocked skill is withheld (D71, read by the same final statement)."""
         receipt, retry, minimal, candidates = data
         readable = final.objects("read")
+        notice = _readable_notice(licence, readable)
         if receipt is minimal or journal not in readable:
-            return minimal, retry, [], final
+            return {**minimal, **notice}, retry, [], final
         kept = [c for c in candidates if f"book:{c['ref'].split('@')[0]}" in readable]
         shown = [{k: v for k, v in c.items() if k not in ("_standing_seq", "_seq")}
                  | ({"text": None, "withheld": gate.SKILL_WITHHELD} if c["_seq"] in final.blocked_notes else {})
                  for c in kept]
-        return {**receipt, "candidates": shown}, retry, kept, final
+        return {**receipt, **notice, "candidates": shown}, retry, kept, final
 
     def shown_text(data) -> list[int]:
         """The candidates whose text a model reader would get: the final statement reads their skill blocks."""

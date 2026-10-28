@@ -392,7 +392,8 @@ be in a skill that a scan blocks.
 
 `outcomes` has the non-zero counts of `record_outcome` for this passage. `status` says where the passage is in the
 book's current version (#140): `current`; `moved`, with `moved_to` (the passage of the same path that replaces it)
-and `match` (`exact`: the same text; `overlap`: it holds at least half of the word pairs); or `stale` (no passage
+and `match` (`exact`: the same text; `overlap`: it holds at least half of the word pairs, or the whole old text when
+the content changed); or `stale` (no passage
 replaces it). The text is always the text of the handle that you opened.
 
 **Result for a note reference:** `{"citation", "note", "targets", "watermark"}`. `note` is one note item, as in
@@ -650,7 +651,7 @@ its sources. Read [agent-memory.md](agent-memory.md).
 | `standing` | The real Standing now. For a re-proposal it can be `rejected`. |
 | `origin_notice` | `origin-claim-refused` when the requested origin was refused, else `null`. |
 | `confirmation` | Only when you asked for `human` or `assisted`: `{"url", "expires_at"}`. Show the URL to the person. On that page, the person can confirm the words with a passkey until `expires_at` (24 hours). `url` is `null` when the operator did not set `KUTUPHANE_CURATOR_URL`. Section 5.16. |
-| `licence_notice` | Only when the note is derived from a file with `license: unknown` (a cited passage, a `derived_from` passage, or through a `derived_from` note): `{"paths": ["<book>/<path>", …], "note"}`. The write is permitted in this installation; the note is never exported (#143). |
+| `licence_notice` | Only when the note is derived from a file with `license: unknown` (a cited passage, a `derived_from` passage, or through a `derived_from` note): `{"paths": ["<book>/<path>", …], "note"}`. A path in a book that you may not read is not named; `unreadable` gives their number. The write is permitted in this installation; the note is never exported (#143). |
 | `candidates` | Possible duplicates: `normalized` (same text after case and white space folding), `vector` (similarity at or above `KUTUPHANE_NOTE_DUP_SIMILARITY`, default 0.90), `class` (same `class_key` in the book). At most 5 per match type. Only from books you may read. The server never merges notes. Use `link_notes` to decide. |
 | `recurrence` | The number of propose writes over the `same_as` cluster of the note. |
 | `class_count` | The number of distinct clusters of evidence notes (`finding`, `lesson`, `dead_end`, `test_result`) with this `class_key` in the book. A `convention` or `decision_proposal` with the key does not count: it answers the class, it does not repeat it. |
@@ -943,7 +944,7 @@ published: a person approves it with `kutuphane approve-import` ([operations.md]
 
 **Result:** the import status, as `GET /v1/packages/{id}` ([http-api.md](http-api.md#132-get-v1packagesid)):
 `{"id", "status", "issuer", "book", "sequence", "content_id", "findings", "diff", "reasons", "received_at",
-"decided_at"}`. `status` is `received`, `findings` or `refused`.
+"decided_at"}`. `status` is `received`, `findings` or `refused`. `diff` is `null` without a current `read` on the book.
 
 **Errors:** `400` (not base64, not a readable package, a journal), `403`, too large.
 
