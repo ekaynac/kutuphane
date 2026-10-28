@@ -117,8 +117,8 @@ hybrid search) / chat (the answer; for 2, 7 and 8 also the question translation)
 | 9 | 0.3 | 14.9 | 1.8 | 17.1 |
 
 `ask`: mean 30.0 s, median 32.6 s (Pilot 1 v2: mean 63 s on 10,206 passages). The CPU reranker takes 46–87 % of
-each answer (G26 stays open). `search_library`: 13.7–40.5 s, also mostly rerank; 5.0 s for a repeated question with
-a path filter.
+each answer (G26 stays open; closed by the GPU reranker in section 10). `search_library`: 13.7–40.5 s, also mostly
+rerank; 5.0 s for a repeated question with a path filter.
 
 ## 6. Gaps found
 
@@ -232,3 +232,57 @@ At that commit, 66 of 66 file commits have a model trailer, the same count as th
 `kstd-check` gives PASS (33 files). The `private-ipv4` finding is in a canon rule file, as in the manual scan of
 section 6 (1 rule file). The smoke had no deny-list, so the customer and site names stay a `--deny-names` question
 for the operator.
+
+## 10. GPU reranker (G26)
+
+Branch `feat/gpu-rerank` ([#131](https://github.com/ekaynac/kutuphane/pull/131)), 2026-10-28. The operator allowed the move "if there is space": before the
+start, 55 GB of host memory was available (the chat model's vLLM used 49.7 GB of GPU memory, an ollama server 0.8 GB).
+
+**Method.** A new compose service `reranker-gpu` (profile `gpu-rerank`, `deploy/compose.local-models.yaml`) runs the
+same `bge-reranker-v2-m3` commit with the image of the host's vLLM container (arm64, CUDA 13, sm_121a; already on
+the host, never pulled). It reads the weights by the snapshot path of the pinned commit from the read-only Hugging
+Face cache that the CPU embedder uses (no download). Settings: fp16, 0.04 of the GPU memory, `--max-model-len`
+2560 (the longest pair that Core can send: a 1,000-character query and 1,200 passage characters), 32 sequences, eager
+mode. vLLM's `/v1/rerank` answer has the shape that Core and LLMDAP's rerank check read (`results[].index`,
+`relevance_score` 0..1), so no adapter was needed: a second LLMDAP route `rerank-gpu` points to it, and Core's
+`KUTUPHANE_LLMDAP_RERANK_ROUTE` (`rerank` or `rerank-gpu`) is the one switch. The CPU route stays as the fallback.
+A CUDA build of the embedder image was not needed: the vLLM image already runs on this GPU.
+
+**Memory.** The reranker uses 1.9 GB of GPU memory (`nvidia-smi`, the same in 45 samples over the runs below). The
+chat model's 49.7 GB did not change, and 51–53 GB of host memory stayed available. A chat call through LLMDAP right
+after the start answered in 0.4 s, and every answer below used the chat model.
+
+**Same order.** Both routes through LLMDAP, on 20 query sets from the test fixtures (14 passages each) and on the 15
+different rerank pools of the questions below (main database, read-only; 9–30 passages, one pool with 1 passage):
+
+| Sets | Kendall τ-b: mean (min) | Same top 1 | Same top 8 (passages and order) | Largest score difference |
+|---|---|---|---|---|
+| Fixtures (20) | 0.998 (0.978) | 20 of 20 | 20 of 20 | 0.0036 |
+| Pilot pools (15; 14 with 2 or more passages) | 0.9993 (0.995) | 15 of 15 | 15 of 15 | 0.0021 |
+
+Each order difference is a swap of two passages with the same score to 5 decimals, at rank 12 or lower. The
+longest query–passage pair in the pools has 476 tokens, so the CPU reranker's 1,024-token cut never applied.
+
+**Time.** The code paths of `ask_library` and `search_library` (`op_ask`, `op_search`, `k` 8) on the main
+database: Pilot 2 questions 1–9 as the orchestrator agent, and Pilot 1 questions 1, 2 (Turkish and English) and 3
+(`docs/18`) as `user:pilot` on the three radar books. One run each, CPU route and then GPU route, the same day.
+Seconds; rerank = the time of the rerank stage from `model_call` (end of the last rerank call minus end of the call
+before it).
+
+| Questions | Measure | CPU: mean (median) | GPU: mean (median) |
+|---|---|---|---|
+| Pilot 2, 1–9 | `ask` | 22.4 (21.8) | 8.1 (6.3) |
+| | `search` | 14.0 (14.0) | 0.4 (0.3) |
+| | rerank stage of `ask` | 14.1 (range 11.5–15.7) | 0.23 (range 0.21–0.28) |
+| Pilot 1, 1–3 | `ask` | 31.0 (28.9) | 9.5 (9.9) |
+| | `search` | 22.3 (22.6) | 0.8 (0.9) |
+| | rerank stage of `ask` | 20.8 (range 15.4–25.5) | 0.30 (range 0.26–0.34) |
+
+The rerank calls (30 passages; 21 + 9 for Pilot 1 question 2) took 64–67 % of an answer on the CPU and 2–3 % on the
+GPU. The answer model is now the largest stage. The answer status was the same in 12 of 13 questions. Pilot 1
+question 1 was `not_in_library` once on the GPU route; 3 more runs gave 2 answers, the same model variance as in
+section 8. G26 is closed for the local models.
+
+**Restart.** The service has no restart policy, as the other services. After a reboot, start it when the host's
+vLLM is up and `free -g` shows 15 GB or more available (`docs/guide/install.md`, "Reboot and restart"). One first
+start failed with `CUDA error: out of memory` while the host had 55 GB available; the second start worked.

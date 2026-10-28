@@ -28,6 +28,15 @@
       "allowInsecure": true
     },
     {
+      "name": "rerank-gpu",
+      "schema": "openai",
+      "surface": "rerank",
+      "locality": "local",
+      "baseUrl": "http://reranker-gpu:8000",
+      "pinnedModel": "BAAI/bge-reranker-v2-m3",
+      "allowInsecure": true
+    },
+    {
       "name": "laya",
       "schema": "systemone",
       "locality": "local",

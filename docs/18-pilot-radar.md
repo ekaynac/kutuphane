@@ -125,6 +125,10 @@ used the cached vector of question 3 (no embedding call). Rerank cap, measured o
 on questions 1–6, kept every evidence passage, and brought the report into the top 8 for question 2en; at 800,
 digest W40 fell from rank 8 to rank 25 for question 6.
 
+**GPU reranker (2026-10-28, `docs/26` §10).** The same reranker on the GPU (route `rerank-gpu`) gives the same top
+8, in the same order, on the pools of questions 1, 2tr, 2en and 3. Rerank stage of an answer: 15.4–25.5 s (CPU) →
+0.26–0.34 s; `ask` mean 31.0 s → 9.5 s, `search` mean 22.3 s → 0.8 s (one run each, the three radar books).
+
 ### 4.2 Re-check after chunker 5 (2026-10-27)
 
 After the re-ingest with chunker 5 (#118), question 3 seemed to lose the security advisory record, and question 2en

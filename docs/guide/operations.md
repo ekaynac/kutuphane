@@ -71,9 +71,10 @@ All `KUTUPHANE_*` variables that the code, `compose.yaml` and `deploy/` read:
 | `KUTUPHANE_LLMDAP_EMBED_ROUTE` | none | LLMDAP embeddings route. Without it, search is full text only. |
 | `KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS` | compose: `local`; no default outside compose | Route class of the embeddings route. |
 | `KUTUPHANE_EMBED_MODEL` | none | Pinned embedding model of the route, for example `BAAI/bge-m3`. |
-| `KUTUPHANE_LLMDAP_RERANK_ROUTE` | none | LLMDAP rerank route. Without it, there is no reranking. |
+| `KUTUPHANE_LLMDAP_RERANK_ROUTE` | none; local-models overlay: `rerank` | LLMDAP rerank route. Without it, there is no reranking. Local models: `rerank` (CPU) or `rerank-gpu` (GPU, [install.md](install.md#gpu-reranker)). |
 | `KUTUPHANE_LLMDAP_RERANK_ROUTE_CLASS` | compose: `local`; no default outside compose | Route class of the rerank route. |
 | `KUTUPHANE_RERANK_MODEL` | none | Pinned rerank model, for example `BAAI/bge-reranker-v2-m3`. |
+| `KUTUPHANE_VLLM_IMAGE` | `vllm-node:latest` | Compose only (profile `gpu-rerank`): the local vLLM image of `reranker-gpu`. It is never pulled. |
 | `KUTUPHANE_INDEX_BATCH` | `8` | Passages per embedding call. |
 | `KUTUPHANE_INDEX_BATCH_CHARS` | `8000` | Embedded characters per call. A longer passage goes alone. |
 | `KUTUPHANE_INDEX_CONCURRENCY` | `1` (at most 4) | Embedding calls in flight. |
@@ -337,6 +338,8 @@ Keep the concurrency at 1 on the CPU embedder. `nice` and `ionice` do not help, 
 
 Reranking is optional. Set `KUTUPHANE_LLMDAP_RERANK_ROUTE`, `KUTUPHANE_LLMDAP_RERANK_ROUTE_CLASS` and `KUTUPHANE_RERANK_MODEL`.
 The reranker reorders the top 30 hybrid hits. It reads the first 1,200 characters of each passage (G26).
+With the local models, the route `rerank-gpu` runs the same reranker on the GPU: 0.2–0.3 s for 30 passages instead of
+11–25 s on the CPU, with the same top 8 ([install.md](install.md#gpu-reranker)). The route `rerank` (CPU) is the fallback.
 
 ## 4. Search and ask from the CLI
 

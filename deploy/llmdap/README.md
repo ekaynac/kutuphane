@@ -8,7 +8,7 @@ LLMDAP's bridge-only image (`llmdap-bridge`, LLMDAP #237) is the only way to the
 | File | In git | Content |
 |---|---|---|
 | `config/routes.json` | yes | bridge routes: `chat`, `emb` (embeddings), `rerank`. The dev routes point to `model-stub`. |
-| `config/routes.local.json` | yes | the same routes on real local models (`deploy/compose.local-models.yaml`, D61) |
+| `config/routes.local.json` | yes | the same routes on real local models (`deploy/compose.local-models.yaml`, D61), plus `rerank-gpu` |
 | `config/policy.csv` | yes | `p, svc-kutuphane, llm:invoke, llm/<route>` |
 | `config/keys.json` | **no** | Core's subject key, as a **hash** only (`GATEWAY_SUBJECT_KEYS_FILE`) |
 | `bridge.env` | **no** | audit signing key, digest key, auth mode (copy `bridge.env.example`) |
@@ -50,9 +50,15 @@ Nothing leaves the machine. `deploy/compose.local-models.yaml` points LLMDAP at 
   (Qwen3.8 otherwise spends tokens on a `reasoning` field). It is the only model service with a non-internal network.
 - `emb` (1024 dimensions) and `rerank` → `embedder` (`deploy/models/`): bge-m3 and bge-reranker-v2-m3 on CPU,
   8 threads, offline, read-only, at the Hub commits pinned in `deploy/models/server.py` (`GET /health` reports them).
+- `rerank-gpu` → `reranker-gpu` (profile `gpu-rerank`): the same bge-reranker-v2-m3 commit on the GPU, served by the
+  host vLLM's own image (`vllm-node:latest`) with 0.04 of the GPU memory. vLLM's `/v1/rerank` answer has the same
+  `results[].index` and `relevance_score` (0..1) as the embedder, plus `document` and `id`, which LLMDAP's rerank check
+  allows; no adapter is needed. Core uses it when `KUTUPHANE_LLMDAP_RERANK_ROUTE=rerank-gpu`; `rerank` stays the CPU
+  fallback (`docs/guide/install.md`, "GPU reranker").
 
 LLMDAP's digest gate (`digestSource` + `approvedDigests`) exists only for the systemone and ollama schemas, so these
-openai routes pin the model *name*; the embedder pins the weights itself (it loads only the pinned commit).
+openai routes pin the model *name*; the embedder and `reranker-gpu` pin the weights themselves (each loads only the
+pinned commit: the embedder by revision, `reranker-gpu` by the snapshot path of that commit).
 
 ```sh
 # once: the pinned weights into the Hugging Face cache (a throwaway venv with huggingface_hub); the files are the
@@ -77,4 +83,5 @@ docker compose --profile app run --rm -T --no-deps core python -I - model-stub:8
 python -I deploy/llmdap_contract.py <okf dir> --chat chat stub-chat --embed emb stub-embed --rerank rerank stub-rerank \
   --audit-export "docker compose --profile app exec -T llmdap llmdap-audit-export --path /var/lib/llmdap/audit/audit.log"
 # local models: --chat chat RadixArk/Qwen3.8-27B-NVFP4 --embed emb BAAI/bge-m3 --rerank rerank BAAI/bge-reranker-v2-m3
+#   (GPU reranker: --rerank rerank-gpu BAAI/bge-reranker-v2-m3)
 ```

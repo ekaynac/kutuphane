@@ -1,13 +1,17 @@
-# Real local models (D61). Nothing leaves the machine: LLMDAP's routes (config/routes.local.json) reach
-#   chat   → spark-chat → the host's vLLM (RadixArk/Qwen3.8-27B-NVFP4, host port 8000; thinking forced off)
-#   emb    → embedder   (BAAI/bge-m3, 1024 dimensions, CPU)
-#   rerank → embedder   (BAAI/bge-reranker-v2-m3, CPU)
-#   laya   → laya       (unchanged)
-# The embedder weights come from the read-only Hugging Face cache at the commits pinned in deploy/models/server.py
+# Real local models (D61). Nothing leaves the machine. LLMDAP's routes (config/routes.local.json) reach
+#   chat       → spark-chat   → the host's vLLM (RadixArk/Qwen3.8-27B-NVFP4, host port 8000; thinking forced off)
+#   emb        → embedder     (BAAI/bge-m3, 1024 dimensions, CPU)
+#   rerank     → embedder     (BAAI/bge-reranker-v2-m3, CPU; the fallback)
+#   rerank-gpu → reranker-gpu (BAAI/bge-reranker-v2-m3, GPU; profile gpu-rerank)
+#   laya       → laya         (unchanged)
+# The weights come from the read-only Hugging Face cache at the commits pinned in deploy/models/server.py
 # (download them once; see deploy/llmdap/README.md). Core gets the matching route and model settings below.
 #
 #   docker compose -f compose.yaml -f deploy/compose.local-models.yaml \
 #     --profile app --profile decision-models --profile local-models up -d --build
+#
+# GPU reranker (G26): add `--profile gpu-rerank` and set KUTUPHANE_LLMDAP_RERANK_ROUTE=rerank-gpu in .env. That
+# setting is the one switch: without it (or with `rerank`), Core reranks on the CPU embedder.
 services:
   llmdap:
     environment:
@@ -19,7 +23,7 @@ services:
       KUTUPHANE_ANSWER_MODEL: RadixArk/Qwen3.8-27B-NVFP4
       KUTUPHANE_LLMDAP_EMBED_ROUTE: emb
       KUTUPHANE_EMBED_MODEL: BAAI/bge-m3
-      KUTUPHANE_LLMDAP_RERANK_ROUTE: rerank
+      KUTUPHANE_LLMDAP_RERANK_ROUTE: ${KUTUPHANE_LLMDAP_RERANK_ROUTE:-rerank}   # rerank (CPU) or rerank-gpu
       KUTUPHANE_RERANK_MODEL: BAAI/bge-reranker-v2-m3
 
   embedder:
@@ -58,6 +62,48 @@ services:
       - ./deploy/spark-chat:/etc/nginx/spark-chat:ro
     extra_hosts: ["vllm-host:host-gateway"]
     networks: [models, spark]   # `models` is internal; `spark` is the one way to the host
+
+  reranker-gpu:
+    profiles: [gpu-rerank]
+    # bge-reranker-v2-m3 on the GB10 GPU behind the LLMDAP route `rerank-gpu` (G26). The image is the host vLLM's
+    # own local build (the image of the `vllm_node` container: arm64, CUDA 13, sm_121a); it is never pulled. The GPU
+    # memory is shared with the chat model, so this server takes a small share: 0.04 of the GPU memory (about
+    # 4.8 GB, measured use in docs/guide/install.md), no KV cache (an encoder), eager mode (no CUDA graphs).
+    # The weights are the pinned commit of deploy/models/server.py, read by path from the read-only cache.
+    # max-model-len 2560 holds the longest pair Core can send (a 1,000-character query and 1,200 passage
+    # characters, even at one token per character), so no rerank call fails on length.
+    image: ${KUTUPHANE_VLLM_IMAGE:-vllm-node:latest}
+    pull_policy: never
+    entrypoint: ["vllm", "serve",
+                 "/hf/hub/models--BAAI--bge-reranker-v2-m3/snapshots/953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
+                 "--served-model-name", "BAAI/bge-reranker-v2-m3", "--host", "0.0.0.0", "--port", "8000",
+                 "--runner", "pooling", "--dtype", "float16", "--gpu-memory-utilization", "0.04",
+                 "--max-model-len", "2560", "--max-num-batched-tokens", "16384", "--max-num-seqs", "32",
+                 "--enforce-eager", "--disable-uvicorn-access-log"]
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:exec,size=1g"]   # Triton builds and loads small kernels at start (the image is read-only)
+    shm_size: 1g
+    environment:
+      HOME: /tmp
+      HF_HUB_OFFLINE: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      VLLM_NO_USAGE_STATS: "1"
+      DO_NOT_TRACK: "1"
+    volumes:
+      - ${HF_CACHE:-~/.cache/huggingface}:/hf:ro   # the same cache as the embedder; the container has no network out
+    deploy:
+      resources:
+        reservations:
+          devices: [{driver: nvidia, count: all, capabilities: [gpu]}]
+    networks: [models]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 10s
+      start_period: 300s
+      retries: 3
 
 networks:
   spark: {}

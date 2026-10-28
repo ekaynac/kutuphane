@@ -165,6 +165,7 @@ The overlay `deploy/compose.local-models.yaml` adds real models. Nothing leaves 
 | `chat` | `spark-chat` → the host's vLLM on port 8000 | `RadixArk/Qwen3.8-27B-NVFP4` |
 | `emb` | `embedder` (CPU, 8 threads, 8 GB) | `BAAI/bge-m3` (1024 dimensions) |
 | `rerank` | `embedder` | `BAAI/bge-reranker-v2-m3` |
+| `rerank-gpu` | `reranker-gpu` (GPU, profile `gpu-rerank`) | `BAAI/bge-reranker-v2-m3` (the same weights) |
 
 The overlay sets Core's route and model settings itself. Download the pinned weights into the Hugging Face cache
 once (`deploy/llmdap/README.md`, section "Local models"). Then:
@@ -180,6 +181,36 @@ book.
 **Hosted decision model.** `deploy/compose.hosted.yaml` gives LLMDAP an outbound network for one hosted route. Every
 hosted call needs an `llm:egress` grant in `policy.csv`. Core's own routes stay `local` unless you set a
 `*_ROUTE_CLASS` to `cloud`. A `local_only` book never goes to a `cloud` route.
+
+### GPU reranker
+
+The CPU reranker takes most of the time of a search or an answer (G26). The profile `gpu-rerank` runs the same
+reranker on the GPU with the host vLLM's own image (`vllm-node:latest`, the image of the `vllm_node` container; it is
+never pulled). It reads the pinned weights from the same read-only Hugging Face cache as `embedder`, so it needs no
+download. It has no network out and runs as a non-root user.
+
+The GPU memory is the host memory, shared with the chat model. The service may take at most 0.04 of it (about
+4.8 GB). Measured on the GB10: 1.9 GB (`nvidia-smi`), stable under load. Before you start it, check that `free -g`
+shows 15 GB or more `available`. Never stop the host's vLLM to make space.
+
+```sh
+docker compose -f compose.yaml -f deploy/compose.local-models.yaml --profile gpu-rerank up -d --no-deps reranker-gpu
+```
+
+Then set the one switch in `.env` and start Core again (or export it for the host CLI):
+
+```sh
+KUTUPHANE_LLMDAP_RERANK_ROUTE=rerank-gpu   # rerank (or unset) = the CPU reranker in embedder
+```
+
+Both routes are in LLMDAP (`routes.local.json`, `policy.csv`). LLMDAP reads them at its start, so restart it once
+after an upgrade that adds the route (`docker compose … restart llmdap`). After that, the switch needs no LLMDAP
+restart, and `model_call` and the LLMDAP audit show which route served each call. The CPU route is the fallback: set
+`KUTUPHANE_LLMDAP_RERANK_ROUTE=rerank` and stop `reranker-gpu` (`docker compose … stop reranker-gpu`). If the GPU
+route is set but `reranker-gpu` is not running, a search keeps the hybrid order and logs `reranking failed`.
+
+On the pilot questions the rerank stage went from 11–25 s (CPU) to 0.2–0.3 s (GPU), with the same top 8 in the same
+order (`docs/26` §10).
 
 ## Curator web
 
@@ -383,6 +414,11 @@ export KUTUPHANE_SKILLSPECTOR_PROXY=http://127.0.0.1:9  # optional: block its OS
   (`llmdap-audit`) are named volumes. They stay.
 - Start the host's vLLM before you use the local-models overlay. Without it, `ask_library` fails; search and notes
   still work.
+- The GPU reranker does not start by itself. After the host's vLLM is up, check `free -g` (15 GB or more
+  `available`), then start it again:
+  `docker compose -f compose.yaml -f deploy/compose.local-models.yaml --profile gpu-rerank up -d --no-deps reranker-gpu`.
+  It is ready in about one minute (`docker compose … ps reranker-gpu` shows `healthy`). Until then, with
+  `KUTUPHANE_LLMDAP_RERANK_ROUTE=rerank-gpu`, searches keep the hybrid order.
 - A background job that was running when the server stopped becomes `failed: interrupted` when its lease ends
   (60 s). It never runs again. Submit it again.
 - The server keeps query vectors in memory only. They are lost on a restart; this changes no result.

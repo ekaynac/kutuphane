@@ -1,6 +1,7 @@
 p, svc-kutuphane, llm:invoke, llm/chat
 p, svc-kutuphane, llm:invoke, llm/emb
 p, svc-kutuphane, llm:invoke, llm/rerank
+p, svc-kutuphane, llm:invoke, llm/rerank-gpu
 p, svc-kutuphane, llm:invoke, llm/laya
 p, svc-kutuphane, llm:invoke, llm/jev
 # Hosted egress is deny-by-default (LLMDAP #225): only the shadow-labelling purpose may reach Jev.
