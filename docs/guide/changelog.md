@@ -9,6 +9,11 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### kstd-check findings and vector counters (#134)
+
+- Fixed: `kstd-check --deny-names <file>` did the personal-data scan but did not show its findings. In Pilot 2, `kstd-init` and `ingest` gave 45 findings with the same deny-list, and `kstd-check` gave none. Now `ingest`, `kstd-init` and `kstd-check` list each finding (`personal-data finding (labelling, not refused): <path> line <n> (<rule>)`) and one count line (`personal-data findings: <rule> <n>, … (<files> files)`) from the same scan. A finding does not make `kstd-check` fail ([operations.md](operations.md#personal-data-and-fleet-data-findings), [kstd.md](kstd.md#workflow)) ([#134](https://github.com/ekaynac/kutuphane/pull/134)).
+- Changed: the index result field `vectors_added` is now `vectors_embedded`, and it counts only the new vectors from the embedder. Before, `vectors_added` also counted the copied vectors: a re-ingest that copied all 585 vectors showed `vectors_added 585` and `vectors_reused 585`. Now it shows `vectors_embedded 0` and `vectors_reused 585`. A script that reads `vectors_added` must read `vectors_embedded` + `vectors_reused` ([operations.md](operations.md#3-indexing)) ([#134](https://github.com/ekaynac/kutuphane/pull/134)).
+
 ### Curator web on the host with tailscale serve (#132)
 
 - New: an install variant without a sidecar: curator web runs on the host as a systemd user service bound to 127.0.0.1, and `tailscale serve` on the host gives it HTTPS 443 (tailnet only, Funnel off). It needs no tagged auth key ([install.md](install.md#host-install-with-tailscale-serve)) ([#132](https://github.com/ekaynac/kutuphane/pull/132)).

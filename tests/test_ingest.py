@@ -323,6 +323,42 @@ def test_a_cloud_book_takes_a_file_with_findings_that_never_goes_to_a_model(conn
     assert cli.main(_ingest_args(okf_dir, "cloud_ok")) == 0
 
 
+def test_kstd_init_kstd_check_and_ingest_report_one_deny_names_scan(conn, tmp_path, monkeypatch, capsys):  # pilot 2
+    """kstd-check --deny-names listed no finding where kstd-init and ingest found 45: all three report one scan."""
+    from kutuphane import cli, llmdap
+    monkeypatch.setenv(db.DSN_ENV, os.environ["KUTUPHANE_TEST_DSN"])
+    monkeypatch.delenv(llmdap.EMBED_ENV["route"], raising=False)
+    names = tmp_path / "names.txt"
+    names.write_text("# customers\nOrnek Lojistik\nBeta Depo\n", encoding="utf-8")
+    folder = tmp_path / "kaynak"
+    (folder / "saha").mkdir(parents=True)
+    (folder / "musteri.md").write_text("# Müşteri\n\nOrnek Lojistik deposu.\nORNEK  LOJISTIK ve Beta Depo.\n",
+                                       encoding="utf-8")
+    (folder / "saha" / "nobet.md").write_text("# Nöbet\n\nBeta Depo: ops@site-a.net\n", encoding="utf-8")
+    (folder / "saha" / "temiz.md").write_text("# Temiz\n\nNo names here.\n", encoding="utf-8")
+    deny = ["--deny-names", str(names)]
+    expected = {f"personal-data finding (labelling, not refused): {where}" for where in (
+        "musteri.md line 3 (listed-name)", "musteri.md line 4 (listed-name)", "saha/nobet.md line 3 (email)",
+        "saha/nobet.md line 3 (listed-name)")}
+    summary = "personal-data findings: email 1, listed-name 3 (2 files)"
+
+    def reported(err: str) -> set[str]:
+        return {line for line in err.splitlines() if line.startswith("personal-data finding ")}
+
+    assert cli.main(["kstd-init", str(folder), "--issuer", "ACME <kb@acme.example>", *deny]) == 0
+    init = capsys.readouterr()
+    assert cli.main(["kstd-check", str(folder), *deny]) == 0
+    check = capsys.readouterr()
+    assert cli.main([*_ingest_args(folder), *deny]) == 0
+    ingest = capsys.readouterr()
+    assert reported(init.err) == reported(check.err) == reported(ingest.err) == expected
+    assert f"{summary}; their files propose personal_data: unknown" in init.out
+    assert summary in check.out.splitlines() and summary in ingest.err.splitlines()
+    assert "Ornek" not in init.out + init.err + check.out + check.err + ingest.out + ingest.err
+    assert cli.main(["kstd-check", str(folder)]) == 0                  # no deny-list: only the email
+    assert "personal-data findings: email 1 (1 file)" in capsys.readouterr().out
+
+
 def test_a_data_finding_is_accepted_like_a_credential_finding(okf_dir):
     (okf_dir / "nobet.md").write_text(PERSONAL_DOC, encoding="utf-8")
     data = (okf_dir / "nobet.md").read_bytes()

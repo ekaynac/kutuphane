@@ -50,7 +50,9 @@ kutuphane ingest <folder> --book <slug> --sensitivity normal --egress local_only
 ```
 
 `kstd-init` and `kstd-check` need no database. Both run the same secret scan and the same personal-data scan as
-`ingest`, and take the same `--accept-finding` and `--deny-names` values.
+`ingest`, and take the same `--accept-finding` and `--deny-names` values. All three list each personal-data finding
+and its count in the same way, so with the same deny-list file they give the same findings. A finding does not make
+`kstd-check` fail.
 
 `kstd-init` writes safe starting values: `license: unknown`, `personal_data: unknown`, and `origin: unknown` for
 each file. It states **no `ai_use` term**: the line `# ai_use: {search: y|n, ai_input: y|n, train: y|n}` is only a
