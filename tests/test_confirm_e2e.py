@@ -198,21 +198,22 @@ def test_an_agent_proposes_and_the_person_confirms_on_the_page(env, web, chromiu
     chromium.js("document.getElementById('start-button').click()")
     chromium.wait(f"{MSG}.startsWith('Passkey saved')")
     chromium.js("document.getElementById('start-button').click()")   # sign in with the new passkey
-    chromium.wait("location.pathname === '/' && document.getElementById('who').textContent.includes('user:ayse')")
+    chromium.wait("location.pathname === '/' && document.getElementById('who').textContent === 'ayse'")
 
     chromium.go(url)  # the URL that confirm_origin gave the agent
     chromium.wait("document.getElementById('claim-human') !== null")
-    assert chromium.js("document.querySelector('pre').textContent") == text
+    assert chromium.js("document.querySelector('#cards .text').textContent") == text  # the text first
+    assert chromium.js("document.getElementById('intro').textContent") == (
+        "An agent typed text for you. Confirm only if these are your words (or you checked them).")
     chromium.js("document.getElementById('claim-human').click()")
     chromium.js("document.getElementById('confirm-sign').click()")
     chromium.wait("!document.getElementById('sheet').hidden")
     # review #17: the sheet shows the stored statement (claim, writer), not the page's own choice
     assert chromium.js("document.getElementById('sheet-text').textContent") == (
-        "“These are my words, verbatim (I wrote or dictated them).” (human) · entered by agent:kobra-7 · "
-        "signed as user:ayse")
+        "You confirm: “These are my words, verbatim (I wrote or dictated them).” Typed by kobra-7.")
+    assert "Signed as ayse" in chromium.js("document.getElementById('sheet-items').textContent")
     chromium.js("document.getElementById('sheet-sign').click()")
-    assert chromium.wait(f"{MSG}.startsWith('Confirmed') && {MSG}") == "Confirmed: origin human (entered by " \
-                                                                       "agent:kobra-7)"
+    assert chromium.wait(f"{MSG}.startsWith('Confirmed') && {MSG}") == "Confirmed. The note now shows your words."
 
     items = {i["ref"]: i for i in notesquery.query_notes(env, Actor(U), for_model=False, book=[J],
                                                          sets=["open"])["items"]}

@@ -331,7 +331,7 @@ def test_the_curator_web_route_snapshot(client):  # C10
     assert paths == ["/", "/api/act", "/api/act/options", "/api/delegations", "/api/delegations/{id}", "/api/enroll",
                      "/api/enroll/options", "/api/enroll/session", "/api/me", "/api/note/{book}/{id}", "/api/queue",
                      "/api/requests", "/api/requests/{book}/{id}", "/auth/logout", "/auth/passkey",
-                     "/auth/passkey/options", "/c/{book}/{id}", "/enroll", "/requests", "/static"]
+                     "/auth/passkey/options", "/c/{book}/{id}", "/delegations", "/enroll", "/requests", "/static"]
 
 
 def test_verify_acts_finds_a_bad_signature_and_a_missing_effect(env, client):  # C12

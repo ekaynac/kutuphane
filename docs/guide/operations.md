@@ -583,8 +583,10 @@ KUTUPHANE_CURATOR_DSN=… kutuphane curator queue --curator user:ayse [--book ad
   `next_cursor` gives the next page at the same w (20 groups per page; `--limit` changes it).
 - **Each note** shows every part that its id covers: the text, the scope, the class key, the commit, the decision
   options and choice, the citations, and the links with the target text. It also shows "why here", the writers, the
-  origin, the outcome counts, and per group the recurrence and "proposed again after rejection". A citation or a link
-  into a book that the curator cannot read shows only "a passage (note) in a book you cannot read".
+  origin, the outcome counts, and per group the recurrence and "proposed again after rejection". A readable passage
+  citation has its `path` and an `excerpt` (the first 240 characters, Markdown heading marks removed; the full text is in
+  `/api/note`); a passage link has its `path` and the full `text`. A citation or a link into a book that the curator
+  cannot read shows only "a passage (note) in a book you cannot read", with no path.
   `hidden_parts` counts these parts in the note's own citations and creation links: such a note cannot be approved
   on the phone (the curator can reject it, or get `read` on that book).
 - **No model suggestion** is in the queue, and the queue order does not use one (D67). A note that a delegation
@@ -604,18 +606,51 @@ The command prints a one-time URL (valid 15 minutes, for one passkey). Give it t
 opens it on her phone (with the Tailscale app on), taps **Create passkey** and confirms with her face, fingerprint or
 PIN. Then she taps **Sign in with passkey**.
 
-The page shows the queue (above): one card per group, the text of each note first (hidden Unicode characters are
-shown as marks such as `⟦U+202E⟧`), then every other part of the note. For each pending note she taps **Approve**,
-**Reject** or **Skip**; **Select group** selects every pending note of the group for approval. The bottom bar shows
-the counts ("Approve 1 · Reject 4"). She writes or picks a reason ("duplicate of …", "wrong", …), taps **Sign**,
-reads the statement (each note: the kind, the first 120 characters, the short reference; and the approved rules that
-the approval retires), and taps **Sign with passkey**. One act decides every selected note, with one reason; each
-note gets its own Standing event. The passkey signs that exact statement: the notes, their digests, the Standing in
-force, the new values and the reason. If another curator acted on a note in between, the page says so and reloads.
+The page has three tabs: **To review** (the queue above), **My words** (the "my words" requests, below) and
+**Auto-approval** (the delegations, below). Each tab has one line that tells what it is for. The words on the page
+are plain English; the internal names (refs, class keys, tiers, writer ids) are under **Details** on each card,
+closed by default.
 
-After the act, the page shows the receipt: for each note, the suggestion of a model decider if there is one ("agrees"
-or "differs"), and for a sample of a delegation, "this was a check of delegation <id>". The page shows these only
-after the act.
+<img src="img/curator-queue.png" alt="The To review tab on a phone: a finding with its evidence and a warning" width="300">
+
+**A card**, from top to bottom (one card per note, or per group of notes that say the same thing):
+
+1. the note text, large (hidden Unicode characters are shown as marks such as `⟦U+202E⟧`);
+2. the kind in plain words ("Finding: something an agent observed", "Convention: a rule the team should
+   follow", "Decision proposal: a choice between options", "Lesson", "Dead end: an approach that did not work",
+   "Test result"), who proposed it for whom, and the date; then where it applies ("Applies to kutuphane: src",
+   "Applies everywhere (no scope)." for a rule) and the commit it saw;
+3. **Evidence**: each cited passage as its file name and the first two lines; **Show passage** opens the full text.
+   A passage in a book that the curator cannot read shows only "A passage in a book you cannot read";
+4. **Options**: the options of a decision proposal, with the **Proposed choice** marked. It is always open;
+5. **Replaces**: the text of the approved rule that this note replaces, and **Linked**: the text of every other
+   linked note or passage;
+6. a warning line instead of the tier: "Approving this replaces an approved rule.", "Contradicts an approved note.
+   Check which one is true.";
+7. **Approve**, **Reject** and **Skip**. A note with a part in a book that the curator cannot read has no
+   **Approve** (she can reject it, or get `read` on that book);
+8. **Details** (closed): the note id, the kind, the scope, the class key, the commit, the writers, the origin, the
+   outcomes and "why here".
+
+<img src="img/curator-decision.png" alt="A decision proposal: the proposed choice is marked, with a hidden character shown as a mark" width="300">
+
+A group card says "3 notes say the same thing" and has **Approve all** and **Reject all** (no **Approve all** when
+two members contradict each other or more than one is a rule). Each member also has its own buttons.
+
+The bottom bar shows the counts ("2 approve · 1 reject") and **Sign 3 decisions**. A tap asks **Why?**: she taps a
+reason (**Correct and useful**, **Wrong**, **Duplicate**, **Not useful now**) or writes one; **Not sure — skip**
+clears the choices and signs nothing. **Continue** shows the sign sheet from the stored statement: "You approve 2
+notes and reject 1. Reason: …", each note (its kind and first line), and "Also retires the approved rule: …" for each
+rule that an approval retires. She taps **Sign with fingerprint** (or face, or PIN). One act decides every chosen
+note, with one reason; each note gets its own Standing event. The passkey signs that exact statement: the notes, their
+digests, the Standing in force, the new values and the reason. If another curator acted on a note in between, the
+page says so and reloads.
+
+<img src="img/curator-sign.png" alt="The sign sheet: what the fingerprint signs, with the rule that the approval retires" width="300">
+
+After the act, the page shows the receipt ("Done. 2 approved, 1 rejected."): for each note, the suggestion of a model
+decider if there is one ("agrees with you" or "differs from you"), and for a sample of a delegation, "This was a check
+of auto-approval <id>". The page shows these only after the act. "Nothing to review." means the queue is empty.
 
 Rules of one act: 1–50 notes, one reason, at most one rule-role note (`decision_proposal`, `convention`) approved,
 never two notes joined by `contradicts` approved together. The transitions are the ones in the table above. iPhone
@@ -654,9 +689,9 @@ The server never stores `human` from a token. When an agent (or a person over HT
 MCP tool `confirm_origin` gives the same URL to the agent; a 2026-07-28 client shows it to the person as a URL
 elicitation. The URL holds no secret and gives no right.
 
-The person opens the URL in curator web (or `/requests` for every open request), signs in with a passkey, and
-reads who asks (the writer and the client), the full text and the fields of the note. Then the person picks one
-sentence and signs it with the passkey:
+The person opens the URL in curator web (or the **My words** tab, `/requests`, for every open request), signs in
+with a passkey, and reads the full text first, then who typed it (the writer and the client) and the fields of the
+note. Then the person picks one sentence and taps **Sign with fingerprint**:
 
 | Choice | Origin | Who may choose it |
 |---|---|---|
@@ -705,10 +740,12 @@ event is `approved` or `rejected`: `n`, the share approved, and the Wilson 95 % 
 
 **A delegation** lets the decider approve fresh notes of one evidence kind (`finding`, `lesson`, `dead_end` or
 `test_result`, never a rule kind) in one journal. A curator with `curate` and `read` creates it on the phone: tap
-**Delegations**, read the agreement table, choose the threshold (default 0.90), the sample rate N (default 10) and
-the days (default 14, at most 30), tap **Delegate** and sign. The page refuses it with fewer than 30 shadow decisions
-at the chosen threshold (`KUTUPHANE_DELEGATION_MIN_SHADOW`, a whole number of at least 1; curator web does not start
-with another value).
+**Auto-approval**, read the agreement in words ("When the model was at least 90 % sure, you agreed with it on 34 of 35
+notes."; the full table is under **Agreement at each level**), choose the level (default 90 %), the check rate
+("You check 1 in" N, default 10) and the days (default 14, at most 30), read the sentence "A local model may approve
+finding notes in adc-memory for 14 days. You check 1 in 10.", tap **Allow auto-approval** and sign. The page refuses
+it with fewer than 30 shadow decisions at the chosen level (`KUTUPHANE_DELEGATION_MIN_SHADOW`, a whole number of at
+least 1; curator web does not start with another value).
 
 The runner reads note text only through the database (`decider_notes()`): the journals where
 `agent:kutuphane-decider` holds `read` (the grant above) and the journals of live delegations, through the text gate.
@@ -739,9 +776,10 @@ KUTUPHANE_CURATOR_DSN=… kutuphane delegation report cd_<32 hex>            # e
 KUTUPHANE_CURATOR_DSN=… kutuphane delegation end cd_<32 hex> --curator user:ayse --reason '…'
 ```
 
-An end is final; a new delegation is a new signed act. On the phone, **Details** shows the checks (agreed,
-disagreed, open, closed with no verdict) and the notes that the delegation approved, newest first. After an end,
-**Retire** retires them in one act (at most 50 at a time). Nothing is retired automatically.
+An end is final; a new delegation is a new signed act. On the phone, **Running now** lists the live delegations;
+**Details** shows the checks (agreed, said no, waiting, closed with no answer), **End auto-approval**, and the notes
+that the delegation approved, newest first. After an end, **Retire the N it approved** retires them in one act (at
+most 50 at a time). Nothing is retired automatically.
 
 ### Measures
 
@@ -753,7 +791,7 @@ KUTUPHANE_CURATOR_DSN=… kutuphane curator report --from 2026-10-01 --to 2026-1
 
 | Key | Content |
 |---|---|
-| `curator_time` | `seconds_per_approved_note`: the visible time of the phone acts that approve a note (from the first display of the cards to the tap on **Sign**, only while the tab is visible, at most 1 hour) ÷ the notes they approve. Also the median seconds per act and per decided note, the acts with no time, and the acts signed by a synced passkey. |
+| `curator_time` | `seconds_per_approved_note`: the visible time of the phone acts that approve a note (from the first display of the cards to the tap on **Continue** after the reason, only while the tab is visible, at most 1 hour) ÷ the notes they approve. Also the median seconds per act and per decided note, the acts with no time, and the acts signed by a synced passkey. |
 | `pending_after_7_days` | Among the notes written from `--from` to 7 days before `--to` (and at least 7 days ago): the share with no Standing event 7 days after it was written. By tier (the tier now) and by book. |
 | `decided_by` | Standing events in the period: `people_web` (phone acts), `people_cli`, `delegations`, `system`, by value. |
 | `delegations` | Each delegation live in the period: uses, approvals, the samples (agreed, disagreed, open, closed with no verdict), the coverage of its class, and the outcome counts of delegated and human approvals of the class. |

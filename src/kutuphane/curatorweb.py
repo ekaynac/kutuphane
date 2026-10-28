@@ -296,7 +296,7 @@ def create_app(*, dsn: str, cfg: passkey.Config, ui_dir: Path = UI_DIR) -> Starl
 
     routes = [
         Route("/", page), Route("/enroll", page),
-        Route("/c/{book}/{id}", page), Route("/requests", page),
+        Route("/c/{book}/{id}", page), Route("/requests", page), Route("/delegations", page),
         Route("/api/requests", answer(requests)), Route("/api/requests/{book}/{id}", answer(request_page)),
         Route("/api/enroll/session", answer(enroll_session), methods=["POST"]),
         Route("/api/enroll/options", answer(enroll_options), methods=["POST"]),

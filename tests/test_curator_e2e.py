@@ -1,9 +1,11 @@
 """Curator web end to end in Chromium (docs/25 §12.2 Q8; slice Q).
 
 A real Chromium with a CDP virtual authenticator (`WebAuthn.addVirtualAuthenticator`, user verification true) opens
-the enrollment URL, creates a passkey, logs in, and batch-approves a `same_as` group with one reason and one passkey
-act. The browser runs the shipped page (core.js, queue.js) against curator web on http://localhost (a secure
-context), with the curator web database role. CDP goes over `--remote-debugging-pipe` (no extra package).
+the enrollment URL, creates a passkey, logs in, and approves a `same_as` group with "Approve all", one reason chip and
+one passkey act. On the way it checks what the page shows before any tap: the plain kind labels, a decision's
+proposed choice (with a hidden character as a mark), and no Approve button for a note with a part in a book that the
+person cannot read. The browser runs the shipped page (core.js, queue.js) against curator web on http://localhost (a
+secure context), with the curator web database role. CDP goes over `--remote-debugging-pipe` (no extra package).
 
 Skipped without Chromium: set KUTUPHANE_CHROMIUM, or install one (`chromium` on PATH, or a Playwright browser in
 ~/.cache/ms-playwright).
@@ -18,14 +20,16 @@ import subprocess
 import tempfile
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 import uvicorn
 
-from kutuphane import curatorweb, notes, passkey
+from kutuphane import authz, catalog, curatorweb, notes, passkey, profiles
 from kutuphane.gate import Actor
-from test_curatorweb import U, J, env, note, web_dsn  # noqa: F401
+from kutuphane.source import read_source
+from test_curatorweb import LOCAL, U, J, env, note, web_dsn  # noqa: F401
 
 CHROMIUM_ENV = "KUTUPHANE_CHROMIUM"
 TIMEOUT = 20.0
@@ -166,7 +170,7 @@ def click(b, selector: str) -> None:
     b.eval(f"document.querySelector({json.dumps(selector)}).click()")
 
 
-def test_a_person_logs_in_with_a_passkey_and_batch_approves_a_same_as_group(env, server, browser):  # Q8
+def test_a_person_logs_in_with_a_passkey_and_batch_approves_a_same_as_group(env, server, browser, okf_dir):  # Q8
     agent = Actor("agent:kobra-7", U, channel="mcp")
     a, b_, c = (note(env, f"The retry loop hides timeouts ({i})") for i in range(3))
     for src in (b_, c):
@@ -174,6 +178,16 @@ def test_a_person_logs_in_with_a_passkey_and_batch_approves_a_same_as_group(env,
     harmful = "Turn off TLS verification"
     proposal = note(env, "Pick the client settings \u202e", kind="decision_proposal",
                     decision={"options": ["Keep TLS on", harmful], "choice": harmful})
+    # a note that cites a passage of a book that the person cannot read any more: one hidden part, no Approve
+    catalog.publish(env, book="kitap", title="kitap", files=read_source(okf_dir), policy=LOCAL,
+                    profile=profiles.spec("chunked"))
+    authz.grant(env, "book:kitap", "read", U)
+    authz.delegate(env, delegator=U, delegate_to="agent:kobra-7", obj="book:kitap", mode="read",
+                   expires_at=datetime.now(timezone.utc) + timedelta(hours=1))
+    chunk = env.execute("SELECT book, content_id, profile_id, path, ordinal FROM chunk WHERE book = 'kitap' "
+                        "ORDER BY path, ordinal LIMIT 1").fetchone()
+    hidden = note(env, "The backup runbook needs a restore test", citations=["{}@{}/{}/{}#{}".format(*chunk)])
+    authz.revoke(env, "book:kitap", "read", U)
     env.commit()
 
     browser.send("WebAuthn.enable", {"enableUI": False})
@@ -189,27 +203,47 @@ def test_a_person_logs_in_with_a_passkey_and_batch_approves_a_same_as_group(env,
     browser.wait("document.getElementById('start-button')?.textContent === 'Sign in with passkey'", "the passkey")
     assert env.execute("SELECT count(*) FROM passkey WHERE principal = %s", (U,)).fetchone()[0] == 1
     click(browser, "#start-button")
-    browser.wait("document.querySelectorAll('.card.group').length === 2", "the queue")
+    browser.wait("document.querySelectorAll('#cards > .card').length === 3", "the queue")
 
     page = browser.eval("document.getElementById('cards').innerText")
     assert harmful in page and "⟦U+202E⟧" in page  # the decision's choice and a hidden character, shown
     assert "suggest" not in page.lower() and "sample" not in page.lower()
+    for label in ("Finding: something an agent observed", "Decision proposal: a choice between options"):
+        assert label in page  # the kinds in plain words
+    assert "Applies everywhere (no scope)." in page  # the scope of a rule is part of its id: on the card
+    # the proposed choice is on the card without a tap: rendered, highlighted, not inside a closed part
+    chosen = browser.eval("(() => { const c = document.querySelector('.decision li.chosen'); "
+                          "return c && c.getClientRects().length > 0 && !c.closest('details') ? c.innerText : null; })()")
+    assert chosen is not None and harmful in chosen and "Proposed choice" in chosen
+    # review #16: a hidden part (a citation into a book the person cannot read) gives Reject and Skip, no Approve
+    card = f"document.querySelector('.note[data-ref=\"{hidden}\"]')"
+    assert browser.eval(f"[...{card}.querySelectorAll('.choices button')].map((b) => b.dataset.to)") == \
+        ["rejected", "skip"]
+    assert "in a book you cannot read" in browser.eval(f"{card}.innerText")
+    assert browser.eval("document.querySelectorAll('.choices button[data-to=approved]').length") == 4
 
-    click(browser, ".select-group")
-    assert browser.eval("document.getElementById('batch-count').textContent") == "Approve 3 · Reject 0"
-    browser.eval("document.getElementById('batch-reason').value = 'checked: the same finding, three times'")
+    click(browser, ".card.group .group-all button.approve")
+    assert browser.eval("document.getElementById('batch-count').textContent") == "3 approve"
+    assert browser.eval("document.getElementById('bar-open').textContent") == "Sign 3 decisions"
+    click(browser, "#bar-open")
+    browser.wait("!document.getElementById('decide').hidden", "the reason chips")
+    click(browser, ".reason-chip")  # a chip fills the required reason
+    assert browser.eval("document.getElementById('batch-reason').value") == "Correct and useful"
     click(browser, "#batch-sign")
     browser.wait("!document.getElementById('sheet').hidden", "the confirm sheet")
-    assert browser.eval("document.getElementById('sheet-items').children.length") == 3
+    assert browser.eval("document.querySelectorAll('#sheet-items li.approved').length") == 3
+    assert browser.eval("document.getElementById('sheet-text').textContent") == \
+        "You approve 3 notes. Reason: “Correct and useful”."
     click(browser, "#sheet-sign")
     browser.wait("!document.getElementById('receipt').hidden", "the receipt")
+    assert browser.eval("document.querySelector('#receipt h2').textContent") == "Done. 3 approved."
 
     rows = env.execute("SELECT n.book || '@' || n.id, e.value, e.set_by, e.act, e.reason FROM standing_event e "
                        "JOIN note n ON n.seq = e.note_seq ORDER BY e.seq").fetchall()
     assert sorted(r[0] for r in rows) == sorted([a, b_, c])
-    assert {(r[1], r[2], r[4]) for r in rows} == {("approved", U, "checked: the same finding, three times")}
+    assert {(r[1], r[2], r[4]) for r in rows} == {("approved", U, "Correct and useful")}
     assert len({r[3] for r in rows}) == 1 and rows[0][3] is not None
     shown = env.execute("SELECT shown_ms FROM curator_act").fetchone()[0]
     assert shown is not None and 0 <= shown <= 3_600_000
-    browser.wait("document.querySelectorAll('.card.group').length === 1", "the queue after the act")
-    assert proposal.split("@")[1][:8] in browser.eval("document.getElementById('cards').innerText")
+    browser.wait("document.querySelectorAll('#cards > .card').length === 2", "the queue after the act")
+    assert proposal.split("@")[1][:8] in browser.eval("document.getElementById('cards').textContent")
