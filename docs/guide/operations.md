@@ -204,8 +204,12 @@ kutuphane ingest <folder> --book <slug> --sensitivity normal --egress local_only
   --deny-names /secure/names.txt
 ```
 
-- Stderr lists each finding: `personal-data finding (labelling, not refused): <path> line <n> (<rule>)`. The
-  matched text is never shown or stored.
+- `ingest`, `kstd-init` and `kstd-check` report the same scan in the same way. Stderr lists each finding:
+  `personal-data finding (labelling, not refused): <path> line <n> (<rule>)`. Then one line gives the count for
+  each rule and the number of files, for example `personal-data findings: email 1, listed-name 44 (12 files)` (or
+  `personal-data findings: none`). `ingest` writes this line to stderr; `kstd-init` and `kstd-check` write it to
+  stdout. Give the three commands the same `--deny-names` file to get the same findings. The matched text is never
+  shown or stored.
 - The publication records the findings that no acceptance covers (`data_findings`: path, digest, rule, lines) in
   the result and in `show`. `kstd.yaml` is not scanned.
 - `kstd-init` writes `personal_data: unknown` for the item of each file with a finding (see
@@ -319,7 +323,7 @@ kutuphane index <book> [--batch N] [--batch-chars N] [--concurrency N]
 
 Without the embeddings route, `index` stops with exit code 1: `no embeddings route: set KUTUPHANE_LLMDAP_EMBED_ROUTE`.
 
-- **Only changed passages are embedded (G17).** A vector records the sha256 of the embedded text. A new version copies the vector of each passage whose text, model and vector width did not change, in the same book, also from another profile of the book. So after a new chunker version, a new ingest embeds only the passages whose text changed. Vectors never go from one book to another. The result shows `vectors_added` and `vectors_reused`.
+- **Only changed passages are embedded (G17).** A vector records the sha256 of the embedded text. A new version copies the vector of each passage whose text, model and vector width did not change, in the same book, also from another profile of the book. So after a new chunker version, a new ingest embeds only the passages whose text changed. Vectors never go from one book to another. The result shows `vectors_embedded` (new vectors from the embedder) and `vectors_reused` (vectors copied from an unchanged passage, with no embedding call). Their sum is the number of vectors that the run wrote. A re-ingest that changes no passage text shows `vectors_embedded: 0`.
 - **The book is live when it is published (G12).** An embedding settings error stops `ingest` and `approve-import` before the publication. If indexing fails after the publication, the command prints the publication result, adds `index_error` or `failed` and `not_attempted`, and exits with code 3. Run `kutuphane index <book>` later. `index` also exits with code 3 while passages are missing vectors.
 - **Retries.** Kütüphane tries a failed embedding call 2 more times (after 5 s and 10 s). It reports a batch that still fails and continues. After 3 failed batches in a row, it stops and reports the rest as not attempted.
 - **Indexing load (G18).** The local CPU embedder runs one request at a time. A search waits for the index call in front of it. `--batch`, `--batch-chars` and `--concurrency` override the `KUTUPHANE_INDEX_*` variables.
@@ -946,7 +950,7 @@ Disk encryption is a deployment duty at the volume level (D48). The application 
 | `reject-import` | Refuse a verified package (kept on record). |
 | `imports` | List received packages and their verdicts. |
 | `kstd-init` | Write a starting `kstd.yaml` for a folder (no database); `--source-repo` proposes each origin from git. |
-| `kstd-check` | Validate a folder's `kstd.yaml` (no database). |
+| `kstd-check` | Validate a folder's `kstd.yaml` and list the personal-data findings (no database). |
 | `whoami` | Verify an access token read from stdin. |
 | `explain` | Print the unified audit for a correlation id or an answer id. |
 | `journal create` | Create a journal. |

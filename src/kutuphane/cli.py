@@ -35,11 +35,7 @@ def cmd_ingest(conn, args) -> int:
                              profile=profiles.spec(args.profile))
     for a in result.accepted_findings:  # on record in the publication; say so where a person looks
         print(f"accepted finding (reviewed exception): {a['path']}@sha256:{a['sha256']}:{a['rule']}", file=sys.stderr)
-    for d in result.data_findings:
-        where = " of the extracted text" if d.get("text") else ""
-        for line in d["lines"]:
-            print(f"personal-data finding (labelling, not refused): {d['path']} line {line}{where} ({d['rule']})",
-                  file=sys.stderr)
+    print(_report_data_findings(result.data_findings), file=sys.stderr)
     return _published_then_index(conn, result, embedder, settings)
 
 
@@ -204,6 +200,21 @@ def _names(args):
     return datascan.load_names(Path(args.deny_names)) if args.deny_names else None
 
 
+def _report_data_findings(found: list[dict]) -> str:
+    """Print each open personal-data finding to stderr; return the summary line. `found`: catalog.data_findings of
+    the read_source scan, so ingest, kstd-init and kstd-check report one scan the same way (G35)."""
+    counts = {}
+    for d in found:
+        where = " of the extracted text" if d.get("text") else ""
+        for line in d["lines"]:
+            print(f"personal-data finding (labelling, not refused): {d['path']} line {line}{where} ({d['rule']})",
+                  file=sys.stderr)
+        counts[d["rule"]] = counts.get(d["rule"], 0) + len(d["lines"])
+    flagged = len({d["path"] for d in found})
+    return "personal-data findings: " + (", ".join(f"{r} {n}" for r, n in sorted(counts.items()))
+                                         + f" ({flagged} file{'s' if flagged != 1 else ''})" if counts else "none")
+
+
 def _scan_options(parser, effect: str) -> None:
     parser.add_argument("--accept-finding", action="append", default=[], metavar="PATH@sha256:DIGEST:RULE",
                         help="accept one reviewed credential or personal-data finding: that rule, in exactly that file "
@@ -226,20 +237,13 @@ def cmd_kstd_init(_conn, args) -> int:
     fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)  # never overwrite a curated manifest
     with os.fdopen(fd, "w") as f:
         f.write(kstd.init(files, args.issuer, proposals=proposals))
-    counts, flagged = {}, 0
-    for sf in sorted(files, key=lambda f: f.path):
-        flagged += bool(sf.data_findings)
-        for where, d in sf.data_findings:
-            counts[d.rule] = counts.get(d.rule, 0) + 1
-            print(f"personal-data finding: {sf.path} line {d.line}{where} ({d.rule})", file=sys.stderr)
+    summary = _report_data_findings(catalog.data_findings(files))
     print(f"wrote {target}: set the license, ai_use and personal_data, then run `kutuphane kstd-check {root}`")
     if proposals is not None:
         origins = [p.origin for p in proposals.items.values()]
         print(f"origin proposals from git: model {origins.count('model')}, unknown {origins.count('unknown')} "
               f"(at {proposals.commit}); a proposal is not authority: check each one in {kstd.MANIFEST}")
-    print("personal-data findings: " + (", ".join(f"{r} {n}" for r, n in sorted(counts.items()))
-                                        + f" ({flagged} file{'s' if flagged != 1 else ''}); their files propose "
-                                          "personal_data: unknown" if counts else "none"))
+    print(summary + ("; their files propose personal_data: unknown" if any(f.data_findings for f in files) else ""))
     return 0
 
 
@@ -254,6 +258,7 @@ def cmd_kstd_check(_conn, args) -> int:
         print(f"warning: {w}")
     for e in errors:
         print(f"error: {e}", file=sys.stderr)
+    print(_report_data_findings(catalog.data_findings(files)))  # a labelling question: never a FAIL
     print("kstd L0: " + ("FAIL" if errors else "PASS") + f" ({len(files) - 1} files)")
     return 1 if errors else 0
 
@@ -766,7 +771,8 @@ def parser() -> argparse.ArgumentParser:
                                                      "(default HEAD)")
     _scan_options(ki, "give the same acceptances to ingest")
     ki.set_defaults(fn=cmd_kstd_init, no_db=True)
-    kc = sub.add_parser("kstd-check", help="validate a folder's kstd.yaml: digests, SPDX ids, terms (no database)")
+    kc = sub.add_parser("kstd-check", help="validate a folder's kstd.yaml: digests, SPDX ids, terms; list the "
+                                           "personal-data findings, as kstd-init and ingest do (no database)")
     kc.add_argument("path")
     _scan_options(kc, "give the same acceptances to ingest")
     kc.set_defaults(fn=cmd_kstd_check, no_db=True)
