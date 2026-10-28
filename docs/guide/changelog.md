@@ -142,6 +142,10 @@ For the terms, read [concepts.md](concepts.md).
 
 - The user and operator guide is in `docs/guide/` (start at [index.md](index.md)), and `README.md` is a short overview with a tested quick start (D75).
 
+### Design and research
+
+- Labelling v5: Astra read the 60 second-reader cases blind, and `experiments/labeling_v5/compare_second.py` compares its answers with the operator's labels (agreement, Cohen's kappa, disagreements) ([../20-labelling-curation-v5.md](../20-labelling-curation-v5.md) §8) ([#126](https://github.com/ekaynac/kutuphane/pull/126)).
+
 ## 2026-10-27
 
 ### Agent memory
