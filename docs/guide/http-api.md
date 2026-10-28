@@ -184,10 +184,12 @@ Notes are not searched here (use `GET /v1/notes`): a journal that you may read i
 ```json
 {"correlation_id": "4b0e…",
  "results": [{"citation": "runbooks@ct_9f…/pf_41…/backup.md#3", "page": null, "line": 40, "score": 0.0325,
-              "text": "…", "item": null}]}
+              "text": "…", "item": null, "quoted_records": []}]}
 ```
 
-`item` is the kstd item information of the file, or `null` when the version has no `kstd.yaml`.
+`item` is the kstd item information of the file, or `null` when the version has no `kstd.yaml`. `quoted_records`
+gives the handles of the JSONL records whose text the passage repeats (G23), from books that you may read now and
+that pass the filters ([concepts.md](concepts.md#records-that-a-passage-repeats)).
 
 With `max_chars`, each `text` is a deterministic snippet of at most `max_chars` characters around the words that
 match the query, cut at white space, with `…` on each cut side, and each result has `truncated` (`true` when the
@@ -261,13 +263,16 @@ Answer a question from the library, with `[n]` citations. MCP: `ask_library` ([m
 ```json
 {"id": "5e1c…", "status": "answered", "body": "Backups are kept for 30 days [1].",
  "citations": [{"n": 1, "book": "runbooks", "content_id": "ct_9f…", "profile_id": "pf_41…", "path": "backup.md",
-                "ordinal": 3, "item": null}],
+                "ordinal": 3, "quoted_records": [], "item": null}],
  "withheld": 0, "correlation_id": "4b0e…"}
 ```
 
 - `status` is `answered` or `not_in_library`. For `not_in_library`, `body` is `null` and `citations` is empty.
 - `withheld` is the number of passages found but not sent to the model, because their kstd rights do not allow AI
   input.
+- When a passage repeats the text of a JSONL record, the record is in the evidence right before the passage (at
+  most 4 records are added; only with `read` on its book and AI input in its rights). `quoted_records` of a citation
+  gives the handles of those records; else it is `[]`.
 
 **Response `202` (`background` is `true`):** `{"job_id": "jb_…", "status": "queued", "correlation_id": "…"}`.
 A retry with the same `idempotency_key` and the same request gets `200` with the same `job_id` and its current
@@ -295,7 +300,8 @@ calling directly. You need `read` now on every source book of the answer.
 
 ```json
 {"id": "5e1c…", "question": "How long do we keep backups?", "status": "answered", "body": "… [1].",
- "evidence": [{"n": 1, "citation": "runbooks@ct_9f…/pf_41…/backup.md#3", "text": "…", "item": null}]}
+ "evidence": [{"n": 1, "citation": "runbooks@ct_9f…/pf_41…/backup.md#3", "text": "…", "item": null,
+               "quoted_records": []}]}
 ```
 
 **Errors:** `401`, `403` (another principal's answer, or a source book is not readable now), `404`.

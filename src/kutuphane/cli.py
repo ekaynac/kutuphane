@@ -12,8 +12,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import (answers, audit, authz, catalog, coderepo, curatorqueue, datascan, db, decisions, devauth, gate,
-               gitorigin, identity, kstd, llmdap, noteimport, notes, packages, passkey, profiles, search, retrieval,
-               signing, skillscan, vectors)
+               gitorigin, identity, kstd, llmdap, noteimport, notes, packages, passkey, profiles, quotes, search,
+               retrieval, signing, skillscan, vectors)
 from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, make_policy
 from .source import AcceptedFinding, read_source
 
@@ -186,10 +186,12 @@ def _scope(args) -> search.Scope:
 
 def cmd_search(conn, args) -> int:
     actor = gate.Actor(args.principal, args.on_behalf_of)
-    hits = retrieval.retrieve(conn, actor, args.query, args.k, retrieval.Stages.from_env(), _scope(args))
-    rights = kstd.Rights(conn)
+    scope = _scope(args)
+    hits = retrieval.retrieve(conn, actor, args.query, args.k, retrieval.Stages.from_env(), scope)
+    rights, found = kstd.Rights(conn), quotes.quoted(conn, actor, hits, scope)
     _print([{"citation": h.citation.handle, "page": h.page, "line": h.line, "score": round(h.score, 4),
-             "text": h.text, "item": rights.info(h.citation.book, h.citation.content_id, h.citation.path)}
+             "text": h.text, "item": rights.info(h.citation.book, h.citation.content_id, h.citation.path),
+             "quoted_records": quotes.handles(found, h.citation)}
             for h in hits])
     return 0
 

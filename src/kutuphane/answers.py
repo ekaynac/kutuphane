@@ -16,7 +16,7 @@ from pathlib import PurePosixPath
 
 from psycopg.types.json import Jsonb
 
-from . import gate, kstd, llmdap, profiles, retrieval, search
+from . import gate, kstd, llmdap, profiles, quotes, retrieval, search
 from .gate import Actor, Denied, NotFound
 
 NOT_IN_LIBRARY = "KÜTÜPHANEDE_YOK"
@@ -78,6 +78,16 @@ ABSENT = {
     "en": "Check: the question names {names}, but no passage above is from it. If the passages only quote or mention "
           f"it, say that they only refer to it; otherwise write only: {NOT_IN_LIBRARY}.",
 }
+# G23 (docs/18 §7): a passage that repeats the text of a record is marked, and the record is put into the evidence
+# right before its first copy (at most MAX_RECORDS added; a record is short), so the answer can cite the record.
+MAX_RECORDS = 4
+REPEATS = {"tr": "tekrarlar", "en": "repeats", None: "repeats"}
+REPEATS_NOTE = {
+    "tr": "Not: \"tekrarlar [n]\" ile işaretli bir pasaj, [n] kaydının metnini aynen tekrarlar. O metin için kaydı "
+          "kaynak göster: [n].",
+    "en": "Note: a passage marked \"repeats [n]\" repeats the text of record [n] word for word. For that text, cite "
+          "the record: [n].",
+}
 
 
 def absent_sources(question: str, hits: list[search.Hit]) -> list[str]:
@@ -123,10 +133,30 @@ def _shown(text: str) -> str:
     return text if len(text) <= PROMPT_CHARS else text[:PROMPT_CHARS] + CUT_MARK
 
 
-def _ref(n: int, hit: search.Hit) -> dict:
+def _ref(n: int, hit: search.Hit, records=()) -> dict:
     c = hit.citation
     return {"n": n, "book": c.book, "content_id": c.content_id, "profile_id": c.profile_id, "path": c.path,
-            "ordinal": c.ordinal}
+            "ordinal": c.ordinal, "quoted_records": [r.handle for r in records]}
+
+
+def with_records(conn, actor: Actor, hits: list[search.Hit], scope: search.Scope, rights: kstd.Rights
+                 ) -> tuple[list[search.Hit], dict]:
+    """The evidence with each record that a passage repeats (quotes.py) right before its first copy, and {copy
+    citation: the record citations in the evidence}. A record is added only when its rights allow AI input; only
+    records in the evidence are named, so the answer's gate covers their books."""
+    found = quotes.quoted(conn, actor, hits, scope)
+    present, out = {h.citation for h in hits}, []
+    added = 0
+    for h in hits:
+        for r in found.get(h.citation, []):
+            c = r.citation
+            if c not in present and added < MAX_RECORDS and rights.allows(c.book, c.content_id, c.path, "ai_input"):
+                out.append(r)
+                present.add(c)
+                added += 1
+        out.append(h)
+    repeats = {copy: [r.citation for r in records if r.citation in present] for copy, records in found.items()}
+    return out, {copy: records for copy, records in repeats.items() if records}
 
 
 def _content(payload) -> str:
@@ -188,15 +218,21 @@ def ask(conn, bridge: llmdap.Bridge, actor: Actor, question: str, *, model: str,
         check()
         stored = _keep(conn, commit, lambda: _store(conn, actor, question, "not_in_library", None, [], [], None))
         return {**stored, "withheld": withheld}
-    sources = [_ref(n, h) for n, h in enumerate(hits, start=1)]
-    passages = "\n\n".join(f"[{n}] ({h.citation.book}/{h.citation.path})\n{_shown(h.text)}"
-                           for n, h in enumerate(hits, 1))
+    hits, repeats = with_records(conn, actor, hits, scope, rights)
+    number = {h.citation: n for n, h in enumerate(hits, start=1)}
+    sources = [_ref(n, h, repeats.get(h.citation, ())) for n, h in enumerate(hits, start=1)]
     lang = retrieval.language(question)
     q_label, p_label = LABELS[lang]
+
+    def header(h: search.Hit) -> str:
+        marks = ", ".join(str(number[r]) for r in repeats.get(h.citation, ()))
+        return f"{h.citation.book}/{h.citation.path}" + (f"; {REPEATS[lang]} [{marks}]" if marks else "")
+    passages = "\n\n".join(f"[{n}] ({header(h)})\n{_shown(h.text)}" for n, h in enumerate(hits, 1))
     missing = absent_sources(question, hits)
     absent = f"\n\n{ABSENT.get(lang, ABSENT['en']).format(names=', '.join(missing))}" if missing else ""
+    note = f"\n\n{REPEATS_NOTE.get(lang, REPEATS_NOTE['en'])}" if repeats else ""
     messages = [{"role": "system", "content": SYSTEM[lang]},
-                {"role": "user", "content": f"{q_label}: {question}\n\n{p_label}:\n{passages}{absent}"}]
+                {"role": "user", "content": f"{q_label}: {question}\n\n{p_label}:\n{passages}{note}{absent}"}]
     check()
     body = _content(llmdap.chat(conn, bridge, actor, model=model, messages=messages,
                                 source_books=sorted({h.citation.book for h in hits}), purpose="answer"))
@@ -270,4 +306,5 @@ def reopen(conn, actor: Actor, answer_id: str) -> dict:
     rights = kstd.Rights(conn)
     return {"id": answer_id, "question": question, "status": status, "body": body,
             "evidence": [{"n": r["n"], "citation": _handle(r), "text": texts[r["n"]][0] if texts[r["n"]] else None,
-                          "item": rights.info(r["book"], r["content_id"], r["path"])} for r in cited]}
+                          "item": rights.info(r["book"], r["content_id"], r["path"]),
+                          "quoted_records": r.get("quoted_records", [])} for r in cited]}  # none before G23
