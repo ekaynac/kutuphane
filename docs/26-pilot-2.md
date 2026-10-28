@@ -191,6 +191,22 @@ also ran 3 to 5 more times with each code. Counts only; the answers are in the p
   gives the reason. `main` answers "the passages do not state why"; the branch gives the same content (twice) or
   `not_in_library` (twice, with an earlier prompt wording). The gap is in retrieval (G19), not in the answer step.
 
+**The measured answer set (#142).** These questions run again, 5 times each with the same code, the same book and
+the same local models, when the answer step, the prompt or the retrieval changes. The result depends on the model,
+so the set is a measurement, not a CI gate: a change reports its counts here, and a lower count needs a reason.
+The expected result is the acceptable answer of section 5.
+
+| Question | Why it is in the set | Acceptable | Last count (`fix/pilot2-gaps`) |
+|---|---|---|---|
+| 3 | a false `not_in_library` (model variance) | the signal and its rule file; no claim about model M | 4 of 7 (3 false `not_in_library`) |
+| 4 | a named section of a held-back document (G29, closed) | `not_in_library`, or "the passages only refer to it" | 5 of 5 |
+| 5 | the top passage names the answer (G30) | the answer names the template | 4 of 7 |
+| 6 | a similar thing, another signed bundle, no document name (G29, open) | `not_in_library`, or an answer that says that the passages describe another bundle | 0 of 5 |
+
+Question 6 is about another signed bundle, not another platform or version. So the request context of #137
+(`applies_to`, section 2) does not change it. Kütüphane does not take a platform, a version or a bundle name out of
+the question text: that is a heuristic. G29 stays open as a measured gap.
+
 **Re-index (done, 2026-10-27).** `inframedic-canon` and the radar documents were ingested again from the same
 sources, with the same policy and `kstd.yaml`, through LLMDAP with the local embedder. The bytes did not change, so
 the content ids stay the same and only the profile is new. The old passages and vectors stay. The embedded counts

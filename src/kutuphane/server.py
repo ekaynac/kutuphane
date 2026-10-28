@@ -119,7 +119,7 @@ def op_search(dsn, stages, actor: Actor, query: str, k: int, model_reader: bool 
         if retrieval_out is not None:
             retrieval_out.update(stage.as_dict())
         hits, found = quotes.quoted(conn, actor, ranked, scope)
-        rights, ai = kstd.Rights(conn), _for_model(actor, model_reader)
+        rights, ai = kstd.Rights(conn, scope.context), _for_model(actor, model_reader)
         items = [rights.info(h.citation.book, h.citation.content_id, h.citation.path) for h in hits]
         texts = [_text(h.text, item, ai) for h, item in zip(hits, items)]
         if max_chars is not None:
@@ -388,7 +388,9 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
             max_chars = int(p["max_chars"]) if "max_chars" in p else None
         except ValueError:
             raise BadRequest("max_chars must be an integer") from None
-        scope = search.Scope.of(p.getlist("book"), p.get("path"), p.getlist("origin"), _flag(p.get("current_only")))
+        context = {k: p[k] for k in ("platform", "version") if k in p} or None
+        scope = search.Scope.of(p.getlist("book"), p.get("path"), p.getlist("origin"), _flag(p.get("current_only")),
+                                context)
         stage: dict = {}
         results = await run_in_threadpool(op_search, dsn, stages, actor, p.get("q", ""), k, False, scope, None,
                                           max_chars, stage)
@@ -408,7 +410,8 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
             raise BadRequest("JSON body required") from None
         if not isinstance(body, dict):
             raise BadRequest("JSON object required")
-        scope = search.Scope.of(body.get("book"), body.get("path"), body.get("origin"), body.get("current_only", False))
+        scope = search.Scope.of(body.get("book"), body.get("path"), body.get("origin"), body.get("current_only", False),
+                                body.get("context"))
         key = body.get("idempotency_key")
         if _background(body.get("background", False), key):
             job, created = await run_in_threadpool(op_submit, dsn, actor, body.get("question"), scope, key)
@@ -672,15 +675,17 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
     @_mcp_errors
     async def search_library(query: str, k: int = search.DEFAULT_K, book: list[str] | None = None,
                              path: str | None = None, origin: list[str] | None = None,
-                             current_only: bool = False, max_chars: int | None = None,
+                             current_only: bool = False, max_chars: int | None = None, context: dict | None = None,
                              ) -> Annotated[CallToolResult, list[dict]]:
         """Search the books you may read now (needs read; agents also need activate for instruction passages).
         Results carry citation handles for open_citation. Optional filters narrow the evidence before ranking:
         `book` (slugs), `path` (prefix, e.g. "data/"), `origin` (kstd origins: human, assisted, model, tool, unknown),
-        `current_only` (kstd validity includes now). `max_chars` (80-4800) makes each text a snippet around the
+        `current_only` (kstd validity includes now), `context` ({platform, version}, e.g. {"platform": "vcenter",
+        "version": "7.0.3"}: a file whose kstd applies_to the context contradicts is left out; `item.scope` says
+        unbounded, match or needs_context). `max_chars` (80-4800) makes each text a snippet around the
         match with `truncated`; open_citation gives the full passage. Use it in agent loops. `_meta`
         "kutuphane/retrieval" says which model stages ran (embedding, translation, rerank: ok, failed, skipped)."""
-        scope, labels, stage = search.Scope.of(book, path, origin, current_only), {}, {}
+        scope, labels, stage = search.Scope.of(book, path, origin, current_only, context), {}, {}
         hits = await run_in_threadpool(op_search, dsn, stages, _mcp_actor(), query, k, True, scope, labels,
                                        max_chars, stage)
         return _handled(hits, labels, structured=True, meta={RETRIEVAL_KEY: stage})
@@ -702,13 +707,13 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
         @_mcp_errors
         async def ask_library(question: str, book: list[str] | None = None, path: str | None = None,
                               origin: list[str] | None = None, current_only: bool = False, background: bool = False,
-                              idempotency_key: str | None = None) -> dict:
+                              idempotency_key: str | None = None, context: dict | None = None) -> dict:
             """Answer from the library with [n] citations, or status not_in_library (needs read on the books it
             uses). The optional filters are those of search_library. With `background: true` it returns {job_id,
             status: queued} at once: poll job_status, then job_result. An `idempotency_key` (8-128 characters) makes
             a retried submission return the same job. `retrieval` says which model stages of the search ran
             (embedding, translation, rerank: ok, failed, skipped)."""
-            scope = search.Scope.of(book, path, origin, current_only)
+            scope = search.Scope.of(book, path, origin, current_only, context)
             if _background(background, idempotency_key):
                 job, _created = await run_in_threadpool(op_submit, dsn, _mcp_actor(), question, scope,
                                                         idempotency_key)

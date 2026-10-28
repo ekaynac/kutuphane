@@ -119,6 +119,7 @@ def _claims(item: dict, where: str) -> tuple[dict, list[str]]:
     """The origin claim of one item as decisions use it, and a notice for each claim that is not valid evidence
     (docs/11 §7). An origin without its evidence counts as `unknown` (= model); data for another origin is ignored."""
     origin, notices = item.get("origin", "unknown"), _unknown(where, item, ITEM_KEYS)
+    notices += _unknown(f"{where} applies_to", item.get("applies_to"), APPLIES_KEYS)
     notices += _rights_unknown(f"{where} rights", item.get("rights"))
     claim = {"origin": origin, "reviewed_by": None, "software_agent": None, "entered_by": None, "confirmed_by": None}
     reviewer, agent = item.get("reviewed_by"), item.get("software_agent")
@@ -309,8 +310,8 @@ def check(manifest: dict, files: dict[str, str]) -> tuple[list[str], list[str]]:
                 errors.append(f"{where}: {key} must be a date")
         if instant(start) and instant(end) and instant(start) >= instant(end):
             errors.append(f"{where}: valid_from must be before valid_to")
-        if "applies_to" in item and not (isinstance(item["applies_to"], str) and item["applies_to"].strip()):
-            errors.append(f"{where}: applies_to must be a non-empty string")
+        if "applies_to" in item:
+            errors += _applies_errors(where, item["applies_to"])
         if "rights" in item:
             _rights(f"{where} rights", item["rights"], errors)
         if "notices" in item:
@@ -357,7 +358,7 @@ def effective(manifest: dict, path: str) -> dict | None:
         "personal_data": _pd(own.get("personal_data", base.get("personal_data", "unknown"))),
         "valid_from": _bound(start),
         "valid_to": _bound(end),
-        "applies_to": (item or {}).get("applies_to"),
+        "applies_to": applies_to((item or {}).get("applies_to")),
         "notices": list(manifest.get("notices", [])) + list((item or {}).get("notices", []))
                    + _folder_notices(manifest) + untrusted,
     }
@@ -367,6 +368,75 @@ def is_current(info: dict, now: datetime | None = None) -> bool:
     now = now or datetime.now(timezone.utc)
     start, end = instant(info.get("valid_from")), instant(info.get("valid_to"))
     return (start is None or start <= now) and (end is None or now < end)
+
+
+# --- Scope (docs/09 §2): `applies_to` bounds an item to a platform and/or a version range ---------------------------
+APPLIES_KEYS = ("platform", "version")
+VERSION = re.compile(r"^\d+(\.\d+)*\Z")
+_CLAUSE = re.compile(r"^(>=|<=|>|<|==|=)?\s*(\d+(?:\.\d+)*)\Z")
+_COMPARE = {">=": lambda a, b: a >= b, "<=": lambda a, b: a <= b, ">": lambda a, b: a > b, "<": lambda a, b: a < b,
+            "==": lambda a, b: a == b, "=": lambda a, b: a == b, None: lambda a, b: a == b}
+
+
+def _version(text: str) -> tuple[int, ...]:
+    return tuple(int(p) for p in text.split("."))
+
+
+def _clauses(text) -> list[tuple[str | None, tuple[int, ...]]] | None:
+    """`>=2.1,<3` as [(">=", (2, 1)), ("<", (3,))]; None when the text is not a version range."""
+    if not isinstance(text, str) or not text.strip():
+        return None
+    found = [_CLAUSE.match(c.strip()) for c in text.split(",")]
+    return [(m[1], _version(m[2])) for m in found] if all(found) else None
+
+
+def _applies_errors(where: str, value) -> list[str]:
+    if isinstance(value, str):
+        return [] if value.strip() else [f"{where}: applies_to must be a non-empty string or a mapping"]
+    if not isinstance(value, dict):
+        return [f"{where}: applies_to must be a non-empty string or a mapping"]
+    errors = []
+    platform = value.get("platform")
+    if "platform" in value and not (isinstance(platform, list) and platform
+                                    and all(isinstance(p, str) and p.strip() for p in platform)):
+        errors.append(f"{where}: applies_to platform must be a list of non-empty strings")
+    if "version" in value and _clauses(value["version"]) is None:
+        errors.append(f"{where}: applies_to version must be a version range such as \">=2.1,<3\"")
+    return errors
+
+
+def applies_to(value) -> dict | None:
+    """The Scope bound of a checked item (None: unbounded). The string form names one platform; unknown keys are
+    ignored (their notice comes from `_claims`)."""
+    if isinstance(value, str):
+        return {"platform": [value]}
+    if not isinstance(value, dict):
+        return None
+    bound = {k: value[k] for k in APPLIES_KEYS if k in value}
+    return bound or None
+
+
+def scope_verdict(bound: dict | None, platform: str | None = None, version: str | None = None) -> str:
+    """`unbounded`, `match`, `mismatch` (the context contradicts a bound) or `needs_context` (a bound that the
+    context does not give), as `notesquery.scope_verdict` decides it for notes."""
+    if bound is None:
+        return "unbounded"
+    missing = False
+    if "platform" in bound:
+        if platform is None:
+            missing = True
+        elif platform not in bound["platform"]:
+            return "mismatch"
+    if "version" in bound:
+        if version is None:
+            missing = True
+        else:
+            clauses = _clauses(bound["version"])
+            v = _version(version)
+            v += (0,) * (max(len(ref) for _, ref in clauses) - len(v))
+            if not all(_COMPARE[op](v, ref + (0,) * (len(v) - len(ref))) for op, ref in clauses):
+                return "mismatch"
+    return "needs_context" if missing else "match"
 
 
 def allows(info: dict | None, use: str) -> bool:
@@ -386,10 +456,11 @@ def legal_basis(value) -> list[str]:
 
 class Rights:
     """Item information per (book, content id, path) within one request. Content versions are immutable, so a
-    manifest is read and parsed at most once per version here."""
+    manifest is read and parsed at most once per version here. `context` is the request's (platform, version):
+    `scope` in the information is the item's Scope verdict in it (docs/09 §2)."""
 
-    def __init__(self, conn):
-        self.conn, self._manifests = conn, {}
+    def __init__(self, conn, context: tuple[str | None, str | None] = (None, None)):
+        self.conn, self._manifests, self.context = conn, {}, context
 
     def manifest(self, book: str, content_id: str) -> dict | None:
         key = (book, content_id)
@@ -404,7 +475,8 @@ class Rights:
         if manifest is None:
             return None
         info = effective(manifest, path)
-        return info and {**info, "current": is_current(info)}
+        return info and {**info, "current": is_current(info),
+                         "scope": scope_verdict(info["applies_to"], *self.context)}
 
     def allows(self, book: str, content_id: str, path: str, use: str) -> bool:
         return allows(self.info(book, content_id, path), use)

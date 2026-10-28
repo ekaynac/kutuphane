@@ -3,8 +3,8 @@
 - Pre-filter: the query only ever sees books the caller may `read` now (and, for agents, instruction chunks only
   where `activate` is held and the skill is not blocked by a scan, D71), so ranks, counts and snippets cannot leak
   other books (AT-04).
-- Optional scope filters (book, path prefix, kstd origin, valid now; G14) narrow that pre-filter in the same
-  statement, before ranking. They never add a book.
+- Optional scope filters (book, path prefix, kstd origin, valid now, request context; G14, #137) narrow that
+  pre-filter in the same statement, before ranking. They never add a book.
 - Before results are handed out, the whole result set is decided again in ONE statement (the request's
   linearization point). If rights changed in between, the search runs again with current rights (so revoked books
   never consume `k`); a second change refuses the request. Delivered chunks are logged by citation handle.
@@ -104,15 +104,22 @@ class Scope:
     """Optional evidence filters (G14). They are applied inside the pre-filter, in the ranking statement, so they
     narrow the passages before ranking and `k`. They never widen it: a book the caller may not read stays out
     whatever the filter names, and naming such a book gives the same empty result as naming one that does not
-    exist. Origin and validity come from the kstd item information of the book's current version; a book without
-    kstd.yaml has none, so it counts as origin `unknown` (docs/11 §5) and as current (no validity stated)."""
+    exist. Origin, validity and `applies_to` come from the kstd item information of the book's current version; a
+    book without kstd.yaml has none, so it counts as origin `unknown` (docs/11 §5), as current (no validity
+    stated) and as unbounded.
+
+    `platform` and `version` are the request context (docs/09 §2, Scope): an unbounded item always matches; an
+    item whose `applies_to` the context contradicts is left out; a bound that the context does not give keeps the
+    item, shown with `scope: needs_context`."""
     books: tuple[str, ...] = ()      # only these books
     path: str | None = None          # only files whose path starts with this text ("data/" = below data/)
     origins: tuple[str, ...] = ()    # only files with one of these kstd origins
     current_only: bool = False       # only files whose kstd validity includes now
+    platform: str | None = None      # the request context: the caller's platform
+    version: str | None = None       # the request context: the caller's version (e.g. "7.0.3")
 
     @classmethod
-    def of(cls, books=None, path=None, origins=None, current_only=False) -> "Scope":
+    def of(cls, books=None, path=None, origins=None, current_only=False, context=None) -> "Scope":
         """A checked scope from request values; raises ValueError for a malformed value."""
         books, origins = _strings("book", books), _strings("origin", origins)
         if len(books) > MAX_SCOPE_BOOKS or not all(_SLUG.match(b) for b in books):
@@ -125,13 +132,41 @@ class Scope:
             path = normalize_path(path.rstrip("/")) + ("/" if path.endswith("/") else "")
         if not isinstance(current_only, bool):
             raise ValueError("current_only must be true or false")
-        return cls(tuple(sorted(set(books))), path, tuple(sorted(set(origins))), current_only)
+        platform, version = _context(context)
+        return cls(tuple(sorted(set(books))), path, tuple(sorted(set(origins))), current_only, platform, version)
+
+    @property
+    def context(self) -> tuple[str | None, str | None]:
+        return self.platform, self.version
+
+    @property
+    def filters_files(self) -> bool:
+        """Whether a filter reads the kstd item information (origin, validity, context)."""
+        return bool(self.origins) or self.current_only or self.context != (None, None)
 
     def admits(self, info: dict | None) -> bool:
-        """Whether a file with this kstd item information (None: no manifest) passes the origin and time filters."""
+        """Whether a file with this kstd item information (None: no manifest) passes the origin, time and context
+        filters."""
         if self.origins and (info["origin"] if info else "unknown") not in self.origins:
             return False
+        if info and kstd.scope_verdict(info["applies_to"], *self.context) == "mismatch":
+            return False
         return not self.current_only or info is None or kstd.is_current(info)
+
+
+def _context(context) -> tuple[str | None, str | None]:
+    """(platform, version) of a request context {platform, version}; both optional."""
+    if context is None:
+        return None, None
+    if not isinstance(context, dict) or set(context) - set(kstd.APPLIES_KEYS):
+        raise ValueError(f"context must be a mapping with only {', '.join(kstd.APPLIES_KEYS)}")
+    platform, version = context.get("platform"), context.get("version")
+    if platform is not None and not (isinstance(platform, str) and platform.strip() and len(platform) <= 200
+                                     and platform.isprintable()):
+        raise ValueError("context platform must be a non-empty string")
+    if version is not None and not (isinstance(version, str) and len(version) <= 100 and kstd.VERSION.match(version)):
+        raise ValueError("context version must be a version such as 7.0.3")
+    return platform, version
 
 
 def _strings(name: str, value) -> list[str]:
@@ -144,7 +179,7 @@ def _strings(name: str, value) -> list[str]:
 def _scope_files(conn, scope: Scope, books: list[str]) -> list[str] | None:
     """`book/content_id/path` of the current files that pass the origin and time filters (None: no such filter).
     Keyed by content id, so a version published meanwhile matches nothing here: the filter fails closed."""
-    if not scope.origins and not scope.current_only:
+    if not scope.filters_files:
         return None
     rights, out = kstd.Rights(conn), []
     rows = conn.execute("SELECT b.slug, v.id, v.manifest FROM book b JOIN content_version v ON v.book = b.slug AND "

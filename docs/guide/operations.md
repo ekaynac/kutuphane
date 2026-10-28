@@ -395,8 +395,36 @@ kutuphane read <principal> <book> <content_id> <path>
 | `--path <prefix>` | Only files whose path starts with the prefix, for example `data/`. |
 | `--origin <origin>` | Only files with this kstd origin: `human`, `assisted`, `model`, `tool`, `unknown`. Repeatable. A book without `kstd.yaml` counts as `unknown`. |
 | `--current-only` | Only files whose kstd validity includes now. |
+| `--platform <name>` | The request context (#137): leave out the files whose kstd `applies_to` names other platforms. |
+| `--version <version>` | The request context: leave out the files whose `applies_to` version range does not hold this version (for example `7.0.3`). |
 
 A filter never adds a book. A book that the caller cannot read gives the same empty result as a book that does not exist.
+
+**Request context and `applies_to` (docs/09, Scope).** A file without `applies_to` is unbounded: it matches every
+request. A file with `applies_to` is bounded:
+
+- When the context contradicts a bound (another platform, a version outside the range), the file is left out before ranking, so it never takes a place in `k`.
+- When the request gives no value for a bound (no context, or a platform but no version), the file stays in the evidence. Its `item.scope` is `needs_context`.
+- `item.scope` is `unbounded`, `match` or `needs_context` in each result and citation. `open_citation` and a stored answer have no context, so a bounded file shows `needs_context` there.
+
+A file of a book has no Role (docs/09) today: every passage is evidence, and no passage has rule authority. A bounded
+journal `rule` note without a matching context is not current in `query_notes` (`excluded.needs_context`); the same
+rule decides `item.scope` here.
+
+### One book per scope (#138)
+
+Grants are for a whole book (G10: item-level access is not built). For roles that see only one scope, for example
+the operators of one device group:
+
+1. Put the content of each scope in its own book (`site-kayseri`, `site-ankara`).
+2. Put the content that every scope uses in one more book (`shared`).
+3. Give each role `read` on its scope book and on `shared`. Do the same for journals: one journal for each scope, and one shared journal.
+4. Search without a `book` filter, or name the scope book and `shared` (`--book site-kayseri --book shared`). One call searches both books.
+
+The pre-filter reads only the books that the caller may read, before ranking. So a role with grants on scope A
+never gets a scope-B passage or note from `search`, the evidence of `ask`, `open_citation`, `neighbours` or
+`query_notes`; a link to a note of scope B is not shown (`tests/test_book_per_scope.py`). Keep the shared part in
+one book: do not copy it into each scope book.
 
 ### Answers
 

@@ -26,7 +26,7 @@ items:
     entered_by: "agent:kobra-7"          # optional for human: who entered the words
     confirmed_by: "user:ayse"            # optional for human: the person who confirmed them as their own
     valid_from: 2026-01-01
-    applies_to: "Plant 3, line A"
+    applies_to: {platform: [vcenter], version: ">=7.0,<8"}   # or one string: "Plant 3, line A" (= one platform)
   - path: notes/weekly-summary.md
     digest: sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
     origin: assisted                     # a model wrote it; a named person reviewed it
@@ -141,6 +141,7 @@ finding never proposes `no`. The rules and the `--deny-names` file are in
 | `origin` | shown with every result; the search filter `--origin`; the signed package lists `model`/`unknown` files as AI-generated, `assisted` files as reviewed (with `reviewed_by`), `tool` files as tool-made (with `software_agent`), and `human` files that carry `entered_by` or `confirmed_by` in `human_confirmed`. An `assisted` or `tool` claim without its evidence counts as `unknown`, so the file is listed as AI-generated. `human` stays `human` without `entered_by` and `confirmed_by`: they are optional. |
 | `license`, `valid_from`, `valid_to`, `applies_to`, `notices` | shown with search results, citations and answers (`item`) |
 | `valid_from`, `valid_to` | the `--current-only` filter; `valid_from` dates a file for "recent" questions |
+| `applies_to` | the request context (`--platform`, `--version`; `context` on HTTP and MCP): a file whose `applies_to` the context contradicts is left out before ranking; `item.scope` is `unbounded`, `match` or `needs_context` ([operations.md](operations.md#scope-filters-g14)). Keys: `platform` (a list of strings) and `version` (a range of clauses with `>=`, `>`, `<=`, `<`, `==`, separated by commas, for example `>=2.1,<3`; a version is numbers with dots). One string means `platform: [<string>]`. A malformed `platform` or `version` refuses the book; an unknown key is ignored with a notice. `item.applies_to` shows the mapping form. |
 | absent `ai_use` term | shown as "not stated"; treated as `n` |
 
 `kstd.yaml` itself is metadata. It is stored and checked, never indexed. A file with no manifest follows its book

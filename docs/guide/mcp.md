@@ -317,6 +317,7 @@ never gets passages of a skill that a SkillSpector scan blocks ([security.md](se
 | `path` | string | no | none | A relative path prefix. End it with `/` for a folder (`data/`). |
 | `origin` | list of strings | no | none | `human`, `assisted`, `model`, `tool`, `unknown`. A book without `kstd.yaml` counts as `unknown`. |
 | `current_only` | boolean | no | `false` | Only files whose kstd validity includes now. |
+| `context` | object | no | none | The request context (#137): `{"platform": "vcenter", "version": "7.0.3"}`, both optional. A file whose kstd `applies_to` the context contradicts is left out before ranking. `item.scope` is `unbounded`, `match` or `needs_context` (a bound that the context does not give: the file stays as evidence). |
 | `max_chars` | integer | no | none (the full text) | 80–4800. Gives a snippet of each passage (below). |
 
 **Snippets (`max_chars`).** An agent loop keeps each tool result in its context for all later turns. With
@@ -434,6 +435,7 @@ The server decides the rights again after the model call.
 | `path` | string | no | none | As `search_library`. |
 | `origin` | list of strings | no | none | As `search_library`. |
 | `current_only` | boolean | no | `false` | As `search_library`. |
+| `context` | object | no | none | As `search_library`. |
 | `background` | boolean | no | `false` | `true` starts a background job (section 6). |
 | `idempotency_key` | string | no | none | 8–128 characters of `A-Z a-z 0-9 . _ : -`. Only with `background: true` (section 7). |
 
