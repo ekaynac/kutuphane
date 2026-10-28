@@ -9,6 +9,9 @@
 3. The answer, the passages given and the passages cited are stored. Reopening shows exactly that, without calling
    a model, and only if the caller may read every source book *now* (agents also need `activate` for
    instruction passages).
+
+A citation names its passage and where a reader finds it (G15): the `line` it starts on, as in search (None for
+HTML and PDF), and for a JSONL passage inside one record the `record`, the number of that record in the file.
 """
 import re
 import uuid
@@ -16,7 +19,7 @@ from pathlib import PurePosixPath
 
 from psycopg.types.json import Jsonb
 
-from . import gate, kstd, llmdap, profiles, quotes, retrieval, search
+from . import gate, kstd, llmdap, profiles, quotes, retrieval, search, source
 from .gate import Actor, Denied, NotFound
 
 NOT_IN_LIBRARY = "KÜTÜPHANEDE_YOK"
@@ -133,10 +136,22 @@ def _shown(text: str) -> str:
     return text if len(text) <= PROMPT_CHARS else text[:PROMPT_CHARS] + CUT_MARK
 
 
-def _ref(n: int, hit: search.Hit, records=()) -> dict:
+def _record(conn, c: search.Citation, line: int | None, text: str) -> int | None:
+    """The number (from 1) of the JSONL record that the passage is in, or None: not JSONL, or more than one record
+    (the `whole` profile). A record is a non-blank line, and each one starts at least one passage, so its number is
+    the count of the distinct passage lines up to its own."""
+    if line is None or source.media_type_of(c.path) != source.JSONL or "\n" in text.rstrip("\n"):
+        return None
+    return conn.execute("SELECT count(DISTINCT line) FROM chunk WHERE book = %s AND content_id = %s AND profile_id = %s "
+                        "AND path = %s AND line <= %s",
+                        (c.book, c.content_id, c.profile_id, c.path, line)).fetchone()[0]
+
+
+def _ref(conn, n: int, hit: search.Hit, records=()) -> dict:
     c = hit.citation
     return {"n": n, "book": c.book, "content_id": c.content_id, "profile_id": c.profile_id, "path": c.path,
-            "ordinal": c.ordinal, "quoted_records": [r.handle for r in records]}
+            "ordinal": c.ordinal, "line": hit.line, "record": _record(conn, c, hit.line, hit.text),
+            "quoted_records": [r.handle for r in records]}
 
 
 def with_records(conn, actor: Actor, hits: list[search.Hit], scope: search.Scope, rights: kstd.Rights
@@ -179,8 +194,12 @@ def _store(conn, actor: Actor, question: str, status: str, body, cited, sources,
     return {"id": answer_id, "status": status, "body": body, "citations": cited}
 
 
+def _citation(ref: dict) -> search.Citation:
+    return search.Citation(ref["book"], ref["content_id"], ref["profile_id"], ref["path"], ref["ordinal"])
+
+
 def _handle(ref: dict) -> str:
-    return search.Citation(ref["book"], ref["content_id"], ref["profile_id"], ref["path"], ref["ordinal"]).handle
+    return _citation(ref).handle
 
 
 def _needs(actor: Actor, sources: list[dict], instruction_of) -> dict:
@@ -220,7 +239,7 @@ def ask(conn, bridge: llmdap.Bridge, actor: Actor, question: str, *, model: str,
         return {**stored, "withheld": withheld}
     hits, repeats = with_records(conn, actor, hits, scope, rights)
     number = {h.citation: n for n, h in enumerate(hits, start=1)}
-    sources = [_ref(n, h, repeats.get(h.citation, ())) for n, h in enumerate(hits, start=1)]
+    sources = [_ref(conn, n, h, repeats.get(h.citation, ())) for n, h in enumerate(hits, start=1)]
     lang = retrieval.language(question)
     q_label, p_label = LABELS[lang]
 
@@ -255,8 +274,9 @@ def ask(conn, bridge: llmdap.Bridge, actor: Actor, question: str, *, model: str,
 
 def _chunk(conn, ref):
     return conn.execute(
-        "SELECT text, instruction FROM chunk WHERE book = %s AND content_id = %s AND profile_id = %s AND path = %s "
-        "AND ordinal = %s", (ref["book"], ref["content_id"], ref["profile_id"], ref["path"], ref["ordinal"])
+        "SELECT text, instruction, line FROM chunk WHERE book = %s AND content_id = %s AND profile_id = %s "
+        "AND path = %s AND ordinal = %s",
+        (ref["book"], ref["content_id"], ref["profile_id"], ref["path"], ref["ordinal"])
     ).fetchone()
 
 
@@ -304,7 +324,13 @@ def reopen(conn, actor: Actor, answer_id: str) -> dict:
                     action="reopen", items={f"book:{r['book']}": [_handle(c) for c in cited if c["book"] == r["book"]]
                                             for r in sources}, skills=_skills(actor, marked))
     rights = kstd.Rights(conn)
+
+    def evidence(r: dict) -> dict:
+        chunk = texts[r["n"]]
+        text, line = (chunk[0], chunk[2]) if chunk else (None, None)
+        record = _record(conn, _citation(r), line, text) if chunk else None
+        return {"n": r["n"], "citation": _handle(r), "line": line, "record": record, "text": text,
+                "item": rights.info(r["book"], r["content_id"], r["path"]),
+                "quoted_records": r.get("quoted_records", [])}  # none before G23
     return {"id": answer_id, "question": question, "status": status, "body": body,
-            "evidence": [{"n": r["n"], "citation": _handle(r), "text": texts[r["n"]][0] if texts[r["n"]] else None,
-                          "item": rights.info(r["book"], r["content_id"], r["path"]),
-                          "quoted_records": r.get("quoted_records", [])} for r in cited]}  # none before G23
+            "evidence": [evidence(r) for r in cited]}

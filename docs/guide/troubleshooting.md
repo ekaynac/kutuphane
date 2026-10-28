@@ -7,10 +7,12 @@ Find the message or the symptom in the left column. Do the step in the right col
 | Message | Cause and fix |
 |---|---|
 | `server not configured: set KUTUPHANE_PUBLIC_URL` (or `KUTUPHANE_ANSWER_MODEL`) | Set it. The answer model is needed only with `KUTUPHANE_LLMDAP_URL`. |
-| `identity not configured: set …` | Set `KUTUPHANE_OIDC_ISSUER`, `KUTUPHANE_OIDC_AUDIENCE` and `KUTUPHANE_OIDC_JWKS`. |
+| `identity not configured: set …` | Set `KUTUPHANE_OIDC_ISSUER` and `KUTUPHANE_OIDC_JWKS`. `KUTUPHANE_OIDC_AUDIENCE` is `kutuphane` when it is not set. |
 | `database needs migrations (…): run kutuphane migrate` | Run `kutuphane migrate` with the owner DSN, then apply `deploy/db-roles.sql`. |
 | `issuer '…' would be advertised as '…'` | The MCP SDK writes the issuer in another form (lowercase host, no default port, a trailing `/`). Configure the IdP and `KUTUPHANE_OIDC_ISSUER` with the form that the message shows. Tokens must carry exactly that string. |
 | `LLMDAP not configured: set …` | `KUTUPHANE_LLMDAP_URL` is set, so the other LLMDAP settings are needed: `KUTUPHANE_LLMDAP_KEY`, `KUTUPHANE_LLMDAP_ROUTE`. Or an embedding or rerank route is set without LLMDAP: Core calls models only through LLMDAP, so set LLMDAP or remove the route ([light install](install.md#light-install)). |
+| `LLMDAP not configured: set KUTUPHANE_LLMDAP_…ROUTE_CLASS (…)` | Often the CLI on the host: compose sets each route class to `local`, the host has no default (G13). Set `local` for a route that keeps the data on premises, else `cloud`. A wrong `local` sends `local_only` text to a cloud route. |
+| `KUTUPHANE_LLMDAP_…ROUTE_CLASS must be local or cloud` | Set one of the two values. |
 | `LLMDAP route not configured: set KUTUPHANE_EMBED_MODEL` (or `_RERANK_MODEL`) | An embedding or rerank route is set without its model name. Set both or neither. |
 | `KUTUPHANE_DSN is not set` | Export the DSN. The server and the CLI use it. |
 

@@ -43,7 +43,7 @@ ELICIT_MESSAGE = ("Open this page in your own browser to confirm whose words thi
 
 def hours() -> int:
     """The request lifetime in hours (docs/25 §7.5, §14 Q8)."""
-    raw = os.environ.get(HOURS_ENV, str(DEFAULT_HOURS))
+    raw = os.environ.get(HOURS_ENV) or str(DEFAULT_HOURS)  # empty is not set, as `${…:-24}` in compose (G13)
     try:
         value = int(raw)
     except ValueError:
