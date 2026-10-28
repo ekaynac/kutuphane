@@ -144,7 +144,7 @@ For the terms, read [concepts.md](concepts.md).
 
 ### Design and research
 
-- Labelling v5: Astra read the 60 second-reader cases blind, and `experiments/labeling_v5/compare_second.py` compares its answers with the operator's labels (agreement, Cohen's kappa, disagreements) ([../20-labelling-curation-v5.md](../20-labelling-curation-v5.md) §8) (PR_NUMBER).
+- Labelling v5: Astra read the 60 second-reader cases blind, and `experiments/labeling_v5/compare_second.py` compares its answers with the operator's labels (agreement, Cohen's kappa, disagreements) ([../20-labelling-curation-v5.md](../20-labelling-curation-v5.md) §8) ([#126](https://github.com/ekaynac/kutuphane/pull/126)).
 
 ## 2026-10-27
 
