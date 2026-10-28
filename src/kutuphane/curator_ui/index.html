@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kütüphane curator</title>
+<meta name="color-scheme" content="light dark">
+<title>Kütüphane · Review notes</title>
 <link rel="stylesheet" href="/static/app.css">
 <script src="/static/core.js" defer></script>
 <script src="/static/confirm.js" defer></script>
@@ -12,35 +13,54 @@
 </head>
 <body>
 <header>
-  <div id="who">Kütüphane curator</div>
-  <div id="progress"></div>
+  <div class="top">
+    <span class="brand">Kütüphane</span>
+    <span id="who"></span>
+  </div>
+  <nav id="tabs" hidden>
+    <a id="tab-review" href="/">To review <span id="tab-count" class="count"></span></a>
+    <a id="tab-words" href="/requests">My words</a>
+    <a id="tab-auto" href="/delegations">Auto-approval</a>
+  </nav>
 </header>
 <main>
-  <section id="start" hidden>
+  <p id="intro" hidden></p>
+  <p id="progress" class="muted"></p>
+  <section id="start" class="card" hidden>
     <p id="start-text"></p>
-    <button id="start-button" class="primary" type="button"></button>
+    <button id="start-button" class="primary big" type="button"></button>
   </section>
-  <section id="receipt" hidden></section>
+  <section id="receipt" class="card" hidden></section>
   <div id="cards"></div>
 </main>
-<div id="sheet" class="sheet" hidden>
-  <h2>Sign this decision</h2>
+<div id="sheet" class="sheet" role="dialog" aria-labelledby="sheet-title" hidden>
+  <h2 id="sheet-title">Check and sign</h2>
   <p id="sheet-text"></p>
-  <ol id="sheet-items"></ol>
-  <p class="meta">Your passkey asks for your face, fingerprint or PIN. It signs exactly this statement.</p>
+  <ul id="sheet-items"></ul>
+  <p id="sheet-note" class="muted">Your fingerprint (or face, or PIN) signs exactly these decisions.</p>
   <div class="sheet-actions">
-    <button id="sheet-cancel" type="button">Cancel</button>
-    <button id="sheet-sign" class="primary" type="button">Sign with passkey</button>
+    <button id="sheet-cancel" type="button">Back</button>
+    <button id="sheet-sign" class="primary" type="button">Sign with fingerprint</button>
   </div>
 </div>
 <div class="actions">
-  <div id="batchbar" hidden>
-    <div id="batch-count"></div>
+  <div id="decide" hidden>
+    <div class="decide-head">
+      <strong>Why?</strong>
+      <span class="muted">Pick one, or write your own.</span>
+    </div>
     <div id="batch-chips" class="chips"></div>
-    <input id="batch-reason" type="text" maxlength="500" placeholder="Reason (required)">
-    <button id="batch-sign" class="primary" type="button">Sign</button>
+    <input id="batch-reason" type="text" maxlength="500" placeholder="Reason (pick one above or type)">
+    <div class="row">
+      <button id="decide-back" type="button">Back</button>
+      <button id="batch-sign" class="primary" type="button">Continue</button>
+    </div>
   </div>
-  <span id="msg"></span>
+  <div id="batchbar" hidden>
+    <span id="batch-count"></span>
+    <button id="bar-open" class="primary" type="button"></button>
+  </div>
+  <div id="msg" role="status"></div>
 </div>
 </body>
 </html>

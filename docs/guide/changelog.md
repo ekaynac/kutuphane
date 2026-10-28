@@ -9,6 +9,11 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Curator web in plain words (#135)
+
+- Changed: the phone page of curator web has three tabs: **To review** (the queue), **My words** (the "my words" requests) and **Auto-approval** (the delegations, now also at `/delegations`). Each tab has one line that tells what it is for. A card shows the note text first, then the kind in plain words ("Finding: something an agent observed"), who proposed it for whom and the date; the evidence as file names with the first two lines and **Show passage**; the options of a decision with the **Proposed choice** marked; the replaced rule; and a warning line instead of the tier ("Approving this replaces an approved rule."). Where a note applies (its scope) stays on the card; the ids, the class key and the writer ids are under **Details**. A group card says "3 notes say the same thing" and has **Approve all** and **Reject all**. The reason is a tap on a chip (**Correct and useful**, **Wrong**, **Duplicate**, **Not useful now**) or free text; the bottom bar says "Sign 3 decisions"; the sign sheet says "You approve 2 notes and reject 1" from the stored statement; the receipt says "Done. 2 approved, 1 rejected." Large buttons, 17 px text, and dark colours when the phone uses a dark theme ([operations.md](operations.md#on-the-phone-curator-web-d72)) ([#135](https://github.com/ekaynac/kutuphane/pull/135)).
+- Changed: the queue gives a readable passage citation its `path` and an `excerpt` (the first 240 characters), and a passage link its `path` ([operations.md](operations.md#the-queue-77)) ([#135](https://github.com/ekaynac/kutuphane/pull/135)).
+
 ### kstd-check findings and vector counters (#134)
 
 - Fixed: `kstd-check --deny-names <file>` did the personal-data scan but did not show its findings. In Pilot 2, `kstd-init` and `ingest` gave 45 findings with the same deny-list, and `kstd-check` gave none. Now `ingest`, `kstd-init` and `kstd-check` list each finding (`personal-data finding (labelling, not refused): <path> line <n> (<rule>)`) and one count line (`personal-data findings: <rule> <n>, … (<files> files)`) from the same scan. A finding does not make `kstd-check` fail ([operations.md](operations.md#personal-data-and-fleet-data-findings), [kstd.md](kstd.md#workflow)) ([#134](https://github.com/ekaynac/kutuphane/pull/134)).

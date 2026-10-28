@@ -309,15 +309,26 @@ def test_the_page_shows_plain_text_marks_and_loads_nothing_external(client):  # 
     assert r.status_code == 200
     csp = r.headers["content-security-policy"]
     assert "default-src 'none'" in csp and "script-src 'self'" in csp and "frame-ancestors 'none'" in csp
-    shell = r.text + "".join((UI / f).read_text(encoding="utf-8") for f in ("core.js", "queue.js", "app.css"))
-    assert "http://" not in shell and "https://" not in shell and "//cdn" not in shell
-    assert '<script src="/static/queue.js" defer></script>' in r.text
-    for name in ("core.js", "queue.js"):
+    scripts = ("core.js", "confirm.js", "delegation.js", "queue.js")
+    shell = r.text + "".join((UI / f).read_text(encoding="utf-8") for f in (*scripts, "app.css"))
+    assert "http://" not in shell and "https://" not in shell and "//cdn" not in shell and "@import" not in shell
+    assert "url(" not in (UI / "app.css").read_text(encoding="utf-8")  # no font or image to load
+    for name in scripts:
+        assert f'<script src="/static/{name}" defer></script>' in r.text
         js = (UI / name).read_text(encoding="utf-8")
         assert "innerHTML" not in js and "insertAdjacentHTML" not in js and "document.write" not in js
+    # the strict CSP: no inline script, no inline style, no event handler attribute
+    assert r.text.count("<script") == len(scripts) and "<style" not in r.text and "style=" not in r.text
+    assert " onclick=" not in r.text and " onload=" not in r.text
     core = (UI / "core.js").read_text(encoding="utf-8")
     assert "\\u200b" in core and "\\u202a-\\u202e" in core  # U+200B and U+202E are shown as marks
     assert client.get("/static/queue.js").status_code == 200
+    # three plain tabs, each a page of its own
+    for label, path in (("To review", "/"), ("My words", "/requests"), ("Auto-approval", "/delegations")):
+        assert f'href="{path}">{label}' in r.text
+        assert client.get(path).text == r.text
+    for kind in ("finding", "convention", "decision_proposal", "lesson", "dead_end", "test_result"):
+        assert f"  {kind}: [" in core  # every kind has a plain name on the card
 
 
 # --- Q7: rights, gated links and citations, the view record -----------------------------------------------------
@@ -352,7 +363,9 @@ def test_only_curate_and_read_books_and_gated_links_and_citations(books, client)
     link(env, ref, "contradicts", other)
     ready(env, client)
     one = client.get(f"/api/note/{ref.replace('@', '/')}").json()
-    assert one["item"]["citations"] == [{"kind": "passage", "ref": handle}]
+    (cited,) = one["item"]["citations"]
+    assert (cited["kind"], cited["ref"], cited["path"]) == ("passage", handle, notes.parse_passage(handle).path)
+    assert cited["excerpt"] and len(cited["excerpt"]) <= curatorqueue.EXCERPT  # the card shows the start
     assert one["passages"][0]["ref"] == handle and one["passages"][0]["text"]
     assert one["item"]["links"][0]["text"] == "secret elsewhere"
 
@@ -396,16 +409,27 @@ def test_the_card_shows_every_part_of_the_note_id(books, client):  # review #16 
     (item,) = members(client.get("/api/queue").json())
     assert item["text"] == "Pick the HTTP client settings"
     assert item["decision"] == {"options": ["Keep TLS verification", harmful], "choice": harmful}
-    assert item["citations"] == [{"kind": "passage", "ref": handle}]
     chunk = notes.parse_passage(handle)
     text = env.execute("SELECT text FROM chunk WHERE book = %s AND content_id = %s AND profile_id = %s AND path = %s "
                        "AND ordinal = %s", (chunk.book, chunk.content_id, chunk.profile_id, chunk.path,
                                             chunk.ordinal)).fetchone()[0]
+    # a citation: the source file and the start of the passage (the full text is one tap away, `/api/note`)
+    assert item["citations"] == [{"kind": "passage", "ref": handle, "path": chunk.path,
+                                  "excerpt": curatorqueue._excerpt(text)}]
+    assert "\n" not in item["citations"][0]["excerpt"] and len(item["citations"][0]["excerpt"]) <= curatorqueue.EXCERPT
+    # a creation link: the full target text, always on the card
     assert item["links"] == [{"type": "derived_from", "direction": "out", "creation": True, "ref": handle,
-                              "text": text}]
+                              "path": chunk.path, "text": text}]
     assert item["hidden_parts"] == 0 and item["integrity"] is None
     assert set(item) >= {"scope", "class_key", "commit"}
     assert canonical.canonical_of(env, seq_of(env, ref))[1]["decision"]["choice"] == harmful  # what the id covers
+
+
+def test_the_excerpt_of_a_cited_passage_keeps_hidden_characters():
+    text = "# Backup\n\nThe job   runs\tat 02:00.\u202e Then\r\nit stops." + "x" * 400
+    out = curatorqueue._excerpt(text)
+    assert out.startswith("Backup — The job runs at 02:00.\u202e Then it stops.")  # the page shows U+202E as a mark
+    assert len(out) == curatorqueue.EXCERPT and curatorqueue._excerpt(None) is None
 
 
 # --- G36: the CLI lists the pending notes ----------------------------------------------------------------------------

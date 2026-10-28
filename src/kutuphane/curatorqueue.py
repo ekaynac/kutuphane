@@ -16,6 +16,7 @@ after 7 days, who decided, and the live agreement of each delegation (§8.7).
 import base64
 import binascii
 import json
+import re
 import statistics
 from datetime import datetime, timedelta
 
@@ -26,6 +27,7 @@ MAX_PAGE_GROUPS = 100
 PENDING_DAYS = 7
 UNREADABLE_PASSAGE = "a passage in a book you cannot read"
 UNREADABLE_NOTE = "a note in a book you cannot read"
+EXCERPT = 240  # the characters of a cited passage on the card; the full text is one tap away (`note`)
 TIER_OF_KIND = {"decision_proposal": 2, "convention": 3, "finding": 4, "lesson": 5, "dead_end": 5, "test_result": 6}
 WHY = {2: "a decision proposal: a rule", 3: "a convention: a rule", 4: "a finding: evidence",
        5: "a lesson or a dead end: evidence", 6: "a test result: history, never current"}
@@ -179,16 +181,32 @@ def _handle(book, content_id, profile_id, path, ordinal) -> str:
     return f"{book}@{content_id}/{profile_id}/{path}#{ordinal}"
 
 
+def _excerpt(text: str | None) -> str | None:
+    """The start of a passage for the card: a Markdown heading line loses its `#` marks and ends with " —", and runs
+    of spaces and line breaks become one space (any other character, hidden ones included, stays: the page shows those
+    as marks). The full text is one tap away."""
+    if text is None:
+        return None
+    text = re.sub(r"(?m)^#{1,6}[ \t]+(.*?)[ \t]*$", r"\1 —", text)
+    return re.sub(r"[ \t\r\n]+", " ", text).strip()[:EXCERPT]
+
+
 def _citations(conn, seqs, readable: set) -> dict:
+    """{seq: [citation]}: a code citation {kind, ref, path}; a readable passage {kind, ref, path, excerpt}; a passage
+    in a book that the person cannot read now {kind, hidden} (no book name, no path, no text)."""
+    rows = conn.execute(
+        "SELECT note_seq, kind, cite_book, content_id, profile_id, path, ordinal, repo, commit, line_start, "
+        "line_end, symbol FROM note_citation WHERE note_seq = ANY(%s) ORDER BY note_seq, n", (list(seqs),)).fetchall()
+    texts = _passage_texts(conn, [(r[2], r[3], r[4], r[5], r[6]) for r in rows if r[1] != "code" and r[2] in readable])
     out = {}
-    for seq, kind, book, cid, pid, path, ordinal, repo, commit, start, end, symbol in conn.execute(
-            "SELECT note_seq, kind, cite_book, content_id, profile_id, path, ordinal, repo, commit, line_start, "
-            "line_end, symbol FROM note_citation WHERE note_seq = ANY(%s) ORDER BY note_seq, n", (list(seqs),)):
+    for seq, kind, book, cid, pid, path, ordinal, repo, commit, start, end, symbol in rows:
         if kind == "code":
             ref = f"{repo}@{commit}:{path}:{start}-{end}" + (f"#{symbol}" if symbol else "")
-            out.setdefault(seq, []).append({"kind": "code", "ref": ref})
+            out.setdefault(seq, []).append({"kind": "code", "ref": ref, "path": path})
         elif book in readable:
-            out.setdefault(seq, []).append({"kind": "passage", "ref": _handle(book, cid, pid, path, ordinal)})
+            out.setdefault(seq, []).append({"kind": "passage", "ref": _handle(book, cid, pid, path, ordinal),
+                                            "path": path,
+                                            "excerpt": _excerpt(texts.get((book, cid, pid, path, ordinal)))})
         else:
             out.setdefault(seq, []).append({"kind": "passage", "hidden": UNREADABLE_PASSAGE})
     return out
@@ -226,7 +244,7 @@ def _links(conn, seqs, readable: set, w: int) -> dict:
                 continue
             link = {"type": type_, "direction": direction, "creation": creation}
             if other is None:  # a passage target
-                link.update({"ref": _handle(dbook, cid, pid, path, ordinal),
+                link.update({"ref": _handle(dbook, cid, pid, path, ordinal), "path": path,
                              "text": passages.get((dbook, cid, pid, path, ordinal))} if dbook in readable
                             else {"hidden": UNREADABLE_PASSAGE})
             elif info[other][1] in readable:
