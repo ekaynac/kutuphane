@@ -185,14 +185,15 @@ def _content(payload) -> str:
     return text.strip()
 
 
-def _store(conn, actor: Actor, question: str, status: str, body, cited, sources, model) -> dict:
+def _store(conn, actor: Actor, question: str, status: str, body, cited, sources, model,
+           stage: retrieval.Status) -> dict:
     answer_id = uuid.uuid4().hex
     books = sorted({s["book"] for s in sources})
     conn.execute("INSERT INTO answer (id, correlation_id, principal, on_behalf_of, question, status, body, citations, "
-                 "sources, source_books, model) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                 "sources, source_books, model, retrieval) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                  (answer_id, actor.correlation_id, actor.principal, actor.on_behalf_of, question, status, body,
-                  Jsonb(cited), Jsonb(sources), books, model))
-    return {"id": answer_id, "status": status, "body": body, "citations": cited}
+                  Jsonb(cited), Jsonb(sources), books, model, Jsonb(stage.as_dict())))
+    return {"id": answer_id, "status": status, "body": body, "citations": cited, "retrieval": stage.as_dict()}
 
 
 def _citation(ref: dict) -> search.Citation:
@@ -230,7 +231,7 @@ def ask(conn, bridge: llmdap.Bridge, actor: Actor, question: str, *, model: str,
     `commit(answer id)`, if given, runs in the transaction that inserts the answer (see `_keep`): a background job
     fences its cancel and its lease and records its success there (docs/24 §12.2)."""
     check = check or (lambda: None)
-    found = retrieval.retrieve(conn, actor, question, k, stages, scope)
+    found, stage = retrieval.retrieved(conn, actor, question, k, stages, scope)
     rights = kstd.Rights(conn)  # kstd: a passage whose rights do not allow ai_input never reaches the answer model
     hits = [h for h in found if rights.allows(h.citation.book, h.citation.content_id, h.citation.path, "ai_input")]
     withheld = len(found) - len(hits)
@@ -238,7 +239,8 @@ def ask(conn, bridge: llmdap.Bridge, actor: Actor, question: str, *, model: str,
         hits, repeats = with_records(conn, actor, hits, scope, rights)
     if not hits:
         check()
-        stored = _keep(conn, commit, lambda: _store(conn, actor, question, "not_in_library", None, [], [], None))
+        stored = _keep(conn, commit, lambda: _store(conn, actor, question, "not_in_library", None, [], [], None,
+                                                     stage))
         return {**stored, "withheld": withheld}
     number = {h.citation: n for n, h in enumerate(hits, start=1)}
     sources = [_ref(conn, n, h, repeats.get(h.citation, ())) for n, h in enumerate(hits, start=1)]
@@ -269,7 +271,7 @@ def ask(conn, bridge: llmdap.Bridge, actor: Actor, question: str, *, model: str,
                                             for r in sources}, skills=_skills(actor, marked))
     check()
     stored = _keep(conn, commit, lambda: _store(conn, actor, question, status, body if status == "answered" else None,
-                                                 cited, sources, model))
+                                                 cited, sources, model, stage))
     citations = [{**c, "item": rights.info(c["book"], c["content_id"], c["path"])} for c in stored["citations"]]
     return {**stored, "citations": citations, "withheld": withheld}
 
@@ -311,11 +313,11 @@ def visible(actor: Actor, asker: str, asked_for: str | None) -> bool:
 
 
 def reopen(conn, actor: Actor, answer_id: str) -> dict:
-    row = conn.execute("SELECT question, status, body, citations, sources, source_books, principal, on_behalf_of "
-                       "FROM answer WHERE id = %s", (answer_id,)).fetchone()
+    row = conn.execute("SELECT question, status, body, citations, sources, source_books, principal, on_behalf_of, "
+                       "retrieval FROM answer WHERE id = %s", (answer_id,)).fetchone()
     if row is None:
         raise NotFound(answer_id)
-    question, status, body, cited, sources, _books, asker, asked_for = row
+    question, status, body, cited, sources, _books, asker, asked_for, stage = row
     if not visible(actor, asker, asked_for):
         raise Denied(f"answer {answer_id} belongs to another principal")  # sharing answers is not in M1
     texts = {ref["n"]: _chunk(conn, ref) for ref in cited}
@@ -335,4 +337,4 @@ def reopen(conn, actor: Actor, answer_id: str) -> dict:
                 "item": rights.info(r["book"], r["content_id"], r["path"]),
                 "quoted_records": r.get("quoted_records", [])}  # none before G23
     return {"id": answer_id, "question": question, "status": status, "body": body,
-            "evidence": [evidence(r) for r in cited]}
+            "evidence": [evidence(r) for r in cited], "retrieval": stage}  # None for answers stored before #136

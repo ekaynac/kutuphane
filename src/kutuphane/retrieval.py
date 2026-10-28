@@ -160,6 +160,25 @@ def _prefer_recent(conn, ranked: list[search.Hit], k: int) -> list[search.Hit]:
     return [head[i] for i in order] + ranked[2 * k:]
 
 
+OK, FAILED, SKIPPED = "ok", "failed", "skipped"
+
+
+@dataclass(frozen=True)
+class Status:
+    """What each model stage of one retrieval did (#136): `ok`, `failed` (the search went on without it: full text
+    instead of hybrid, the question only, or the hybrid order) or `skipped` (not configured, or not needed)."""
+    embedding: str = SKIPPED
+    translation: str = SKIPPED
+    rerank: str = SKIPPED
+
+    def as_dict(self) -> dict:
+        return {"embedding": self.embedding, "translation": self.translation, "rerank": self.rerank}
+
+
+def _worst(*outcomes: str) -> str:
+    return FAILED if FAILED in outcomes else OK if OK in outcomes else SKIPPED
+
+
 @dataclass(frozen=True)
 class Stages:
     embedder: llmdap.Routed | None = None
@@ -208,54 +227,66 @@ class _QueryCache:
 _vectors = _QueryCache()
 
 
-def query_vector(conn, embedder: llmdap.Routed | None, actor: Actor, query: str) -> search.QueryVector | None:
-    """`vectors.query_vector` with a per-process cache. Only vectors are cached, never a failure: a query whose
+def query_vector(conn, embedder: llmdap.Routed | None, actor: Actor, query: str
+                 ) -> tuple[search.QueryVector | None, str]:
+    """`vectors.query_vector` (the vector and the stage outcome) with a per-process cache. Only vectors are cached, never a failure: a query whose
     embedding failed is embedded again next time. A query the search would refuse is neither embedded nor looked up
     (Astra review #12: an oversized question stayed in the cache as a key)."""
     search.check_query(query)
     if embedder is None:
-        return None
+        return None, SKIPPED
     key = (embedder.bridge.url, embedder.bridge.route, embedder.model, query)
     vector = _vectors.get(key)
-    if vector is None:
-        vector = vectors.query_vector(conn, embedder, actor, query)
-        if vector is not None:
-            _vectors.put(key, vector)
-    return vector
+    if vector is not None:
+        return vector, OK
+    vector, outcome = vectors.query_vector(conn, embedder, actor, query)
+    if vector is not None:
+        _vectors.put(key, vector)
+    return vector, outcome
 
 
 def retrieve(conn, actor: Actor, query: str, k: int = search.DEFAULT_K, stages: Stages = Stages(),
              scope: search.Scope = search.Scope()) -> list[search.Hit]:
+    """The hits of `retrieved`, without the stage status (the CLI and the tests)."""
+    return retrieved(conn, actor, query, k, stages, scope)[0]
+
+
+def retrieved(conn, actor: Actor, query: str, k: int = search.DEFAULT_K, stages: Stages = Stages(),
+              scope: search.Scope = search.Scope()) -> tuple[list[search.Hit], Status]:
+    """The hits and what each model stage did (#136): a stage that fails never stops the search, but it shows."""
     search.check_query(query)  # before the embedding call and the query cache, on every path (search and ask)
     search.check_scope(conn, actor, scope)  # G33: a journal in the filter is refused with a notice, before any model
-    vector = query_vector(conn, stages.embedder, actor, query)
+    vector, embedding = query_vector(conn, stages.embedder, actor, query)
     recent = asks_recent(query)
     if stages.reranker is None:
         hits = search.search(conn, actor, query, min(2 * k, search.MAX_K) if recent else k, vector=vector,
                              scope=scope)
-        return _prefer_recent(conn, hits, k)[:k] if recent else hits
+        return (_prefer_recent(conn, hits, k)[:k] if recent else hits), Status(embedding=embedding)
     size = max(k, RERANK_POOL)
     pool = search.search(conn, actor, query, size, vector=vector, scope=scope)
-    translated = translate(conn, stages.translator, actor, query, pool)
+    translated, translation = translate(conn, stages.translator, actor, query, pool)
     if translated:
-        second = search.search(conn, actor, translated, size, scope=scope,
-                               vector=query_vector(conn, stages.embedder, actor, translated))
+        second_vector, second = query_vector(conn, stages.embedder, actor, translated)
+        embedding = _worst(embedding, second)
+        second_hits = search.search(conn, actor, translated, size, scope=scope, vector=second_vector)
         # One statement for the merged pool, before the reranker or the answer model sees it (Astra review #12).
-        pool, _ = search.authorize(conn, actor, _merge(pool, second, size))
+        pool, _ = search.authorize(conn, actor, _merge(pool, second_hits, size))
     queries = {OTHER_LANGUAGE[language(query)]: translated} if translated else {}
-    ranked = _rerank(conn, stages.reranker, actor, query, queries, pool)
+    ranked, rerank = _rerank(conn, stages.reranker, actor, query, queries, pool)
     if recent:
         ranked = _prefer_recent(conn, ranked, k)
-    return ranked[:k] if translated else _keep_other_language(query, ranked, pool, k)
+    status = Status(embedding, translation, rerank)
+    return (ranked[:k] if translated else _keep_other_language(query, ranked, pool, k)), status
 
 
 def translate(conn, translator: llmdap.Routed | None, actor: Actor, query: str,
-              pool: list[search.Hit]) -> str | None:
+              pool: list[search.Hit]) -> tuple[str | None, str]:
     """The query in the other language, if the pool holds passages in that language and the answer model can
-    translate it; else None. Only the query goes to the model (no book content)."""
+    translate it; else None. With the stage outcome: `skipped` when no translation is needed or possible, `failed`
+    when the call fails, `ok` when the model answered. Only the query goes to the model (no book content)."""
     lang = language(query)
     if translator is None or lang is None or not any(language(h.text) == OTHER_LANGUAGE[lang] for h in pool):
-        return None
+        return None, SKIPPED
     target = OTHER_LANGUAGE[lang]
     try:
         payload = llmdap.chat(conn, translator.bridge, actor, model=translator.model, source_books=[],
@@ -265,9 +296,9 @@ def translate(conn, translator: llmdap.Routed | None, actor: Actor, query: str,
         text = payload["choices"][0]["message"]["content"]
     except (llmdap.EgressError, KeyError, IndexError, TypeError) as exc:
         log.warning("query translation failed, reranking with the question only: %s", exc)
-        return None
+        return None, FAILED
     text = " ".join(text.split())[:search.MAX_QUERY_CHARS] if isinstance(text, str) else ""
-    return text if text and text != query and language(text) == target else None
+    return (text if text and text != query and language(text) == target else None), OK
 
 
 def _merge(first: list[search.Hit], second: list[search.Hit], size: int) -> list[search.Hit]:
@@ -282,14 +313,15 @@ def _merge(first: list[search.Hit], second: list[search.Hit], size: int) -> list
 
 
 def _rerank(conn, reranker: llmdap.Routed, actor: Actor, query: str, queries: dict, pool: list[search.Hit]
-            ) -> list[search.Hit]:
-    """The pool in the reranker's order, with its scores; the hybrid order if reranking is not possible.
+            ) -> tuple[list[search.Hit], str]:
+    """The pool in the reranker's order, with its scores, and the stage outcome; the hybrid order if reranking is
+    not needed (`skipped`: fewer than two passages may go to the reranker) or fails (`failed`).
     `queries` maps a passage language to the query to rerank it with (default: `query`)."""
     rights = kstd.Rights(conn)
     slots = [i for i, h in enumerate(pool)  # kstd: only passages whose rights allow ai_input go to the reranker
              if rights.allows(h.citation.book, h.citation.content_id, h.citation.path, "ai_input")]
     if len(slots) < 2:
-        return pool
+        return pool, SKIPPED
     groups: dict[str, list[int]] = {}
     for j, i in enumerate(slots):
         groups.setdefault(queries.get(language(pool[i].text), query), []).append(j)
@@ -303,9 +335,9 @@ def _rerank(conn, reranker: llmdap.Routed, actor: Actor, query: str, queries: di
                 scores[j] = s
     except llmdap.EgressError as exc:
         log.warning("reranking failed, keeping the hybrid order: %s", exc)
-        return pool
+        return pool, FAILED
     order = sorted(range(len(slots)), key=lambda j: -scores[j])  # stable: ties keep the hybrid order
     out = list(pool)  # passages that were not reranked keep their hybrid position
     for slot, j in zip(slots, order):
         out[slot] = dataclasses.replace(pool[slots[j]], score=scores[j])
-    return out
+    return out, OK

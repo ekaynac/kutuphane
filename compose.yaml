@@ -13,11 +13,14 @@
 # Dev models: add `--profile dev-models` for the deterministic stand-in model server (never for measurements).
 # Real local models (D61): the overlay deploy/compose.local-models.yaml (its header has the start command).
 # No LLMDAP, no models (#76): the separate file deploy/compose.light.yaml (project `kutuphane-light`).
+# Restart (#141): postgres, core, ingress and llmdap have `restart: unless-stopped`, so they come back after a crash
+# or a host reboot (the Docker daemon must start at boot). `docker compose stop` keeps them stopped.
 name: kutuphane
 
 services:
   postgres:
     image: pgvector/pgvector:0.8.0-pg17
+    restart: unless-stopped
     environment:
       POSTGRES_DB: kutuphane
       POSTGRES_USER: kutuphane
@@ -35,6 +38,7 @@ services:
   core:
     profiles: [app]
     build: .
+    restart: unless-stopped
     environment:
       # The app role (deploy/db-roles.sql): it cannot write Standing. The owner credential never enters this container.
       KUTUPHANE_DSN: postgresql://kutuphane_app:${KUTUPHANE_APP_DB_PASSWORD:-}@postgres:5432/kutuphane
@@ -68,6 +72,7 @@ services:
   ingress:
     profiles: [app]
     image: nginx:1.27-alpine
+    restart: unless-stopped
     volumes:
       - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
@@ -80,6 +85,7 @@ services:
     # LLMDAP's bridge-only image (LLMDAP #237): loaded from its release tarball or built from the LLMDAP repo
     # (`docker build -f deploy/bridge/Dockerfile .`). Never a moving tag.
     image: ${LLMDAP_BRIDGE_IMAGE:-llmdap-bridge:0.28.0-llmdap1.18.0}
+    restart: unless-stopped
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]

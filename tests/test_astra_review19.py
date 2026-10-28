@@ -130,15 +130,15 @@ def test_parts_written_with_the_note_in_a_savepoint_are_accepted(env):
 
 def _transfer_after_retrieval(conn, monkeypatch):
     """Retrieval finishes its own final decision; then one atomic grant change revokes briefs and grants news."""
-    real = retrieval.retrieve
+    real = retrieval.retrieved
 
-    def retrieve(*args, **kw):
-        hits = real(*args, **kw)
+    def retrieved(*args, **kw):
+        found = real(*args, **kw)
         with conn.transaction():
             authz.revoke(conn, "book:briefs", "read", U)
             authz.grant(conn, "book:news", "read", U)
-        return hits
-    monkeypatch.setattr(retrieval, "retrieve", retrieve)
+        return found
+    monkeypatch.setattr(retrieval, "retrieved", retrieved)
 
 
 def test_search_never_hands_out_a_passage_with_a_record_not_readable_at_the_same_time(conn, books, monkeypatch):

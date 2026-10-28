@@ -236,15 +236,18 @@ def _batches(rows: list, settings: Settings) -> list[list]:
     return out
 
 
-def query_vector(conn, embedder: llmdap.Routed | None, actor: Actor, query: str) -> search.QueryVector | None:
+def query_vector(conn, embedder: llmdap.Routed | None, actor: Actor, query: str
+                 ) -> tuple[search.QueryVector | None, str]:
+    """The query vector and the embedding stage outcome (#136): `skipped` without an embedder, `failed` when the call
+    fails or the vector does not fit the stored vectors (the search then uses full text only), else `ok`."""
     if embedder is None:
-        return None
+        return None, "skipped"
     try:
         (values,) = llmdap.embed(conn, embedder, actor, [query], source_books=[], purpose="search")
     except llmdap.EgressError as exc:
         log.warning("query embedding failed, searching full text only: %s", exc)
-        return None
+        return None, "failed"
     if len(values) != stored_dims(conn, embedder.model):  # also when nothing is indexed for this model yet
         log.warning("query vector does not fit the stored %s vectors, searching full text only", embedder.model)
-        return None
-    return search.QueryVector(embedder.model, values)
+        return None, "failed"
+    return search.QueryVector(embedder.model, values), "ok"
