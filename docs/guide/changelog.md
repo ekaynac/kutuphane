@@ -9,6 +9,12 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### GPU reranker (G26)
+
+- New: the compose profile `gpu-rerank` runs `bge-reranker-v2-m3` (the same pinned commit) on the GPU, with the host vLLM's image and 0.04 of the GPU memory (about 1.9 GB used), behind the new LLMDAP route `rerank-gpu`. Set `KUTUPHANE_LLMDAP_RERANK_ROUTE=rerank-gpu` to use it; `rerank` (the CPU embedder) stays the fallback. On the pilot questions the rerank stage went from 11–25 s to 0.2–0.3 s with the same top 8, and `ask` from 22–31 s to 8–10 s on average ([install.md](install.md#gpu-reranker), [operations.md](operations.md#reranking), [troubleshooting.md](troubleshooting.md#ingest-and-index)) (PR_LINK).
+- Changed: the local-models overlay takes `KUTUPHANE_LLMDAP_RERANK_ROUTE` from `.env` (default `rerank`). After a reboot, start the GPU reranker again ([install.md](install.md#reboot-and-restart)) (PR_LINK).
+- Design and research: `docs/26` §10 and `docs/18` §4.1 (method, memory, order agreement, time before and after) (PR_LINK).
+
 ### Astra review #19 fixes
 
 - Fixed: a database function without a fixed search path could read a temporary table or sequence of the caller. The decider role could hide `standing_event` and `memory_seq` and so make a late suggestion count as earlier shadow evidence for a delegation. Every function and trigger now uses `pg_catalog, public, pg_temp` and names its tables with their schema, and the role scripts take the `TEMP` right from `PUBLIC` and from the three login roles ([security.md](security.md#curation-boundary), [install.md](install.md)) ([#130](https://github.com/ekaynac/kutuphane/pull/130)).
