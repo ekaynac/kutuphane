@@ -53,7 +53,7 @@ A book with `kstd.yaml` follows it (`src/kutuphane/kstd.py`). Validation has thr
 | `ai_use` term absent | reported as absent ("not stated"); every decision treats it as `n` |
 | origin, license, validity, applies_to, notices | shown with search results, citations and answers (`item`) |
 
-A book without `kstd.yaml` behaves as before. Absent `ai_use` terms mean `n`; an unknown license gives no permission.
+A book without `kstd.yaml` behaves as before. Absent `ai_use` terms mean `n`; an unknown license gives no permission to forward or train; derivation inside the node is permitted with the notice `rights-unknown`, and the derived item is never forwarded.
 `kstd.yaml` itself is metadata: it is stored and checked, never indexed. A quarantined file (Kütüphane stores it
 but cannot extract it, see `docs/guide/operations.md` §2) keeps its kstd rights; it is not searched until a version
 fixes it.

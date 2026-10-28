@@ -37,6 +37,8 @@ KIND_ROLE = {"decision_proposal": "rule", "convention": "rule", "finding": "evid
 LINK_TYPES = ("derived_from", "same_as", "about", "fixed_by", "violates", "decided_by", "supersedes", "contradicts")
 CREATION_ONLY = ("derived_from", "supersedes")  # they change rights and retirement: part of what a curator approves
 PASSAGE_LINKS = ("derived_from", "about")
+LICENCE_NOTICE = ("derived from file(s) with license unknown: allowed in this installation; this note is never "
+                  "exported or forwarded (#143)")
 STANDINGS = ("approved", "pending", "rejected", "retired")
 TRANSITIONS = {("pending", "approved"), ("pending", "rejected"), ("approved", "retired"), ("rejected", "pending"),
                ("retired", "pending")}  # §8.2; a re-proposal never reopens a note
@@ -488,6 +490,49 @@ def _derive(conn, draft: Draft) -> tuple[bool, bool, bool, list[str], dict]:
     return allow_search, allow_ai, allow_train, sorted(books), found
 
 
+_LINEAGE_PASSAGES = """
+WITH RECURSIVE c(root, seq) AS (
+    SELECT s, s FROM unnest(%s::bigint[]) s
+    UNION
+    SELECT c.root, l.dst_note FROM c JOIN note_link l ON l.src = c.seq
+     WHERE l.type = 'derived_from' AND l.creation AND l.dst_note IS NOT NULL)
+SELECT c.root, t.cite_book, t.content_id, t.path FROM c JOIN note_citation t ON t.note_seq = c.seq
+ WHERE t.kind = 'passage'
+UNION
+SELECT c.root, l.dst_book, l.dst_content_id, l.dst_path FROM c JOIN note_link l ON l.src = c.seq
+ WHERE l.type = 'derived_from' AND l.creation AND l.dst_book IS NOT NULL
+"""
+
+
+def _unlicensed(rights: kstd.Rights, files) -> list[str]:
+    return sorted({f"{book}/{path}" for book, content_id, path in files
+                   if rights.license_unknown(book, content_id, path)})
+
+
+def unknown_licence(conn, seqs) -> dict[int, list[str]]:
+    """{note seq: ["book/path", …]} of the files with `license: unknown` that each note derives from (#143): its
+    passage citations and `derived_from` passages, and those of every note its creation `derived_from` chain
+    reaches. Notes without such a file are left out. Derivation is allowed here; forwarding is not."""
+    by_note = {}
+    for root, book, content_id, path in conn.execute(_LINEAGE_PASSAGES, (list(seqs),)):
+        by_note.setdefault(root, []).append((book, content_id, path))
+    rights = kstd.Rights(conn)
+    return {seq: found for seq, files in by_note.items() if (found := _unlicensed(rights, files))}
+
+
+def _licence_notice(conn, draft: Draft, found: dict) -> dict:
+    """The receipt notice of a note derived from `license: unknown` files (directly or through a derived note)."""
+    direct = [(c.book, c.content_id, c.path) for c in [c for _, c in draft.passages]
+              + [t[1] for k, t in draft.links if k == "derived_from" and t[0] == "passage"]]
+    parents = [found[(t[1], t[2])][0] for k, t in draft.links if k == "derived_from" and t[0] == "note"]
+    paths = set(_unlicensed(kstd.Rights(conn), direct))
+    for inherited in unknown_licence(conn, parents).values():
+        paths.update(inherited)
+    if not paths:
+        return {}
+    return {"licence_notice": {"paths": sorted(paths), "note": LICENCE_NOTICE}}
+
+
 def _excerpts(conn, draft: Draft) -> dict:
     """Step 7: {n: excerpt sha256} of every code citation; a scope names a live repository of the journal."""
     if draft.scope is not None and not conn.execute(
@@ -677,6 +722,7 @@ def propose(conn, actor: Actor, args: dict, embedder: llmdap.Routed | None = Non
     needs = draft.needs()
     _decide(conn, actor, needs, "propose")                                                   # 5. pre-decision
     allow_search, allow_ai, allow_train, books, found = _derive(conn, draft)                 # 6. dependencies
+    licence = _licence_notice(conn, draft, found)                                            #    #143 notice
     excerpts = _excerpts(conn, draft)                                                        # 7. code excerpts
     vector, vector_status = _embed(conn, embedder, actor, draft, allow_search, allow_ai, books)  # 8. embedding
     journal = f"book:{draft.book}"
@@ -706,13 +752,14 @@ def propose(conn, actor: Actor, args: dict, embedder: llmdap.Routed | None = Non
         if origin_notice == origins.REFUSED and draft.origin_requested in origins.CONFIRMABLE:  # docs/25 §7.1
             from . import confirm  # confirm imports curation, which needs this module loaded
             request = {"confirmation": confirm.receipt(conn, write_seq, draft.ref)}
-        minimal = {"ref": draft.ref, "status": "recorded", "origin": origin, "origin_notice": origin_notice, **request}
+        minimal = {"ref": draft.ref, "status": "recorded", "origin": origin, "origin_notice": origin_notice, **request,
+                   **licence}
         if journal not in reads.objects("read"):
             return minimal, again is not None, minimal, []  # propose-only: nothing about existence or counts
         readable = sorted(o.removeprefix("book:") for o in reads.objects("read"))
         candidates = _candidates(conn, seq, draft, readable, embedder, _for_model(actor)) if allow_search else []
         receipt = {"ref": draft.ref, "status": status, "standing": effective_standing(conn, [seq], NOW)[seq][0],
-                   "origin": origin, "origin_notice": origin_notice, **request, "candidates": candidates,
+                   "origin": origin, "origin_notice": origin_notice, **request, **licence, "candidates": candidates,
                    **_counts(conn, seq, draft), "vector": vector_status}
         return receipt, again is not None, minimal, candidates
 

@@ -13,6 +13,9 @@ models: the context, the options offered, the choice, the actor, the outcome row
   rights (Astra review #15).
 - A note with a `restricted` book in its `source_books` (book policy now) is left out: Sensitivity owns export
   (docs/09 §1, docs/24 §23). The summary counts them (`restricted`).
+- A note derived from a file with `license: unknown` (its citations and `derived_from` passages, also through its
+  `derived_from` notes, `notes.unknown_licence`) is left out: derivation stays in this installation (#143, docs/11
+  §5.2). The summary counts them (`licence_unknown`).
 """
 import hashlib
 from datetime import datetime, timezone
@@ -153,12 +156,16 @@ def export(conn, actor: Actor, books: list[str] | None = None) -> tuple[list[dic
                 raise ValueError("book must be a book slug")
         books = sorted(set(books))
     if not books:
-        return [], {"records": 0, "withheld": 0, "restricted": 0, "books": [],
+        return [], {"records": 0, "withheld": 0, "restricted": 0, "licence_unknown": 0, "books": [],
                     "watermark": notesquery.watermark(conn)}
     items = {f"book:{b}": [] for b in books}  # filled by the work, logged by guard_many after the final decision
+    left_out = {"licence_unknown": 0}
 
     def work():
         records, w, restricted = _records(conn, actor, books)
+        unlicensed = notes.unknown_licence(conn, [r["_seq"] for r in records])  # #143: never exported
+        records = [r for r in records if r["_seq"] not in unlicensed]
+        left_out["licence_unknown"] = len(unlicensed)
         for r in records:
             items[f"book:{r['book']}"].append({"ref": r["ref"], "standing_seq": r.pop("_standing_seq")})
         return records, w, restricted
@@ -168,4 +175,4 @@ def export(conn, actor: Actor, books: list[str] | None = None) -> tuple[list[dic
                                              finish=lambda final, data: _finish(conn, final, data),
                                              notes_of=lambda data: [r["_seq"] for r in data[0]])
     return records, {"records": len(records), "withheld": sum(r["withheld"] is not None for r in records),
-                     "restricted": restricted, "books": books, "watermark": w}
+                     "restricted": restricted, **left_out, "books": books, "watermark": w}

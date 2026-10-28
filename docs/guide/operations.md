@@ -819,6 +819,10 @@ kutuphane decisions export <principal> --out decisions.jsonl [--book <journal>] 
 - Without `--book`, the export includes every journal that the principal can read.
 - The text, options and choice are present only when the note allows `ai_input` and `train` (`journal create --train y`) and the note does not depend on a skill that a scan blocks. Otherwise the record has only references and hashes, and `withheld` gives the reason.
 - A note with a `restricted` book in its sources is not in the export. The summary counts these notes in `restricted`.
+- A note derived from a file with `license: unknown` is not in the export (#143). "Derived" means: the note cites a
+  passage of that file, has a `derived_from` link to it, or has a `derived_from` link to a note that is derived from
+  it. The summary counts these notes in `licence_unknown`. Set `rights.license` in the `kstd.yaml` of the source
+  book, then publish it again, to export them.
 
 ## 9. Code repositories
 
@@ -856,6 +860,11 @@ KUTUPHANE_SIGNING_KEY=/path/key.pem kutuphane export <book> --out <book>.pkg [--
 
 `export` refuses a journal and a book with `--sensitivity restricted`: restricted content never leaves this installation in a package.
 
+`export` refuses a book that has a file with `license: unknown` in its `kstd.yaml` (#143). The error names the
+files. Derivation inside this installation is permitted; export and forwarding need a license. Set
+`rights.license` (or the license of each item), for example `LicenseRef-InfraMedic-Internal` for internal
+content, and publish the book again.
+
 On the receiving installation:
 
 ```sh
@@ -866,7 +875,8 @@ kutuphane reject-import <id> --by user:admin --reason '…'
 ```
 
 - `receive` quarantines and verifies the package. It publishes nothing. It exits with code 5 if the status is not `verified`.
-- `imports` lists the last 50 received packages and their verdicts.
+- `imports` lists the last 50 received packages and their verdicts. A package that came over HTTP or MCP also shows
+  `submitted_by`, `submitted_for` and `submitted_channel` (the caller of the token). A CLI `receive` has none.
 - `approve-import` publishes the package with this installation's policy. It indexes like `ingest` (exit code 3 if the index is incomplete).
 - `reject-import` refuses the package. Kütüphane keeps the record.
 - `receive` adds a `personal_data` finding for each open personal-data or fleet-data finding (path, file digest, rule,
@@ -877,6 +887,49 @@ kutuphane reject-import <id> --by user:admin --reason '…'
 - With `KUTUPHANE_SKILLSPECTOR_BIN`, `receive` adds a `skill_scan` finding for each skill folder (status, blocking,
   recommendation, score, completeness, issue count). The publication at `approve-import` records the scans that
   block agents.
+
+### Packages from an application (HTTP and MCP, #139)
+
+An application can send a signed package without the CLI: `POST /v1/packages`
+([http-api.md](http-api.md#13-packages)) or the MCP tool `submit_package` ([mcp.md](mcp.md#517-submit_package)).
+The checks are the same as `receive`. Nothing is published: a person still runs `approve-import` (no route and no
+tool approves).
+
+1. Trust the signing key of the application once (section 5, `trust`).
+2. Give the principal of the application `propose` on the target book. There is no new grant mode:
+
+   ```sh
+   kutuphane grant book:<book> propose agent:<client>
+   ```
+
+   A principal without `propose` on the book that the manifest names gets `403`, and Kütüphane stores nothing. A
+   journal is never a target (`400`).
+3. The issuer of the files is the key that signed the package (D74). The origin of each file comes from the signed
+   `kstd.yaml`. The caller is only recorded (`submitted_by`, D70): a client-credentials token is an agent, and it
+   does not change the issuer or the origins.
+
+#### Consumer application guide (example: InfraMedic)
+
+1. **Sign.** InfraMedic keeps its knowledge (runbooks, problem packs) as a book in its own Kütüphane installation,
+   with a `kstd.yaml`. Set a license, for example `license: LicenseRef-InfraMedic-Internal`: a file with
+   `license: unknown` is never exported. After its own human gate, InfraMedic publishes the new version and signs
+   it: `KUTUPHANE_SIGNING_KEY=… kutuphane export runbooks --out runbooks.pkg`. Each export has a new sequence.
+2. **Submit.** InfraMedic gets a client-credentials token and sends the package:
+
+   ```sh
+   curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/x-tar" \
+     --data-binary @runbooks.pkg "$KUTUPHANE_PUBLIC_URL/v1/packages"
+   ```
+
+   The response has the import `id` and `status`: `received`, `findings`, or `refused` with the `reasons`.
+   `GET /v1/packages/<id>` gives the status again, and `approved` after the approval.
+3. **A person approves.** The operator reads `kutuphane imports` (the findings and the diff: `added`, `removed`,
+   `changed`) and runs `kutuphane approve-import <id> --by user:<name> …` or `reject-import`.
+4. **Indexed.** `approve-import` publishes the version and indexes it. Only the passages whose text changed are
+   embedded again; every unchanged passage copies its vector (section 3). Search finds the new text after the
+   approval, not before.
+
+Run state (saga outcomes, task results) is not a book: record it with `record_outcome` or in a journal.
 
 ## 11. Audit and logs
 

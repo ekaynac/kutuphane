@@ -96,7 +96,7 @@ cases:
     request: {actor: user:ayse, action: read, item: i-own, want: rule, context: {plant: "3"}}
     expect: {result: escalate, authority: evidence, reasons: [outside-valid-time], notices: []}
 
-  - name: an unknown license blocks derivation
+  - name: an unknown license allows derivation in this node, with a notice
     rule: [3]
     <<: *base
     statements:
@@ -105,7 +105,49 @@ cases:
           body: {scope: book:ops, origin: model, rights: {license: unknown, personal_data: "no"}, applicability: {}}},
          {kind: acceptance, about: i-unk, issuer: node:acme, issued_at: 2026-10-02T00:00:00Z, body: {value: accepted}}]
     request: {actor: user:ayse, action: derive, item: i-unk, want: evidence, context: {}}
+    expect: {result: permit, authority: evidence, reasons: [], notices: [rights-unknown]}
+
+  - name: an unknown license blocks forwarding
+    rule: [3]
+    <<: *base
+    statements:
+      - *stmts
+      - [{id: i-unk, kind: item, issuer: node:acme, issued_at: 2026-10-01T00:00:00Z,
+          body: {scope: book:ops, origin: model, rights: {license: unknown, personal_data: "no"}, applicability: {}}},
+         {kind: acceptance, about: i-unk, issuer: node:acme, issued_at: 2026-10-02T00:00:00Z, body: {value: accepted}},
+         {kind: handling, about: i-unk, issuer: node:acme, issued_at: 2026-10-02T00:00:00Z, body: {export: normal, route: local_only}}]
+    request: {actor: user:ayse, action: forward, item: i-unk, want: evidence, context: {}, destination: node:partner}
     expect: {result: deny, authority: evidence, reasons: [rights-unknown], notices: []}
+
+  - name: an item derived from an unknown-license input is never forwarded
+    rule: [3]
+    <<: *base
+    statements:
+      - *stmts
+      - [{id: i-unk, kind: item, issuer: node:acme, issued_at: 2026-10-01T00:00:00Z,
+          body: {scope: book:ops, origin: model, rights: {license: unknown, personal_data: "no"}, applicability: {}}},
+         {id: i-der, kind: item, issuer: node:acme, issued_at: 2026-10-03T00:00:00Z,
+          body: {scope: book:ops, origin: human, inputs: [i-unk],
+                 rights: {license: CC-BY-4.0, personal_data: "no"}, applicability: {}}},
+         {kind: acceptance, about: i-der, issuer: node:acme, issued_at: 2026-10-04T00:00:00Z, body: {value: accepted}},
+         {kind: handling, about: i-der, issuer: node:acme, issued_at: 2026-10-04T00:00:00Z, body: {export: normal, route: local_only}},
+         {kind: handling, about: i-unk, issuer: node:acme, issued_at: 2026-10-02T00:00:00Z, body: {export: normal, route: local_only}}]
+    request: {actor: user:ayse, action: forward, item: i-der, want: evidence, context: {}, destination: node:partner}
+    expect: {result: deny, authority: evidence, reasons: [input-rights-unknown], notices: []}
+
+  - name: derivation from an item whose input has an unknown license carries the input notice
+    rule: [3]
+    <<: *base
+    statements:
+      - *stmts
+      - [{id: i-unk, kind: item, issuer: node:acme, issued_at: 2026-10-01T00:00:00Z,
+          body: {scope: book:ops, origin: model, rights: {license: unknown, personal_data: "no"}, applicability: {}}},
+         {id: i-der, kind: item, issuer: node:acme, issued_at: 2026-10-03T00:00:00Z,
+          body: {scope: book:ops, origin: human, inputs: [i-unk],
+                 rights: {license: CC-BY-4.0, personal_data: "no"}, applicability: {}}},
+         {kind: acceptance, about: i-der, issuer: node:acme, issued_at: 2026-10-04T00:00:00Z, body: {value: accepted}}]
+    request: {actor: user:ayse, action: derive, item: i-der, want: evidence, context: {}}
+    expect: {result: permit, authority: evidence, reasons: [], notices: [input-rights-unknown]}
 
   - name: personal data unknown counts as yes, so forwarding needs a legal basis
     rule: [3]

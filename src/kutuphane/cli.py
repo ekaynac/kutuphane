@@ -339,9 +339,11 @@ def cmd_reject(conn, args) -> int:
 
 
 def cmd_imports(conn, _args) -> int:
-    rows = conn.execute("SELECT id, received_at, status, issuer, book, sequence, reasons, findings, diff, decided_by "
+    rows = conn.execute("SELECT id, received_at, status, issuer, book, sequence, reasons, findings, diff, decided_by, "
+                        "submitted_by, submitted_for, submitted_channel "
                         "FROM package_import ORDER BY id DESC LIMIT 50").fetchall()
-    keys = ("id", "received_at", "status", "issuer", "book", "sequence", "reasons", "findings", "diff", "decided_by")
+    keys = ("id", "received_at", "status", "issuer", "book", "sequence", "reasons", "findings", "diff", "decided_by",
+            "submitted_by", "submitted_for", "submitted_channel")
     _print([{**dict(zip(keys, r)), "received_at": r[1].isoformat()} for r in rows])
     return 0
 
