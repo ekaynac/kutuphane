@@ -35,8 +35,9 @@ def journal(conn, book, search=True, ai_input=True, readers=(U,)):
 
 
 def note(conn, book, body, kind="finding", *, repo=None, branch=None, paths=(), commit=None, class_key=None,
-         origin="model", creation_links=()):
-    """A note and its creating propose write (and its creation links: [(type, dst seq)]). Returns the seq."""
+         origin="model", creation_links=(), cites=()):
+    """A note and its creating propose write, its creation links ([(type, dst seq)]) and its code citations
+    ([(commit, start, end, excerpt sha)]), in one transaction (039: the parts are written with the note). The seq."""
     nid = "nt_" + hashlib.sha256(f"{book}\n{body}\n{creation_links}".encode()).hexdigest()
     s = conn.execute("SELECT search FROM journal WHERE book = %s", (book,)).fetchone()[0]
     with conn.transaction():
@@ -56,6 +57,10 @@ def note(conn, book, body, kind="finding", *, repo=None, branch=None, paths=(), 
             conn.execute("INSERT INTO note_link (src, src_book, type, dst_note, dst_note_book, creation, write_seq) "
                          "VALUES (%s, %s, %s, %s, (SELECT book FROM note WHERE seq = %s), true, %s)",
                          (seq, book, type_, dst, dst, wseq))
+        for n, (c, start, end, sha) in enumerate(cites, start=1):
+            conn.execute("INSERT INTO note_citation (note_seq, book, n, kind, path, repo, commit, line_start, "
+                         "line_end, excerpt_sha256) VALUES (%s, %s, %s, 'code', 'q.py', 'adc', %s, %s, %s, %s)",
+                         (seq, book, n, c, start, end, sha))
     return seq
 
 
@@ -474,18 +479,11 @@ def repo(mem, tmp_path, monkeypatch):
     return c1, c2, v1
 
 
-def cite(conn, seq, c, start, end, sha, n=1):
-    conn.execute("INSERT INTO note_citation (note_seq, book, n, kind, path, repo, commit, line_start, line_end, "
-                 "excerpt_sha256) VALUES (%s, 'mem', %s, 'code', 'q.py', 'adc', %s, %s, %s, %s)",
-                 (seq, n, c, start, end, sha))
-
-
 def test_code_targets_and_commits_range(mem, repo):  # T30, T22 commits
     c1, c2, v1 = repo
-    moved = approved(mem, "mem", "b is two", repo="adc", commit=c1)
-    cite(mem, moved, c1, 2, 2, _excerpt(v1, 2, 2))
-    still = approved(mem, "mem", "c is three at the end", repo="adc", commit=c2)
-    cite(mem, still, c1, 1, 3, _excerpt(v1, 1, 3))
+    moved = approved(mem, "mem", "b is two", repo="adc", commit=c1, cites=[(c1, 2, 2, _excerpt(v1, 2, 2))])
+    still = approved(mem, "mem", "c is three at the end", repo="adc", commit=c2,
+                     cites=[(c1, 1, 3, _excerpt(v1, 1, 3))])
     assert refs(q(mem)) == [ref(mem, still), ref(mem, moved)]                 # no target: not_checked
     assert q(mem)["items"][0]["citations"][0]["status"] == "not_checked"
     old = q(mem, repo="adc", commit=c1)
@@ -508,9 +506,7 @@ def test_many_cited_notes_never_fail_a_query(mem, repo, monkeypatch):  # Astra r
     c1, _c2, v1 = repo
     retired = []
     for i in range(11):
-        s = approved(mem, "mem", f"retired with citations {i}")
-        for n in range(1, 21):
-            cite(mem, s, c1, 1, 1, _excerpt(v1, 1, 1), n=n)
+        s = approved(mem, "mem", f"retired with citations {i}", cites=[(c1, 1, 1, _excerpt(v1, 1, 1))] * 20)
         standing(mem, s, "retired")
         retired.append(s)
     calls = []
@@ -521,9 +517,8 @@ def test_many_cited_notes_never_fail_a_query(mem, repo, monkeypatch):  # Astra r
     assert calls == []                                                        # no target: nothing to verify
     current = []
     for i in range(11):
-        s = approved(mem, "mem", f"current with citations {i} " + "word " * 100)
-        for n in range(1, 21):
-            cite(mem, s, c1, n % 3 + 1, n % 3 + 1, _excerpt(v1, n % 3 + 1, n % 3 + 1), n=n)
+        s = approved(mem, "mem", f"current with citations {i} " + "word " * 100,
+                     cites=[(c1, n % 3 + 1, n % 3 + 1, _excerpt(v1, n % 3 + 1, n % 3 + 1)) for n in range(1, 21)])
         current.append(s)
     verified = []
     real_verify = coderepo._verify

@@ -7,7 +7,7 @@ statement (migration 023).
 """
 import uuid
 
-from . import authz, gate
+from . import authz, canonical, gate
 from . import notes as notes_
 
 MAX_ITEMS = 50
@@ -30,7 +30,7 @@ def check_reason(principal, reason) -> None:
 
 
 def check_integrity(conn, seq: int, note_id: str) -> None:
-    if notes_.canonical_of(conn, seq)[0] != note_id:
+    if canonical.canonical_of(conn, seq)[0] != note_id:
         raise IntegrityRefused(f"note-integrity: the stored parts of {note_id} do not give its id")
 
 

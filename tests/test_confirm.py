@@ -316,9 +316,10 @@ def test_a_changed_note_is_not_shown_for_signing(env):  # §5.2 for confirm
     r = propose(env, "Integrity")
     seq = seq_of(env, r["ref"])
     write = env.execute("SELECT seq FROM write_record WHERE note_seq = %s AND creates", (seq,)).fetchone()[0]
-    env.execute("INSERT INTO note_link (src, src_book, type, dst_note, dst_note_book, creation, write_seq) "
-                "VALUES (%s, %s, 'about', %s, %s, true, %s)", (seq, J, seq_of(env, other["ref"]), J, write))
-    env.commit()
+    with env.transaction():  # a part written before migration 039 (its trigger off, as then)
+        env.execute("SET LOCAL session_replication_role = replica")
+        env.execute("INSERT INTO note_link (src, src_book, type, dst_note, dst_note_book, creation, write_seq) "
+                    "VALUES (%s, %s, 'about', %s, %s, true, %s)", (seq, J, seq_of(env, other["ref"]), J, write))
     c, auth = person(env)
     page = c.get(f"/api/requests/{r['ref'].replace('@', '/')}").json()
     assert page["integrity"] == "note-integrity" and page["claims"] == []

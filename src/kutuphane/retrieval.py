@@ -241,7 +241,7 @@ def retrieve(conn, actor: Actor, query: str, k: int = search.DEFAULT_K, stages: 
         second = search.search(conn, actor, translated, size, scope=scope,
                                vector=query_vector(conn, stages.embedder, actor, translated))
         # One statement for the merged pool, before the reranker or the answer model sees it (Astra review #12).
-        pool = search.authorize(conn, actor, _merge(pool, second, size))
+        pool, _ = search.authorize(conn, actor, _merge(pool, second, size))
     queries = {OTHER_LANGUAGE[language(query)]: translated} if translated else {}
     ranked = _rerank(conn, stages.reranker, actor, query, queries, pool)
     if recent:

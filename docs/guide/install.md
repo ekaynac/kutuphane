@@ -116,6 +116,8 @@ docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=
 `migrate` uses `KUTUPHANE_CURATOR_DSN`; without it, it uses `KUTUPHANE_DSN`. New tables need their grants, so
 apply `deploy/db-roles.sql` (and `deploy/db-roles-curator.sql` when you run curator web, `deploy/db-roles-decider.sql`
 when you run the decider runner) after every `migrate`. The server refuses to start while a migration is pending.
+`deploy/db-roles.sql` also takes the right to make temporary tables (`TEMP`) on the database from `PUBLIC`; the owner
+of the database keeps it. No Kütüphane process needs temporary tables.
 
 Keep `KUTUPHANE_CURATOR_DSN` out of every environment that an agent can read: not in the Core container, not in an
 orchestrator container, not in a shell profile that an agent session gets. Type it at the prompt or read it from a

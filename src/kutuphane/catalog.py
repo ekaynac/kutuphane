@@ -10,9 +10,10 @@ Accepted credential findings (`--accept-finding`, source.AcceptedFinding) are pa
 [{path, sha256, rule}] for this publication, shown by `book_state`. The matched text is never recorded.
 
 Personal-data and fleet-data findings (datascan.py, G35) are a labelling question: the open ones (no acceptance)
-are recorded in the publication as `data_findings` [{path, sha256, rule, lines}] and never refuse a book here.
-Ingest refuses them only when the book policy sends passages to cloud models (check_personal_data); an accepted
-one is in `accepted_findings`, like a credential finding.
+are recorded in the publication as `data_findings` [{path, sha256, rule, lines}]. Publication refuses them only
+when the book policy sends passages to cloud models (`_check_personal_data`, here, so every path that publishes
+applies it: ingest and package approval, Astra review #19); an accepted one is in `accepted_findings`, like a
+credential finding.
 
 Skill scans (D71, skillscan.py): the skill folders are scanned before the transaction (a subprocess must not hold
 the book lock); the records are written in it, so a block is in force as soon as the version is."""
@@ -60,13 +61,12 @@ def data_findings(files: list[SourceFile]) -> list[dict]:
     return [out[k] for k in sorted(out)]
 
 
-def check_personal_data(files: list[SourceFile], policy: dict) -> None:
-    """Ingest gate (G35): a `cloud_ok` book sends passages to cloud models, so an open personal-data finding in a
+def _check_personal_data(files: list[SourceFile], policy: dict, manifest) -> None:
+    """The cloud gate (G35): a `cloud_ok` book sends passages to cloud models, so an open personal-data finding in a
     file that can go to a model (no kstd.yaml, or `ai_use.ai_input: y`) refuses it until the operator reviews it.
     A `local_only` book only records the findings: personal data is a labelling question there."""
-    if check_policy(policy)["egress"] != "cloud_ok":
+    if policy["egress"] != "cloud_ok":
         return
-    manifest = kstd.validate(files)
     refused = [f"{f.path}: personal-data findings in a cloud_ok book: "
                + ", ".join(f"line {d.line}{where} ({d.rule})" for where, d in sorted(f.data_findings,
                                                                                   key=lambda x: (x[1], x[0])))
@@ -76,7 +76,7 @@ def check_personal_data(files: list[SourceFile], policy: dict) -> None:
         example = refused[0].split(":", 1)[0]
         raise ValueError("; ".join(refused) + f"; the passages go to cloud models: review each finding, then accept "
                          f"it (--accept-finding {example}@sha256:<file digest>:<rule>), set ai_use.ai_input: n for "
-                         f"the file in kstd.yaml, or ingest with --egress local_only")
+                         f"the file in kstd.yaml, or publish with --egress local_only")
 
 
 def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dict, profile: dict) -> Published:
@@ -88,6 +88,7 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
     profile = profiles.check_profile(profile)
     profile_id = ids.profile_id(profile)
     manifest = kstd.validate(files)  # a folder with kstd.yaml follows it; an invalid manifest blocks publication
+    _check_personal_data(files, policy, manifest)  # before any write, on every publication path
     searchable = [f for f in files if f.path != kstd.MANIFEST and not f.quarantine
                   and (manifest is None or kstd.allows(kstd.effective(manifest, f.path), "search"))]
     skills = agentfiles.skill_dirs(f.path for f in files)

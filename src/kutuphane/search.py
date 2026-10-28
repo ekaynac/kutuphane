@@ -215,19 +215,20 @@ def check_query(query) -> None:
         raise ValueError(f"query must be 1..{MAX_QUERY_CHARS} characters")
 
 
-def authorize(conn, actor: Actor, hits: list[Hit]) -> list[Hit]:
-    """The hits the caller may receive now, decided in ONE statement for the whole list. A pool merged from two
-    searches (retrieval, G19) has no common linearization point otherwise: rights may change between the searches
-    (Astra review #12). A passage of a book that lost a needed mode is dropped; the loss is logged. An agent's
-    instruction passage inside a skill that a scan blocked meanwhile (D71) is dropped too."""
+def authorize(conn, actor: Actor, hits: list[Hit]) -> tuple[list[Hit], authz.Allowed | None]:
+    """The hits the caller may receive now, decided in ONE statement for the whole list, and that final decision
+    (None for no hits). A pool merged from two searches (retrieval, G19), or hits with the records they repeat
+    (quotes.py), has no common linearization point otherwise: rights may change between the reads (Astra reviews
+    #12, #19). A passage of a book that lost a needed mode is dropped; the loss is logged. An agent's instruction
+    passage inside a skill that a scan blocked meanwhile (D71) is dropped too."""
     needs = _needs(actor, ((h.citation.book, h.instruction) for h in hits))
     if not needs:
-        return []
+        return [], None
     final = authz.allowed(conn, actor.principal, actor.on_behalf_of, _modes(actor), skills=_skills(
         actor, ((h.citation.book, h.citation.content_id, h.citation.path, h.instruction) for h in hits)))
     lost = _lost(conn, actor, needs, final)
     return [h for h in hits if f"book:{h.citation.book}" not in lost
-            and (h.citation.book, h.citation.content_id, h.citation.path) not in final.blocked_files]
+            and (h.citation.book, h.citation.content_id, h.citation.path) not in final.blocked_files], final
 
 
 def _skills(actor: Actor, passages) -> list[tuple[str, str, str]]:

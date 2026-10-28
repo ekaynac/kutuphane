@@ -85,7 +85,7 @@ def test_a_search_hit_points_to_the_record_it_repeats(conn, books):
     authz.grant(conn, "book:briefs", "read", U)
     brief, digest = _hit(conn, "brief.json", "falcon latency pilot"), _hit(conn, "digest.md", "ring moves counts")
     record = _hit(conn, "news.jsonl", "remote code execution")
-    found = quotes.quoted(conn, Actor(U), [brief, digest, record])
+    _, found = quotes.quoted(conn, Actor(U), [brief, digest, record])
     assert [tuple(vars(h.citation).values()) for h in found[brief.citation]] == [_record(conn, 0)]
     assert [h.citation.ordinal for h in found[digest.citation]] == [2]
     assert record.citation not in found                                   # a record is never a copy
@@ -94,12 +94,12 @@ def test_a_search_hit_points_to_the_record_it_repeats(conn, books):
 def test_no_pointer_into_an_unreadable_or_filtered_book(conn, books):
     authz.grant(conn, "book:briefs", "read", U)
     brief = _hit(conn, "brief.json", "falcon latency pilot")
-    assert quotes.quoted(conn, Actor(U), [brief]) == {}                   # news is not readable
+    assert quotes.quoted(conn, Actor(U), [brief]) == ([brief], {})        # news is not readable
     authz.grant(conn, "book:news", "read", U)
-    assert quotes.quoted(conn, Actor(U), [brief])
+    assert quotes.quoted(conn, Actor(U), [brief])[1]
     for scope in (search.Scope.of(books=["briefs"]), search.Scope.of(path="brief"),
                   search.Scope.of(origins=["human"])):
-        assert quotes.quoted(conn, Actor(U), [brief], scope) == {}, scope
+        assert quotes.quoted(conn, Actor(U), [brief], scope) == ([brief], {}), scope
 
 
 def test_cli_search_shows_quoted_records(conn, books, monkeypatch, capsys):

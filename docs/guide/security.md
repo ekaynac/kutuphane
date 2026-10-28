@@ -91,8 +91,15 @@ migration 029).
 - The CLI trusts its operator. So the curator credential is the boundary. An agent that can read it can curate as
   any user. Keep it out of every environment that an agent can read.
 - Memory rows (`note`, `write_record`, `note_link`, `note_citation`, `outcome`) are append-only for the app role.
+  The citations and the creation links of a note are part of its id: the database writes them only in the
+  transaction that writes the note (migration 039). So a later insert cannot change a note that a person confirmed
+  or approved. Readers and `curator verify-acts` also compare the parts with the signed id.
 - Skill scan records are append-only for the app role (it can only mark a record `stale`). The app role cannot
   write a skill clearance, so it cannot lift a block.
+- Every database function and trigger fixes its search path to `pg_catalog, public, pg_temp` and names its tables
+  with their schema (migration 038). The role scripts take the right to make temporary tables (`TEMP`) from
+  `PUBLIC` and from the app, curator web and decider roles. So a role cannot hide a table or a sequence that a check
+  reads behind a temporary one.
 
 ## Curator web and passkeys (D72)
 

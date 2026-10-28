@@ -316,22 +316,27 @@ def test_the_database_binds_creation_links_to_their_write(env, okf_dir):  # T10
     wb2 = row(env, "SELECT seq FROM write_record WHERE NOT creates")[0]
     insert = ("INSERT INTO note_link (src, src_book, type, dst_note, dst_note_book, creation, write_seq) "
               "VALUES (%s, %s, %s, %s, %s, %s, %s)")
-    with pytest.raises(psycopg.errors.ForeignKeyViolation):  # the write of another note
-        env.execute(insert, (sb, J, "about", sa, J, True, wa))
-    with pytest.raises(psycopg.errors.ForeignKeyViolation):  # a propose that did not create the note
-        env.execute(insert, (sb, J, "about", sa, J, True, wb2))
+    with pytest.raises(psycopg.errors.RaiseException, match="is written"):  # 039: only in the note's transaction
+        env.execute(insert, (sb, J, "about", sa, J, True, wb))
+    cid = row(env, "SELECT content_id, profile_id FROM chunk LIMIT 1")
+    with env.transaction(force_rollback=True):
+        # the keys hold inside the transaction that writes note b too (the owner plays that transaction here)
+        env.execute("UPDATE note SET written_xact = pg_current_xact_id() WHERE seq = %s", (sb,))
+        with pytest.raises(psycopg.errors.ForeignKeyViolation), env.transaction():  # the write of another note
+            env.execute(insert, (sb, J, "about", sa, J, True, wa))
+        with pytest.raises(psycopg.errors.ForeignKeyViolation), env.transaction():  # a non-creating propose
+            env.execute(insert, (sb, J, "about", sa, J, True, wb2))
+        with pytest.raises(psycopg.errors.ForeignKeyViolation), env.transaction():  # a passage that does not exist
+            env.execute("INSERT INTO note_link (src, src_book, type, dst_book, dst_content_id, dst_profile_id, "
+                        "dst_path, dst_ordinal, creation, write_seq) "
+                        "VALUES (%s, %s, 'about', 'kitap', %s, %s, 'yok.md', 0, true, %s)",
+                        (sb, J, cid[0], cid[1], wb))
     journal(env, "baska")
     allow(env, "baska", "read", "propose")
     notes.propose(env, mcp(), {"book": "baska", "kind": "lesson", "text": "c"})
     sc, wl = row(env, "SELECT seq FROM note WHERE book = 'baska'")[0], wb
     with pytest.raises(psycopg.errors.CheckViolation):  # same_as across books
         env.execute(insert, (sc, "baska", "same_as", sa, J, False, wl))
-    cid = row(env, "SELECT content_id, profile_id FROM chunk LIMIT 1")
-    with pytest.raises(psycopg.errors.ForeignKeyViolation):  # a passage that does not exist
-        env.execute("INSERT INTO note_link (src, src_book, type, dst_book, dst_content_id, dst_profile_id, "
-                    "dst_path, dst_ordinal, creation, write_seq) "
-                    "VALUES (%s, %s, 'about', 'kitap', %s, %s, 'yok.md', 0, true, %s)",
-                    (sb, J, cid[0], cid[1], wb))
 
 
 # --- T11, T12, T13: idempotency, receipt level, candidate rights -----------------------------------------------

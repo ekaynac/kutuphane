@@ -19,7 +19,7 @@ import json
 import statistics
 from datetime import datetime, timedelta
 
-from . import authz, gate, notes, notesquery, origin, outcomes
+from . import authz, canonical, gate, notes, notesquery, origin, outcomes
 
 PAGE_GROUPS = 20
 MAX_PAGE_GROUPS = 100
@@ -277,7 +277,7 @@ def _items(conn, seqs: list[int], rows: dict, w: int, readable: set, tier: dict)
                 "entered_by": entered_by, "confirmed_by": confirmed_by, "outcomes": counted.get(s, {}),
                 "citations": cites.get(s, []), "links": links.get(s, []),
                 "hidden_parts": _hidden_parts(cites.get(s, []), links.get(s, [])),
-                "integrity": None if notes.canonical_of(conn, s)[0] == note_id else "note-integrity"}
+                "integrity": None if canonical.canonical_of(conn, s)[0] == note_id else "note-integrity"}
         out[s] = item
     return out
 

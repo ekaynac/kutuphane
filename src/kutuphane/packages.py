@@ -22,7 +22,7 @@ from psycopg.types.json import Jsonb
 
 from . import agentfiles, catalog, ids, kstd, profiles, signing, skillscan
 from .policy import check_policy
-from .source import MAX_FILE_BYTES, MAX_SOURCE_BYTES, TEXT_TYPES, SourceError, read_file
+from .source import MAX_FILE_BYTES, MAX_SOURCE_BYTES, TEXT_TYPES, AcceptedFinding, SourceError, read_file
 
 FORMAT = "kutuphane-package/1"
 MANIFEST, SIGNATURE, CONTENT = "MANIFEST.json", "MANIFEST.sig", "content/"
@@ -172,8 +172,9 @@ def _manifest(body: bytes) -> dict:
     return manifest
 
 
-def _verify(conn, members: dict[str, bytes]) -> tuple[dict, list]:
-    """Returns (manifest, source files). Raises PackageError with the first reason it is not acceptable."""
+def _verify(conn, members: dict[str, bytes], accept: frozenset = frozenset()) -> tuple[dict, list]:
+    """Returns (manifest, source files). Raises PackageError with the first reason it is not acceptable. `accept`:
+    the AcceptedFinding values of an approval (receipt accepts nothing)."""
     if MANIFEST not in members or SIGNATURE not in members:
         raise PackageError("manifest or signature missing")
     body = members[MANIFEST]
@@ -202,7 +203,7 @@ def _verify(conn, members: dict[str, bytes]) -> tuple[dict, list]:
         if ids.sha256_hex(data) != f["sha256"] or len(data) != f["size"]:
             raise PackageError(f"{f['path']}: digest or size mismatch")
         try:
-            files.append(read_file(f["path"], data))
+            files.append(read_file(f["path"], data, accept))
         except (SourceError, ValueError) as exc:
             raise PackageError(str(exc)) from None
     if ids.content_id({sf.path: sf.sha256 for sf in files}) != manifest["content_id"]:
@@ -232,7 +233,8 @@ def _last_sequence(conn, issuer, book, lock=False) -> int:
 def _scan(files) -> list[dict]:
     """Findings for the person who approves, never an approval or a rejection by themselves. The SkillSpector scan
     of each skill folder (D71) is a proposal here; the publication at approval records the scans that block
-    `activate`."""
+    `activate`. Each open personal-data finding (G35) is listed with the file digest: a `cloud_ok` approval needs
+    its acceptance (`--accept-finding`), as ingest does (Astra review #19)."""
     findings, skills = [], agentfiles.skill_dirs(f.path for f in files)
     for f in files:
         if agentfiles.is_instruction({"path": f.path, "okf_type": f.okf_type}, skills):
@@ -243,6 +245,7 @@ def _scan(files) -> list[dict]:
         if f.media_type.startswith("text/") or f.media_type in TEXT_TYPES.values():
             for m in SUSPICIOUS.finditer(f.data.decode("utf-8", errors="replace")):
                 findings.append({"path": f.path, "kind": "instruction_like_text", "match": m.group(0)})
+    findings += [{"path": d["path"], "kind": "personal_data", **d} for d in catalog.data_findings(files)]
     return findings + [skillscan.finding(path, scan) for path, scan in skillscan.scan_files(files)]
 
 
@@ -277,9 +280,13 @@ def receive(conn, data: bytes) -> dict:
 
 # --- decide -----------------------------------------------------------------------------------------------
 
-def approve(conn, import_id: int, *, by: str, policy: dict, profile: str = "chunked") -> catalog.Published:
-    """A person approves; this installation's own policy applies. Atomic: all of it or none of it."""
+def approve(conn, import_id: int, *, by: str, policy: dict, profile: str = "chunked",
+            accept=()) -> catalog.Published:
+    """A person approves; this installation's own policy applies. Atomic: all of it or none of it. `accept`: the
+    AcceptedFinding values of the personal-data findings that this person reviewed (a `cloud_ok` book refuses an
+    open one at publication, catalog.py); each must match a finding of the package."""
     policy = check_policy(policy)
+    accept = frozenset(accept)
     try:
         with conn.transaction():
             row = conn.execute("SELECT status, package FROM package_import WHERE id = %s FOR UPDATE",
@@ -294,7 +301,10 @@ def approve(conn, import_id: int, *, by: str, policy: dict, profile: str = "chun
             conn.execute("INSERT INTO package_sequence (issuer, book, last_sequence) VALUES (%s, %s, 0) "
                          "ON CONFLICT (issuer, book) DO NOTHING", (manifest["issuer"], manifest["book"]))
             _last_sequence(conn, manifest["issuer"], manifest["book"], lock=True)
-            manifest, files = _verify(conn, members)  # key may be revoked or a newer package accepted meanwhile
+            manifest, files = _verify(conn, members, accept)  # the key may be revoked or a newer package accepted
+            used = {AcceptedFinding(f.path, f.sha256, rule) for f in files for rule in f.accepted}
+            if unused := sorted(accept - used):
+                raise ValueError(f"--accept-finding {unused[0]} matches no finding of the package")
             published = catalog.publish(conn, book=manifest["book"], title=manifest["title"], files=files,
                                         policy=policy, profile=profiles.spec(profile))
             conn.execute("UPDATE package_sequence SET last_sequence = GREATEST(last_sequence, %s) "

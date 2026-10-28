@@ -42,7 +42,7 @@ or `Mcp-Method` header that differs from the body. Check that your reverse proxy
 | ingest refused: `kstd.yaml` | The manifest has an error. Run `kutuphane kstd-check <folder>` to see the errors. A warning does not refuse the book. |
 | a notice such as `kstd.yaml <path>: origin 'assisted' not trusted` | The claim has no evidence, so the file counts as origin `unknown`. Add `reviewed_by` (for `assisted`) or `software_agent: {name, version}` (for `tool`), or remove the unknown field. |
 | no file is searched after `kstd-init` | `kstd-init` states no `ai_use` term, so every term counts as `n`. Set `ai_use` in `kstd.yaml`. |
-| ingest refused: `personal-data findings in a cloud_ok book` | The book sends passages to cloud models, and the file has personal data or fleet data. Review each finding, then add `--accept-finding <path>@sha256:<digest>:<rule>`, set `ai_use.ai_input: n` for the file in `kstd.yaml`, or ingest with `--egress local_only`. |
+| ingest or `approve-import` refused: `personal-data findings in a cloud_ok book` | The book sends passages to cloud models, and the file has personal data or fleet data. Review each finding (`receive` lists them for a package as `personal_data`), then add `--accept-finding <path>@sha256:<digest>:<rule>`, set `ai_use.ai_input: n` for the file in `kstd.yaml`, or publish with `--egress local_only`. |
 | `kstd-init --source-repo` gives `origin: unknown`, `the content differs` | The copy is older or newer than the commit. Give the commit that the copy was taken at with `--commit <rev>`. |
 | a file is in `quarantined` | It cannot be extracted (a PDF without a text layer, an encrypted PDF, text that is not UTF-8). It is stored and listed, not searched. Fix the file and ingest again. |
 | a file is not found by search | Its `ai_use.search` is not `y`, it is a format that is not searched, or it is under a hidden path. See `operations.md`. |
@@ -71,6 +71,8 @@ or `Mcp-Method` header that differs from the body. Check that your reverse proxy
 | `origin_notice: origin-claim-refused` | The writer asked for `human`, `assisted` or `tool`. The server stored the computed origin. This is correct. |
 | `vector: skipped:<reason>` | The note was stored without a vector. `search` or `ai_input`: the note's rights forbid it; `no_route`: no embedding route; `egress`: the egress check refused; `error`: the call failed; `dimensions`: a wrong vector width. Text search still works. |
 | `journal: use query_notes for <journal>; notes are not in search_library or ask_library` | You named a journal in the `book` filter of `search_library`, `ask_library` or `GET /v1/search`. Notes are not searched there. Use `query_notes` (`text` for full text) and `neighbours`. |
+| `note … is written: its citations and creation links are part of its id and are fixed` | A writer tried to add a citation or a creation link to a stored note. The database refuses it (migration 039): propose a new note with the parts, or add a later link with `link_notes`. |
+| `curator verify-acts` lists the problem `contents` | A note that an act approved or confirmed no longer has the parts of its signed id. Its approval and its confirmation no longer count. Find who wrote the extra rows (`kutuphane explain`), and treat the app credential as leaked. |
 
 ## Code citations
 

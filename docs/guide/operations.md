@@ -209,8 +209,9 @@ kutuphane ingest <folder> --book <slug> --sensitivity normal --egress local_only
   the result and in `show`. `kstd.yaml` is not scanned.
 - `kstd-init` writes `personal_data: unknown` for the item of each file with a finding (see
   [kstd.md](kstd.md#personal-data-findings)).
-- A `cloud_ok` book sends passages to cloud models. `ingest` refuses a file with a finding there, unless the file
-  never goes to a model (`ai_use.ai_input` not `y` in `kstd.yaml`). Review each finding, then accept it as above
+- A `cloud_ok` book sends passages to cloud models. Every publication (`ingest` and `approve-import`, see
+  [Packages](#10-packages)) refuses a file with a finding there, unless the file never goes to a model
+  (`ai_use.ai_input` not `y` in `kstd.yaml`). Review each finding, then accept it as above
   (`--accept-finding '<path>@sha256:<digest>:email'`), set `ai_input: n` for the file, or use `--egress local_only`.
   An accepted finding is in `accepted_findings`.
 
@@ -634,7 +635,13 @@ After each enrollment, check `curator passkeys`: one new passkey per enrollment 
 every stored act again, offline: the statement gives the challenge, the signature verifies with user verification
 against the stored passkey, and the rows of the act (Standing events, origin confirmations and withdrawals) are
 exactly the items of its statement, and the
-retirements that they caused are exactly its `retires`. It exits 1 and lists the act when a check fails.
+retirements that they caused are exactly its `retires`. It also checks that each note that an approval or a
+confirmation signed still has the parts (text, citations, creation links) that give its signed id; a mismatch is the
+problem `contents`. It exits 1 and lists the act when a check fails.
+
+The citations and the creation links of a note are part of its id, so the database writes them only together with the
+note (migration 039). An approval on the phone, and a confirmation, count only while the note's stored parts give the
+id that the person signed. Else the note shows `pending` and the origin of the write path (`model`).
 
 ### "My words": confirm the origin of a note (D70 R3, R7)
 
@@ -817,6 +824,11 @@ kutuphane reject-import <id> --by user:admin --reason '…'
 - `imports` lists the last 50 received packages and their verdicts.
 - `approve-import` publishes the package with this installation's policy. It indexes like `ingest` (exit code 3 if the index is incomplete).
 - `reject-import` refuses the package. Kütüphane keeps the record.
+- `receive` adds a `personal_data` finding for each open personal-data or fleet-data finding (path, file digest, rule,
+  lines; never the matched text). With `--egress cloud_ok`, `approve-import` refuses a file with a finding that can go
+  to a model, as `ingest` does, until you accept each reviewed finding:
+  `--accept-finding '<path>@sha256:<digest>:<rule>'` (repeatable). The refusal is in the reasons of the import, and
+  you can approve again. An accepted finding is in `accepted_findings` of the publication.
 - With `KUTUPHANE_SKILLSPECTOR_BIN`, `receive` adds a `skill_scan` finding for each skill folder (status, blocking,
   recommendation, score, completeness, issue count). The publication at `approve-import` records the scans that
   block agents.

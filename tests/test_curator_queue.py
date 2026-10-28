@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from kutuphane import authz, catalog, cli, curatorqueue, curatorweb, notes, passkey, profiles
+from kutuphane import authz, canonical, catalog, cli, curatorqueue, curatorweb, notes, passkey, profiles
 from kutuphane.gate import Actor
 from kutuphane.source import read_source
 from test_curatorweb import (CFG, H, J, LOCAL, U, client, env, events, note, options, ready, submit,  # noqa: F401
@@ -405,7 +405,7 @@ def test_the_card_shows_every_part_of_the_note_id(books, client):  # review #16 
                               "text": text}]
     assert item["hidden_parts"] == 0 and item["integrity"] is None
     assert set(item) >= {"scope", "class_key", "commit"}
-    assert notes.canonical_of(env, seq_of(env, ref))[1]["decision"]["choice"] == harmful  # what the id covers
+    assert canonical.canonical_of(env, seq_of(env, ref))[1]["decision"]["choice"] == harmful  # what the id covers
 
 
 # --- G36: the CLI lists the pending notes ----------------------------------------------------------------------------

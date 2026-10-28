@@ -26,7 +26,7 @@ from mcp.server.mcpserver import Context
 from mcp_types import ElicitRequest, ElicitRequestURLParams, InputRequiredResult
 from mcp_types.version import is_version_at_least
 
-from . import authz, curation, db, gate, notes
+from . import authz, canonical, curation, db, gate, notes
 from . import origin as origins
 from .gate import Actor
 
@@ -229,7 +229,7 @@ def _replaces_another(live, principal: str) -> bool:
 
 
 def _page_item(conn, principal: str, book: str, note_id: str, seq: int, request: Request | None) -> dict:
-    computed, body = notes.canonical_of(conn, seq)
+    computed, body = canonical.canonical_of(conn, seq)
     whole = computed == note_id
     shown = origins.shown(conn, [seq], None)[seq]
     live = _live(conn, seq)
