@@ -9,11 +9,11 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
-### GPU reranker (G26)
+### GPU reranker (#131; G26)
 
-- New: the compose profile `gpu-rerank` runs `bge-reranker-v2-m3` (the same pinned commit) on the GPU, with the host vLLM's image and 0.04 of the GPU memory (about 1.9 GB used), behind the new LLMDAP route `rerank-gpu`. Set `KUTUPHANE_LLMDAP_RERANK_ROUTE=rerank-gpu` to use it; `rerank` (the CPU embedder) stays the fallback. On the pilot questions the rerank stage went from 11–25 s to 0.2–0.3 s with the same top 8, and `ask` from 22–31 s to 8–10 s on average ([install.md](install.md#gpu-reranker), [operations.md](operations.md#reranking), [troubleshooting.md](troubleshooting.md#ingest-and-index)) (PR_LINK).
-- Changed: the local-models overlay takes `KUTUPHANE_LLMDAP_RERANK_ROUTE` from `.env` (default `rerank`). After a reboot, start the GPU reranker again ([install.md](install.md#reboot-and-restart)) (PR_LINK).
-- Design and research: `docs/26` §10 and `docs/18` §4.1 (method, memory, order agreement, time before and after) (PR_LINK).
+- New: the compose profile `gpu-rerank` runs `bge-reranker-v2-m3` (the same pinned commit) on the GPU, with the host vLLM's image and 0.04 of the GPU memory (about 1.9 GB used), behind the new LLMDAP route `rerank-gpu`. Set `KUTUPHANE_LLMDAP_RERANK_ROUTE=rerank-gpu` to use it; `rerank` (the CPU embedder) stays the fallback. On the pilot questions the rerank stage went from 11–25 s to 0.2–0.3 s with the same top 8, and `ask` from 22–31 s to 8–10 s on average ([install.md](install.md#gpu-reranker), [operations.md](operations.md#reranking), [troubleshooting.md](troubleshooting.md#ingest-and-index)) ([#131](https://github.com/ekaynac/kutuphane/pull/131)).
+- Changed: the local-models overlay takes `KUTUPHANE_LLMDAP_RERANK_ROUTE` from `.env` (default `rerank`). After an upgrade, restart LLMDAP once to load the new route. After a reboot, start the GPU reranker again ([install.md](install.md#reboot-and-restart)) ([#131](https://github.com/ekaynac/kutuphane/pull/131)).
+- Design and research: `docs/26` §10 and `docs/18` §4.1 (method, memory, order agreement, time before and after) ([#131](https://github.com/ekaynac/kutuphane/pull/131)).
 
 ### Astra review #19 fixes
 

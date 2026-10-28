@@ -235,7 +235,7 @@ for the operator.
 
 ## 10. GPU reranker (G26)
 
-Branch `feat/gpu-rerank` (PR_LINK), 2026-10-28. The operator allowed the move "if there is space": before the
+Branch `feat/gpu-rerank` ([#131](https://github.com/ekaynac/kutuphane/pull/131)), 2026-10-28. The operator allowed the move "if there is space": before the
 start, 55 GB of host memory was available (the chat model's vLLM used 49.7 GB of GPU memory, an ollama server 0.8 GB).
 
 **Method.** A new compose service `reranker-gpu` (profile `gpu-rerank`, `deploy/compose.local-models.yaml`) runs the
