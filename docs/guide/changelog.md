@@ -9,6 +9,16 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Restart policies and the dependency check (#141)
+
+- New: `postgres`, `core`, `ingress` and `llmdap` (and `embedder` and `spark-chat` in the local-models overlay; the three services of the light install) have `restart: unless-stopped`: they come back after a crash or a host reboot without a person. `reranker-gpu` has `restart: on-failure:5`, so a start that fails with a CUDA out-of-memory error is tried again ([install.md](install.md#reboot-and-restart)) ([#141](https://github.com/ekaynac/kutuphane/issues/141)).
+- New: `GET /v1/health` (a token is necessary) gives one boolean for each dependency: `db`, `llmdap`, `embedding`, `rerank`, `chat`, and `ok`. It names no route, model or address. A dependency that the install does not configure is `null`. `/healthz` does not change ([http-api.md](http-api.md#33-get-v1health)) ([#141](https://github.com/ekaynac/kutuphane/issues/141)).
+
+### Retrieval status: a degraded search shows (#136)
+
+- New: each search and answer tells what each model stage did: `retrieval: {embedding, translation, rerank}`, each `ok`, `failed` or `skipped`. Before, a failed query embedding (full text only), a failed query translation (the question only) and a failed rerank (the hybrid order) gave the same result shape as a full search and only wrote a log line. `GET /v1/search` and `POST /v1/ask` have the `retrieval` key; `search_library` has it in `_meta["kutuphane/retrieval"]`; `ask_library`, `reopen_answer`, `job_result` and `GET /v1/answers/{id}` have it in the answer. It is stored with the answer (migration 042; older answers show `null`) ([http-api.md](http-api.md#51-get-v1search), [mcp.md](mcp.md#45-retrieval-status)) ([#136](https://github.com/ekaynac/kutuphane/issues/136)).
+- New: the guide gives the `model_call` queries that count the failed model calls per route and the degraded answers per stage ([operations.md](operations.md#degraded-searches-and-failed-model-calls-136)) ([#136](https://github.com/ekaynac/kutuphane/issues/136)).
+
 ### Notes follow a re-index (#140)
 
 - Fixed: after a re-index (a new profile id, for example a new chunker, or a new content version), note citations and `about` and `derived_from` links stayed on the old passages, so `neighbours` from a new handle did not find the notes. Now each publication maps every cited or linked passage of an earlier version to the passage of the same path in the new version: the same text (`exact`), else the passage that holds at least half of its word pairs (`overlap`), else none. The notes keep their handles, and the old passages still open ([operations.md](operations.md#re-index-and-note-citations)) ([#146](https://github.com/ekaynac/kutuphane/pull/146)).

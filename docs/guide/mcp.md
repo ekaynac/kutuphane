@@ -238,6 +238,20 @@ the extension is stable, the plan is to add it next to `kutuphane/handling`, whi
 
 Comments on the drafts follow [../14-contributions.md](../14-contributions.md).
 
+### 4.5 Retrieval status
+
+`search_library` gives what each model stage of the search did in `result._meta["kutuphane/retrieval"]`, next to
+the handling labels (its `structuredContent.result` stays the list of hits):
+
+```json
+{"_meta": {"kutuphane/retrieval": {"embedding": "ok", "translation": "skipped", "rerank": "failed"}}}
+```
+
+`ask_library`, `reopen_answer` and `job_result` give the same object as the `retrieval` key of the answer; it is
+stored with the answer. Each stage is `ok`, `failed` (the search went on without it: full text only, the question
+only, or the hybrid order) or `skipped`. The table of the stages is in
+[http-api.md](http-api.md#51-get-v1search).
+
 ## 5. Tools
 
 The tools are in this order in `tools/list`. The order does not change between calls.

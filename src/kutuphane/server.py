@@ -18,6 +18,7 @@ import urllib.parse
 import uuid
 from typing import Annotated
 
+import psycopg
 import pydantic_core
 from mcp.server import CacheHint, MCPServer
 from mcp.server.auth.middleware.auth_context import get_access_token
@@ -41,7 +42,7 @@ from starlette.staticfiles import StaticFiles
 
 from . import (answers, catalog, coderepo, confirm, db, feedback, gate, handling, identity, ids, jobs, kstd, llmdap,
                notes, notesquery, outcomes, packages, quotes, retrieval, search, skills, snippets)
-from . import passagemap
+from . import health, passagemap
 from .gate import Actor
 from .ids import normalize_path
 
@@ -104,8 +105,9 @@ def _check_query(query) -> None:
 
 def op_search(dsn, stages, actor: Actor, query: str, k: int, model_reader: bool = False,
               scope: search.Scope = search.Scope(), labels_out: dict | None = None,
-              max_chars: int | None = None) -> list[dict]:
+              max_chars: int | None = None, retrieval_out: dict | None = None) -> list[dict]:
     """`labels_out`, if given, gets the handling labels of the hits (handling.py), from the same connection.
+    `retrieval_out`, if given, gets what each model stage did (#136: `retrieval.Status.as_dict`).
     `max_chars` (#121): each delivered text becomes a snippet of at most that size, with `truncated`; the hits, their
     order and the gates do not change, and a withheld text stays withheld."""
     _check_query(query)
@@ -113,7 +115,10 @@ def op_search(dsn, stages, actor: Actor, query: str, k: int, model_reader: bool 
 
     def go(conn):
         # G23: the records each passage repeats; the hits and those records in one final decision (Astra review #19)
-        hits, found = quotes.quoted(conn, actor, retrieval.retrieve(conn, actor, query, k, stages, scope), scope)
+        ranked, stage = retrieval.retrieved(conn, actor, query, k, stages, scope)
+        if retrieval_out is not None:
+            retrieval_out.update(stage.as_dict())
+        hits, found = quotes.quoted(conn, actor, ranked, scope)
         rights, ai = kstd.Rights(conn), _for_model(actor, model_reader)
         items = [rights.info(h.citation.book, h.citation.content_id, h.citation.path) for h in hits]
         texts = [_text(h.text, item, ai) for h, item in zip(hits, items)]
@@ -193,6 +198,14 @@ def _shown_answer(out: dict, actor: Actor, model_reader: bool) -> dict:
 
 def op_reopen(dsn, actor: Actor, answer_id: str, model_reader: bool = False) -> dict:
     return _shown_answer(_run(dsn, lambda c: answers.reopen(c, actor, answer_id)), actor, model_reader)
+
+
+def op_health(dsn, bridge, model: str | None, stages, actor: Actor) -> dict:
+    """`GET /v1/health` (#141). Without the database nothing else can be checked (every model call is recorded)."""
+    try:
+        return _run(dsn, lambda c: health.check(c, actor, bridge, model, stages))
+    except psycopg.OperationalError:
+        return {"ok": False, **{name: None for name in health.DEPENDENCIES}, "db": False}
 
 
 def op_job_status(dsn, actor: Actor, job_id: str) -> dict:
@@ -376,9 +389,10 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
         except ValueError:
             raise BadRequest("max_chars must be an integer") from None
         scope = search.Scope.of(p.getlist("book"), p.get("path"), p.getlist("origin"), _flag(p.get("current_only")))
-        return JSONResponse({"correlation_id": actor.correlation_id,
-                             "results": await run_in_threadpool(op_search, dsn, stages, actor, p.get("q", ""), k,
-                                                                False, scope, None, max_chars)})
+        stage: dict = {}
+        results = await run_in_threadpool(op_search, dsn, stages, actor, p.get("q", ""), k, False, scope, None,
+                                          max_chars, stage)
+        return JSONResponse({"correlation_id": actor.correlation_id, "results": results, "retrieval": stage})
 
     async def h_citation(request, actor):
         q = request.query_params
@@ -434,6 +448,10 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
     async def h_health(_request):
         return JSONResponse({"ok": True})
 
+    async def h_dependencies(_request, actor):
+        out = await run_in_threadpool(op_health, dsn, bridge, model, stages, actor)
+        return JSONResponse(out, status_code=200 if out["ok"] else 503)
+
     async def h_whoami(_request, actor):
         return JSONResponse({"principal": actor.principal, "on_behalf_of": actor.on_behalf_of})
 
@@ -458,6 +476,7 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
     app = Starlette(routes=[
         Route("/healthz", h_health),
         Route("/v1/whoami", endpoint(h_whoami)),
+        Route("/v1/health", endpoint(h_dependencies)),
         *([Mount("/ui", app=StaticFiles(directory=ui_dir, html=True))] if ui_dir else []),
         Route("/v1/search", endpoint(h_search)),
         Route("/v1/citation", endpoint(h_citation)),
@@ -592,14 +611,18 @@ class _Server(MCPServer):
         return [ReadResourceContents(content=content, mime_type=media_type, meta={handling.KEY: labels})]
 
 
-def _handled(value, labels: dict, *, structured: bool = False) -> CallToolResult:
+RETRIEVAL_KEY = "kutuphane/retrieval"  # #136: search_library's stage status in `_meta`, beside the handling labels
+
+
+def _handled(value, labels: dict, *, structured: bool = False, meta: dict | None = None) -> CallToolResult:
     """The result the SDK makes of a tool's return value (one JSON text block per list item, or the text itself;
-    `structuredContent` {"result": …} for a tool with an output schema), with the handling labels in `_meta` (#80)."""
+    `structuredContent` {"result": …} for a tool with an output schema), with the handling labels in `_meta` (#80)
+    and any further `_meta` keys."""
     blocks = [TextContent(type="text", text=v if isinstance(v, str) else
                           pydantic_core.to_json(v, fallback=str, indent=2).decode())
               for v in (value if isinstance(value, list) else [value])]
     return CallToolResult(content=blocks, structured_content={"result": value} if structured else None,
-                          _meta={handling.KEY: labels})
+                          _meta={handling.KEY: labels, **(meta or {})})
 
 
 # docs/24 §12.1: the tool list is the same for every caller and changes only with a deployment.
@@ -655,11 +678,12 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
         Results carry citation handles for open_citation. Optional filters narrow the evidence before ranking:
         `book` (slugs), `path` (prefix, e.g. "data/"), `origin` (kstd origins: human, assisted, model, tool, unknown),
         `current_only` (kstd validity includes now). `max_chars` (80-4800) makes each text a snippet around the
-        match with `truncated`; open_citation gives the full passage. Use it in agent loops."""
-        scope, labels = search.Scope.of(book, path, origin, current_only), {}
+        match with `truncated`; open_citation gives the full passage. Use it in agent loops. `_meta`
+        "kutuphane/retrieval" says which model stages ran (embedding, translation, rerank: ok, failed, skipped)."""
+        scope, labels, stage = search.Scope.of(book, path, origin, current_only), {}, {}
         hits = await run_in_threadpool(op_search, dsn, stages, _mcp_actor(), query, k, True, scope, labels,
-                                       max_chars)
-        return _handled(hits, labels, structured=True)
+                                       max_chars, stage)
+        return _handled(hits, labels, structured=True, meta={RETRIEVAL_KEY: stage})
 
     @mcp.tool()
     @_mcp_errors
@@ -682,7 +706,8 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
             """Answer from the library with [n] citations, or status not_in_library (needs read on the books it
             uses). The optional filters are those of search_library. With `background: true` it returns {job_id,
             status: queued} at once: poll job_status, then job_result. An `idempotency_key` (8-128 characters) makes
-            a retried submission return the same job."""
+            a retried submission return the same job. `retrieval` says which model stages of the search ran
+            (embedding, translation, rerank: ok, failed, skipped)."""
             scope = search.Scope.of(book, path, origin, current_only)
             if _background(background, idempotency_key):
                 job, _created = await run_in_threadpool(op_submit, dsn, _mcp_actor(), question, scope,

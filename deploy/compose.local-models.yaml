@@ -30,6 +30,7 @@ services:
     profiles: [local-models]
     build: deploy/models
     image: kutuphane-models:1.0
+    restart: unless-stopped
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
@@ -53,6 +54,7 @@ services:
     # Forwards only POST /v1/chat/completions, and only to the host's vLLM (deploy/spark-chat/nginx.conf).
     image: nginx:1.27-alpine
     entrypoint: ["nginx", "-c", "/etc/nginx/spark-chat/nginx.conf", "-g", "daemon off;"]
+    restart: unless-stopped
     user: "101:101"
     read_only: true
     cap_drop: [ALL]
@@ -74,6 +76,9 @@ services:
     # characters, even at one token per character), so no rerank call fails on length.
     image: ${KUTUPHANE_VLLM_IMAGE:-vllm-node:latest}
     pull_policy: never
+    # A start can fail with a CUDA out-of-memory error while the host's GPU memory is busy; retry a few times,
+    # then stop (a crash loop would compete with the chat model for the shared memory).
+    restart: on-failure:5
     entrypoint: ["vllm", "serve",
                  "/hf/hub/models--BAAI--bge-reranker-v2-m3/snapshots/953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
                  "--served-model-name", "BAAI/bge-reranker-v2-m3", "--host", "0.0.0.0", "--port", "8000",

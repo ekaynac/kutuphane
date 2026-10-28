@@ -207,7 +207,8 @@ Both routes are in LLMDAP (`routes.local.json`, `policy.csv`). LLMDAP reads them
 after an upgrade that adds the route (`docker compose … restart llmdap`). After that, the switch needs no LLMDAP
 restart, and `model_call` and the LLMDAP audit show which route served each call. The CPU route is the fallback: set
 `KUTUPHANE_LLMDAP_RERANK_ROUTE=rerank` and stop `reranker-gpu` (`docker compose … stop reranker-gpu`). If the GPU
-route is set but `reranker-gpu` is not running, a search keeps the hybrid order and logs `reranking failed`.
+route is set but `reranker-gpu` is not running, a search keeps the hybrid order, logs `reranking failed` and says
+`"rerank": "failed"` in its `retrieval` status ([http-api.md](http-api.md#51-get-v1search)).
 
 On the pilot questions the rerank stage went from 11–25 s (CPU) to 0.2–0.3 s (GPU), with the same top 8 in the same
 order (`docs/26` §10).
@@ -458,17 +459,26 @@ export KUTUPHANE_SKILLSPECTOR_PROXY=http://127.0.0.1:9  # optional: block its OS
 
 ## Reboot and restart
 
-- No service in the compose files has a `restart:` policy. After a host reboot, start the stack again with the
-  same `docker compose … up -d` command.
+- `postgres`, `core`, `ingress` and `llmdap` (and, in the local-models overlay, `embedder` and `spark-chat`) have
+  `restart: unless-stopped`. Docker starts them again after a crash and after a host reboot, if the Docker daemon
+  starts at boot (`systemctl is-enabled docker`). A service that you stopped with `docker compose … stop` stays
+  stopped. The light install has the same policy for its three services. `laya`, `model-stub` and the curator
+  services have no policy: start them again with the same `docker compose … up -d` command.
+- `reranker-gpu` has `restart: on-failure:5`. A start that fails (for example `CUDA error: out of memory` while the
+  GPU memory is busy) is tried again at most 5 times, with a longer wait each time. After a reboot it starts with
+  the others. If it stops after 5 failures, check `free -g` (15 GB or more `available`) and start it again (below).
+- Check the result with `GET /v1/health` (a token is necessary; [http-api.md](http-api.md#33-get-v1health)): each
+  dependency is `true` when it answers now. `/healthz` shows only that the process answers.
 - The database (`pgdata`; `kutuphane-light_pgdata` in the light install) and the LLMDAP audit chain
   (`llmdap-audit`) are named volumes. They stay.
 - Start the host's vLLM before you use the local-models overlay. Without it, `ask_library` fails; search and notes
   still work.
-- The GPU reranker does not start by itself. After the host's vLLM is up, check `free -g` (15 GB or more
+- If the GPU reranker stopped after its retries, wait until the host's vLLM is up, check `free -g` (15 GB or more
   `available`), then start it again:
   `docker compose -f compose.yaml -f deploy/compose.local-models.yaml --profile gpu-rerank up -d --no-deps reranker-gpu`.
   It is ready in about one minute (`docker compose … ps reranker-gpu` shows `healthy`). Until then, with
-  `KUTUPHANE_LLMDAP_RERANK_ROUTE=rerank-gpu`, searches keep the hybrid order.
+  `KUTUPHANE_LLMDAP_RERANK_ROUTE=rerank-gpu`, searches keep the hybrid order and say `"rerank": "failed"` in their
+  `retrieval` status.
 - A background job that was running when the server stopped becomes `failed: interrupted` when its lease ends
   (60 s). It never runs again. Submit it again.
 - The server keeps query vectors in memory only. They are lost on a restart; this changes no result.

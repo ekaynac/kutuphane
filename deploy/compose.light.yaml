@@ -15,6 +15,7 @@ name: kutuphane-light
 services:
   postgres:
     image: pgvector/pgvector:0.8.0-pg17
+    restart: unless-stopped
     environment:
       POSTGRES_DB: kutuphane
       POSTGRES_USER: kutuphane
@@ -31,6 +32,7 @@ services:
 
   core:
     build: ..
+    restart: unless-stopped
     environment:
       # The app role (deploy/db-roles.sql). No KUTUPHANE_LLMDAP_* and no KUTUPHANE_ANSWER_MODEL: no model calls.
       KUTUPHANE_DSN: postgresql://kutuphane_app:${KUTUPHANE_APP_DB_PASSWORD:?set KUTUPHANE_APP_DB_PASSWORD}@postgres:5432/kutuphane
@@ -48,6 +50,7 @@ services:
 
   ingress:
     image: nginx:1.27-alpine
+    restart: unless-stopped
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     ports:

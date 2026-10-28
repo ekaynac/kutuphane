@@ -982,6 +982,35 @@ docker compose --profile app logs -f core
 docker compose --profile app logs llmdap ingress
 ```
 
+### Degraded searches and failed model calls (#136)
+
+A search goes on when a model stage fails, with a weaker result: full text only, the question only, or the hybrid
+order. Each search and answer says so in its `retrieval` status (`embedding`, `translation`, `rerank`: `ok`,
+`failed` or `skipped`; [http-api.md](http-api.md#51-get-v1search)). Answers keep it in `answer.retrieval`.
+
+There is no separate counter. `model_call` records every call, also each failed one. Count the failed calls per
+route and model in the last 24 hours (read-only; any role that may read `model_call`):
+
+```sql
+SELECT route, model, count(*) AS failed
+FROM model_call
+WHERE at > now() - interval '24 hours'
+  AND (error IS NOT NULL OR http_status IS NULL OR http_status >= 400)
+GROUP BY route, model ORDER BY failed DESC;
+```
+
+A call that LLMDAP answered with HTTP 200 but with an answer that is not valid (for example a rerank answer that
+scores one passage twice) is a `failed` stage in the result, but not a failed row here. Count the degraded answers:
+
+```sql
+SELECT key AS stage, count(*) AS failed
+FROM answer, jsonb_each_text(retrieval)
+WHERE created_at > now() - interval '24 hours' AND value = 'failed'
+GROUP BY key;
+```
+
+`GET /v1/health` ([http-api.md](http-api.md#33-get-v1health)) checks each dependency now.
+
 ## 12. Backups
 
 Kütüphane has no backup command. Back up the Postgres database. It holds the books, notes and audit records.

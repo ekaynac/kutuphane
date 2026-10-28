@@ -93,6 +93,7 @@ The ingress proxy (`deploy/nginx.conf`) accepts a body of at most 1 MiB (`413` a
 |---|---|---|---|---|
 | `GET` | `/healthz` | none | Liveness. | `200` |
 | `GET` | `/v1/whoami` | bearer | The caller of the token. | `200` |
+| `GET` | `/v1/health` | bearer | Is each dependency up now (booleans only). | `200`, `503` |
 | `GET` | `/ui/…` | none | The web UI (static files). Only when `KUTUPHANE_UI_DIR` is set. | `200` |
 | `GET` | `/v1/search` | bearer | Search the books you may read. | `200` |
 | `GET` | `/v1/citation` | bearer | Open a passage handle or a note reference. | `200` |
@@ -150,6 +151,38 @@ Shows the principal that the server reads from your token.
 curl -s -H "Authorization: Bearer $TOKEN" "$KUTUPHANE_PUBLIC_URL/v1/whoami"
 ```
 
+### 3.3 `GET /v1/health`
+
+Checks each dependency now. Any valid token can call it; it needs no grant. It gives booleans only: no route names,
+no model names, no addresses and no error texts.
+
+| Key | `true` when |
+|---|---|
+| `db` | The database answers. |
+| `llmdap` | LLMDAP answered at least one of the model checks below (any HTTP status). |
+| `embedding` | The embedding route returned a valid vector. |
+| `rerank` | The rerank route returned valid scores. |
+| `chat` | The answer model's chat route answered. |
+| `ok` | No dependency is `false`. |
+
+A dependency that the server does not configure is `null` (the light install: `llmdap`, `embedding`, `rerank` and
+`chat`). When the database does not answer, `db` is `false` and the others are `null`: every model call is recorded
+in the database, so the server does not make one.
+
+Each model check is a real call through LLMDAP with a fixed input and no book content (purpose `health`), so it is
+in `model_call` and in the LLMDAP audit. The chat check asks for one token. Call it from monitoring at a low rate
+(for example once a minute), not per request.
+
+**Response `200`** (all up) or **`503`** (one is `false`):
+
+```json
+{"ok": false, "db": true, "llmdap": true, "embedding": true, "rerank": false, "chat": true}
+```
+
+```sh
+curl -s -H "Authorization: Bearer $TOKEN" "$KUTUPHANE_PUBLIC_URL/v1/health"
+```
+
 ## 4. Web UI
 
 `/ui/` serves the static files of the web UI from the folder in `KUTUPHANE_UI_DIR`. `/ui/` gives `index.html`.
@@ -187,8 +220,18 @@ Notes are not searched here (use `GET /v1/notes`): a journal that you may read i
 ```json
 {"correlation_id": "4b0e…",
  "results": [{"citation": "runbooks@ct_9f…/pf_41…/backup.md#3", "page": null, "line": 40, "score": 0.0325,
-              "text": "…", "item": null, "quoted_records": []}]}
+              "text": "…", "item": null, "quoted_records": []}],
+ "retrieval": {"embedding": "ok", "translation": "skipped", "rerank": "ok"}}
 ```
+
+`retrieval` tells what each model stage of this search did (#136). A stage that fails never stops the search, but
+the result is weaker, so check it before you trust an empty or short result:
+
+| Stage | `ok` | `failed` (the search went on without it) | `skipped` |
+|---|---|---|---|
+| `embedding` | The query vector was used (hybrid search). | The embedding call failed, or its vector does not fit the stored vectors (another width, or nothing indexed for that model): full text only. | No embedding route. |
+| `translation` | The answer model translated the query for the passages in the other language. | The translation call failed: the reranker used the question only. | No reranker, no answer model, or all passages in the question's language. |
+| `rerank` | The reranker ordered the passages. | The rerank call failed or its answer was not valid: the hybrid order. | No rerank route, or fewer than 2 passages that may go to a model. |
 
 `item` is the kstd item information of the file, or `null` when the version has no `kstd.yaml`. `quoted_records`
 gives the handles of the JSONL records whose text the passage repeats (G23), from books that you may read now and
@@ -270,8 +313,12 @@ Answer a question from the library, with `[n]` citations. MCP: `ask_library` ([m
 {"id": "5e1c…", "status": "answered", "body": "Backups are kept for 30 days [1].",
  "citations": [{"n": 1, "book": "runbooks", "content_id": "ct_9f…", "profile_id": "pf_41…", "path": "backup.md",
                 "ordinal": 3, "line": 12, "record": null, "quoted_records": [], "item": null}],
- "withheld": 0, "correlation_id": "4b0e…"}
+ "withheld": 0, "retrieval": {"embedding": "ok", "translation": "skipped", "rerank": "ok"},
+ "correlation_id": "4b0e…"}
 ```
+
+- `retrieval` is the status of the search that found the evidence, as in `GET /v1/search`. It is stored with the
+  answer.
 
 - `line` is the line where the passage starts, as in `GET /v1/search` (`null` for HTML and PDF). `record` is the
   number of the JSONL record that the passage is in, from 1 (blank lines are not records); `null` for other files and
@@ -310,10 +357,12 @@ calling directly. You need `read` now on every source book of the answer.
 ```json
 {"id": "5e1c…", "question": "How long do we keep backups?", "status": "answered", "body": "… [1].",
  "evidence": [{"n": 1, "citation": "runbooks@ct_9f…/pf_41…/backup.md#3", "line": 12, "record": null, "text": "…",
-               "item": null, "quoted_records": []}]}
+               "item": null, "quoted_records": []}],
+ "retrieval": {"embedding": "ok", "translation": "skipped", "rerank": "failed"}}
 ```
 
-`line` and `record` are as in the `citations` of `POST /v1/ask`. They are read from the passage, so an answer that
+`retrieval` is the stored status of the answer's search (`GET /v1/search`); it is `null` for an answer stored before
+it existed (#136). `line` and `record` are as in the `citations` of `POST /v1/ask`. They are read from the passage, so an answer that
 was stored before they existed has them too.
 
 **Errors:** `401`, `403` (another principal's answer, or a source book is not readable now), `404`.

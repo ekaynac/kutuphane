@@ -272,7 +272,7 @@ def test_a_grant_change_between_the_two_searches_lets_no_passage_of_the_removed_
     def switch(conn, translator, actor, query, pool):
         authz.revoke(conn, "book:ing", "read", U)
         authz.grant(conn, "book:trk", "read", U)
-        return "Yedekler ve loglar için ne yapılır?"
+        return "Yedekler ve loglar için ne yapılır?", retrieval.OK
     monkeypatch.setattr(retrieval, "translate", switch)
     fake.rerank_reply = lambda b: [{"index": i, "relevance_score": 0.5} for i in range(len(b["documents"]))]
     ranked = retrieval.retrieve(conn, Actor(U), query, k=8, stages=retrieval.Stages(reranker=fake.reranker()))
