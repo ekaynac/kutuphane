@@ -27,20 +27,22 @@ questions) is on this machine only, in the git-ignored `research/pilot-2/`.
 
 | Field | Value | Evidence |
 |---|---|---|
-| License | `unknown` | The repository has no license file. Question to the operator. |
+| License | `LicenseRef-proprietary` | Operator answer (2026-10-28): the files are proprietary. Before: `unknown` (no license file). |
 | Holder, issuer | the operator | The operator owns the repository. |
-| `ai_use` | `search: y`, `ai_input: y`, `train: n` | Search and AI input as the operator allowed. Training was not stated, so the safe value `n` is used. |
-| Personal data | default `no`; 1 rule file `unknown` | A scan for IPv4 and e-mail addresses found one private IPv4 address (in a rule file's source header) and loopback addresses only. |
-| Origin | `model` for 33 of 33 files | 66 of 66 commits that touch these files have a `Co-Authored-By: Claude` trailer. No reviewer is named, so no file is `assisted`. |
+| `ai_use` | `search: y`, `ai_input: y`, `train: y` | Search and AI input as the operator allowed. Training: allowed by the operator (2026-10-28). Before: `n` (not stated). |
+| Personal data | default `no`; 13 files `unknown` | The datascan of #124 (`kstd-init --deny-names`, a private deny-list of the customer, site and device names) found 44 `listed-name` findings and 1 `private-ipv4` finding in 13 files. The operator is not sure that these names are personal data, so these files keep the safe value `unknown`. The book is `local_only`: local search and answers work; export and cloud need a legal basis. Before: 1 rule file `unknown`. |
+| Origin | `assisted` (`reviewed_by: user:ekaynac`) for 6 files; `model` for 27 files | 66 of 66 commits that touch these files have a `Co-Authored-By: Claude` trailer. 6 design notes record in writing that the operator ratified or decided them (a ratification line, or verbatim operator rulings marked binding; for one note also a ratification commit). The other 27 files have no written ratification, so they stay `model`. Before: `model` for 33 of 33. |
 | `valid_from` | the date in the file name (15 notes) | |
 | `applies_to` | `platform <name>` (13 rule files) | the folder name |
 
 `kstd-init`: 0.3 s, all 33 items `origin: unknown`, no secret finding. `kstd-check`: PASS (33 files) with one
 warning: "no default license: derivation and forwarding need a license for each file".
 
-**Open questions for the operator** (details in the private report): the license; `train`; whether customer and
-site names and the private address are personal data or fleet data; whether a doctrine that the operator ratified
-in writing is `assisted` with the operator as `reviewed_by`.
+**Open questions for the operator:** whether customer and site names and the private address are personal data or
+fleet data (the 13 files stay `unknown` until the answer). The license, `train` and the `assisted` origin of
+ratified doctrine were answered on 2026-10-28; `kstd-check` with the deny-list: PASS (33 files), no warning. The
+book was ingested again with these values (content id `ct_5897ea8e…`; the bytes did not change, so all 585
+vectors were reused).
 
 ## 3. Load results
 
