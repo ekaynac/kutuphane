@@ -26,7 +26,7 @@ from webauthn.helpers.exceptions import InvalidAuthenticationResponse, InvalidRe
 from webauthn.helpers.structs import (AuthenticatorSelectionCriteria, PublicKeyCredentialDescriptor,
                                       ResidentKeyRequirement, UserVerificationRequirement)
 
-from . import authz, ids
+from . import authz, canonical, ids
 
 DOMAIN = b"kutuphane/curator-act/v1\n"
 CHALLENGE_TTL = "5 minutes"
@@ -379,9 +379,30 @@ def _withdraw_effects(conn, act: int, payload: dict) -> bool:
 EFFECTS.update(confirm=_confirm_effects, withdraw=_withdraw_effects)  # slice R (024)
 
 
+def _signed_notes(payload: dict, action: str) -> list[str]:
+    """The note refs (`book@nt_…`) whose exact parts an act signs: the items of a `standing` act, the item of a
+    `confirm` act."""
+    if action == "standing":
+        return [i.get("ref") for i in payload.get("items", [])]
+    if action == "confirm":
+        return [payload.get("item", {}).get("ref")]
+    return []
+
+
+def _contents_intact(conn, refs: list[str]) -> bool:
+    """Astra review #19: every signed note still has the parts that give its signed id (canonical.py)."""
+    for ref in refs:
+        book, _, note_id = (ref or "").partition("@")
+        row = conn.execute("SELECT seq FROM note WHERE book = %s AND id = %s", (book, note_id)).fetchone()
+        if row is None or canonical.canonical_of(conn, row[0])[0] != note_id:
+            return False
+    return True
+
+
 def verify_acts(conn, cfg: Config, since: int = 0) -> dict:
     """Check every stored act again: the statement gives the challenge, the assertion verifies with UV against the
-    stored passkey, and the rows that name the act are exactly the ones its statement asks for."""
+    stored passkey, the rows that name the act are exactly the ones its statement asks for, and each note that a
+    `standing` or `confirm` act signs still has the parts that give its signed id (problem `contents`)."""
     rows = conn.execute(
         "SELECT a.seq, a.action, a.credential_id, a.authenticator_data, a.client_data_json, a.signature, c.payload, "
         "c.challenge, p.public_key FROM curator_act a JOIN curator_challenge c ON c.id = a.challenge "
@@ -408,6 +429,8 @@ def verify_acts(conn, cfg: Config, since: int = 0) -> dict:
             problems.append({"act": seq, "problem": f"no effect check for {action}"})
         elif not check(conn, seq, payload):
             problems.append({"act": seq, "problem": "effects"})
+        elif not _contents_intact(conn, _signed_notes(payload, action)):
+            problems.append({"act": seq, "problem": "contents"})
     return {"acts": len(rows), "problems": problems}
 
 

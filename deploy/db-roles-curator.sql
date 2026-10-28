@@ -29,3 +29,7 @@ GRANT INSERT ON origin_confirmation, origin_withdrawal TO kutuphane_curator_web;
 GRANT INSERT ON curate_delegation, delegation_end TO kutuphane_curator_web;
 -- Security review #17 (029): the key of the sample draw is the owner's only.
 REVOKE ALL ON delegation_sample_key FROM kutuphane_curator_web;
+-- Astra review #19 (038): no temporary tables or sequences (deploy/db-roles.sql revokes TEMP from PUBLIC too).
+DO $$ BEGIN
+    EXECUTE format('REVOKE TEMPORARY ON DATABASE %I FROM PUBLIC, kutuphane_curator_web', current_database());
+END $$;

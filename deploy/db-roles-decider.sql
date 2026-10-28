@@ -19,3 +19,7 @@ GRANT INSERT (delegation, book, kind, decider, spec_sha256, approver, note_seq, 
 GRANT INSERT ON model_call, access_event TO kutuphane_decider;
 GRANT EXECUTE ON FUNCTION decider_notes(text[], text, bytea, integer, integer, bigint), delegation_next(text)
     TO kutuphane_decider;
+-- Astra review #19 (038): no temporary tables or sequences (deploy/db-roles.sql revokes TEMP from PUBLIC too).
+DO $$ BEGIN
+    EXECUTE format('REVOKE TEMPORARY ON DATABASE %I FROM PUBLIC, kutuphane_decider', current_database());
+END $$;

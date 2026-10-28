@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from starlette.testclient import TestClient
 
-from kutuphane import authz, cli, curation, curatorweb, notes, passkey
+from kutuphane import authz, canonical, cli, curation, curatorweb, notes, passkey
 from kutuphane.gate import Actor
 from kutuphane.policy import make_policy
 from softauthn import SoftAuthenticator
@@ -279,16 +279,18 @@ def test_a_note_whose_parts_changed_is_refused(env, client):  # C14
     auth = ready(env, client)
     seq_a, seq_b = (env.execute("SELECT seq FROM note WHERE id = %s", (r.split("@")[1],)).fetchone()[0] for r in (a, b))
     write = env.execute("SELECT seq FROM write_record WHERE note_seq = %s AND creates", (seq_b,)).fetchone()[0]
-    # what an app-role writer can do: add a creation link to a stored note under its own creating write
-    env.execute("INSERT INTO note_link (src, src_book, type, dst_note, dst_note_book, creation, write_seq) "
-                "VALUES (%s, %s, 'about', %s, %s, true, %s)", (seq_b, J, seq_a, J, write))
-    env.commit()
+    # what an app-role writer could do before migration 039 (its trigger off, as then): add a creation link to a
+    # stored note under its own creating write
+    with env.transaction():
+        env.execute("SET LOCAL session_replication_role = replica")
+        env.execute("INSERT INTO note_link (src, src_book, type, dst_note, dst_note_book, creation, write_seq) "
+                    "VALUES (%s, %s, 'about', %s, %s, true, %s)", (seq_b, J, seq_a, J, write))
     item = next(i for i in queued(client) if i["ref"] == b)
     assert item["integrity"] == "note-integrity"
     r = client.post("/api/act/options", json={"action": "standing", "items": [{"ref": b, "to": "approved"}],
                                               "reason": "x"}, headers=H)
     assert r.status_code == 403 and "note-integrity" in r.text
-    assert notes.canonical_of(env, seq_a)[0] == a.split("@")[1]
+    assert canonical.canonical_of(env, seq_a)[0] == a.split("@")[1]
 
 
 # --- curation.apply: the batch rules of §6.5 -----------------------------------------------------------------------

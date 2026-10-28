@@ -28,3 +28,9 @@ REVOKE INSERT, UPDATE, DELETE ON origin_confirmation, origin_withdrawal FROM kut
 REVOKE INSERT, UPDATE, DELETE ON note_suggestion, curate_delegation, delegation_use, delegation_end FROM kutuphane_app;
 -- Security review #17 (029): the key of the sample draw is the owner's only.
 REVOKE ALL ON delegation_sample_key FROM kutuphane_app;
+-- Astra review #19 (038): no login role makes temporary tables or sequences, which PostgreSQL would search before
+-- `public` in a function without a pinned search path. TEMP is a right of PUBLIC by default, so it goes from PUBLIC
+-- (the owner of the database keeps it); defense in depth next to the pinned paths of migration 038.
+DO $$ BEGIN
+    EXECUTE format('REVOKE TEMPORARY ON DATABASE %I FROM PUBLIC, kutuphane_app', current_database());
+END $$;

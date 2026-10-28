@@ -158,8 +158,9 @@ def with_records(conn, actor: Actor, hits: list[search.Hit], scope: search.Scope
                  ) -> tuple[list[search.Hit], dict]:
     """The evidence with each record that a passage repeats (quotes.py) right before its first copy, and {copy
     citation: the record citations in the evidence}. A record is added only when its rights allow AI input; only
-    records in the evidence are named, so the answer's gate covers their books."""
-    found = quotes.quoted(conn, actor, hits, scope)
+    records in the evidence are named, so the answer's gate covers their books. The passages and the records are
+    decided together before the model sees them (Astra review #19): a book lost meanwhile drops its passages."""
+    hits, found = quotes.quoted(conn, actor, hits, scope, log=False)  # the answer's final gate logs the sources
     present, out = {h.citation for h in hits}, []
     added = 0
     for h in hits:
@@ -233,11 +234,12 @@ def ask(conn, bridge: llmdap.Bridge, actor: Actor, question: str, *, model: str,
     rights = kstd.Rights(conn)  # kstd: a passage whose rights do not allow ai_input never reaches the answer model
     hits = [h for h in found if rights.allows(h.citation.book, h.citation.content_id, h.citation.path, "ai_input")]
     withheld = len(found) - len(hits)
+    if hits:
+        hits, repeats = with_records(conn, actor, hits, scope, rights)
     if not hits:
         check()
         stored = _keep(conn, commit, lambda: _store(conn, actor, question, "not_in_library", None, [], [], None))
         return {**stored, "withheld": withheld}
-    hits, repeats = with_records(conn, actor, hits, scope, rights)
     number = {h.citation: n for n, h in enumerate(hits, start=1)}
     sources = [_ref(conn, n, h, repeats.get(h.citation, ())) for n, h in enumerate(hits, start=1)]
     lang = retrieval.language(question)

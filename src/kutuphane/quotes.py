@@ -13,15 +13,19 @@ that record, and `ask` gives the record to the answer model before its copy.
   migration with the same folding in SQL). Looked up at read time against the current version of each book, so a
   re-published book never leaves a stale link.
 - **Rights:** a pointer names only a record in a book that the caller may read now, and that passes the same scope
-  filters as the evidence (book, path prefix, kstd origin, validity). Instruction passages are never sources. `ask`
-  adds a source only when its rights allow AI input; its book is then a source book of the answer, decided again
-  with the others before anything is handed out.
+  filters as the evidence (book, path prefix, kstd origin, validity). Instruction passages are never sources. The
+  passages and the records that they name are decided again in ONE final statement (`search.authorize`, Astra
+  review #19): a book lost since the search drops its passages and every pointer into it, so no answer holds a
+  passage and a record that were never readable at the same instant; the loss is logged, and each book whose records
+  are named gets one `access_event` (action `quote`, items = the record handles). `ask` adds a source only when its
+  rights allow AI input; its book is then a source book of the answer, decided again with the others before anything
+  is handed out.
 """
 import hashlib
 import json
 import re
 
-from . import authz, kstd, search
+from . import authz, gate, kstd, search
 from .gate import Actor
 from .source import JSONL, media_type_of
 
@@ -119,36 +123,59 @@ SELECT DISTINCT r.sha256, c.book, c.content_id, c.profile_id, c.path, c.ordinal,
 """
 
 
-def quoted(conn, actor: Actor, hits: list[search.Hit], scope: search.Scope = search.Scope()
-           ) -> dict[search.Citation, list[search.Hit]]:
-    """{citation of a passage: the record passages whose whole field values it repeats}, only for passages that
-    repeat one; the records come from books that the caller may read now and that pass `scope`."""
+def quoted(conn, actor: Actor, hits: list[search.Hit], scope: search.Scope = search.Scope(), log: bool = True
+           ) -> tuple[list[search.Hit], dict[search.Citation, list[search.Hit]]]:
+    """(the hits, {citation of a passage: the record passages whose whole field values it repeats}), the map only
+    for passages that repeat one; the records come from books that the caller may read now and that pass `scope`.
+    When a record is named, the hits and the records are decided together once more (see the module text). `log`:
+    the `quote` events of the named records; `ask` logs its sources at its own final gate instead."""
     copies = {h.citation: units(h.text) for h in hits if not is_record(h.citation.path)}
     shas = sorted(set().union(*copies.values())) if copies else []
     if not shas:
-        return {}
+        return hits, {}
     read = {o.removeprefix("book:") for o in authz.allowed(conn, actor.principal, actor.on_behalf_of,
                                                            ["read"]).objects("read")}
     if scope.books:
         read &= set(scope.books)
     if not read:
-        return {}
+        return hits, {}
     found = conn.execute(_SOURCES, {"shas": shas, "books": sorted(read), "prefix": scope.path}).fetchall()
     rights, records = kstd.Rights(conn), {}
     for r in found:
         hit = search.Hit(search.Citation(*r[1:6]), r[6], r[7], r[8], r[9], 0.0, r[10])
         if not scope.origins and not scope.current_only or scope.admits(rights.info(*r[1:3], r[4])):
             records.setdefault(bytes(r[0]), []).append(hit)
-    out = {}
+    pointers = {}
     for citation, mine in copies.items():
         seen = {}
         for sha in mine:
             for hit in records.get(sha, []):
                 seen.setdefault(hit.citation, hit)
         if seen:
-            out[citation] = sorted(seen.values(), key=lambda h: (h.citation.book, h.citation.path,
-                                                                 h.citation.ordinal))[:MAX_POINTERS]
-    return out
+            pointers[citation] = sorted(seen.values(), key=lambda h: (h.citation.book, h.citation.path,
+                                                                      h.citation.ordinal))[:MAX_POINTERS]
+    if not pointers:
+        return hits, {}
+    named = list({r.citation: r for rs in pointers.values() for r in rs}.values())
+    kept, final = search.authorize(conn, actor, hits + named)
+    keep = {h.citation for h in kept}
+    out = {c: [r for r in rs if r.citation in keep] for c, rs in pointers.items() if c in keep}
+    out = {c: rs for c, rs in out.items() if rs}
+    if log:
+        _log(conn, actor, final, out)
+    return [h for h in hits if h.citation in keep], out
+
+
+def _log(conn, actor: Actor, final: authz.Allowed, out: dict) -> None:
+    """One `access_event` per book whose records the result names (AT-09: what was handed out, under which decision)."""
+    by_book = {}
+    for rs in out.values():
+        for r in rs:
+            by_book.setdefault(r.citation.book, {}).setdefault(r.citation.handle, r.citation)
+    for book in sorted(by_book):
+        obj, first = f"book:{book}", by_book[book][min(by_book[book])]
+        gate.log_event(conn, actor, "quote", obj, "read", final.decisions[obj]["read"], final.policies.get(obj),
+                       first.content_id, None, profile_id=first.profile_id, items=sorted(by_book[book]))
 
 
 def handles(found: dict, citation: search.Citation) -> list[str]:

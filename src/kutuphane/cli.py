@@ -30,7 +30,6 @@ def cmd_migrate(conn, _args) -> int:
 def cmd_ingest(conn, args) -> int:
     policy = make_policy(sensitivity=args.sensitivity, egress=args.egress, protection=args.protection)
     files = read_source(Path(args.path), _accepted(args), _names(args))
-    catalog.check_personal_data(files, policy)  # only a cloud_ok book refuses an open personal-data finding
     embedder, settings = _indexing()  # a configuration error stops here, before anything is published
     result = catalog.publish(conn, book=args.book, title=args.title or args.book, files=files, policy=policy,
                              profile=profiles.spec(args.profile))
@@ -187,8 +186,9 @@ def _scope(args) -> search.Scope:
 def cmd_search(conn, args) -> int:
     actor = gate.Actor(args.principal, args.on_behalf_of)
     scope = _scope(args)
-    hits = retrieval.retrieve(conn, actor, args.query, args.k, retrieval.Stages.from_env(), scope)
-    rights, found = kstd.Rights(conn), quotes.quoted(conn, actor, hits, scope)
+    hits, found = quotes.quoted(conn, actor, retrieval.retrieve(conn, actor, args.query, args.k,
+                                                                retrieval.Stages.from_env(), scope), scope)
+    rights = kstd.Rights(conn)
     _print([{"citation": h.citation.handle, "page": h.page, "line": h.line, "score": round(h.score, 4),
              "text": h.text, "item": rights.info(h.citation.book, h.citation.content_id, h.citation.path),
              "quoted_records": quotes.handles(found, h.citation)}
@@ -323,7 +323,8 @@ def cmd_receive(conn, args) -> int:
 def cmd_approve(conn, args) -> int:
     policy = make_policy(sensitivity=args.sensitivity, egress=args.egress, protection=args.protection)
     embedder, settings = _indexing()
-    published = packages.approve(conn, args.id, by=args.by, policy=policy, profile=args.profile)
+    published = packages.approve(conn, args.id, by=args.by, policy=policy, profile=args.profile,
+                                 accept=_accepted(args))
     return _published_then_index(conn, published, embedder, settings)
 
 
@@ -745,6 +746,9 @@ def parser() -> argparse.ArgumentParser:
     ap_.add_argument("--egress", required=True, choices=EGRESS)
     ap_.add_argument("--protection", required=True, choices=PROTECTION_M1)
     ap_.add_argument("--profile", choices=("chunked", "whole"), default="chunked")
+    ap_.add_argument("--accept-finding", action="append", default=[], metavar="PATH@sha256:DIGEST:RULE",
+                     help="accept one reviewed personal-data finding that `receive` listed: that rule, in exactly "
+                          "that file content; repeatable; needed for a cloud_ok book (--egress cloud_ok)")
     ap_.set_defaults(fn=cmd_approve)
     rj = sub.add_parser("reject-import", help="refuse a verified package (kept on record)")
     rj.add_argument("id", type=int)

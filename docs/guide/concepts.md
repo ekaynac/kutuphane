@@ -251,7 +251,10 @@ Kütüphane links the copy to the record, so that the answer can cite the record
   every few hours would become newer than its own copies.
 - **Search** gives each passage `quoted_records`: the handles of the records that it repeats, from books that you
   may read now and that pass the search filters. The copy stays in the results with its rank, because it usually
-  holds other text too.
+  holds other text too. The passages and the records are decided again together, in one step: if you lost `read`
+  on a book in the meantime, its passages and the handles into it are left out. Each book whose records are named
+  gets an `access_event` with the action `quote` and the handles. Ask uses the same step before the model sees the
+  evidence.
 - **Ask** puts each such record into the evidence right before its first copy (at most 4 records; only when their
   rights allow AI input). The copy is marked `repeats [n]` for the model, and the model is told to cite record
   `[n]` for that text. Each citation and evidence entry has `quoted_records`: the repeated records in the evidence.

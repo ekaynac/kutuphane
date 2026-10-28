@@ -4,8 +4,11 @@ can only ask for a lower value.
 R2: an agent path (an `agent:` principal, a user acted for, or the MCP channel) is `model`. R4/R6: anything else (a
 `user:` principal without `act`, over HTTP or the CLI import of docs/24 §23) is `unknown` in R1. R1 never stores
 `human`: a token is not a person's act on exact bytes; `human` comes only from the R3 passkey confirmation
-(`origin_confirmation`, migration 024), and R7 withdrawal removes it. `unknown` is handled as `model`.
+(`origin_confirmation`, migration 024), and R7 withdrawal removes it. `unknown` is handled as `model`. A
+confirmation counts only while the note's stored parts give the id that the person signed (canonical.py, Astra
+review #19); else the shown origin is `model`.
 """
+from . import canonical
 from .gate import Actor
 from .kstd import ORIGINS
 
@@ -56,13 +59,19 @@ SELECT s.seq,
 def shown(conn, seqs, w: int | None) -> dict:
     """{seq: (origin, entered_by, confirmed_by)} at the watermark `w` (None: now), docs/25 §7.6. The latest
     confirmation with seq <= w counts unless a withdrawal with seq <= w removed it; then, and with no confirmation,
-    the write-path value (entered_by and confirmed_by None). A withdrawal never brings back an older confirmation."""
+    the write-path value (entered_by and confirmed_by None). A withdrawal never brings back an older confirmation.
+    A live confirmation of a note whose stored parts no longer give the signed id shows `model` (D70)."""
     seqs = sorted(set(seqs))
     if not seqs:
         return {}
+    rows = conn.execute(_SHOWN, {"seqs": seqs, "w": w}).fetchall()
+    whole = canonical.intact(conn, [r[0] for r in rows if r[2] and not r[5]])
     out = {}
-    for seq, written, claim, entered_by, confirmed_by, withdrawn in conn.execute(_SHOWN, {"seqs": seqs, "w": w}):
-        out[seq] = (claim, entered_by, confirmed_by) if claim and not withdrawn else (written, None, None)
+    for seq, written, claim, entered_by, confirmed_by, withdrawn in rows:
+        if claim and not withdrawn:
+            out[seq] = (claim, entered_by, confirmed_by) if seq in whole else ("model", None, None)
+        else:
+            out[seq] = (written, None, None)
     return out
 
 

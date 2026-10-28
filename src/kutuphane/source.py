@@ -247,8 +247,8 @@ def _personal_data(path: str, sha256: str, texts: list[tuple[str, str]], accept:
 
 
 def read_file(rel: str, data: bytes, accept: frozenset = frozenset(), names=None) -> SourceFile:
-    """`accept`: AcceptedFinding values (ingest only; package receipt accepts nothing). `names`: the compiled
-    deny-list of datascan.load_names, or None."""
+    """`accept`: AcceptedFinding values (ingest and package approval; package receipt accepts nothing). `names`: the
+    compiled deny-list of datascan.load_names, or None."""
     path = normalize_path(rel)
     if not agentfiles.admitted(tuple(path.split("/"))):
         raise SourceError(f"{path}: hidden path outside the agent folders")

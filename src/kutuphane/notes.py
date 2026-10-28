@@ -27,7 +27,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from . import authz, db, gate, ids, kstd, llmdap, origin as origins, profiles, search, secretscan, vectors
+from . import authz, canonical, db, gate, ids, kstd, llmdap, origin as origins, profiles, search, secretscan, vectors
 from .gate import Actor, NotFound
 from .policy import check_policy
 
@@ -349,11 +349,17 @@ def _passages_exist(conn, cites) -> None:
 
 
 def effective_standing(conn, seqs, w: int) -> dict:
-    """{seq: (value, event seq)}: the latest Standing event with seq <= w, else ("pending", None) (§4.2)."""
-    rows = conn.execute("SELECT s.seq, e.value, e.seq FROM unnest(%s::bigint[]) AS s(seq) "
-                        "LEFT JOIN LATERAL (SELECT value, seq FROM standing_event WHERE note_seq = s.seq "
+    """{seq: (value, event seq)}: the latest Standing event with seq <= w, else ("pending", None) (§4.2). An approval
+    that a person signed on the phone (an act event) counts only while the note's stored parts give the signed id
+    (canonical.py, Astra review #19): an approval of other parts is not an approval of these, so the note is
+    ("pending", that event)."""
+    rows = conn.execute("SELECT s.seq, e.value, e.seq, e.act FROM unnest(%s::bigint[]) AS s(seq) "
+                        "LEFT JOIN LATERAL (SELECT value, seq, act FROM standing_event WHERE note_seq = s.seq "
                         "AND seq <= %s ORDER BY seq DESC LIMIT 1) e ON true", (list(seqs), w)).fetchall()
-    return {seq: (value or "pending", event) for seq, value, event in rows}
+    signed = {seq for seq, value, _, act in rows if value == "approved" and act is not None}
+    whole = canonical.intact(conn, signed)
+    return {seq: ("pending" if value is None or (seq in signed and seq not in whole) else value, event)
+            for seq, value, event, _ in rows}
 
 
 _COMPONENTS = """
@@ -399,41 +405,6 @@ def item_info(conn, note_seq: int) -> dict:
     yn = {True: "y", False: "n"}
     shown = origins.shown(conn, [note_seq], None)[note_seq]
     return {"origin": shown[0], **origins.details(*shown), "ai_use": {"search": yn[row[0]], "ai_input": yn[row[1]]}}
-
-
-_CANONICAL_PARTS = """
-SELECT n.kind, n.body, n.class_key, n.scope_repo, n.scope_branch, n.scope_paths, n.observed_commit, n.options,
-       n.choice,
-       ARRAY(SELECT CASE c.kind
-                      WHEN 'passage' THEN c.cite_book || '@' || c.content_id || '/' || c.profile_id || '/' || c.path
-                                          || '#' || c.ordinal
-                      ELSE c.repo || '@' || c.commit || ':' || c.path || ':' || c.line_start || '-' || c.line_end
-                           || coalesce('#' || c.symbol, '') END
-               FROM note_citation c WHERE c.note_seq = n.seq ORDER BY c.n),
-       ARRAY(SELECT jsonb_build_object('type', l.type, 'target', CASE WHEN l.dst_note IS NOT NULL
-                 THEN l.dst_note_book || '@' || d.id
-                 ELSE l.dst_book || '@' || l.dst_content_id || '/' || l.dst_profile_id || '/' || l.dst_path || '#'
-                      || l.dst_ordinal END)
-               FROM note_link l LEFT JOIN note d ON d.seq = l.dst_note WHERE l.src = n.seq AND l.creation)
-  FROM note n WHERE n.seq = %s
-"""
-
-
-def canonical_of(conn, note_seq: int) -> tuple[str, dict]:
-    """(id, body) computed again from every stored part of a note: what a person sees and signs (docs/25 §5.2). The
-    app role can add citations and creation links to a stored note, so the stored id alone does not prove the bytes;
-    a caller compares this id with the stored one."""
-    row = conn.execute(_CANONICAL_PARTS, (note_seq,)).fetchone()
-    if row is None:
-        raise NotFound(f"no such note: {note_seq}")
-    kind, text, class_key, repo, branch, paths, commit, options, choice, cited, links = row
-    body = {"v": 1, "kind": kind, "text": text, "class_key": class_key,
-            "scope": None if repo is None else {"repo": repo, "branch": branch, "paths": list(paths)},
-            "commit": commit, "citations": list(cited),
-            "links": sorted(links, key=lambda link: (link["type"], link["target"]))}
-    if options is not None:
-        body["decision"] = {"options": list(options), "choice": choice}
-    return "nt_" + ids.sha256_hex(ids.canonical(body)), body
 
 
 # --- journals (CLI) ------------------------------------------------------------------------------------------
