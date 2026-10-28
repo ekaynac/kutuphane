@@ -26,6 +26,7 @@ ALGORITHMS = ["RS256", "ES256", "EdDSA"]
 LEEWAY_SECONDS = 30
 TYPE_CLAIM = "kutuphane/principal_type"
 ENV = {"issuer": "KUTUPHANE_OIDC_ISSUER", "audience": "KUTUPHANE_OIDC_AUDIENCE", "jwks": "KUTUPHANE_OIDC_JWKS"}
+DEFAULT_AUDIENCE = "kutuphane"  # the compose default (G13); tokens must still name it exactly
 
 
 class AuthenticationError(PermissionError):
@@ -40,10 +41,11 @@ class Verifier:
 
     @classmethod
     def from_env(cls) -> "Verifier":
-        missing = [v for v in ENV.values() if not os.environ.get(v)]
+        audience = os.environ.get(ENV["audience"]) or DEFAULT_AUDIENCE
+        missing = [v for k, v in ENV.items() if k != "audience" and not os.environ.get(v)]
         if missing:
             raise RuntimeError(f"identity not configured: set {', '.join(missing)}")
-        return cls.from_files(os.environ[ENV["issuer"]], os.environ[ENV["audience"]], Path(os.environ[ENV["jwks"]]))
+        return cls.from_files(os.environ[ENV["issuer"]], audience, Path(os.environ[ENV["jwks"]]))
 
     @classmethod
     def from_files(cls, issuer: str, audience: str, jwks_path: Path) -> "Verifier":

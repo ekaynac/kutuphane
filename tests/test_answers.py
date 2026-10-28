@@ -164,6 +164,57 @@ def test_an_unknown_number_in_a_group_rejects_the_answer(conn, fake, library, ci
     assert result["status"] == "not_in_library" and result["citations"] == []
 
 
+def _locators(citations):
+    return sorted(((c["path"], c["line"], c["record"]) for c in citations), key=repr)
+
+
+NEWS = "\n".join([
+    '{"id": "a", "title": "haberkelime uzun", "body": "' + "x " * 3000 + 'haberkelime son"}',  # cut in two passages
+    '{"id": "b", "title": "haberkelime kısa"}',
+    "",                                                                                      # a blank line
+    '{"id": "c", "title": "haberkelime üçüncü"}',
+]) + "\n"
+
+
+def test_citations_give_the_line_and_the_jsonl_record(conn, fake, okf_dir):  # G15, with a grouped reference (G21)
+    (okf_dir / "haberler.jsonl").write_text(NEWS, encoding="utf-8")
+    (okf_dir / "notlar.txt").write_text("\n\nhaberkelime notu\n", encoding="utf-8")
+    (okf_dir / "sayfa.html").write_text("<html><body><p>haberkelime sayfa</p></body></html>\n", encoding="utf-8")
+    catalog.publish(conn, book="kitap", title="kitap", files=read_source(okf_dir),
+                    policy=make_policy(sensitivity="normal", egress="local_only", protection="standard"),
+                    profile=profiles.spec("chunked"))
+    authz.grant(conn, "book:kitap", "read", U)
+    fake.reply = "Haberler [1-6]."
+    result = ask(conn, fake, Actor(U), "haberkelime")
+    assert result["status"] == "answered"
+    # The record is the record's number in the file (blank lines are not records); both pieces of a long record
+    # are in record 1. A text file has a line and no record; HTML has neither.
+    assert _locators(result["citations"]) == sorted([
+        ("haberler.jsonl", 1, 1), ("haberler.jsonl", 1, 1), ("haberler.jsonl", 2, 2), ("haberler.jsonl", 4, 3),
+        ("notlar.txt", 3, None), ("sayfa.html", None, None)], key=repr)
+    stored = conn.execute("SELECT citations, sources FROM answer WHERE id = %s", (result["id"],)).fetchone()
+    assert _locators(stored[0]) == _locators(stored[1]) == _locators(result["citations"])
+    # Reopening (and so a background job's result) shows them too, read from the passage: also for an answer
+    # stored before G15, without them.
+    want = {c["n"]: (c["line"], c["record"]) for c in result["citations"]}
+    conn.execute("UPDATE answer SET citations = (SELECT jsonb_agg(c - 'line' - 'record') FROM jsonb_array_elements("
+                 "citations) c) WHERE id = %s", (result["id"],))
+    evidence = answers.reopen(conn, Actor(U), result["id"])["evidence"]
+    assert {e["n"]: (e["line"], e["record"]) for e in evidence} == want
+
+
+def test_a_whole_jsonl_file_is_not_one_record(conn, fake, tmp_path):  # G15: the passage must map to one record
+    (tmp_path / "haberler.jsonl").write_text(NEWS, encoding="utf-8")
+    (tmp_path / "tek.jsonl").write_text('{"id": "d", "title": "haberkelime tek"}\n', encoding="utf-8")
+    catalog.publish(conn, book="kitap", title="kitap", files=read_source(tmp_path),
+                    policy=make_policy(sensitivity="normal", egress="local_only", protection="standard"),
+                    profile=profiles.spec("whole"))
+    authz.grant(conn, "book:kitap", "read", U)
+    fake.reply = "Haberler [1, 2]."
+    result = ask(conn, fake, Actor(U), "haberkelime")
+    assert _locators(result["citations"]) == [("haberler.jsonl", 1, None), ("tek.jsonl", 1, 1)]
+
+
 def test_cited_numbers():  # G21, Astra review #12
     assert answers.cited_numbers("a [2,3,5] b [2, 3] c [7-9] d [4] e [x] f [10–11]", 11) == [2, 3, 4, 5, 7, 8, 9, 10, 11]
     assert answers.cited_numbers("[2026-10-26] [1]", 8) == [1] and answers.cited_numbers("no reference", 8) == []

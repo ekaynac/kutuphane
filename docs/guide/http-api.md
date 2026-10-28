@@ -263,10 +263,13 @@ Answer a question from the library, with `[n]` citations. MCP: `ask_library` ([m
 ```json
 {"id": "5e1c…", "status": "answered", "body": "Backups are kept for 30 days [1].",
  "citations": [{"n": 1, "book": "runbooks", "content_id": "ct_9f…", "profile_id": "pf_41…", "path": "backup.md",
-                "ordinal": 3, "quoted_records": [], "item": null}],
+                "ordinal": 3, "line": 12, "record": null, "quoted_records": [], "item": null}],
  "withheld": 0, "correlation_id": "4b0e…"}
 ```
 
+- `line` is the line where the passage starts, as in `GET /v1/search` (`null` for HTML and PDF). `record` is the
+  number of the JSONL record that the passage is in, from 1 (blank lines are not records); `null` for other files and
+  for a passage of many records (the `whole` profile).
 - `status` is `answered` or `not_in_library`. For `not_in_library`, `body` is `null` and `citations` is empty.
 - `withheld` is the number of passages found but not sent to the model, because their kstd rights do not allow AI
   input.
@@ -300,9 +303,12 @@ calling directly. You need `read` now on every source book of the answer.
 
 ```json
 {"id": "5e1c…", "question": "How long do we keep backups?", "status": "answered", "body": "… [1].",
- "evidence": [{"n": 1, "citation": "runbooks@ct_9f…/pf_41…/backup.md#3", "text": "…", "item": null,
-               "quoted_records": []}]}
+ "evidence": [{"n": 1, "citation": "runbooks@ct_9f…/pf_41…/backup.md#3", "line": 12, "record": null, "text": "…",
+               "item": null, "quoted_records": []}]}
 ```
+
+`line` and `record` are as in the `citations` of `POST /v1/ask`. They are read from the passage, so an answer that
+was stored before they existed has them too.
 
 **Errors:** `401`, `403` (another principal's answer, or a source book is not readable now), `404`.
 

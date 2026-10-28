@@ -60,19 +60,19 @@ All `KUTUPHANE_*` variables that the code, `compose.yaml` and `deploy/` read:
 | `KUTUPHANE_BIND` | `127.0.0.1` | Host address of the ingress port `8080` in compose. |
 | `KUTUPHANE_UI_DIR` | none | Directory of the web UI files that the server serves. Optional. |
 | `KUTUPHANE_OIDC_ISSUER` | none | IdP issuer, exactly as the tokens carry it. Required by the server and `whoami`. |
-| `KUTUPHANE_OIDC_AUDIENCE` | compose: `kutuphane` | Expected token audience. Required. |
+| `KUTUPHANE_OIDC_AUDIENCE` | `kutuphane` | Expected token audience. |
 | `KUTUPHANE_OIDC_JWKS` | compose: `/run/kutuphane/jwks.json` | Path of the JWKS file. Required. |
 | `KUTUPHANE_OIDC_JWKS_FILE` | `./deploy/jwks.json` | Compose only: the host file that is mounted as the JWKS. |
 | `KUTUPHANE_LLMDAP_URL` | compose: `http://llmdap:8787` | LLMDAP gateway URL. Without it, the server makes no model call: full-text search only, no answers ([light install](install.md#light-install)). |
 | `KUTUPHANE_LLMDAP_KEY` | none | Core's LLMDAP subject key. |
 | `KUTUPHANE_LLMDAP_ROUTE` | none | LLMDAP route for answers and question translation. |
-| `KUTUPHANE_LLMDAP_ROUTE_CLASS` | compose: `local` | `local` or `cloud`. A `local_only` book never goes to a `cloud` route. |
+| `KUTUPHANE_LLMDAP_ROUTE_CLASS` | compose: `local`; no default outside compose | `local` or `cloud`. A `local_only` book never goes to a `cloud` route. |
 | `KUTUPHANE_ANSWER_MODEL` | none | Answer model on `KUTUPHANE_LLMDAP_ROUTE`. Required by the server when `KUTUPHANE_LLMDAP_URL` is set. `ask --model` sets it for the CLI. |
 | `KUTUPHANE_LLMDAP_EMBED_ROUTE` | none | LLMDAP embeddings route. Without it, search is full text only. |
-| `KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS` | compose: `local` | Route class of the embeddings route. |
+| `KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS` | compose: `local`; no default outside compose | Route class of the embeddings route. |
 | `KUTUPHANE_EMBED_MODEL` | none | Pinned embedding model of the route, for example `BAAI/bge-m3`. |
 | `KUTUPHANE_LLMDAP_RERANK_ROUTE` | none | LLMDAP rerank route. Without it, there is no reranking. |
-| `KUTUPHANE_LLMDAP_RERANK_ROUTE_CLASS` | compose: `local` | Route class of the rerank route. |
+| `KUTUPHANE_LLMDAP_RERANK_ROUTE_CLASS` | compose: `local`; no default outside compose | Route class of the rerank route. |
 | `KUTUPHANE_RERANK_MODEL` | none | Pinned rerank model, for example `BAAI/bge-reranker-v2-m3`. |
 | `KUTUPHANE_INDEX_BATCH` | `8` | Passages per embedding call. |
 | `KUTUPHANE_INDEX_BATCH_CHARS` | `8000` | Embedded characters per call. A longer passage goes alone. |
@@ -89,6 +89,18 @@ All `KUTUPHANE_*` variables that the code, `compose.yaml` and `deploy/` read:
 | `KUTUPHANE_SKILLSPECTOR_PROXY` | none | Proxy for the SkillSpector subprocess. A dead port (`http://127.0.0.1:9`) blocks its OSV.dev requests. |
 | `KUTUPHANE_DEV` | none | `1` enables `dev-keys` and `dev-token`. Set it on a development machine only. |
 | `KUTUPHANE_PROBE_TOKEN` | none | Access token for `deploy/mcp_probe.py`. The probe never prints it. |
+
+The CLI on the host reads no compose file (G13). A compose default that is also right on the host is the default of
+the code too: `KUTUPHANE_OIDC_AUDIENCE` (`kutuphane`) and `KUTUPHANE_CONFIRM_HOURS` (`24`). An empty value counts as
+not set, as in compose. The other compose values are container addresses and paths (`KUTUPHANE_DSN`,
+`KUTUPHANE_CURATOR_WEB_DSN`, `KUTUPHANE_OIDC_JWKS`, `KUTUPHANE_LLMDAP_URL`, `KUTUPHANE_REPO_ROOTS`) or route classes.
+Set them on the host. Without them, the command stops and its message names the variable.
+
+A route class never has a default outside compose. `local` skips the egress check, so a wrong default would send
+`local_only` text to a cloud route. Set `local` only for a route that keeps the data on premises. The CLI stops with
+`LLMDAP not configured: set KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS (…: local or cloud …)` before it publishes anything.
+The routes and models that `deploy/compose.local-models.yaml` sets are not defaults either: without
+`KUTUPHANE_LLMDAP_EMBED_ROUTE` on the host, `search` and `ask` use full text only.
 
 ## 2. Ingest a folder into a book
 
@@ -336,7 +348,7 @@ kutuphane read <principal> <book> <content_id> <path>
 
 - The principal is `user:<name>` or `agent:<name>`. For an agent that acts for a person, give `--on-behalf-of user:<name>`.
 - `search` returns `citation`, `page`, `line`, `score`, `text`, `item` (the kstd rights) and `quoted_records` (the JSONL records that the passage repeats, [concepts.md](concepts.md#records-that-a-passage-repeats)). `-k` is 8 by default, from 1 to 50.
-- `ask` needs the LLMDAP variables. It prints the answer and its `correlation_id`.
+- `ask` needs the LLMDAP variables. On the host, this includes the route class of each route that you set (§1). It prints the answer and its `correlation_id`.
 - `reopen` shows a stored answer and its evidence again. It does not call a model.
 - `read` writes the file bytes to stdout through the authorization gate.
 
@@ -358,6 +370,7 @@ A filter never adds a book. A book that the caller cannot read gives the same em
 - The answer is in the language of the question (Turkish or English; G20). It is short (about 150 words).
 - The answer model gets the first 2,400 characters of each passage. The stored sources and citations keep the whole passage (G26).
 - A reference names one or more passages: `[2]`, `[2,3]`, `[2-4]`, `[2–4]` (G21). One unknown number or one malformed group (`[1-2-3]`) refuses the answer.
+- Each citation gives `line`, the line where the passage starts, as `search` does (`null` for HTML and PDF). A JSONL passage also gives `record`: the number of its record in the file, from 1. Blank lines are not records. With the `whole` profile, one passage holds the whole file, so `record` is `null` unless the file has one record (G15). The evidence of `reopen` and of a background job's result gives them too, also for an answer from before G15.
 
 ### Two languages (G19)
 

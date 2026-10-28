@@ -9,6 +9,12 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Pilot 1 gaps G13, G15 (host CLI settings, citation lines)
+
+- Changed: each `ask` citation has `line` (the line where the passage starts, as in `search`; `null` for HTML and PDF) and `record` (for a JSONL passage inside one record: the number of the record in the file, from 1; else `null`). The evidence of `reopen`, `reopen_answer` and a background job's result has both too, also for old answers (G15) ([operations.md](operations.md#answers), [mcp.md](mcp.md), [http-api.md](http-api.md)) ([#129](https://github.com/ekaynac/kutuphane/pull/129)).
+- Changed: `KUTUPHANE_OIDC_AUDIENCE` is `kutuphane` when it is not set, as in compose. An empty `KUTUPHANE_CONFIRM_HOURS` is 24, as in compose (G13) ([operations.md](operations.md#variables)) ([#129](https://github.com/ekaynac/kutuphane/pull/129)).
+- Changed: a route class (`KUTUPHANE_LLMDAP_ROUTE_CLASS`, `_EMBED_ROUTE_CLASS`, `_RERANK_ROUTE_CLASS`) still has no default outside compose, because `local` skips the egress check. The message now gives the two values and tells that compose sets `local`; a bad value names its setting (G13) ([troubleshooting.md](troubleshooting.md)) ([#129](https://github.com/ekaynac/kutuphane/pull/129)).
+
 ### Records that a passage repeats (#128; pilot 1 gaps G23, G16, G25)
 
 - New: a passage that repeats a whole string value of a JSONL record (40 characters or more, white space folded; a JSON string, a line, or a line without its markdown mark) points to that record. `search_library`, `GET /v1/search` and `kutuphane search` give each hit `quoted_records`: the handles of those records, only from books that you may read now and that pass the filters. The order of the hits does not change ([concepts.md](concepts.md#records-that-a-passage-repeats), [mcp.md](mcp.md#51-search_library), [http-api.md](http-api.md)) ([#128](https://github.com/ekaynac/kutuphane/pull/128)).

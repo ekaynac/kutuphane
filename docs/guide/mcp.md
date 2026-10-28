@@ -424,7 +424,7 @@ The server decides the rights again after the model call.
 | `id` | The answer id. Use it with `reopen_answer`. |
 | `status` | `answered` or `not_in_library`. |
 | `body` | The answer text, or `null`. |
-| `citations` | A list of `{n, book, content_id, profile_id, path, ordinal, quoted_records, item}` for each cited passage. When a passage repeats the text of a record (G23), the record is in the evidence right before the passage (at most 4 records are added), and `quoted_records` gives their handles; else `[]`. |
+| `citations` | A list of `{n, book, content_id, profile_id, path, ordinal, line, record, quoted_records, item}` for each cited passage. `line`: the line where the passage starts (`null` for HTML and PDF). `record`: the number of the JSONL record that the passage is in, from 1, else `null`. When a passage repeats the text of a record (G23), the record is in the evidence right before the passage (at most 4 records are added), and `quoted_records` gives their handles; else `[]`. |
 | `withheld` | The number of passages found but not sent to the model (kstd rights). |
 
 **Result (`background: true`):** `{"job_id": "jb_…", "status": "queued"}` at once. A retry with the same
@@ -456,11 +456,12 @@ agent, `activate` for instruction passages). An agent is refused when a source i
 
 ```json
 {"id": "5e1c…", "question": "…", "status": "answered", "body": "… [1]",
- "evidence": [{"n": 1, "citation": "runbooks@ct_…/pf_…/backup.md#3", "text": "…", "item": null,
-               "quoted_records": []}]}
+ "evidence": [{"n": 1, "citation": "runbooks@ct_…/pf_…/backup.md#3", "line": 12, "record": null, "text": "…",
+               "item": null, "quoted_records": []}]}
 ```
 
-An evidence entry can have `"text": null` with `withheld` (section 4.2).
+An evidence entry can have `"text": null` with `withheld` (section 4.2). `line` and `record` are as in the
+`citations` of `ask_library`.
 
 **Errors:** `403` (the answer belongs to another principal, or a source book is not readable now), `404`.
 

@@ -55,6 +55,11 @@ _OPENER = urllib.request.build_opener(_NoRedirect)
 
 
 ROUTE_CLASSES = ("local", "cloud")
+# G13: never a default. `local` skips the egress check (_check_egress), so a default would turn a cloud route the
+# operator did not declare into one that gets `local_only` text. compose.yaml sets `local` for its own LLMDAP; the
+# CLI on the host reads no compose file, so it stops and names the setting.
+ROUTE_CLASS_HINT = ("local or cloud: does the route keep the data on premises? compose.yaml sets local for its own "
+                    "LLMDAP; outside compose there is no default")
 
 
 @dataclass(frozen=True)
@@ -68,7 +73,10 @@ class Bridge:
     def from_env(cls, route_env: str = ENV["route"], class_env: str = ENV["route_class"]) -> "Bridge":
         missing = [v for v in (ENV["url"], ENV["key"], route_env, class_env) if not os.environ.get(v)]
         if missing:
-            raise RuntimeError(f"LLMDAP not configured: set {', '.join(missing)}")
+            hint = f" ({class_env}: {ROUTE_CLASS_HINT})" if class_env in missing else ""
+            raise RuntimeError(f"LLMDAP not configured: set {', '.join(missing)}{hint}")
+        if os.environ[class_env] not in ROUTE_CLASSES:
+            raise RuntimeError(f"{class_env} must be {' or '.join(ROUTE_CLASSES)}")
         return cls(os.environ[ENV["url"]].rstrip("/"), os.environ[route_env], os.environ[ENV["key"]],
                    os.environ[class_env])
 
