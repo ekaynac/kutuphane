@@ -37,6 +37,8 @@ MAX_BYTES = (8192, 131072)
 MAX_NODES = 200
 MAX_TEXT_CHARS = 1000
 MAX_BOOKS = 50
+MAX_REFS = 50
+MAX_PATHS = 20
 RANK_NORMALIZATION = 4
 WITHHELD = "rights do not allow AI input"
 _SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}\Z")
@@ -94,7 +96,7 @@ class Note:
     observed_commit: str | None
     written_at: datetime
     ai_input: bool               # note AND the journals of its closure now (docs/24 §20.3)
-    path_ok: bool                # a file path in the context matches a scope glob (SQL, scope_path_re)
+    path_ok: dict                # {file path of the context: it matches a scope glob} (SQL, scope_path_re)
     origin: str                  # the shown origin at w (docs/25 §7.6: a live R3 confirmation, else the write path)
     entered_by: str | None = None    # with a live confirmation: the writer of the request
     confirmed_by: str | None = None  # with a live confirmation: the person who confirmed
@@ -117,9 +119,37 @@ class Note:
 
 
 def _glob_prefix_ok(glob: str, prefix: str) -> bool:
-    """A directory prefix matches a glob when the glob's literal head and the prefix agree as far as both go."""
-    head = re.split(r"[*?]", glob, maxsplit=1)[0]
-    return head.startswith(prefix) or prefix.startswith(head)
+    """A folder prefix (it ends with "/") matches a glob when some file below it could match the glob, with the
+    semantics of `notes.glob_re`: `**` any characters, `*` any characters except `/`, `?` one character except `/`.
+    So `*.log` matches only the files of the root folder, and no folder prefix."""
+    tokens, i = [], 0
+    while i < len(glob):
+        step = 2 if glob.startswith("**", i) else 1
+        tokens.append(glob[i:i + step])
+        i += step
+
+    def close(states: set) -> set:  # a star can match no character
+        out, todo = set(states), list(states)
+        while todo:
+            s = todo.pop()
+            if s < len(tokens) and tokens[s] in ("*", "**") and s + 1 not in out:
+                out.add(s + 1)
+                todo.append(s + 1)
+        return out
+
+    states = close({0})
+    for ch in prefix:
+        nxt = set()
+        for s in states:
+            t = tokens[s] if s < len(tokens) else None
+            if t == "**" or (t == "*" and ch != "/"):
+                nxt.add(s)
+            elif t == ch or (t == "?" and ch != "/"):
+                nxt.add(s + 1)
+        states = close(nxt)
+        if not states:
+            return False
+    return any(s < len(tokens) for s in states)  # the glob needs more characters: a file below the folder
 
 
 def scope_verdict(note: Note, ctx: Context) -> str:
@@ -142,7 +172,7 @@ def scope_verdict(note: Note, ctx: Context) -> str:
         elif ctx.path.endswith("/"):
             if not any(_glob_prefix_ok(g, ctx.path) for g in note.scope_paths):
                 return "mismatch"
-        elif not note.path_ok:
+        elif not note.path_ok.get(ctx.path, False):
             return "mismatch"
     return "needs_context" if missing else "match"
 
@@ -211,8 +241,8 @@ def watermark(conn) -> int:
 _NOTES = """
 SELECT n.seq, n.book, n.id, n.kind, n.body, n.class_key, n.scope_repo, n.scope_branch, n.scope_paths,
        n.observed_commit, n.written_at, n.ai_input AND j.ai_input,
-       (%(path)s::text IS NULL OR cardinality(n.scope_path_re) = 0
-        OR EXISTS (SELECT 1 FROM unnest(n.scope_path_re) r WHERE %(path)s::text ~ r)),
+       ARRAY(SELECT cardinality(n.scope_path_re) = 0 OR EXISTS (SELECT 1 FROM unnest(n.scope_path_re) r WHERE u.p ~ r)
+               FROM unnest(%(paths)s::text[]) WITH ORDINALITY AS u(p, i) ORDER BY u.i),
        (SELECT CASE WHEN bool_or(wr.origin = 'model') THEN 'model' ELSE 'unknown' END FROM write_record wr
          WHERE wr.note_seq = n.seq AND wr.action = 'propose' AND wr.seq <= %(w)s),
        CASE WHEN %(text)s::text IS NULL THEN 0
@@ -223,6 +253,7 @@ SELECT n.seq, n.book, n.id, n.kind, n.body, n.class_key, n.scope_repo, n.scope_b
  WHERE n.book = ANY(%(books)s::text[]) AND n.seq <= %(w)s
    AND (%(seqs)s::bigint[] IS NULL OR n.seq = ANY(%(seqs)s::bigint[]))
    AND (%(kinds)s::text[] IS NULL OR n.kind = ANY(%(kinds)s::text[]))
+   AND (%(refs)s::text[] IS NULL OR n.book || '@' || n.id = ANY(%(refs)s::text[]))
    AND (%(class_key)s::text IS NULL OR n.class_key = %(class_key)s::text)
    AND (%(after)s::timestamptz IS NULL OR n.written_at > %(after)s::timestamptz)
    AND (%(before)s::timestamptz IS NULL OR n.written_at < %(before)s::timestamptz)
@@ -231,14 +262,17 @@ SELECT n.seq, n.book, n.id, n.kind, n.body, n.class_key, n.scope_repo, n.scope_b
 """
 
 
-def _load(conn, books, w: int, ctx: Context, *, seqs=None, kinds=None, class_key=None, after=None, before=None,
-          text=None, blocks: bool = False) -> list[Note]:
-    """`blocks`: read whether each note depends on a blocked skill (only model readers need it)."""
+def _load(conn, books, w: int, paths: list, *, seqs=None, refs=None, kinds=None, class_key=None, after=None,
+          before=None, text=None, blocks: bool = False) -> list[Note]:
+    """`paths`: the context paths (a folder prefix ends with "/"; None: no path). `blocks`: read whether each note
+    depends on a blocked skill (only model readers need it)."""
+    files = [p for p in paths if p and not p.endswith("/")]
     rows = conn.execute(_NOTES, {
-        "books": sorted(books), "w": w, "seqs": seqs, "kinds": kinds, "class_key": class_key, "after": after,
-        "before": before, "text": text, "cfg": profiles.FTS_CONFIG, "norm": RANK_NORMALIZATION,
-        "path": ctx.path if ctx.path and not ctx.path.endswith("/") else None, "blocks": blocks}).fetchall()
-    out = [Note(*r[:13], origin=r[13], rank=float(r[14]), w=w, skill_blocked=r[15], approved_by=r[16]) for r in rows]
+        "books": sorted(books), "w": w, "seqs": seqs, "refs": refs, "kinds": kinds, "class_key": class_key,
+        "after": after, "before": before, "text": text, "cfg": profiles.FTS_CONFIG, "norm": RANK_NORMALIZATION,
+        "paths": files, "blocks": blocks}).fetchall()
+    out = [Note(*r[:12], dict(zip(files, r[12])), origin=r[13], rank=float(r[14]), w=w, skill_blocked=r[15],
+                approved_by=r[16]) for r in rows]
     standing = notes.effective_standing(conn, [n.seq for n in out], w)
     for n in out:
         n.standing, n.standing_seq = standing[n.seq]
@@ -583,12 +617,15 @@ def _targets_out(targets: dict) -> dict:
 
 
 def query_notes(conn, actor: Actor, *, for_model: bool, book=None, sets=("current",), kind=None, role=None,
-                origin=None, class_key=None, repo=None, branch=None, path=None, commit=None, commits=None,
-                written_after=None, written_before=None, since=None, text=None, unfixed: bool = False,
+                origin=None, class_key=None, refs=None, repo=None, branch=None, path=None, paths=None, commit=None,
+                commits=None, written_after=None, written_before=None, since=None, text=None, unfixed: bool = False,
                 collapse: bool = False, include_unverified: bool = False, order: str = "newest",
                 budget_tokens: int = 2000, max_bytes: int = 32768, as_of=None, cursor=None,
                 attempts: int = 2, readable_out: set | None = None) -> dict:
     """docs/24 §9.1. `for_model`: the reader puts the text into a model's context (`server._for_model`).
+    `refs` (#155): only these notes; each item then has `standing_seq`, the event of its effective Standing.
+    `paths` (#153): more context paths (with `path`); each note gets the best placement over them, and each item has
+    `paths`, the context paths that put it in the sets.
     `readable_out`, if given, gets the books (slugs) of the final read set, for the handling labels (handling.py)."""
     wanted = _strings("book", book, pattern=_SLUG)
     if wanted is not None and len(wanted) > MAX_BOOKS:
@@ -598,7 +635,19 @@ def query_notes(conn, actor: Actor, *, for_model: bool, book=None, sets=("curren
     origins = _strings("origin", origin, NOTE_ORIGINS)
     if class_key is not None and not (isinstance(class_key, str) and _CLASS_KEY.match(class_key)):
         raise ValueError("invalid class_key")
-    ctx = Context(repo, branch, path, commit)
+    named = _strings("refs", refs)
+    if named is not None:
+        if len(named) > MAX_REFS:
+            raise ValueError(f"at most {MAX_REFS} refs")
+        for r in named:
+            notes.parse_ref(r)
+    many = _strings("paths", paths)
+    if many is not None:
+        many = sorted(set(many) | ({path} if path is not None else set()))
+        if len(many) > MAX_PATHS:
+            raise ValueError(f"at most {MAX_PATHS} paths")
+    ctxs = [Context(repo, branch, p, commit) for p in (many if many is not None else [path])]
+    ctx = ctxs[0]  # repo, branch and commit (the code targets) are the same in each
     rng = None
     if commits is not None:
         if repo is None:
@@ -631,8 +680,8 @@ def query_notes(conn, actor: Actor, *, for_model: bool, book=None, sets=("curren
                 if conn.execute("SELECT 1 FROM code_repo WHERE book = %s AND slug = %s AND removed_at IS NULL",
                                 (b, repo)).fetchone():
                     revs[b] = set(coderepo.rev_list(conn, b, repo, *rng))
-        found = _load(conn, books, w, ctx, kinds=kinds, class_key=class_key, after=after, before=before, text=text,
-                      blocks=for_model)
+        found = _load(conn, books, w, [c.path for c in ctxs], refs=named, kinds=kinds, class_key=class_key,
+                      after=after, before=before, text=text, blocks=for_model)
         if rng is not None:
             found = [n for n in found if n.scope_repo == repo and n.observed_commit in revs.get(n.book, ())]
         if origins is not None:
@@ -665,13 +714,18 @@ def query_notes(conn, actor: Actor, *, for_model: bool, book=None, sets=("curren
         for n in candidates:
             members.setdefault(clusters.get(n.seq, n.seq), []).append(n)
         verifier = coderepo.Verifier(conn, targets)
-        placed, kept, passed = {}, {}, []
+        placed, hits, kept, passed = {}, {}, {}, []
 
         def place(group):
-            """The placement of each note; its code citations are verified only when they decide it or show."""
+            """The placement of each note, the best over the context paths (in the sets, then current, then a
+            counter); its code citations are verified only when they decide it or show."""
             fresh = [n for n in group if n.seq not in placed]
-            _verify(verifier, [n for n in fresh if _placement(n, ctx, w, sets, include_unverified)[0]])
-            placed.update({n.seq: _placement(n, ctx, w, sets, include_unverified) for n in fresh})
+            _verify(verifier, [n for n in fresh
+                               if any(_placement(n, c, w, sets, include_unverified)[0] for c in ctxs)])
+            for n in fresh:
+                each = [_placement(n, c, w, sets, include_unverified) for c in ctxs]
+                placed[n.seq] = max(each, key=lambda p: (p[0], p[1], p[2] is not None))
+                hits[n.seq] = [c.path for c, p in zip(ctxs, each) if p[0]]
 
         def entries():
             """Tombstones (by note seq), then items in order, built and verified as the page needs them; `passed`
@@ -691,8 +745,12 @@ def query_notes(conn, actor: Actor, *, for_model: bool, book=None, sets=("curren
                     if n.seq not in kept[root]:
                         continue
                 if in_sets:
-                    yield "items", _item(n, is_current, recurrence.get(n.seq, 0), graph, for_model,
-                                         counted.get(n.seq, {})), key(n)
+                    item = _item(n, is_current, recurrence.get(n.seq, 0), graph, for_model, counted.get(n.seq, {}))
+                    if named is not None:
+                        item["standing_seq"] = n.standing_seq
+                    if many is not None:
+                        item["paths"] = hits[n.seq]
+                    yield "items", item, key(n)
                 elif why in ("code", "needs_context"):
                     passed.append((key(n), why))
 
@@ -794,7 +852,7 @@ def neighbours(conn, actor: Actor, *, for_model: bool, ref: str, types=None, dep
                                (root_book, root_id, w)).fetchone()
             if row is None:
                 raise gate.NotFound(ref)
-            loaded = _load(conn, books, w, ctx, seqs=[row[0]], blocks=for_model)
+            loaded = _load(conn, books, w, [ctx.path], seqs=[row[0]], blocks=for_model)
             if not loaded:
                 raise gate.NotFound(ref)
             root = loaded[0]
@@ -809,7 +867,7 @@ def neighbours(conn, actor: Actor, *, for_model: bool, ref: str, types=None, dep
             links = _links(conn, frontier, passage if level == 0 else None, direction, types, w)
             fresh = sorted({s for _, src, _t, dst, _p in links for s in (src, dst) if s is not None} - set(evaluated))
             if fresh:
-                loaded = _load(conn, books, w, ctx, seqs=fresh, blocks=for_model)
+                loaded = _load(conn, books, w, [ctx.path], seqs=fresh, blocks=for_model)
                 _citations(conn, loaded, read, targets)
                 # code statuses only for a note that can be a node: they can only drop it from the sets
                 _verify(verifier, [n for n in loaded if _placement(n, ctx, w, sets, False)[0]])
@@ -937,7 +995,7 @@ def open_note(conn, actor: Actor, *, for_model: bool, ref: str, repo=None, branc
         pre = _read(conn, actor)
         read = pre.objects("read")
         targets = _targets(conn, [book], ctx)
-        note = _load(conn, [book], w, ctx, seqs=[row[0]], blocks=for_model)[0]
+        note = _load(conn, [book], w, [ctx.path], seqs=[row[0]], blocks=for_model)[0]
         _citations(conn, [note], read, targets)
         _verify(coderepo.Verifier(conn, targets), [note])
         graph = _graph(conn, [note.seq], read, w)
@@ -997,8 +1055,9 @@ def register_mcp(mcp, deps) -> None:
     @deps.mcp_errors
     async def query_notes(book: list[str] | None = None, sets: list[str] = ["current"],  # noqa: B006
                           kind: list[str] | None = None, role: list[str] | None = None,
-                          origin: list[str] | None = None, class_key: str | None = None, repo: str | None = None,
-                          branch: str | None = None, path: str | None = None, commit: str | None = None,
+                          origin: list[str] | None = None, class_key: str | None = None,
+                          refs: list[str] | None = None, repo: str | None = None, branch: str | None = None,
+                          path: str | None = None, paths: list[str] | None = None, commit: str | None = None,
                           commits: str | None = None, written_after: str | None = None,
                           written_before: str | None = None, since: int | None = None, text: str | None = None,
                           unfixed: bool = False, collapse: bool = False, include_unverified: bool = False,
@@ -1006,8 +1065,9 @@ def register_mcp(mcp, deps) -> None:
                           as_of: int | None = None, cursor: str | None = None) -> CallToolResult:
         """List agent notes in the journals you may read (needs read on each journal): fast SQL filters, no model
         call. `sets`: current (approved, in your context), open (pending, not accepted), history. Context: repo,
-        branch, path, commit. Use `since` with the last watermark to get changes and `left` tombstones; `cursor` for
-        the next page."""
+        branch, path (or `paths`: up to 20, each item names the paths it matches), commit. `refs` (up to 50 note
+        references): only these notes, each with `standing` and `standing_seq`. Use `since` with the last watermark to
+        get changes and `left` tombstones; `cursor` for the next page."""
         args, labels = {k: v for k, v in locals().items() if k in _PARAMS[_QUERY]}, {}  # the tool arguments
         return deps.handled(await run_in_threadpool(lambda: run(_QUERY, labels, **args)), labels)
 
@@ -1046,8 +1106,9 @@ def _query_args(p) -> dict:
     def many(name, default=None):
         return p.getlist(name) or default
     return {"book": many("book"), "sets": many("sets", ["current"]), "kind": many("kind"), "role": many("role"),
-            "origin": many("origin"), "class_key": p.get("class_key"), "repo": p.get("repo"),
-            "branch": p.get("branch"), "path": p.get("path"), "commit": p.get("commit"), "commits": p.get("commits"),
+            "origin": many("origin"), "class_key": p.get("class_key"), "refs": many("refs"), "repo": p.get("repo"),
+            "branch": p.get("branch"), "path": p.get("path"), "paths": many("paths"), "commit": p.get("commit"),
+            "commits": p.get("commits"),
             "written_after": p.get("written_after"), "written_before": p.get("written_before"),
             "since": number("since"), "text": p.get("text"), "unfixed": flag("unfixed"),
             "collapse": flag("collapse"), "include_unverified": flag("include_unverified"),
