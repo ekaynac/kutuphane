@@ -752,9 +752,11 @@ request on the same data gives the same bytes.
 | `role` | list of strings | no | none | `rule`, `evidence`. |
 | `origin` | list of strings | no | none | `human`, `assisted`, `model`, `unknown`: the shown origin (section 5.16). |
 | `class_key` | string | no | none | As `propose_note`. |
+| `refs` | list of strings | no | none | 1–50 note references (`book@nt_…`). Only these notes. Each item also has `standing_seq`: the event of its effective Standing (`null` before the first event). A note that you may not read is left out without an error. The other filters and `sets` still apply: to get the Standing of any named note, give `sets: ["current", "open", "history"]`. |
 | `repo` | string | no | none | The context: a repository slug. |
 | `branch` | string | no | none | The context: a branch. Without `commit`, its head is the code target. |
-| `path` | string | no | none | The context: one path, or a folder prefix that ends with `/`. |
+| `path` | string | no | none | The context: one path, or a folder prefix that ends with `/`. A folder prefix matches a scope glob only when a file below the folder can match it: `*.log` matches only files in the root folder, so it does not match `src/`. |
+| `paths` | list of strings | no | none | 1–20 context paths, as `path` (`path`, if given, is one more). One query, one budget, one order. A note is in the result when one path puts it in `sets`; the scope rule for each path is the same as for `path`. Each item also has `paths`: the context paths that put it in `sets`. |
 | `commit` | string | no | none | The context: a full commit id. Needs `repo`. |
 | `commits` | string | no | none | `A..B` with two full commit ids. Notes whose observed commit is in that range. Needs `repo`. At most 10,000 commits. |
 | `written_after` | string | no | none | ISO 8601 time. Without a time zone, UTC. |

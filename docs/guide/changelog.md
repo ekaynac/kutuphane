@@ -9,6 +9,12 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Note query: folder scope, `refs` and `paths` (#152, #155, #153)
+
+- Fixed: a folder prefix in `path` (it ends with `/`) matched every note whose scope glob has no literal head, for example `*.log` matched `src/`. Now a folder matches a glob only when a file below the folder can match it, with the glob rules of the write path (`*` and `?` do not match `/`) ([mcp.md](mcp.md#513-query_notes)) ([#152](https://github.com/ekaynac/kutuphane/issues/152)).
+- New: `refs` on `query_notes` and `GET /v1/notes` (1–50 note references): only these notes, with `standing` and the new item key `standing_seq` (the event of the effective Standing). Notes that you may not read are left out without an error; the other filters still apply. The `propose_note` receipt does not change ([mcp.md](mcp.md#513-query_notes)) ([#155](https://github.com/ekaynac/kutuphane/issues/155)).
+- New: `paths` on `query_notes` and `GET /v1/notes` (1–20 context paths, with `path`): one query, one budget, one order. The scope rule for each path does not change. Each item has `paths`, the context paths that put it in the sets ([mcp.md](mcp.md#513-query_notes)) ([#153](https://github.com/ekaynac/kutuphane/issues/153)).
+
 ### Astra review #20 fixes
 
 - Changed: the package status (`POST /v1/packages`, `GET /v1/packages/{id}`, `submit_package`, `package_status`) gives `diff` only with a current `read` on the book; else `diff` is `null`. Before, `propose` alone listed the files of the receiving catalog ([http-api.md](http-api.md#132-get-v1packagesid)).

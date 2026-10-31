@@ -557,6 +557,8 @@ List notes in the journals that you may read. No model call. MCP: `query_notes`
 | `origin` | none | Repeat for more: `human`, `assisted`, `model`, `unknown` (the shown origin). |
 | `class_key` | none | |
 | `repo`, `branch`, `path`, `commit` | none | The context. |
+| `paths` | none | Repeat for more: 1–20 context paths, as `query_notes` `paths`. |
+| `refs` | none | Repeat for more: 1–50 note references, as `query_notes` `refs`. |
 | `commits` | none | `A..B`. Needs `repo`. |
 | `written_after`, `written_before` | none | ISO 8601 times. |
 | `since` | none | An integer watermark. |

@@ -201,6 +201,67 @@ def test_scope_branch_and_path_globs(mem):  # T22
     assert refs(q(mem, repo="other")) == []
 
 
+def test_a_folder_matches_only_when_a_file_below_it_could_match(mem):  # #152
+    mem.execute("INSERT INTO code_repo (book, slug, git_dir, object_format, refs, added_by) "
+                "VALUES ('mem', 'adc', '/nonexistent', 'sha1', '{refs/heads/*}', 'user:admin')")
+    root = approved(mem, "mem", "root logs", "finding", repo="adc", paths=["*.log"])
+    py = approved(mem, "mem", "python below src", "finding", repo="adc", paths=["src/**/*.py"])
+    assert refs(q(mem, repo="adc", path="src/")) == [ref(mem, py)]
+    assert refs(q(mem, repo="adc", path="src/a/")) == [ref(mem, py)]
+    assert refs(q(mem, repo="adc", path="docs/")) == []
+    assert not notesquery._glob_prefix_ok("*.log", "src/")
+    assert notesquery._glob_prefix_ok("src/*", "src/") and not notesquery._glob_prefix_ok("src/*", "src/a/")
+    assert notesquery._glob_prefix_ok("**/x.py", "a/b/") and notesquery._glob_prefix_ok("s?c/**", "src/")
+    assert not notesquery._glob_prefix_ok("src/a.py", "src/a.py/")
+    assert refs(q(mem, repo="adc", path="x.log")) == [ref(mem, root)]
+
+
+def test_refs_give_the_standing_of_named_readable_notes(mem):  # #155
+    journal(mem, "hidden", readers=(V,))
+    a = approved(mem, "mem", "approved one")
+    b = note(mem, "mem", "still pending")
+    c = approved(mem, "mem", "later retired")
+    retired = standing(mem, c, "retired")
+    other = approved(mem, "mem", "not named")
+    secret = approved(mem, "hidden", "not readable")
+    named = [ref(mem, s) for s in (a, b, c, secret)]
+    out = q(mem, refs=named, sets=["current", "open", "history"])
+    got = {i["ref"]: (i["standing"], i["standing_seq"]) for i in out["items"]}
+    a_seq = mem.execute("SELECT max(seq) FROM standing_event WHERE note_seq = %s", (a,)).fetchone()[0]
+    assert got == {ref(mem, a): ("approved", a_seq), ref(mem, b): ("pending", None),
+                   ref(mem, c): ("retired", retired)}
+    assert ref(mem, other) not in got
+    assert refs(q(mem, refs=named)) == [ref(mem, a)]  # combines with sets
+    assert refs(q(mem, refs=named, sets=["open"], kind=["convention"])) == []
+    assert "standing_seq" not in q(mem)["items"][0]
+    for bad in ([], ["nope"], [f"mem@nt_{i:064x}" for i in range(51)]):
+        with pytest.raises(ValueError):
+            q(mem, refs=bad)
+
+
+def test_paths_give_one_budget_and_order(mem):  # #153
+    mem.execute("INSERT INTO code_repo (book, slug, git_dir, object_format, refs, added_by) "
+                "VALUES ('mem', 'adc', '/nonexistent', 'sha1', '{refs/heads/*}', 'user:admin')")
+    a = approved(mem, "mem", "a only", "finding", repo="adc", paths=["a/*.py"])
+    b = approved(mem, "mem", "b only", "finding", repo="adc", paths=["b/*.py"])
+    both = approved(mem, "mem", "both", "finding", repo="adc", paths=["**/*.py"])
+    approved(mem, "mem", "neither", "finding", repo="adc", paths=["c/*.py"])
+    out = q(mem, repo="adc", paths=["a/x.py", "b/"])
+    assert refs(out) == [ref(mem, both), ref(mem, b), ref(mem, a)]
+    assert {i["ref"]: i["paths"] for i in out["items"]} == {
+        ref(mem, both): ["a/x.py", "b/"], ref(mem, b): ["b/"], ref(mem, a): ["a/x.py"]}
+    assert refs(q(mem, repo="adc", path="a/x.py", paths=["b/"])) == refs(out)
+    single = q(mem, repo="adc", path="a/x.py")
+    assert refs(single) == [ref(mem, both), ref(mem, a)] and "paths" not in single["items"][0]
+    rule = approved(mem, "mem", "a rule", "convention", repo="adc", paths=["a/*.py"])
+    assert ref(mem, rule) not in refs(q(mem, repo="adc", kind=["convention"]))  # needs_context, as before
+    assert refs(q(mem, repo="adc", kind=["convention"], paths=["b/x.py", "a/y.py"])) == [ref(mem, rule)]
+    with pytest.raises(ValueError):
+        q(mem, repo="adc", paths=[f"p{i}.py" for i in range(21)])
+    with pytest.raises(ValueError):
+        q(mem, repo="adc", paths=[])
+
+
 def test_search_false_journal(conn):  # T14
     journal(conn, "quiet", search=False)
     seq = approved(conn, "quiet", "Kayıtlar saklanır")
@@ -559,11 +620,16 @@ def test_tools_routes_and_open_citation(mem, keys, verifier):  # §9.4, §13
         assert c["note"]["text"] == "over the wire" and c["note"]["current"] is True
         assert client.get("/v1/notes", params={"order": "x"}, headers=bearer(keys)).status_code == 400
         assert client.get("/v1/notes", headers=bearer(keys, sub="mehmet")).json()["items"] == []
+        r = client.get("/v1/notes", params=[("sets", "open"), ("refs", ref(mem, pending)), ("refs", ref(mem, seq)),
+                                            ("paths", "a.py"), ("paths", "b/")], headers=bearer(keys))
+        assert [(i["ref"], i["standing_seq"], i["paths"]) for i in r.json()["items"]] == [
+            (ref(mem, pending), None, ["a.py", "b/"])]
     mcp = server.build_mcp(dsn=dsn, verifier=verifier, bridge=None, model=None, public_url=PUBLIC)
     names = [t.name for t in asyncio.run(mcp.list_tools())]
     assert names.index("query_notes") < names.index("neighbours")
     claims = asyncio.run(server._Verifier(verifier).verify_token(token(keys, act={"sub": "kobra-7"}))).claims
     assert refs(_tool(mcp, claims, "query_notes", {"sets": ["open"]})) == [ref(mem, pending)]
+    assert refs(_tool(mcp, claims, "query_notes", {"refs": [ref(mem, seq)], "paths": ["x.py"]})) == [ref(mem, seq)]
     assert _tool(mcp, claims, "open_citation", {"handle": ref(mem, seq)})["note"]["ref"] == ref(mem, seq)
 
 
