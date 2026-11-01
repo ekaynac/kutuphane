@@ -245,8 +245,6 @@ SELECT n.seq, n.book, n.id, n.kind, n.body, n.class_key, n.scope_repo, n.scope_b
        n.observed_commit, n.written_at, n.ai_input AND j.ai_input,
        ARRAY(SELECT cardinality(n.scope_path_re) = 0 OR EXISTS (SELECT 1 FROM unnest(n.scope_path_re) r WHERE u.p ~ r)
                FROM unnest(%(paths)s::text[]) WITH ORDINALITY AS u(p, i) ORDER BY u.i),
-       (SELECT CASE WHEN bool_or(wr.origin = 'model') THEN 'model' ELSE 'unknown' END FROM write_record wr
-         WHERE wr.note_seq = n.seq AND wr.action = 'propose' AND wr.seq <= %(w)s),
        CASE WHEN %(text)s::text IS NULL THEN 0
             ELSE ts_rank_cd(n.tsv, websearch_to_tsquery(%(cfg)s::regconfig, %(text)s::text), %(norm)s) END,
        CASE WHEN %(blocks)s THEN note_skill_blocked(n.seq) ELSE false END,
@@ -274,14 +272,13 @@ def _load(conn, books, w: int, paths: list, *, seqs=None, refs=None, kinds=None,
         "books": sorted(books), "w": w, "seqs": seqs, "refs": refs, "kinds": kinds, "class_key": class_key,
         "after": after, "before": before, "text": text, "cfg": profiles.FTS_CONFIG, "norm": RANK_NORMALIZATION,
         "paths": files, "blocks": blocks}).fetchall()
-    out = [Note(*r[:12], dict(zip(files, r[12])), origin=r[13], rank=float(r[14]), w=w, skill_blocked=r[15],
-                approved_by=r[16], applies_to=r[17]) for r in rows]
+    shown = origins.shown(conn, [r[0] for r in rows], w)  # docs/25 §7.6: a live R3 confirmation counts
+    out = [Note(*r[:12], dict(zip(files, r[12])), origin=shown[r[0]][0], rank=float(r[13]), w=w,
+                skill_blocked=r[14], approved_by=r[15], applies_to=r[16],
+                entered_by=shown[r[0]][1], confirmed_by=shown[r[0]][2]) for r in rows]
     standing = notes.effective_standing(conn, [n.seq for n in out], w)
     for n in out:
         n.standing, n.standing_seq = standing[n.seq]
-    shown = origins.shown(conn, [n.seq for n in out], w)  # docs/25 §7.6: a live R3 confirmation counts
-    for n in out:
-        n.origin, n.entered_by, n.confirmed_by = shown[n.seq]
     return out
 
 
