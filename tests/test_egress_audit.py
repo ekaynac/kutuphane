@@ -7,7 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from kutuphane import audit, authz, catalog, gate, llmdap
+from kutuphane import audit, authz, catalog, gate, llmdap, profiles
 from kutuphane.gate import Actor
 from kutuphane.policy import make_policy
 from kutuphane.source import read_source
@@ -129,7 +129,7 @@ def ask(conn, bridge, actor, books=()):
 def test_call_is_recorded_and_joined_with_llmdap_audit(conn, fake, okf_dir):  # AT-09 (Core side)
     r = catalog.publish(conn, book="kitap", title="kitap", files=read_source(okf_dir),
                         policy=make_policy(sensitivity="normal", egress="local_only", protection="standard"),
-                        profile=catalog.whole_profile())
+                        profile=profiles.spec("whole"))
     authz.grant(conn, "book:kitap", "read", "user:ayse")
     actor = Actor("user:ayse")
     gate.deliver_file(conn, actor, "kitap", r.content_id, "index.md")
@@ -170,7 +170,7 @@ def test_local_only_book_never_reaches_a_cloud_route(conn, fake, okf_dir):  # E5
     for book, egress in (("yerel", "local_only"), ("acik", "cloud_ok")):
         catalog.publish(conn, book=book, title=book, files=read_source(okf_dir),
                         policy=make_policy(sensitivity="normal", egress=egress, protection="standard"),
-                        profile=catalog.whole_profile())
+                        profile=profiles.spec("whole"))
     actor = Actor("user:ayse")
     before = len(fake.hits)
     with pytest.raises(llmdap.EgressError, match="yerel"):
@@ -259,7 +259,7 @@ def test_every_call_names_a_purpose_from_the_fixed_list(conn, fake, purpose):  #
 def test_explain_accepts_the_callers_correlation_id(conn, fake, okf_dir):  # #156
     r = catalog.publish(conn, book="kitap", title="kitap", files=read_source(okf_dir),
                         policy=make_policy(sensitivity="normal", egress="local_only", protection="standard"),
-                        profile=catalog.whole_profile())
+                        profile=profiles.spec("whole"))
     authz.grant(conn, "book:kitap", "read", "user:ayse")
     actor = Actor("user:ayse", caller_correlation_id="im-req:0042")
     gate.deliver_file(conn, actor, "kitap", r.content_id, "index.md")

@@ -30,10 +30,6 @@ from .policy import check_policy
 from .source import SourceFile
 
 
-def whole_profile() -> dict:
-    return profiles.spec("whole")
-
-
 @dataclass(frozen=True)
 class Published:
     book: str

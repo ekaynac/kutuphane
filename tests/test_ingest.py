@@ -15,7 +15,7 @@ POLICY = make_policy(sensitivity="normal", egress="local_only", protection="stan
 
 def publish(conn, path, book="kitap", policy=POLICY):
     return catalog.publish(conn, book=book, title=book, files=read_source(path), policy=policy,
-                           profile=catalog.whole_profile())
+                           profile=profiles.spec("whole"))
 
 
 def test_okf_bundle_gets_three_ids(conn, okf_dir):
@@ -221,7 +221,7 @@ def test_accepted_finding_is_narrow_and_on_record(conn, okf_dir):  # Astra #9: a
     with pytest.raises(SourceError, match="matches no finding"):               # another file's acceptance
         read_source(okf_dir, [aws, assigned, _accept("index.md", data, "jwt")])
     files = read_source(okf_dir, [aws, assigned])
-    r = catalog.publish(conn, book="kitap", title="kitap", files=files, policy=POLICY, profile=catalog.whole_profile())
+    r = catalog.publish(conn, book="kitap", title="kitap", files=files, policy=POLICY, profile=profiles.spec("whole"))
     record = [{"path": "belgeler/ornek.md", "sha256": hashlib.sha256(data).hexdigest(), "rule": rule}
               for rule in ("assigned-credential", "aws-access-key")]
     assert r.accepted_findings == record
@@ -271,7 +271,7 @@ def test_personal_data_findings_are_recorded_and_do_not_refuse_a_local_book(conn
     (okf_dir / "nobet.md").write_text(PERSONAL_DOC, encoding="utf-8")
     files = read_source(okf_dir)
     digest = hashlib.sha256((okf_dir / "nobet.md").read_bytes()).hexdigest()
-    r = catalog.publish(conn, book="kitap", title="kitap", files=files, policy=POLICY, profile=catalog.whole_profile())
+    r = catalog.publish(conn, book="kitap", title="kitap", files=files, policy=POLICY, profile=profiles.spec("whole"))
     record = [{"path": "nobet.md", "sha256": digest, "rule": rule, "lines": lines}
               for rule, lines in (("email", [3]), ("phone", [5]), ("private-ipv4", [5]))]
     assert r.data_findings == record and r.accepted_findings == []
@@ -437,7 +437,7 @@ def test_pdf_three_ids_and_one_byte(conn, tmp_path):  # AT-01 for PDF
 def test_publish_validates_policy_itself(conn, okf_dir, bad):  # AT-16 at the shared boundary
     with pytest.raises(PolicyError):
         catalog.publish(conn, book="kitap", title="kitap", files=read_source(okf_dir), policy=bad,
-                        profile=catalog.whole_profile())
+                        profile=profiles.spec("whole"))
     assert conn.execute("SELECT count(*) FROM book").fetchone()[0] == 0
 
 

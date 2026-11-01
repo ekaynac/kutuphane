@@ -69,14 +69,11 @@ class BadRequest(ValueError):
 
 
 def parse_citation(handle: str) -> search.Citation:
-    """`book@ct_…/pf_…/path#ordinal`; the path may contain '/' but is validated like any stored path."""
+    """`book@ct_…/pf_…/path#ordinal`, parsed by the one passage-handle rule (`notes.parse_passage`)."""
     try:
-        head, ordinal = handle.rsplit("#", 1)
-        book, rest = head.split("@", 1)
-        content_id, profile_id, path = rest.split("/", 2)
-        return search.Citation(book, content_id, profile_id, normalize_path(path), int(ordinal))
-    except ValueError:
-        raise BadRequest("malformed citation handle") from None
+        return notes.parse_passage(handle)
+    except ValueError as e:
+        raise BadRequest(str(e)) from None
 
 
 # --- shared operations (HTTP and MCP call the same code) ---------------------------------------------------

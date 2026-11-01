@@ -436,7 +436,7 @@ approved the version of the handle (section 5.18); it is `null` for a version wi
 
 The result `_meta` has the handling labels (section 4.4). For a note, they cover its journal and its source books.
 
-**Errors:** `400` (`malformed citation handle`, or a context value not valid), `403`, `404`, `409`.
+**Errors:** `400` (`malformed passage handle`, or a context value not valid), `403`, `404`, `409`.
 
 ```json
 {"jsonrpc": "2.0", "id": 3, "method": "tools/call",

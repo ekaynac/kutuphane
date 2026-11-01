@@ -102,8 +102,8 @@ def test_agent_proposes_human_and_the_person_confirms_verbatim(env):  # R1
     assert query(env, origin=["human"]).keys() == {r["ref"]} and query(env, origin=["model"]) == {}
     assert env.execute("SELECT origin FROM write_record WHERE note_seq = %s",
                        (seq_of(env, r["ref"]),)).fetchone()[0] == "model"     # the write record never changes
-    info = notes.item_info(env, seq_of(env, r["ref"]))
-    assert (info["origin"], info["entered_by"], info["confirmed_by"]) == ("human", A, U)
+    seq = seq_of(env, r["ref"])
+    assert origin.shown(env, [seq], None)[seq] == ("human", A, U)
     assert passkey.verify_acts(env, CFG)["problems"] == []
     assert c.get("/api/requests").json()["items"] == []   # confirmed: no longer waiting
 
@@ -139,7 +139,8 @@ def test_the_decision_export_shows_the_confirmed_origin(env):  # R1, §7.6
     records, _ = decisions.export(env, Actor(U), [J])
     assert records[0]["actor"]["origin"] == "assisted"
     assert (records[0]["actor"]["entered_by"], records[0]["actor"]["confirmed_by"]) == (A, U)
-    assert notes.item_info(env, seq_of(env, r["ref"]))["reviewed_by"] == U
+    seq = seq_of(env, r["ref"])
+    assert origin.details(*origin.shown(env, [seq], None)[seq]) == {"reviewed_by": U}
 
 
 # --- R2: another person ----------------------------------------------------------------------------------------

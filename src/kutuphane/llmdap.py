@@ -29,7 +29,6 @@ TIMEOUT_SECONDS = 120
 CHAT_PATH = "/v1/chat/completions"  # openai schema on the bridge route
 EMBED_PATH = "/v1/embeddings"       # openai schema on an LLMDAP `surface: "embeddings"` route
 RERANK_PATH = "/v1/rerank"          # openai-compatible schema on an LLMDAP `surface: "rerank"` route (#236)
-SYSTEMONE_PATH = "/v1/systemone"    # typed decisions on an LLMDAP `schema: "systemone"` route (D44, #225)
 # #165: every call names one of these as `x-llmdap-purpose`, so one shared LLMDAP chain (D76) tells our calls apart.
 # The product is the LLMDAP subject (`svc-kutuphane`), so the names carry no product prefix.
 PURPOSES = ("answer", "search", "index", "translate", "rerank", "note", "decide", "health")
@@ -176,13 +175,6 @@ def chat(conn, bridge: Bridge, actor: Actor, *, model: str, messages: list[dict]
     return _post(conn, bridge, actor, CHAT_PATH, {**(options or {}), "model": model, "messages": messages,
                                                   "stream": False},
                  model=model, source_books=source_books, purpose=purpose)
-
-
-def systemone(conn, bridge: Bridge, actor: Actor, *, model: str, body: dict, source_books: list[str],
-              purpose: str) -> dict:
-    """A typed decision on an LLMDAP `schema: "systemone"` route (D44: choice questions, class probabilities)."""
-    return _post(conn, bridge, actor, SYSTEMONE_PATH, {**body, "model": model}, model=model,
-                 source_books=source_books, purpose=purpose)
 
 
 def embed(conn, embedder: Routed, actor: Actor, texts: list[str], *, source_books: list[str],

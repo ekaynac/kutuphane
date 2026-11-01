@@ -23,7 +23,7 @@ def book(conn, okf_dir):
     (okf_dir / "skills" / "ozet.md").write_text("---\ntype: skill\n---\nÖzetle.\n", encoding="utf-8")
     r = catalog.publish(conn, book=BOOK, title=BOOK, files=read_source(okf_dir),
                         policy=make_policy(sensitivity="normal", egress="local_only", protection="standard"),
-                        profile=catalog.whole_profile())
+                        profile=profiles.spec("whole"))
     return r.content_id
 
 
@@ -273,7 +273,7 @@ def test_crlf_and_bom_frontmatter_still_marks_instruction(conn, okf_dir):  # AT-
     (okf_dir / "bom.md").write_bytes("﻿---\ntype: prompt\n---\nYap.\n".encode())
     r = catalog.publish(conn, book="crlf", title="crlf", files=read_source(okf_dir),
                         policy=make_policy(sensitivity="normal", egress="local_only", protection="standard"),
-                        profile=catalog.whole_profile())
+                        profile=profiles.spec("whole"))
     authz.grant(conn, "book:crlf", "read", A)
     for path in ("crlf.md", "bom.md"):
         with pytest.raises(Denied, match="activate"):
@@ -287,7 +287,7 @@ def test_access_log_records_policy_in_force_at_delivery(conn, conn2, book, okf_d
 
     def repolicy():
         catalog.publish(conn2, book=BOOK, title=BOOK, files=read_source(okf_dir), policy=restricted,
-                        profile=catalog.whole_profile())
+                        profile=profiles.spec("whole"))
     before = catalog.current_policy(conn, BOOK)
     _revoke_during_fetch(monkeypatch, repolicy)
     actor = Actor(U)
@@ -305,7 +305,7 @@ OTHER = "book:ikinci"
 def two_books(conn, book, okf_dir):
     catalog.publish(conn, book="ikinci", title="ikinci", files=read_source(okf_dir),
                     policy=make_policy(sensitivity="normal", egress="local_only", protection="standard"),
-                    profile=catalog.whole_profile())
+                    profile=profiles.spec("whole"))
     conn.execute("CREATE TABLE probe_write (n integer)")
     authz.grant(conn, OBJ, "read", U)
     authz.grant(conn, OTHER, "read", U)
