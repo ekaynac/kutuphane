@@ -43,7 +43,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import (answers, catalog, coderepo, confirm, db, gate, handling, identity, ids, jobs, kstd, llmdap,
+from . import (answers, authz, catalog, coderepo, confirm, db, gate, handling, identity, ids, jobs, kstd, llmdap,
                notes, notesquery, outcomes, packages, quotes, retrieval, search, skills, snippets)
 from . import health, passagemap
 from .gate import Actor
@@ -163,7 +163,8 @@ def op_citation(dsn, actor: Actor, handle: str, model_reader: bool = False, cont
         key = (c.book, c.content_id, c.profile_id, c.path, c.ordinal)
         return {"citation": c.handle, "page": hit.page, "line": hit.line,
                 **_text(hit.text, item, _for_model(actor, model_reader)),
-                "item": item, "outcomes": outcomes.passage_counts(conn, c),
+                "item": item, "publication": catalog.publications(conn, [key[:3]]).get(key[:3]),  # #160
+                "outcomes": outcomes.passage_counts(conn, c),
                 **passagemap.resolve(conn, [key])[key].out()}  # #140: the passage in the current version
     return _run(dsn, go)
 
@@ -243,6 +244,52 @@ def op_file(dsn, actor: Actor, book: str, content_id: str, path: str,
         if labels_out is not None:
             labels_out.update(handling.labels(conn, [book], [(book, content_id, norm)]))
         return data, entry[0] if entry else "application/octet-stream"
+    return _run(dsn, go)
+
+
+FILES_PAGE, MAX_FILES_PAGE = 100, 500
+
+
+def op_books(dsn, actor: Actor) -> list[dict]:
+    """#159: the books and journals that the caller may read now; a book it may not read is never named. Decided
+    before the read and again before delivery; one `list_books` event per listed book."""
+    def go(conn):
+        def readable(verdict: authz.Allowed) -> set[str]:
+            return {o.removeprefix("book:") for o in verdict.objects("read") if o.startswith("book:")}
+        rows = catalog.books(conn, readable(authz.allowed(conn, actor.principal, actor.on_behalf_of, ["read"])))
+        final = authz.allowed(conn, actor.principal, actor.on_behalf_of, ["read"])
+        out = [b for b in rows if b["book"] in readable(final)]
+        for b in out:
+            obj = f"book:{b['book']}"
+            gate.log_event(conn, actor, "list_books", obj, "read", final.decisions[obj]["read"],
+                           final.policies.get(obj), b["content_id"], None)
+        return out
+    return _run(dsn, go)
+
+
+def op_book_files(dsn, actor: Actor, book: str, cursor: str | None = None, limit: int = FILES_PAGE) -> dict:
+    """#159: a page of the files of the book's current version, with their kstd item information, behind the book
+    gate of `read_document` (an unreadable book is refused as a missing one). `next_cursor`: the `cursor` of the
+    next page, or None."""
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= MAX_FILES_PAGE:
+        raise BadRequest(f"limit must be an integer from 1 to {MAX_FILES_PAGE}")
+    if cursor is not None and not isinstance(cursor, str):
+        raise BadRequest("cursor must be a string")
+
+    def go(conn):
+        def fetch():
+            row = conn.execute("SELECT current_content, current_profile FROM book WHERE slug = %s",
+                               (book,)).fetchone()
+            if row is None or row[0] is None:  # a journal has notes, no files
+                raise gate.NotFound(f"{book}: no content version")
+            return row[0], row[1], catalog.files_page(conn, book, row[0], row[1], cursor, limit + 1)
+        content_id, profile_id, page = gate.guard(conn, actor, f"book:{book}", ["read"], fetch, action="list_files",
+                                                  content_of=lambda found: found[0])
+        rights, key = kstd.Rights(conn), (book, content_id, profile_id)
+        files = [{**f, "item": rights.info(book, content_id, f["path"])} for f in page[:limit]]
+        return {"book": book, "content_id": content_id, "profile_id": profile_id,
+                "publication": catalog.publications(conn, [key]).get(key), "files": files,
+                "next_cursor": files[-1]["path"] if len(page) > limit else None}
     return _run(dsn, go)
 
 
@@ -439,6 +486,18 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
         return Response(data, media_type=media_type, headers={"X-Content-Type-Options": "nosniff",
                                                               "Content-Disposition": "attachment"})
 
+    async def h_books(_request, actor):
+        return JSONResponse({"books": await run_in_threadpool(op_books, dsn, actor)})
+
+    async def h_book_files(request, actor):
+        q = request.query_params
+        try:
+            limit = int(q.get("limit", FILES_PAGE))
+        except ValueError:
+            raise BadRequest("limit must be an integer") from None
+        return JSONResponse(await run_in_threadpool(op_book_files, dsn, actor, request.path_params["book"],
+                                                    q.get("cursor"), limit))
+
     async def h_health(_request):
         return JSONResponse({"ok": True})
 
@@ -480,6 +539,8 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
         Route("/v1/jobs/{job_id}/result", endpoint(h_job_result)),
         Route("/v1/jobs/{job_id}/cancel", endpoint(h_job_cancel), methods=["POST"]),
         Route("/v1/files/{book}/{content_id}/{path:path}", endpoint(h_file)),
+        Route("/v1/books", endpoint(h_books)),
+        Route("/v1/books/{book}/files", endpoint(h_book_files)),
         *(route for f in features if hasattr(f, "http_routes") for route in f.http_routes(deps, endpoint)),
         Mount("/", app=mcp_http_app(mcp, public_url)),  # serves /mcp and the protected-resource metadata
     ], lifespan=lifespan)
@@ -755,6 +816,22 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
         if media_type not in TEXT_TYPES:
             raise BadRequest("not a text document; use search_library and open_citation for its passages")
         return _handled(data.decode("utf-8"), labels, structured=True)
+
+    @mcp.tool()
+    @_mcp_errors
+    async def list_books() -> list[dict]:
+        """The books and journals you may read now (needs read; a book you may not read is not named): kind (book
+        or journal), the current content_id and profile_id, and its publication (who approved it, the channel
+        ingest or import, for a package the issuer key and the sequence)."""
+        return await run_in_threadpool(op_books, dsn, _mcp_actor())
+
+    @mcp.tool()
+    @_mcp_errors
+    async def list_files(book: str, cursor: str | None = None, limit: int = FILES_PAGE) -> dict:
+        """The files of a book's current version, a page at a time (needs read on the book): path, digest, size,
+        passage count and the kstd item (license, ai_use, personal_data, origin, validity, applies_to). Pass
+        `next_cursor` as `cursor` for the next page; read_document reads a text file."""
+        return await run_in_threadpool(op_book_files, dsn, _mcp_actor(), book, cursor, limit)
 
     if answering:
         @mcp.tool()

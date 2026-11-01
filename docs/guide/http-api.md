@@ -111,6 +111,8 @@ The ingress proxy (`deploy/nginx.conf`) accepts a body of at most 1 MiB (`413` a
 | `GET` | `/v1/jobs/{job_id}/result` | bearer | The answer of a succeeded job. | `200` |
 | `POST` | `/v1/jobs/{job_id}/cancel` | bearer | Cancel a background job. | `200` |
 | `GET` | `/v1/files/{book}/{content_id}/{path}` | bearer | Download a file of one version. | `200` |
+| `GET` | `/v1/books` | bearer | The books and journals that you may read. | `200` |
+| `GET` | `/v1/books/{book}/files` | bearer | The files of a book's current version, a page at a time. | `200` |
 | `POST` | `/v1/notes` | bearer | Write a note into a journal. | `201`, `200` |
 | `POST` | `/v1/notes/links` | bearer | Link a note to a note or a passage. | `201`, `200` |
 | `POST` | `/v1/citations/verify` | bearer | Check code citations. | `200` |
@@ -282,11 +284,15 @@ Open a passage handle, or a note reference. MCP: `open_citation` ([mcp.md](mcp.m
 
 ```json
 {"citation": "runbooks@ct_9f…/pf_41…/backup.md#3", "page": null, "line": 40, "text": "…", "item": null,
+ "publication": {"content_id": "ct_9f…", "published_at": "…", "channel": "ingest", "approved_by": "user:ayse",
+                 "issuer_key": null, "sequence": null},
  "outcomes": {"passed": 2}, "status": "current"}
 ```
 
 `status` is `current`, `moved` (with `moved_to` and `match`) or `stale`: where the passage is in the book's current
-version after a re-index ([mcp.md](mcp.md#52-open_citation)). A passage citation of a note item has the same keys.
+version after a re-index ([mcp.md](mcp.md#52-open_citation)). A passage citation of a note item has the same keys,
+except `publication`. `publication` says who published or approved the version of the handle
+([mcp.md](mcp.md#518-list_books)).
 
 **Response `200` for a note:** `{"citation", "note", "targets", "watermark"}`. `note` is a note item, as in
 `GET /v1/notes`.
@@ -448,6 +454,43 @@ rights of the file must allow AI input.
 ```sh
 curl -s -H "Authorization: Bearer $TOKEN" -o backup.md \
   "$KUTUPHANE_PUBLIC_URL/v1/files/runbooks/ct_9f…/backup.md"
+```
+
+### 7.2 `GET /v1/books`
+
+The books and journals that you may read now. A book that you may not read is not in the list.
+MCP: `list_books` ([mcp.md](mcp.md#518-list_books)), with the same entries and keys.
+
+**Needs:** `read` on each listed book. Each listed book gets one `list_books` event in the audit log.
+
+**Response `200`:** `{"books": [{"book", "title", "kind", "content_id", "profile_id", "policy_id", "publication"}]}`.
+`kind` is `book` or `journal`. `publication` has `content_id`, `published_at`, `channel` (`ingest` or `import`),
+`approved_by`, `issuer_key` and `sequence` (the last two only for `import`). A publication from before migration 045
+has `null` in the last four keys. A journal has `"publication": null`.
+
+**Errors:** `401`.
+
+### 7.3 `GET /v1/books/{book}/files`
+
+The files of the current version of one book, a page at a time, with the kstd item information of each file.
+MCP: `list_files` ([mcp.md](mcp.md#519-list_files)).
+
+**Needs:** `read` on the book, as for 7.1. A book that you may not read and a book that does not exist give the
+same `403`.
+
+| Query parameter | Required | Limits |
+|---|---|---|
+| `cursor` | no | The `next_cursor` of the previous page. |
+| `limit` | no | 1 to 500 files. Default 100. |
+
+**Response `200`:** `{"book", "content_id", "profile_id", "publication", "files", "next_cursor"}`. Each file is
+`{"path", "sha256", "size", "media_type", "passages", "item"}`, sorted by path. `next_cursor` is `null` on the last
+page.
+
+**Errors:** `400` (`limit` not an integer, or out of range), `401`, `403`, `404` (a journal: it has no files).
+
+```sh
+curl -s -H "Authorization: Bearer $TOKEN" "$KUTUPHANE_PUBLIC_URL/v1/books/runbooks/files?limit=50"
 ```
 
 ## 8. Notes (agent memory)

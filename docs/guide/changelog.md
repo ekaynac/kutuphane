@@ -9,6 +9,13 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Catalog read and publication facts (#159, #160)
+
+- New: `GET /v1/books` and the MCP tool `list_books`: the books and journals that you may read now, with `kind` (`book` or `journal`), the current `content_id` and `profile_id`, and `publication`. A book that you may not read is not in the list ([http-api.md](http-api.md#72-get-v1books), [mcp.md](mcp.md#518-list_books)) ([#159](https://github.com/ekaynac/kutuphane/issues/159)).
+- New: `GET /v1/books/{book}/files` and the MCP tool `list_files`: the files of a book's current version, a page at a time (`cursor`, `limit` 1–500), with digest, size, passage count and the kstd item information (licence, `ai_use`, `personal_data`, origin, validity, `applies_to`). It needs `read` on the book; a book that you may not read gives the same `403` as a book that does not exist ([http-api.md](http-api.md#73-get-v1booksbookfiles), [mcp.md](mcp.md#519-list_files)) ([#159](https://github.com/ekaynac/kutuphane/issues/159)).
+- New: each publication records `approved_by` and `channel`: `ingest` (the new `--by` option, default `user:<the CLI user>`) or `import` (the `approve-import --by` decider, with the package's signing key and sequence). The book list, the file list, `open_citation` and `kutuphane show` show them; older publications show `null` ([operations.md](operations.md#2-ingest-a-folder-into-a-book)) ([#160](https://github.com/ekaynac/kutuphane/issues/160)).
+- Migration `045_publication_facts.sql` adds `approved_by`, `channel` and `package_import` to `publication`. No role script changes.
+
 ### Identity and trace: caller correlation id, more issuers, LLMDAP purposes (#156, #157, #165)
 
 - New: send your own correlation id in `X-Correlation-Id` (MCP: `_meta["kutuphane/correlation-id"]`). Kütüphane stores it next to its own id as `caller_correlation_id` in `access_event`, `model_call`, `write_record` and a background job, puts it at the start of the LLMDAP correlation id, and returns both ids on every response (`X-Correlation-Id` + `X-Caller-Correlation-Id`; MCP result `_meta`). A malformed id is `400` (MCP `-32602`). It never decides a right or an idempotency key. `kutuphane explain` accepts either id ([http-api.md](http-api.md#15-correlation-id), [mcp.md](mcp.md#46-correlation-id)) ([#156](https://github.com/ekaynac/kutuphane/issues/156)).

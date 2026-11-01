@@ -328,7 +328,8 @@ def approve(conn, import_id: int, *, by: str, policy: dict, profile: str = "chun
             if unused := sorted(accept - used):
                 raise ValueError(f"--accept-finding {unused[0]} matches no finding of the package")
             published = catalog.publish(conn, book=manifest["book"], title=manifest["title"], files=files,
-                                        policy=policy, profile=profiles.spec(profile))
+                                        policy=policy, profile=profiles.spec(profile), approved_by=by,
+                                        package_import=import_id)
             conn.execute("UPDATE package_sequence SET last_sequence = GREATEST(last_sequence, %s) "
                          "WHERE issuer = %s AND book = %s", (manifest["sequence"], manifest["issuer"], manifest["book"]))
             conn.execute("UPDATE package_import SET status = 'published', decided_by = %s, decided_at = now() "

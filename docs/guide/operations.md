@@ -171,8 +171,13 @@ kutuphane show <slug>
 | `--protection` | `standard` | Required. |
 | `--profile` | `chunked`, `whole` | The reading profile. |
 | `--accept-finding` | `PATH@sha256:DIGEST:RULE` | Accept one reviewed credential-scan finding. Repeatable. |
+| `--by` | a principal, for example `user:ayse` | Who publishes. Default: `user:<the CLI user>`. Recorded in the publication. |
 
 Each `ingest` publishes a new version of the book. `show` lists the current versions and files of a book.
+Each publication records who stood behind it (#160): `approved_by` and `channel` (`ingest`, or `import` for
+`approve-import`, with `--by` as `approved_by`). `show` shows them. The book list (`GET /v1/books`, `list_books`), the
+file list and `open_citation` show them too, and for a package also the signing key and the sequence. A publication
+from before migration 045 shows `null`.
 
 ### What is searched
 

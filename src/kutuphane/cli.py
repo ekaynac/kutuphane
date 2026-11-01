@@ -5,6 +5,7 @@ go through the authorization gate. Network surfaces (API, MCP) arrive in M1e and
 """
 import argparse
 import dataclasses
+import getpass
 import json
 import os
 import sys
@@ -32,7 +33,7 @@ def cmd_ingest(conn, args) -> int:
     files = read_source(Path(args.path), _accepted(args), _names(args))
     embedder, settings = _indexing()  # a configuration error stops here, before anything is published
     result = catalog.publish(conn, book=args.book, title=args.title or args.book, files=files, policy=policy,
-                             profile=profiles.spec(args.profile))
+                             profile=profiles.spec(args.profile), approved_by=args.by or f"user:{getpass.getuser()}")
     for a in result.accepted_findings:  # on record in the publication; say so where a person looks
         print(f"accepted finding (reviewed exception): {a['path']}@sha256:{a['sha256']}:{a['rule']}", file=sys.stderr)
     print(_report_data_findings(result.data_findings), file=sys.stderr)
@@ -665,6 +666,7 @@ def parser() -> argparse.ArgumentParser:
     ing.add_argument("--egress", required=True, choices=EGRESS)
     ing.add_argument("--protection", required=True, choices=PROTECTION_M1)
     ing.add_argument("--profile", choices=("chunked", "whole"), default="chunked")
+    ing.add_argument("--by", help="who publishes, recorded in the publication (default: user:<the CLI user>)")
     _scan_options(ing, "recorded in the publication")
     ing.set_defaults(fn=cmd_ingest)
     ix = sub.add_parser("index", help="give a book's current chunks a vector: copy unchanged ones, embed the rest "
