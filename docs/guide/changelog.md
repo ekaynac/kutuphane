@@ -9,6 +9,12 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Expiry of unused evidence and outcome filters (R1, R2)
+
+- New: `kutuphane note expire [--days N] [--dry-run]` (owner credential; days from `KUTUPHANE_EVIDENCE_EXPIRY_DAYS`, default 90). An `evidence` note whose clock (the last of its write, its last Standing event and its last `passed` outcome) is older than the days gets a system event with the reason `expired`: `pending` becomes `rejected`, `approved` becomes `retired` (a pending note that was approved before: `retired`, D68). `rule` notes never expire. The command is idempotent; run it from a timer ([operations.md](operations.md#expiry-of-unused-evidence-r1)).
+- New: `query_notes` and `GET /v1/notes` take `min_passed` (0–100: at least that many `passed` outcomes) and `exclude_failed` (no note whose latest outcome is `failed` or `reverted`). Both read the outcomes up to the watermark, so the result is deterministic ([mcp.md](mcp.md#512-query_notes), [agent-memory.md](agent-memory.md#7-record-outcomes)).
+- Migration `049_evidence_expiry.sql` allows a system Standing event without a cause only with the reason `expired`, and a trigger allows only the two expiry moves on `evidence` notes. No role script changes.
+
 ### Remove the decider and delegated curate (D73)
 
 - Removed: the decider runner and delegated curate (D73, plan W1-1 option B). The commands `kutuphane decider …` and `kutuphane delegation …`, the curator web **Auto-approval** tab (`/delegations`, `/api/delegations`, `/api/delegations/{id}`), the `delegate` and `end_delegation` passkey actions, `deploy/db-roles-decider.sql`, `deploy/deciders/` and the settings `KUTUPHANE_DECIDER_DSN`, `KUTUPHANE_DECIDER_LLMDAP_KEY`, `KUTUPHANE_DECIDER_BOOKS` and `KUTUPHANE_DELEGATION_MIN_SHADOW` are gone. Only a person approves a note. The tables of migration 025 stay as history; there is no migration ([security.md](security.md#delegated-curate-d73-removed)).

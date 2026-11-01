@@ -49,6 +49,8 @@ CANDIDATE_CHARS = 300
 CANDIDATES_PER_MATCH = 5
 WRITES_ENV, WRITES_DEFAULT = "KUTUPHANE_NOTE_WRITES_PER_DAY", 500
 SIMILARITY_ENV, SIMILARITY_DEFAULT = "KUTUPHANE_NOTE_DUP_SIMILARITY", 0.90
+EXPIRY_ENV, EXPIRY_DEFAULT, MAX_EXPIRY_DAYS = "KUTUPHANE_EVIDENCE_EXPIRY_DAYS", 90, 36500
+EXPIRED = "expired"  # the reason of an expiry event: the only system event without a cause (migration 049)
 MEMORY_LOCK = 0x6B75747570  # pg_advisory_xact_lock key of every memory write
 NOW = 2 ** 63 - 1  # a watermark above every seq: "the rows committed now"
 WITHHELD = "rights do not allow AI input"
@@ -1019,6 +1021,50 @@ def _used(conn, refs: list[str]) -> dict:
     return {"deliveries": [e for e in events.values() if not e["action"].startswith("export")],
             "answers": list(answers.values()),
             "exports": [e for e in events.values() if e["action"].startswith("export")]}
+
+
+# --- expiry of evidence (CLI only, R1, docs/24 §8.4) ---------------------------------------------------------
+
+# The clock of a note is the last of its write, its last Standing event and its last `passed` outcome.
+_STALE = """
+SELECT n.seq, n.book || '@' || n.id FROM note n
+ WHERE n.kind = ANY(%(kinds)s)
+   AND greatest(n.written_at, (SELECT max(at) FROM standing_event e WHERE e.note_seq = n.seq),
+                (SELECT max(at) FROM outcome o WHERE o.note_seq = n.seq AND o.result = 'passed')) < %(cutoff)s
+ ORDER BY n.seq
+"""
+
+
+def expiry_days() -> int:
+    value = os.environ.get(EXPIRY_ENV) or str(EXPIRY_DEFAULT)
+    if not value.isdigit():
+        raise ValueError(f"{EXPIRY_ENV} must be a number of days")
+    return int(value)
+
+
+def expire(conn, *, days: int, dry_run: bool = False, now=None) -> dict:
+    """R1: an evidence note whose clock is more than `days` old gets a system event with the reason `expired` and
+    no cause: pending → rejected (D68: retired if it was ever approved), approved → retired. Rule notes never expire.
+    One correlation id per run. Idempotent: an expired note is out, and an out note never expires. The caller connects
+    with the owner credential. `now` (tests): the time to measure from, else the database's now()."""
+    if type(days) is not int or not 1 <= days <= MAX_EXPIRY_DAYS:
+        raise ValueError(f"days must be an integer in 1..{MAX_EXPIRY_DAYS}")
+    with conn.transaction():
+        _lock(conn)
+        cutoff = conn.execute("SELECT coalesce(%s::timestamptz, now()) - %s * interval '1 day'",
+                              (now, days)).fetchone()[0]
+        stale = conn.execute(_STALE, {"kinds": [k for k, r in KIND_ROLE.items() if r == "evidence"],
+                                      "cutoff": cutoff}).fetchall()
+        was = effective_standing(conn, [s for s, _ in stale], NOW)
+        correlation = uuid.uuid4().hex
+        out = []
+        for seq, ref in stale:
+            before = was[seq][0]
+            if before in ("approved", "pending"):
+                after = _root_move(conn, seq, before)
+                event = None if dry_run else _event(conn, seq, after, "system", EXPIRED, correlation)
+                out.append({"ref": ref, "was": before, "standing": after, "event_seq": event})
+    return {"days": days, "cutoff": cutoff.isoformat(), "dry_run": dry_run, "notes": out}
 
 
 # --- MCP and HTTP (feature hooks, docs/24 §16 P0) ------------------------------------------------------------

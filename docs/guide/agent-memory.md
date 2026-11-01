@@ -109,7 +109,8 @@ gives the error `journal: use query_notes …`.
   target; a note with a `stale`, `missing` or `unverifiable` citation is not current (`excluded.code`).
   `include_unverified: true` shows them with their statuses.
 - **Filters:** `kind`, `role`, `origin`, `class_key`, `written_after`, `written_before`, `commits` (`A..B`), `text`
-  (full text), `unfixed` (findings with no `fixed_by`).
+  (full text), `unfixed` (findings with no `fixed_by`), and the outcome filters `min_passed` (at least n `passed`
+  outcomes) and `exclude_failed` (no note whose latest outcome is `failed` or `reverted`), section 7.
 - **Size:** `budget_tokens` (200–16,000, an estimate) and `max_bytes` (8,192–131,072, hard). Follow `next_cursor`
   until it is null.
 - **Incremental reads:** keep the `watermark`. Next time, send `since: <watermark>`. You get changed `items` and
@@ -192,7 +193,15 @@ When you use a note or passage in a task, record how it went:
 ```
 
 `result` is `passed`, `failed`, `reverted` or `reopened`. You need `propose` and `read` on the item's book. The key
-is required. Reads show the counts as `outcomes`. An outcome never changes Standing.
+is required. Reads show the counts as `outcomes`. An outcome never writes a Standing event, and it changes two things:
+
+- **Filters:** `query_notes` with `min_passed: 2` gives only notes with at least 2 `passed` outcomes;
+  `exclude_failed: true` leaves out each note whose latest outcome is `failed` or `reverted`. The filters read the
+  outcomes up to the watermark, so the same request gives the same bytes.
+- **Expiry:** an `evidence` note that nobody used for 90 days (the operator sets the days) leaves the sets: a
+  pending one becomes `rejected`, an approved one `retired`, with the reason `expired`. Each `passed` outcome, and
+  each Standing event, restarts its clock; `failed`, `reverted` and `reopened` do not. `rule` notes never expire.
+  Your next `query_notes` with `since` returns an expired note in `left`.
 
 ## 8. Decisions and the decision export
 

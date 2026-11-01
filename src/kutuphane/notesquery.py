@@ -630,13 +630,16 @@ def query_notes(conn, actor: Actor, *, for_model: bool, book=None, sets=("curren
                 origin=None, class_key=None, refs=None, repo=None, branch=None, path=None, paths=None, commit=None,
                 platform=None, version=None,
                 commits=None, written_after=None, written_before=None, since=None, text=None, unfixed: bool = False,
-                collapse: bool = False, include_unverified: bool = False, order: str = "newest",
+                collapse: bool = False, include_unverified: bool = False, min_passed: int = 0,
+                exclude_failed: bool = False, order: str = "newest",
                 budget_tokens: int = 2000, max_bytes: int = 32768, as_of=None, cursor=None,
                 attempts: int = 2, readable_out: set | None = None) -> dict:
     """docs/24 §9.1. `for_model`: the reader puts the text into a model's context (`server._for_model`).
     `refs` (#155): only these notes; each item then has `standing_seq`, the event of its effective Standing.
     `paths` (#153): more context paths (with `path`); each note gets the best placement over them, and each item has
     `paths`, the context paths that put it in the sets.
+    `min_passed`, `exclude_failed` (R2): only notes with at least that many `passed` outcomes; no note whose latest
+    outcome is `failed` or `reverted` (the outcome rows with seq <= the watermark, so `as_of` reads them as they were).
     `readable_out`, if given, gets the books (slugs) of the final read set, for the handling labels (handling.py)."""
     wanted = _strings("book", book, pattern=_SLUG)
     if wanted is not None and len(wanted) > MAX_BOOKS:
@@ -671,11 +674,13 @@ def query_notes(conn, actor: Actor, *, for_model: bool, book=None, sets=("curren
         raise ValueError(f"order must be one of {', '.join(ORDERS)}")
     if order == "relevance" and text is None:
         raise ValueError("order relevance needs text")
-    for name, value in (("unfixed", unfixed), ("collapse", collapse), ("include_unverified", include_unverified)):
+    for name, value in (("unfixed", unfixed), ("collapse", collapse), ("include_unverified", include_unverified),
+                        ("exclude_failed", exclude_failed)):
         if type(value) is not bool:
             raise ValueError(f"{name} must be true or false")
     budget_tokens = _int("budget_tokens", budget_tokens, *BUDGET_TOKENS)
     max_bytes = _int("max_bytes", max_bytes, *MAX_BYTES)
+    min_passed = _int("min_passed", min_passed, 0, 100)
     w, after_key = _as_of(conn, as_of, cursor)
     if since is not None:
         since = _int("since", since, 0, w)
@@ -697,10 +702,14 @@ def query_notes(conn, actor: Actor, *, for_model: bool, book=None, sets=("curren
             found = [n for n in found if n.scope_repo == repo and n.observed_commit in revs.get(n.book, ())]
         if origins is not None:
             found = [n for n in found if n.origin in origins]
+        counted = outcomes.counts(conn, [n.seq for n in found], w)
+        if min_passed or exclude_failed:
+            last = outcomes.latest(conn, [n.seq for n in found], w) if exclude_failed else {}
+            found = [n for n in found if counted.get(n.seq, {}).get("passed", 0) >= min_passed
+                     and last.get(n.seq) not in outcomes.FAILED]
         _citations(conn, found, read, targets)
         graph = _graph(conn, [n.seq for n in found], read, w)
         recurrence, clusters = _recurrence(conn, found, w) if found else ({}, {})
-        counted = outcomes.counts(conn, [n.seq for n in found], w)
 
         changed = _changed(conn, [n.seq for n in found], since, w, read) if since is not None else None
         then = notes.effective_standing(conn, [n.seq for n in found], since) if since is not None else {}
@@ -1074,6 +1083,7 @@ def register_mcp(mcp, deps) -> None:
                           commits: str | None = None, written_after: str | None = None,
                           written_before: str | None = None, since: int | None = None, text: str | None = None,
                           unfixed: bool = False, collapse: bool = False, include_unverified: bool = False,
+                          min_passed: int = 0, exclude_failed: bool = False,
                           order: str = "newest", budget_tokens: int = 2000, max_bytes: int = 32768,
                           as_of: int | None = None, cursor: str | None = None) -> CallToolResult:
         """List agent notes in the journals you may read (needs read on each journal): fast SQL filters, no model
@@ -1081,7 +1091,8 @@ def register_mcp(mcp, deps) -> None:
         branch, path (or `paths`: up to 20, each item names the paths it matches), commit, platform and version
         (a note with `applies_to` needs them, as files do). `refs` (up to 50 note
         references): only these notes, each with `standing` and `standing_seq`. Use `since` with the last watermark to
-        get changes and `left` tombstones; `cursor` for the next page."""
+        get changes and `left` tombstones; `cursor` for the next page. `min_passed` (0..100): only notes with at least
+        that many `passed` outcomes; `exclude_failed`: no note whose latest outcome is failed or reverted."""
         args, labels = {k: v for k, v in locals().items() if k in _PARAMS[_QUERY]}, {}  # the tool arguments
         return deps.handled(await run_in_threadpool(lambda: run(_QUERY, labels, **args)), labels)
 
@@ -1129,6 +1140,7 @@ def _query_args(p) -> dict:
             "written_after": p.get("written_after"), "written_before": p.get("written_before"),
             "since": number("since"), "text": p.get("text"), "unfixed": flag("unfixed"),
             "collapse": flag("collapse"), "include_unverified": flag("include_unverified"),
+            "min_passed": number("min_passed", 0), "exclude_failed": flag("exclude_failed"),
             "order": p.get("order", "newest"), "budget_tokens": number("budget_tokens", 2000),
             "max_bytes": number("max_bytes", 32768), "as_of": number("as_of"), "cursor": p.get("cursor")}
 

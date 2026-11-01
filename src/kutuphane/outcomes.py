@@ -6,7 +6,8 @@
   `read`, "found" or "not found" would tell a propose-only caller that a note with those bytes exists (§6.1).
 - The server computes the origin from the write path (`origin.py`, §5.2). The rows are append-only, and a required
   idempotency key makes a retry return the first receipt: a retried outcome that counts twice is a false label.
-- An outcome never changes Standing and the "current" predicate never reads it. Reads show counts only (§21.2).
+- An outcome never changes Standing and the "current" predicate never reads it. Reads show counts (§21.2) and can
+  filter on them (`min_passed`, `exclude_failed`); a `passed` outcome resets the expiry clock of a note (§8.4).
 """
 import re
 
@@ -18,6 +19,7 @@ from . import db, gate, ids, notes, origin as origins, search
 from .gate import Actor, NotFound
 
 RESULTS = ("passed", "failed", "reverted", "reopened")
+FAILED = ("failed", "reverted")  # a latest outcome that `exclude_failed` excludes
 FIELDS = ("ref", "task_ref", "result", "idempotency_key")
 TASK_REF = re.compile(r"^[A-Za-z0-9._:/#@+-]{1,200}\Z")
 
@@ -103,6 +105,12 @@ def counts(conn, seqs, w: int) -> dict:
                                        "AND seq <= %s GROUP BY note_seq, result", (list(seqs), w)):
         out.setdefault(seq, {})[result] = n
     return {seq: _ordered(c) for seq, c in out.items()}
+
+
+def latest(conn, seqs, w: int) -> dict:
+    """{note seq: the result of its latest outcome row with seq <= w}."""
+    return dict(conn.execute("SELECT DISTINCT ON (note_seq) note_seq, result FROM outcome WHERE note_seq = ANY(%s) "
+                             "AND seq <= %s ORDER BY note_seq, seq DESC", (list(seqs), w)).fetchall())
 
 
 def passage_counts(conn, cite: search.Citation) -> dict:

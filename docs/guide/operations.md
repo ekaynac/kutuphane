@@ -21,13 +21,13 @@ Every command prints JSON on stdout. Errors go to stderr.
 | Variable | Role | Used by |
 |---|---|---|
 | `KUTUPHANE_DSN` | The app role `kutuphane_app`. This role cannot write Standing. | The server and every command, except the curator commands. |
-| `KUTUPHANE_CURATOR_DSN` | The owner role. | `migrate`, `note standing`, `note rollback`. |
+| `KUTUPHANE_CURATOR_DSN` | The owner role. | `migrate`, `note standing`, `note rollback`, `note expire`. |
 
 Keep `KUTUPHANE_CURATOR_DSN` out of every environment that an agent can read.
 The `core` container in `compose.yaml` gets only `KUTUPHANE_DSN`.
 
 Without `KUTUPHANE_CURATOR_DSN`, `migrate` uses `KUTUPHANE_DSN`. Use this only for a one-role development database.
-`note standing` and `note rollback` stop with exit code 2 when `KUTUPHANE_CURATOR_DSN` is not set:
+`note standing`, `note rollback` and `note expire` stop with exit code 2 when `KUTUPHANE_CURATOR_DSN` is not set:
 
 ```
 error: KUTUPHANE_CURATOR_DSN is not set (the curator credential)
@@ -53,7 +53,8 @@ All `KUTUPHANE_*` variables that the code, `compose.yaml` and `deploy/` read:
 | Variable | Default | Effect |
 |---|---|---|
 | `KUTUPHANE_DSN` | none (compose: app role at `postgres:5432/kutuphane`) | Database connection as the app role. Required. |
-| `KUTUPHANE_CURATOR_DSN` | none | Owner connection for `migrate`, `note standing`, `note rollback`, `skill clear`. |
+| `KUTUPHANE_CURATOR_DSN` | none | Owner connection for `migrate`, `note standing`, `note rollback`, `note expire`, `skill clear`. |
+| `KUTUPHANE_EVIDENCE_EXPIRY_DAYS` | `90` | `note expire`: the days without use after which an `evidence` note expires (1–36500). `--days` wins. |
 | `KUTUPHANE_DB_PASSWORD` | none (compose stops without it) | Password of the Postgres owner `kutuphane` in compose. |
 | `KUTUPHANE_APP_DB_PASSWORD` | empty | Password of `kutuphane_app` in the compose `KUTUPHANE_DSN`. |
 | `KUTUPHANE_PUBLIC_URL` | none | Public URL of the server. The server does not start without it. |
@@ -670,6 +671,58 @@ Rollback prints:
 
 Use this report to tell the users and agents that used the notes.
 
+### Expiry of unused evidence (R1)
+
+Evidence that nobody uses expires. Run it from a timer:
+
+```sh
+KUTUPHANE_CURATOR_DSN=… kutuphane note expire --dry-run   # list only
+KUTUPHANE_CURATOR_DSN=… kutuphane note expire             # days: --days, else KUTUPHANE_EVIDENCE_EXPIRY_DAYS, else 90
+```
+
+- **The clock** of a note is the last of: its write, its last Standing event, its last `passed` outcome. A
+  `failed`, `reverted` or `reopened` outcome does not move it.
+- An `evidence` note (`finding`, `lesson`, `dead_end`, `test_result`) whose clock is older than the days gets a system
+  event with the reason `expired`: `pending` becomes `rejected`; `approved` becomes `retired`. A pending note that
+  was approved before becomes `retired` (D68: `rejected` means never accepted).
+- `rule` notes (`convention`, `decision_proposal`) never expire.
+- A "my words" confirmation neither exempts a note nor moves its clock: it says whose words the note holds, not that
+  anybody uses them.
+- The command is idempotent: a second run moves nothing. The Standing events are the audit record (`set_by`
+  `system`, reason `expired`, one `correlation_id` for each run). A curator can reopen an expired note with
+  `note standing … pending`; the reopen restarts its clock. The queue shows nothing new.
+
+It prints `days`, `cutoff` (the time before which a clock is old), `dry_run` and `notes` (each `ref`, `was`,
+`standing`, `event_seq`; `event_seq` is `null` in a dry run).
+
+A systemd user timer (do not put the owner credential in an environment that an agent can read):
+
+1. `~/.config/kutuphane/expire.env` (mode 600):
+   ```sh
+   KUTUPHANE_CURATOR_DSN=postgresql://kutuphane:<password>@127.0.0.1:55432/kutuphane
+   PYTHONPATH=<deploy dir>/src
+   ```
+2. `~/.config/systemd/user/kutuphane-expire.service`:
+   ```ini
+   [Service]
+   Type=oneshot
+   WorkingDirectory=<deploy dir>
+   EnvironmentFile=%h/.config/kutuphane/expire.env
+   ExecStart=<venv>/bin/python -m kutuphane.cli note expire
+   UMask=0077
+   ```
+3. `~/.config/systemd/user/kutuphane-expire.timer`:
+   ```ini
+   [Timer]
+   OnCalendar=daily
+   Persistent=true
+
+   [Install]
+   WantedBy=timers.target
+   ```
+4. `systemctl --user daemon-reload && systemctl --user enable --now kutuphane-expire.timer`. Read the results with
+   `journalctl --user -u kutuphane-expire`.
+
 ### The queue (#77)
 
 The queue lists the pending notes of a curator in risk order. The phone page and the CLI show the same queue:
@@ -853,7 +906,8 @@ Agents record outcomes with `record_outcome` (MCP) or `POST /v1/outcomes`. There
 - An outcome is `passed`, `failed`, `reverted` or `reopened` for a task on one exact note or passage version.
 - The writer needs `propose` and `read` on the book and an `idempotency_key`.
 - Reads show the counts in an `outcomes` field: for example `{"passed": 2, "failed": 1}`. Only non-zero counts show.
-- An outcome never changes the Standing.
+- An outcome never changes the Standing. A `passed` outcome restarts the expiry clock of a note (section 7,
+  "Expiry of unused evidence"); `query_notes` filters on outcomes with `min_passed` and `exclude_failed`.
 
 Export decision records:
 
@@ -1087,6 +1141,7 @@ Disk encryption is a deployment duty at the volume level (D48). The application 
 | `journal restrict` | Tighten a journal. |
 | `note standing` | Set the Standing of a note as a curator. |
 | `note rollback` | Retire a note and its derived notes; report who used them. |
+| `note expire` | Expire the `evidence` notes that nobody used for N days (system events; `--dry-run`). |
 | `note import` | Import JSONL records of a local memory as `pending` notes of a journal. |
 | `decisions export` | Write JSONL decision records that the principal can read. |
 | `skill show` | Show the SkillSpector scans of a book's current version, the blocks and the clearances. |
