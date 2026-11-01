@@ -8,8 +8,8 @@ current now, for the same path:
 - `exact`: a passage with the same text (so the same embedded text, `vectors.input_sha256`);
 - `overlap`: else, when the content version is the same (only the profile cuts differently, so the source text is
   the same), the passage that holds the largest share of the old passage's word pairs, at least OVERLAP_MIN; when
-  the content changed, only a passage that holds the whole old text (Astra review #20: a changed word, `enable` to
-  `disable`, can keep most word pairs and change the meaning);
+  the content changed, only a passage that holds the whole old text, with its operators and case (Astra reviews #20
+  and #21: a changed word, `enable` to `disable`, or `>=` to `<=`, can keep most word pairs and change the meaning);
 - `none`: else no successor. The reads show the citation as `stale`; nothing is dropped.
 
 The reads show a passage reference as `current` (in the current version), `moved` (with `moved_to` and `match`) or
@@ -25,6 +25,7 @@ from dataclasses import dataclass
 MATCHES = ("exact", "overlap", "none")
 OVERLAP_MIN = 0.5  # the share of the old passage's word pairs that its successor must hold
 _WORD = re.compile(r"\w+")
+_TOKEN = re.compile(r"\w+|[^\w\s]+")  # words and operator/punctuation runs, case kept: `>=` is not `<=`
 
 
 @dataclass(frozen=True)
@@ -57,7 +58,7 @@ def _grams(text: str) -> Counter:
 
 
 def _flat(text: str) -> str:
-    return " ".join(_WORD.findall(text.casefold()))
+    return " ".join(_TOKEN.findall(text))
 
 
 def choose(text: str, ordinal: int, candidates: list[tuple[int, str]], *,

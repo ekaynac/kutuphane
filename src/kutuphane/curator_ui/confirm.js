@@ -70,9 +70,9 @@ function details(item) {
   const dl = el("dl"), add = (k, v) => { if (v) dl.append(el("dt", null, k), el("dd", null, v)); };
   add("Note id", item.ref);
   add("Kind", `${item.kind} (${item.role === "rule" ? "a rule" : "evidence"}) in ${item.book}`);
-  add("Scope", item.scope ? `${item.scope.repo}${item.scope.branch ? "@" + item.scope.branch : ""} ${item.scope.paths.join(", ")}` : "Everywhere (no scope)");
-  const a = item.applies_to;  // #164: the kstd Scope bound, part of the note id
-  add("Applies to", a && [(a.platform || []).join(", "), a.version && `version ${a.version}`].filter(Boolean).join("; "));
+  add("Scope", item.scope ? `${item.scope.repo}${item.scope.branch ? "@" + item.scope.branch : ""} ${item.scope.paths.join(", ")}` :
+               item.applies_to ? "No repository scope" : "Everywhere (no scope)");
+  add("Applies to", appliesTo(item.applies_to));  // #164: the kstd Scope bound, part of the note id
   add("Class key", item.class_key || "none");
   add("Commit", item.commit);
   const r = item.request;

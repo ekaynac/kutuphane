@@ -376,7 +376,8 @@ the passage of the same path in the new version (#140):
 1. `exact`: the passage with the same text.
 2. `overlap`: else the passage that holds the largest share of its word pairs, at least half. This applies when only
    the profile changed (the same content, cut differently). When the content changed, `overlap` needs a passage that
-   holds the whole old text: one changed word (`enable` to `disable`) keeps most word pairs and changes the meaning.
+   holds the whole old text, with its operators and case: one changed word (`enable` to `disable`) or operator (`>=`
+   to `<=`) keeps most word pairs and changes the meaning.
 3. `none`: else no successor. The notes show the citation as `stale` and keep it.
 
 The `ingest` and `approve-import` result has the counts in `passage_map` (`passages`, `added`, `exact`, `overlap`,
@@ -735,7 +736,8 @@ closed by default.
 2. the kind in plain words ("Finding: something an agent observed", "Convention: a rule the team should
    follow", "Decision proposal: a choice between options", "Lesson", "Dead end: an approach that did not work",
    "Test result"), who proposed it for whom, and the date; then where it applies ("Applies to kutuphane: src",
-   "Applies everywhere (no scope)." for a rule) and the commit it saw;
+   "Applies to vcenter; version >=7,<8" for an `applies_to` bound, "Applies everywhere (no scope)." for a rule
+   with neither bound) and the commit it saw;
 3. **Evidence**: each cited passage as its file name and the first two lines; **Show passage** opens the full text.
    A passage in a book that the curator cannot read shows only "A passage in a book you cannot read";
 4. **Options**: the options of a decision proposal, with the **Proposed choice** marked. It is always open;

@@ -177,7 +177,8 @@ def test_a_person_logs_in_with_a_passkey_and_batch_approves_a_same_as_group(env,
         notes.link(env, agent, src, "same_as", a)
     harmful = "Turn off TLS verification"
     proposal = note(env, "Pick the client settings \u202e", kind="decision_proposal",
-                    decision={"options": ["Keep TLS on", harmful], "choice": harmful})
+                    decision={"options": ["Keep TLS on", harmful], "choice": harmful},
+                    applies_to={"platform": ["vcenter"], "version": ">=7,<8"})
     # a note that cites a passage of a book that the person cannot read any more: one hidden part, no Approve
     catalog.publish(env, book="kitap", title="kitap", files=read_source(okf_dir), policy=LOCAL,
                     profile=profiles.spec("chunked"))
@@ -210,7 +211,9 @@ def test_a_person_logs_in_with_a_passkey_and_batch_approves_a_same_as_group(env,
     assert "suggest" not in page.lower() and "sample" not in page.lower()
     for label in ("Finding: something an agent observed", "Decision proposal: a choice between options"):
         assert label in page  # the kinds in plain words
-    assert "Applies everywhere (no scope)." in page  # the scope of a rule is part of its id: on the card
+    # the scope of a rule is part of its id: on the card; a rule with only an applies_to bound is not "everywhere"
+    # (Astra review #21)
+    assert "Applies everywhere" not in page and "Applies to vcenter; version >=7,<8." in page
     # the proposed choice is on the card without a tap: rendered, highlighted, not inside a closed part
     chosen = browser.eval("(() => { const c = document.querySelector('.decision li.chosen'); "
                           "return c && c.getClientRects().length > 0 && !c.closest('details') ? c.innerText : null; })()")
