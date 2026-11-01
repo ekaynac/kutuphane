@@ -9,6 +9,11 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Journal export (R3)
+
+- New: `kutuphane journal export <journal> --out FILE --by <principal>` writes a journal as JSONL in the `note import` record shape, with the Standing history, the writers, the outcomes and `ai_use` of each note. `note import` of the file into a journal with the same slug gives the same note ids and links; each note is `pending` again. It needs `read` on the journal and on each book that its notes cite or link. A `restricted` journal is refused; notes derived from a private journal or from `license: unknown` files are left out; the text needs `ai_input` and `train`, as in the decision export ([agent-memory.md](agent-memory.md#export-a-journal-backup-git), [operations.md](operations.md#export-a-journal)).
+- Changed: `note import` accepts the export fields `standing_history`, `writers`, `outcomes`, `ai_use` and `withheld`. It checks their shape and does not store them. A record with a `withheld` reason is refused.
+
 ### Vision 1.2 and "memory is data" (D80)
 
 - `docs/01` D80 records the nine operator decisions of 2026-11-01. R5: no new agent-memory feature merges before the T3 A/B (#121) rerun.
