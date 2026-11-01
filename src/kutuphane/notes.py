@@ -30,6 +30,7 @@ from starlette.routing import Route
 from . import authz, canonical, db, gate, ids, kstd, llmdap, origin as origins, passagemap, profiles, search, secretscan
 from . import vectors
 from .gate import Actor, NotFound
+from .ids import CONTROL
 from .policy import check_policy
 
 KINDS = ("finding", "decision_proposal", "dead_end", "convention", "lesson", "test_result")
@@ -61,7 +62,6 @@ REPO = re.compile(r"^[a-z0-9][a-z0-9._-]{0,62}\Z")
 CLASS_KEY = re.compile(r"^[a-z0-9][a-z0-9._:/-]{0,79}\Z")
 COMMIT = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?\Z")
 IDEMPOTENCY_KEY = re.compile(r"^[A-Za-z0-9._:-]{8,128}\Z")
-CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 PROPOSE_FIELDS = ("book", "kind", "text", "citations", "scope", "commit", "links", "class_key", "decision", "origin",
                   "idempotency_key", "applies_to")
 

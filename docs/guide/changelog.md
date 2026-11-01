@@ -8,6 +8,13 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Astra review #22
+
+- Changed (security): migration 050 refuses any write to the D73 tables, drops `decider_notes()` and `delegation_next()`, and revokes all rights of `kutuphane_decider`. **Action:** `kutuphane migrate`; then you may run `DROP ROLE kutuphane_decider;` ([security.md](security.md#delegated-curate-d73-removed)).
+- Fixed: `kutuphane curator verify-acts` checks stored `delegate` and `end_delegation` acts again (before: `no effect check for delegate`). `kutuphane curator report` has `decided_by.delegations` again for stored `model:…` approvals.
+- Fixed (security): the journal and decision exports check sensitivity again at the final decision; a book that became `restricted` during the export refuses the whole export.
+- Changed: ingest and package import refuse a file path with a control character (before: its passage handles could not be opened).
+
 ### Guide cut (W1-6, D80)
 
 - Changed (documentation): the guide is about 31,000 words (before: 57,000). Each page is for one role. Design history now links to `docs/24`, `docs/25`, `docs/research` and `docs/08`. Old changelog entries are one line each, with the PR link. No command, setting, MCP tool, HTTP route or error text was removed.

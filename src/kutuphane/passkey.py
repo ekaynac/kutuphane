@@ -379,6 +379,30 @@ def _withdraw_effects(conn, act: int, payload: dict) -> bool:
 EFFECTS.update(confirm=_confirm_effects, withdraw=_withdraw_effects)  # slice R (024)
 
 
+def _delegate_effects(conn, act: int, payload: dict) -> bool:
+    """D73 history (no new acts): the delegation that names the act is exactly the statement's row."""
+    rows = conn.execute(
+        "SELECT x.id = s #>> '{delegation,id}' AND x.book = s #>> '{delegation,book}' "
+        "   AND x.kind = s #>> '{delegation,kind}' AND x.decider = s #>> '{delegation,decider}' "
+        "   AND encode(x.spec_sha256, 'hex') = s #>> '{delegation,spec_sha256}' "
+        "   AND x.min_confidence = (s #>> '{delegation,min_confidence}')::real "
+        "   AND x.sample_every = (s #>> '{delegation,sample_every}')::integer "
+        "   AND x.expires_at = (s #>> '{delegation,expires_at}')::timestamptz "
+        "  FROM curate_delegation x, (SELECT %s::jsonb AS s) p WHERE x.act = %s",
+        (Jsonb(payload), act)).fetchall()
+    return rows == [(True,)]
+
+
+def _end_delegation_effects(conn, act: int, payload: dict) -> bool:
+    """D73 history (no new acts): exactly one end, of this delegation, by revocation."""
+    rows = conn.execute("SELECT delegation, cause FROM delegation_end WHERE act = %s", (act,)).fetchall()
+    return [tuple(r) for r in rows] == [(payload.get("delegation"), "revoked")]
+
+
+# Astra review #22: the stored acts of the removed D73 still verify; ACTIONS no longer offers them.
+EFFECTS.update(delegate=_delegate_effects, end_delegation=_end_delegation_effects)
+
+
 def _signed_notes(payload: dict, action: str) -> list[str]:
     """The note refs (`book@nt_…`) whose exact parts an act signs: the items of a `standing` act, the item of a
     `confirm` act."""

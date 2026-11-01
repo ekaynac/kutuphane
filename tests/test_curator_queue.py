@@ -189,7 +189,7 @@ def test_the_report_gives_seconds_per_approved_note_and_the_seven_day_share(env,
     assert out["decided_by"]["people_web"] == {"approved": 3, "rejected": 2}
     assert out["decided_by"]["people_cli"] == {"approved": 2}  # 18 and 10 days old: both in the 30 days
     assert set(out) == {"from", "to", "curator_time", "pending_after_7_days", "decided_by"}   # no D73 delegations
-    assert set(out["decided_by"]) == {"people_web", "people_cli", "system"}
+    assert set(out["decided_by"]) == {"people_web", "people_cli", "delegations", "system"}  # review #22: D73 history
 
     monkeypatch.setenv("KUTUPHANE_CURATOR_DSN", os.environ["KUTUPHANE_TEST_DSN"])
     assert cli.main(["curator", "report", "--from", (now - timedelta(days=30)).date().isoformat(),

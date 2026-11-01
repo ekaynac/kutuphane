@@ -33,7 +33,7 @@ import yaml
 from pypdf import PdfReader
 
 from . import agentfiles, datascan, secretscan
-from .ids import normalize_path, sha256_hex
+from .ids import CONTROL, normalize_path, sha256_hex
 from .kstd import MANIFEST
 
 MAX_FILE_BYTES = 50 * 1024 * 1024
@@ -248,6 +248,8 @@ def _personal_data(path: str, sha256: str, texts: list[tuple[str, str]], accept:
 def read_file(rel: str, data: bytes, accept: frozenset = frozenset(), names=None) -> SourceFile:
     """`accept`: AcceptedFinding values (ingest and package approval; package receipt accepts nothing). `names`: the
     compiled deny-list of datascan.load_names, or None."""
+    if CONTROL.search(rel):  # Astra review #22: a passage handle with this path could never be opened
+        raise SourceError(f"{rel!r}: control character in the path")
     path = normalize_path(rel)
     if not agentfiles.admitted(tuple(path.split("/"))):
         raise SourceError(f"{path}: hidden path outside the agent folders")

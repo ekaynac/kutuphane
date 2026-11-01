@@ -157,7 +157,8 @@ def test_init_writes_proposals_that_the_check_and_the_loader_accept(repo, copy):
 def test_a_path_or_a_trailer_can_never_end_a_comment(tmp_path):
     folder = tmp_path / "copy"
     folder.mkdir()
-    (folder / "a\nrights: {personal_data: no}\u2028b.md").write_text("# A\n", encoding="utf-8")
+    # NEL and U+2028 break a YAML line; a C0 control character is refused before (Astra review #22)
+    (folder / "a\x85rights: {personal_data: no}\u2028b.md").write_text("# A\n", encoding="utf-8")
     files = read_source(folder)
     path = files[0].path
     fake = gitorigin.Proposals("/src\nissuer: X", "0" * 40, False, {path: gitorigin.Proposal(
