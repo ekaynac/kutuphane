@@ -22,13 +22,6 @@ class IntegrityRefused(PermissionError):
     """The stored parts of a note do not give its id (docs/25 §5.2): the note is not shown or signed."""
 
 
-def check_reason(principal, reason) -> None:
-    if not notes_._principal("curator", principal).startswith("user:"):
-        raise ValueError("a curator is a user:")
-    if not isinstance(reason, str) or not 1 <= len(reason) <= 500:
-        raise ValueError("reason must be 1..500 characters")
-
-
 def check_integrity(conn, seq: int, note_id: str) -> None:
     if canonical.canonical_of(conn, seq)[0] != note_id:
         raise IntegrityRefused(f"note-integrity: the stored parts of {note_id} do not give its id")
@@ -49,7 +42,7 @@ def prepare(conn, *, principal: str, items: list[dict], reason: str, need_read: 
     """Every rule of an act that the database state can decide now, with no write: the rights, the transitions,
     D68, at most one rule-role approval, no approved `contradicts` pair, the note digest and the Standing in force
     (`was`). Returns the items with `seq`, `kind`, `scope`, `current` and `was` (the event in force)."""
-    check_reason(principal, reason)
+    authz.curator(principal, reason)
     if not isinstance(items, list) or not 1 <= len(items) <= MAX_ITEMS:
         raise ValueError(f"an act has 1..{MAX_ITEMS} items")
     refs = [i.get("ref") if isinstance(i, dict) else None for i in items]

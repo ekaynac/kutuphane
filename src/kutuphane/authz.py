@@ -40,6 +40,14 @@ def _check(pattern, value: str, what: str) -> str:
     return value
 
 
+def curator(principal, reason) -> None:
+    """A curator act names a user principal and gives a reason of 1..500 characters."""
+    if not isinstance(principal, str) or not PRINCIPAL.match(principal) or not principal.startswith("user:"):
+        raise ValueError("a curator is a user:")
+    if not isinstance(reason, str) or not 1 <= len(reason) <= 500:
+        raise ValueError("reason must be 1..500 characters")
+
+
 def _mode(mode: str) -> str:
     if mode not in MODES:
         raise AuthzError(f"mode must be one of {', '.join(MODES)} (E9 is mandatory)")
