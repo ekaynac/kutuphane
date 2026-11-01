@@ -325,7 +325,8 @@ volume) and run `kutuphane index <book>` per book. An install from the old `depl
 ## Optional: SkillSpector
 
 SkillSpector (NVIDIA, D71) scans skill folders at ingest; it is not in the Kütüphane package or image. Install it
-where you run `kutuphane ingest`, `receive` and `skill rescan`. Needs `uv`, `curl`, Python 3.12–3.14.
+where you run `kutuphane ingest`, `receive` and `skill rescan`. Needs `uv`, `curl`, Python 3.12 or 3.13 (yara-python
+has no 3.14 wheel).
 
 ```sh
 deploy/skillspector/install.sh /opt/skillspector        # or SKILLSPECTOR_PREFIX=…
