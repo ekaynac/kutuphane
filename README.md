@@ -130,11 +130,11 @@ Design and decisions: `docs/01-direction-decisions.md`, `docs/23-vision-v1.md`, 
 ## Status
 
 Version 0.1.0, under active development; interfaces can change. Built: file books with kstd L0, hybrid search,
-answers with citations, signed packages, agent memory R1 (notes, fast reads, code citations, MCP 2026-07-28,
-headless auth), R2 rollback, outcomes, decision export, bulk import and private journals, a light install
-without LLMDAP (#76), and curator web with passkey acts (D72, `docs/25` slice P). Open: the risk-ordered curator
-queue (#77, slice Q), the "my words" confirmation (D70 R3), delegated curate (#78) and MCP Skills (#80). See
-`docs/guide/changelog.md`.
+answers with citations, signed packages, a catalog read for applications (`list_books`, `list_files`), agent memory
+(notes, fast reads, code citations, scope, rollback, outcomes, evidence expiry, journal export and import, private
+journals), MCP 2026-07-28 with headless auth and several token issuers, MCP Skills with the SkillSpector scan, a light
+install without LLMDAP, and curator web with passkey acts, a risk-ordered queue and the "my words" confirmation.
+Removed: delegated curate (D73; D80). Open: item-level access (#138, G10). See `docs/guide/changelog.md`.
 
 ## Licence
 
