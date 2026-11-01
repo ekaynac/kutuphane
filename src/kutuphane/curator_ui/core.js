@@ -1,7 +1,7 @@
 "use strict";
 // Curator web (docs/25 §3.3, §3.4, §5, §6.6): the shared helpers, the plain words of the page, enrollment, passkey
-// login and the three tabs. The queue is in queue.js (`load`), "my words" in confirm.js (`confirmPage`), auto-approval
-// in delegation.js (`showDelegations`). Note text is plain text only (textContent); hidden characters become marks.
+// login and the two tabs. The queue is in queue.js (`load`), "my words" in confirm.js (`confirmPage`). Note text is
+// plain text only (textContent); hidden characters become marks.
 
 const $ = (id) => document.getElementById(id);
 const HIDDEN = /[\u200b\u200c\u200d\u2060\ufeff\u202a-\u202e\u2066-\u2069\u00ad]/g;
@@ -18,7 +18,6 @@ const KINDS = {
 const TABS = {
   review: "Agents proposed these notes. Approve what is true and useful; reject the rest. Your fingerprint signs each decision.",
   words: "An agent typed text for you. Confirm only if these are your words (or you checked them).",
-  auto: "A local model may approve findings and other evidence notes for a short time. You check some of its approvals.",
 };
 
 function kindName(kind) { return (KINDS[kind] || [kind])[0]; }
@@ -107,7 +106,7 @@ function start(text, label, fn) {
 // --- the page frame: the active tab and its one-line explanation ------------------------------------------------
 function frame(tab, progress) {
   $("tabs").hidden = false;
-  for (const [name, id] of [["review", "tab-review"], ["words", "tab-words"], ["auto", "tab-auto"]]) {
+  for (const [name, id] of [["review", "tab-review"], ["words", "tab-words"]]) {
     $(id).classList.toggle("on", name === tab);
     if (name === tab) $(id).setAttribute("aria-current", "page"); else $(id).removeAttribute("aria-current");
   }
@@ -191,7 +190,6 @@ async function main() {
   if (!me.ok) return signIn();
   $("who").textContent = person((await me.json()).principal);
   if (location.pathname.startsWith("/c/") || location.pathname === "/requests") return confirmPage();
-  if (location.pathname === "/delegations") return showDelegations();
   return load();
 }
 

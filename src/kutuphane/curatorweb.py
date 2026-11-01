@@ -21,7 +21,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import authz, confirm, curation, curatorqueue, db, delegation, gate, notes, passkey
+from . import confirm, curation, curatorqueue, db, gate, notes, passkey
 from .server import SecurityHeaders
 
 COOKIE = "__Host-kc"
@@ -63,16 +63,15 @@ def _shown_whole(conn, principal: str, items) -> None:
 
 
 def _standing(conn, act: passkey.Act) -> dict:
-    """The rows of a `standing` statement (docs/25 §5.4 step 7, §6.5). The receipt adds, after the act, each note's
-    suggestions and, for a sample, its delegation (§5.4 step 8, §6.4, §8.4)."""
+    """The rows of a `standing` statement (docs/25 §5.4 step 7, §6.5)."""
     items = [{"ref": i["ref"], "to": i["to"], "was": i["was"]} for i in act.payload["items"]]
     _shown_whole(conn, act.principal, items)
     out = curation.apply(conn, principal=act.principal, items=items, reason=act.payload["reason"], act=act.seq,
                          need_read=True, check_was=True, integrity=True, retires=act.payload["retires"])
-    return {"act": act.seq, "items": curatorqueue.receipt(conn, out)}
+    return {"act": act.seq, "items": out}
 
 
-HANDLERS = {"standing": _standing}  # slices R and D add confirm, withdraw, delegate, end_delegation
+HANDLERS = {"standing": _standing}
 
 
 def _standing_fields(conn, principal: str, body: dict) -> dict:
@@ -89,9 +88,6 @@ def _standing_fields(conn, principal: str, body: dict) -> dict:
 FIELDS = {"standing": _standing_fields}
 HANDLERS.update(confirm=confirm.confirm_act, withdraw=confirm.withdraw_act)       # slice R (docs/25 §7)
 FIELDS.update(confirm=confirm.confirm_fields, withdraw=confirm.withdraw_fields)
-# docs/25 §8 (slice D): a `delegate` act creates one delegation; an `end_delegation` act ends one.
-HANDLERS.update({"delegate": delegation.apply_delegate, "end_delegation": delegation.apply_end})
-FIELDS.update({"delegate": delegation.delegate_fields, "end_delegation": delegation.end_fields})
 
 
 def create_app(*, dsn: str, cfg: passkey.Config, ui_dir: Path = UI_DIR) -> Starlette:
@@ -269,34 +265,9 @@ def create_app(*, dsn: str, cfg: passkey.Config, ui_dir: Path = UI_DIR) -> Starl
                 raise Refused(403, "refused by the database") from None
             raise
 
-    # --- delegations (docs/25 §8; slice D) ------------------------------------------------------------------------
-    def curated_books(conn, principal: str) -> list[str]:
-        rights = authz.allowed(conn, principal, None, ["curate", "read"])
-        return sorted(o.removeprefix("book:") for o in rights.objects("curate") & rights.objects("read"))
-
-    def delegations(conn, request, _raw):
-        """The delegations of the person's books, and the shadow agreement of each decider spec per evidence class:
-        what the person sees before signing a `delegate` act (§8.2)."""
-        _, principal, _ = session_of(conn, request)
-        books = curated_books(conn, principal)
-        return JSONResponse({"books": books, "kinds": list(delegation.EVIDENCE_KINDS), "defaults": delegation.DEFAULTS,
-                             "max_days": delegation.MAX_DAYS, "delegations": delegation.list_(conn, books),
-                             "shadow": delegation.shadow_classes(conn, books)})
-
-    def delegation_view(conn, request, _raw):
-        """One delegation: the report (§8.6) and the review list of the notes it approved (§8.4)."""
-        _, principal, _ = session_of(conn, request)
-        out = delegation.report(conn, request.path_params["id"])
-        if out["delegation"]["book"] not in curated_books(conn, principal):
-            raise gate.NotFound(f"no such delegation: {request.path_params['id']}")
-        out["review"] = delegation.review_list(conn, request.path_params["id"])
-        _log(conn, principal, "curate_view", True, f"delegation {request.path_params['id']}",
-             [{"ref": r["ref"], "standing_seq": r["was"]} for r in out["review"]])
-        return JSONResponse(out)
-
     routes = [
         Route("/", page), Route("/enroll", page),
-        Route("/c/{book}/{id}", page), Route("/requests", page), Route("/delegations", page),
+        Route("/c/{book}/{id}", page), Route("/requests", page),
         Route("/api/requests", answer(requests)), Route("/api/requests/{book}/{id}", answer(request_page)),
         Route("/api/enroll/session", answer(enroll_session), methods=["POST"]),
         Route("/api/enroll/options", answer(enroll_options), methods=["POST"]),
@@ -309,8 +280,6 @@ def create_app(*, dsn: str, cfg: passkey.Config, ui_dir: Path = UI_DIR) -> Starl
         Route("/api/note/{book}/{id}", answer(note_view)),
         Route("/api/act/options", answer(act_options), methods=["POST"]),
         Route("/api/act", answer(act), methods=["POST"]),
-        Route("/api/delegations", answer(delegations)),
-        Route("/api/delegations/{id}", answer(delegation_view)),
         Mount("/static", StaticFiles(directory=ui_dir)),
     ]
     app = Starlette(routes=routes)
@@ -324,7 +293,6 @@ def app_from_env() -> Starlette:
     if not dsn:
         raise RuntimeError(f"curator web not configured: set {DSN_ENV} (the kutuphane_curator_web role)")
     cfg = passkey.Config.from_env()
-    delegation.min_shadow()  # a bad KUTUPHANE_DELEGATION_MIN_SHADOW stops the start, not a delegate act
     with db.connect(dsn) as conn:
         waiting = db.pending(conn)
     if waiting:

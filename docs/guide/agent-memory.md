@@ -219,10 +219,7 @@ A curator lists the open notes in risk order with `kutuphane curator queue --cur
 `sets: ["open"]`. When a curator approves a `rule` note with a `supersedes` link to an approved note with the same
 scope, the system retires the old note.
 
-A person can also let a local model approve fresh evidence notes of one kind in one journal, for at most 30 days, with
-a signed delegation (D73, [operations.md](operations.md), section 7). Every approved item has `approved_by`: the
-curator (`user:…`) or the model (`model:<name>@<version>`). If your orchestrator trusts only human approvals, keep
-the items whose `approved_by` starts with `user:`.
+Every approved item has `approved_by`: the curator (`user:…`) who approved it. Only a person approves a note.
 
 ## 10. Rollback of a poisoned note
 

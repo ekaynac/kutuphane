@@ -23,7 +23,7 @@ p { margin:6px 0; }
 .err { color:var(--reject); font-weight:600; }
 .ok { color:var(--approve); font-weight:600; }
 
-/* the header: the name, the person, three tabs */
+/* the header: the name, the person, two tabs */
 header { position:sticky; top:0; z-index:2; background:var(--card); border-bottom:1px solid var(--line); }
 .top { display:flex; justify-content:space-between; align-items:baseline; padding:10px 14px 0; }
 .brand { font-weight:700; font-size:18px; }

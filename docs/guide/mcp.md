@@ -811,8 +811,8 @@ The sets:
 - A retired item has `successor`: the note that supersedes it, or `null`.
 - `origin` is the shown origin. With a live confirmation (section 5.15), the item also has `entered_by` (the writer
   of the request) and `confirmed_by` (the person who confirmed).
-- `approved_by` (after `standing`): for an approved item, who approved it: a curator (`user:…`) or a model through a
-  signed delegation (`model:<name>@<version>`, D73); `null` for other items. `neighbours` and `open_citation` items
+- `approved_by` (after `standing`): for an approved item, who approved it: a curator (`user:…`); `null` for other
+  items. `neighbours` and `open_citation` items
   have it too.
 - An item that alone does not fit the limits has its text cut and `text_cut: true`.
 - `left` holds tombstones `{ref, standing, seq, successor}` for notes that a Standing change after `since` moved

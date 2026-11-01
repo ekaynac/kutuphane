@@ -107,7 +107,7 @@ migration 029).
   write a skill clearance, so it cannot lift a block.
 - Every database function and trigger fixes its search path to `pg_catalog, public, pg_temp` and names its tables
   with their schema (migration 038). The role scripts take the right to make temporary tables (`TEMP`) from
-  `PUBLIC` and from the app, curator web and decider roles. So a role cannot hide a table or a sequence that a check
+  `PUBLIC` and from the app and curator web roles. So a role cannot hide a table or a sequence that a check
   reads behind a temporary one.
 
 ## Curator web and passkeys (D72)
@@ -142,42 +142,12 @@ Curator web (`kutuphane curator web`) is the phone page of the curator. Design: 
   finds rows that no stored passkey signed; it cannot find a signature given over a misleading page. A passkey
   proves who confirmed, not that the person read the text.
 
-## Delegated curate (D73)
+## Delegated curate (D73), removed
 
-A model approves a note only through a delegation that a person signed. Design: `../25-curator-queue-passkey-design.md`
-§8.
-
-- **Signed and bounded.** A `delegate` passkey act of a user with direct `curate` and `read` creates it; the database
-  accepts only the row of the signed statement. One journal, one evidence kind (never `decision_proposal` or
-  `convention`), one decider spec (`spec_sha256`), a threshold of 0.5–1, a sample rate N of 2–100, at most 30 days.
-  It needs at least 30 shadow decisions at its threshold (`KUTUPHANE_DELEGATION_MIN_SHADOW`, a whole number of at
-  least 1; curator web does not start with another value).
-- **The database decides each use.** The runner role (`kutuphane_decider`, `deploy/db-roles-decider.sql`) can insert
-  suggestions, model call records, uses and its access record, and nothing else; it has no `INSERT` on
-  `standing_event`. It cannot set the `seq`, the time or the `sampled` flag of a use, or the `seq` or time of a
-  suggestion (column grants; triggers set them), and a suggestion comes before any Standing event of its note. A
-  trigger refuses a use of an ended or expired delegation, of a creator who no longer holds `curate`, under the
-  threshold, of a suggestion of the same transaction, on a note with any Standing event, in a `contradicts` link,
-  whose text may not go to a model or with a propose write by the runner's principal, of any note but the oldest
-  eligible one of the class (no skipping), and while 3 samples are open. It draws the sample (1 in N, and always one
-  after 2N unchecked uses) as an HMAC of the delegation and the note under a key that only the owner can read, so a
-  rollback and a retry give the same draw, and writes the approval of an unsampled use with `set_by` =
-  `model:<name>@<version>` (migrations 025, 029).
-- **What the runner reads.** The runner role has no `SELECT` on `note`. It gets note text only from
-  `decider_notes()`: undecided notes of the books where `agent:kutuphane-decider` holds `read` directly or that have
-  a live delegation, through the text gate (`ai_input` of the note and its journal, no skill block). It reads each
-  note again through the gate just before its model call. The spec digest includes the source of the runner's prompt
-  and answer code (`runner_code`), so a change to it is a new spec that no delegation matches.
-- **The end on disagreement.** A person's first decision on a sample that is not `approved` ends the delegation in
-  the same transaction, on every Standing path (phone, `note standing`, `note rollback`).
-- **Local models only.** The runner refuses a spec whose route is not `local`, sends the note's `source_books` to
-  the egress check, never sends a note whose `ai_input` is off or that depends on a blocked skill, and refuses an
-  answer whose reported model or revision is not the spec's. It holds no database lock during a model call.
-- **Limits.** Sampling bounds the rate of bad approvals, not each one: with N = 10, one bad note that the model
-  approves is approved at once with probability 0.9. Approved evidence goes into agents' context, so an
-  instruction-shaped finding that passes the model is a prompt-injection risk. LLMDAP reports the route's model; the
-  route configuration, the model server and the spec files are in the trusted base. Readers that want human
-  approvals only can filter on `approved_by`.
+Delegated curate and the decider runner are removed (2026-11-01). Only a person approves a note: on the phone with a
+passkey act, or with the owner credential. The tables of migration 025 stay as history; no Kütüphane role writes
+them (`deploy/db-roles.sql` and `deploy/db-roles-curator.sql` revoke the writes), and curator web refuses the
+`delegate` and `end_delegation` actions.
 
 ## Skill scan (SkillSpector)
 

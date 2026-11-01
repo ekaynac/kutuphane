@@ -2,8 +2,7 @@
 // The curator queue (docs/25 §6.2, §6.3, §6.5, §6.6): risk-ordered same_as groups at one watermark, the note text
 // first, then every part that the note id covers in plain words (evidence, options and the proposed choice, the
 // replaced rule, every creation link with its target text), Approve / Reject / Skip, one reason and one passkey act
-// for every chosen note. No suggestion and no sample mark is ever shown before the act: the server never sends them;
-// the receipt has them. Note text and every server value are plain text only (textContent). Only `load` is global.
+// for every chosen note. Note text and every server value are plain text only (textContent). Only `load` is global.
 
 (() => {
 const REASONS = ["Correct and useful", "Wrong", "Duplicate", "Not useful now"];
@@ -340,7 +339,7 @@ async function sign() {
   await load();
 }
 
-// --- after the act (§6.6 item 7): the suggestions, "agrees" or "differs", and the check --------------------------
+// --- after the act (§6.6 item 7): what was decided ---------------------------------------------------------------
 function receipt(r) {
   const box = $("receipt"); box.replaceChildren(); box.hidden = false;
   const n = counts(r.items.map((i) => i.standing));
@@ -352,12 +351,6 @@ function receipt(r) {
     const li = el("li", i.standing);
     li.append(el("div", null, `${i.standing === "approved" ? "Approved" : i.standing === "rejected" ? "Rejected" : i.standing}: ` +
                               `${item ? firstLine(item.text) : shortRef(i.ref)}`));
-    for (const s of i.suggestions) {
-      const verdict = s.agrees === null ? "it gave no answer" : (s.agrees ? "agrees with you" : "differs from you");
-      li.append(el("div", s.agrees === false ? "err" : "muted",
-                   `The local model ${s.decider} said: ${s.value} (${Math.round(s.confidence * 100)} % sure), ${verdict}.`));
-    }
-    if (i.sample) li.append(el("div", "muted", `This was a check of auto-approval ${i.sample}.`));
     for (const ref of i.retired || []) li.append(el("div", "muted", `Also retired: ${retiredText(ref)}`));
     list.append(li);
   }

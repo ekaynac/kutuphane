@@ -1,21 +1,19 @@
 """The curator queue and its measures (docs/25 §6, §6.7; #77; slice Q): Q1–Q7 and the CLI queue (Pilot 2 G36).
 
 Curator web runs as the curator web role with the deploy grants, as in test_curatorweb.py; the test writes as the
-owner (the CLI). The delegation of Q4 is made with a real `delegate` act (a software authenticator) and the rows of
-migration 025, so the database draws the sample.
+owner (the CLI).
 """
 import json
 import os
-import secrets
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
-from kutuphane import authz, canonical, catalog, cli, curatorqueue, curatorweb, notes, passkey, profiles
+from kutuphane import authz, canonical, catalog, cli, curatorqueue, curatorweb, notes, profiles
 from kutuphane.gate import Actor
 from kutuphane.source import read_source
-from test_curatorweb import (CFG, H, J, LOCAL, U, client, env, events, note, options, ready, submit,  # noqa: F401
+from test_curatorweb import (H, J, LOCAL, U, client, env, events, note, options, ready, submit,  # noqa: F401
                              web_dsn)
 
 AGENT = Actor("agent:kobra-7", U, channel="mcp")
@@ -112,6 +110,7 @@ def test_a_group_of_five_is_decided_in_one_act(env, client):  # Q2
     assert r.status_code == 200, r.text
     rows = env.execute("SELECT value, act, reason FROM standing_event ORDER BY seq").fetchall()
     assert len(rows) == 5 and {x[1] for x in rows} == {r.json()["act"]} and {x[2] for x in rows} == {f"duplicate of {a}"}
+    assert not {"suggestions", "sample"} & {k for i in r.json()["items"] for k in i}   # the receipt shape without D73
     assert [x[0] for x in rows].count("approved") == 1
     assert client.get("/api/queue").json()["groups"] == []
 
@@ -156,88 +155,6 @@ def test_the_batch_rules_are_refused_before_the_passkey(env, client):  # Q3
     assert env.execute("SELECT count(*) FROM curator_challenge WHERE action = 'standing'").fetchone()[0] == 0
 
 
-# --- Q4: no suggestion and no sample mark before the act ---------------------------------------------------------
-
-DECIDER = "qwen-notes@0.1"
-
-
-def delegate(env, client, auth, *, sample_every=2) -> str:
-    """A `delegate` act of the person (§8.2) and the curate_delegation row of its statement (migration 025)."""
-    sid = passkey.session(env, client.cookies.get(curatorweb.COOKIE))[0]
-    expires = env.execute("SELECT date_trunc('second', now()) + interval '14 days'").fetchone()[0]
-    did = "cd_" + secrets.token_hex(16)
-    spec = bytes(32)
-    fields = {"delegation": {"id": did, "book": J, "kind": "finding", "decider": DECIDER, "spec_sha256": spec.hex(),
-                             "min_confidence": 0.9, "sample_every": sample_every, "expires_at": expires.isoformat()}}
-    with env.transaction():
-        cid, _statement, opts = passkey.act_options(env, CFG, sid, U, "delegate", fields)
-    with env.transaction():
-        notes._lock(env)
-        act = passkey.verify_act(env, CFG, sid, U, cid, auth.get(opts))
-        env.execute("INSERT INTO curate_delegation (id, book, kind, decider, spec_sha256, min_confidence, "
-                    "sample_every, created_by, act, expires_at) VALUES (%s, %s, 'finding', %s, %s, 0.9, %s, %s, %s, %s)",
-                    (did, J, DECIDER, spec, sample_every, U, act.seq, expires))
-    return did
-
-
-def suggest(env, ref, value="approved", confidence=0.95) -> int:
-    with env.transaction():
-        notes._lock(env)
-        call = env.execute("INSERT INTO model_call (correlation_id, principal, route, model, call_id) "
-                           "VALUES ('c', 'agent:kutuphane-decider', 'chat', 'qwen', %s) RETURNING id",
-                           (secrets.token_hex(8),)).fetchone()[0]
-        return env.execute("INSERT INTO note_suggestion (note_seq, decider, spec_sha256, value, confidence, model_call) "
-                           "VALUES (%s, %s, %s, %s, %s, %s) RETURNING seq",
-                           (seq_of(env, ref), DECIDER, bytes(32), value, confidence, call)).fetchone()[0]
-
-
-def use(env, did, ref, suggestion) -> bool:
-    """A delegation use, as the decider runner inserts it; the database draws `sampled`."""
-    with env.transaction():
-        notes._lock(env)
-        return env.execute(
-            "INSERT INTO delegation_use (delegation, book, kind, decider, spec_sha256, approver, note_seq, suggestion, "
-            "correlation_id) VALUES (%s, %s, 'finding', %s, %s, %s, %s, %s, 'run-1') RETURNING sampled",
-            (did, J, DECIDER, bytes(32), f"model:{DECIDER}", seq_of(env, ref), suggestion)).fetchone()[0]
-
-
-def test_suggestions_and_samples_only_in_the_receipt(env, client):  # Q4
-    auth = ready(env, client)
-    rule = note(env, "Name branches feat/<scope>", kind="convention")
-    lesson = note(env, "Measure before caching", kind="lesson")
-    findings = [note(env, f"finding number {i}") for i in range(12)]
-    before = [m["ref"] for m in members(curatorqueue.queue(env, U))]
-    did = delegate(env, client, auth)
-    suggest(env, rule, "rejected", 0.81)
-    sample = None
-    for ref in findings:
-        if use(env, did, ref, suggest(env, ref)):
-            sample = ref
-            break
-    assert sample is not None  # N = 2: a forced sample after 4 unsampled uses at the latest
-    pending = {m["ref"] for m in members(curatorqueue.queue(env, U))}
-    assert sample in pending
-
-    page = client.get("/api/queue")
-    expected = [r for r in before if r in pending]
-    assert [m["ref"] for g in page.json()["groups"] for m in g["members"]] == expected
-    one = client.get(f"/api/note/{sample.replace('@', '/')}")
-    for body in (page.text, one.text):
-        for word in ("suggestion", "sample", "confidence", DECIDER, did, "delegat"):
-            assert word not in body, word
-
-    o = options(client, [{"ref": sample, "to": "approved"}, {"ref": rule, "to": "approved"}], reason="checked")
-    r = submit(client, o, auth.get(o["publicKey"]))
-    assert r.status_code == 200, r.text
-    got = {i["ref"]: i for i in r.json()["items"]}
-    assert got[sample]["sample"] == did
-    assert got[sample]["suggestions"] == [{"decider": DECIDER, "value": "approved", "confidence": 0.95,
-                                           "agrees": True}]
-    assert got[rule]["sample"] is None
-    assert got[rule]["suggestions"] == [{"decider": DECIDER, "value": "rejected", "confidence": 0.81,
-                                         "agrees": False}]
-
-
 # --- Q5: the measures --------------------------------------------------------------------------------------------
 
 def test_the_report_gives_seconds_per_approved_note_and_the_seven_day_share(env, client, monkeypatch, capsys):  # Q5
@@ -271,7 +188,8 @@ def test_the_report_gives_seconds_per_approved_note_and_the_seven_day_share(env,
     assert p["by_book"] == {J: {"notes": 4, "pending": 3, "share": 0.75}}
     assert out["decided_by"]["people_web"] == {"approved": 3, "rejected": 2}
     assert out["decided_by"]["people_cli"] == {"approved": 2}  # 18 and 10 days old: both in the 30 days
-    assert out["delegations"] == []
+    assert set(out) == {"from", "to", "curator_time", "pending_after_7_days", "decided_by"}   # no D73 delegations
+    assert set(out["decided_by"]) == {"people_web", "people_cli", "system"}
 
     monkeypatch.setenv("KUTUPHANE_CURATOR_DSN", os.environ["KUTUPHANE_TEST_DSN"])
     assert cli.main(["curator", "report", "--from", (now - timedelta(days=30)).date().isoformat(),
@@ -281,27 +199,6 @@ def test_the_report_gives_seconds_per_approved_note_and_the_seven_day_share(env,
         curatorqueue.report(env, now, now - timedelta(days=1))
 
 
-def test_the_report_gives_the_live_agreement_of_a_delegation(env, client):  # Q5, §8.7
-    auth = ready(env, client)
-    findings = [note(env, f"finding number {i}") for i in range(12)]
-    did = delegate(env, client, auth)
-    sampled = []
-    for ref in findings:
-        if use(env, did, ref, suggest(env, ref)):
-            sampled.append(ref)
-            if len(sampled) == 2:
-                break
-    standing(env, sampled[0], "approved", reason="checked")
-    now = datetime.now(timezone.utc)
-    (d,) = curatorqueue.report(env, now - timedelta(days=1), now + timedelta(minutes=1))["delegations"]
-    assert d["id"] == did and d["samples"] == {"agreed": 1, "disagreed": 0, "open": 1, "closed_no_verdict": 0}
-    assert d["approved"] == d["uses"] - 2 and d["ended"] is None
-    assert d["coverage"]["approved_by_delegation"] == d["approved"] and d["coverage"]["notes"] == 12
-    standing(env, sampled[1], "rejected", reason="wrong")
-    (d,) = curatorqueue.report(env, now - timedelta(days=1), now + timedelta(minutes=1))["delegations"]
-    assert d["samples"]["disagreed"] == 1 and d["ended"]["cause"] == "disagreement"
-
-
 # --- Q6: the page --------------------------------------------------------------------------------------------------
 
 def test_the_page_shows_plain_text_marks_and_loads_nothing_external(client):  # Q6
@@ -309,7 +206,7 @@ def test_the_page_shows_plain_text_marks_and_loads_nothing_external(client):  # 
     assert r.status_code == 200
     csp = r.headers["content-security-policy"]
     assert "default-src 'none'" in csp and "script-src 'self'" in csp and "frame-ancestors 'none'" in csp
-    scripts = ("core.js", "confirm.js", "delegation.js", "queue.js")
+    scripts = ("core.js", "confirm.js", "queue.js")
     shell = r.text + "".join((UI / f).read_text(encoding="utf-8") for f in (*scripts, "app.css"))
     assert "http://" not in shell and "https://" not in shell and "//cdn" not in shell and "@import" not in shell
     assert "url(" not in (UI / "app.css").read_text(encoding="utf-8")  # no font or image to load
@@ -323,10 +220,11 @@ def test_the_page_shows_plain_text_marks_and_loads_nothing_external(client):  # 
     core = (UI / "core.js").read_text(encoding="utf-8")
     assert "\\u200b" in core and "\\u202a-\\u202e" in core  # U+200B and U+202E are shown as marks
     assert client.get("/static/queue.js").status_code == 200
-    # three plain tabs, each a page of its own
-    for label, path in (("To review", "/"), ("My words", "/requests"), ("Auto-approval", "/delegations")):
+    # two plain tabs, each a page of its own; the D73 auto-approval page is gone
+    for label, path in (("To review", "/"), ("My words", "/requests")):
         assert f'href="{path}">{label}' in r.text
         assert client.get(path).text == r.text
+    assert "Auto-approval" not in r.text and client.get("/api/delegations").status_code == 404
     for kind in ("finding", "convention", "decision_proposal", "lesson", "dead_end", "test_result"):
         assert f"  {kind}: [" in core  # every kind has a plain name on the card
 
