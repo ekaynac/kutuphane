@@ -53,7 +53,7 @@ Each promise is a behavior that a user can check. Every new feature must serve o
 
 ## 4. Who uses it
 
-1. **Coding orchestrators** (ADC, nöbetçi-mcp): shared memory for decisions, findings, lessons, conventions and skills (#67). **This is the first real customer**, and it sets the first roadmap. Copilot Memory's A/B shows cited, verified memories lift PR merge rate; our A/B (#121) does not yet. **The next A/B gates further memory work** (R5, D80): no new memory feature merges before the T3 rerun shows acceptance not lower and input tokens not higher than without memory.
+1. **Coding orchestrators** (ADC, nöbetçi-mcp): shared memory for decisions, findings, lessons, conventions and skills (#67). **This is the first real customer**, and it sets the first roadmap. Copilot Memory's A/B shows cited, verified memories lift PR merge rate; our A/B (#121) does not yet. **The next A/B gates further memory work** (R5, D80): no new memory feature after R1, R2 and R3 (approved in D80, so not blocked) merges before the T3 rerun shows acceptance not lower and input tokens not higher than without memory.
 2. **Organizations with a RAG platform:** Kütüphane is the governed source. The platform asks through MCP or HTTP, and gets only the passages the caller and the model may use, with the rights attached.
 3. **Curators (people):** they accept or reject what agents propose, on the phone (D72) or the CLI.
 4. **Consumer applications** (InfraMedic): they submit signed packages, read the catalog with a scope context, and show Standing and citations in their own screens.
