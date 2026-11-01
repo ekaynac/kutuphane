@@ -91,16 +91,6 @@ or `Mcp-Method` header that differs from the body. Check that your reverse proxy
 | `unverifiable: timeout` | A git command took more than 5 s. Check the disk and the size of the repository. |
 | `stale` with `moved_to` | The cited lines moved. Propose a new note with the new lines and a `supersedes` link. |
 
-## Decider and delegations
-
-| Message | Cause and fix |
-|---|---|
-| `N shadow decisions of … a delegation needs at least 30` | Too few notes of the class have a suggestion before a person's verdict at this threshold. Run the decider in shadow mode longer, or choose a lower threshold. |
-| `stopped: … waits for 3 open samples` | Three sampled notes wait for a person. Decide them on the phone; the next run continues. |
-| `stopped: user:… no longer holds curate on book:…` | The creator lost `curate`. The delegation does nothing; end it and sign a new one. |
-| `failed: the answer names revision …` | The model server reports another revision than the spec. Check the model server; for a planned change, write a new spec version. |
-| `spec: route locality 'cloud': a decider uses local routes only` | A decider spec must name a `local` LLMDAP route. |
-
 ## Background jobs
 
 | Symptom | Cause and fix |

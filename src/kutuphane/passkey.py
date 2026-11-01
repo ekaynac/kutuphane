@@ -33,7 +33,7 @@ CHALLENGE_TTL = "5 minutes"
 SESSION_TTL = "8 hours"
 ENROLL_TTL = "15 minutes"
 TIMEOUT_MS = 120_000
-ACTIONS = ("standing", "confirm", "withdraw", "delegate", "end_delegation")
+ACTIONS = ("standing", "confirm", "withdraw")
 ENV = {"rp_id": "KUTUPHANE_WEBAUTHN_RP_ID", "origin": "KUTUPHANE_WEBAUTHN_ORIGIN"}
 
 
@@ -357,7 +357,7 @@ def _standing_effects(conn, act: int, payload: dict) -> bool:
     return want == got and caused == sorted((r["ref"], "retired") for r in payload.get("retires", []))
 
 
-EFFECTS = {"standing": _standing_effects}  # slices R and D add their actions
+EFFECTS = {"standing": _standing_effects}  # slice R adds its actions
 
 
 def _confirm_effects(conn, act: int, payload: dict) -> bool:
@@ -432,10 +432,3 @@ def verify_acts(conn, cfg: Config, since: int = 0) -> dict:
         elif not _contents_intact(conn, _signed_notes(payload, action)):
             problems.append({"act": seq, "problem": "contents"})
     return {"acts": len(rows), "problems": problems}
-
-
-# docs/25 §8 (slice D): the effects of the delegation acts. Imported here, at the end, because delegation.py does not
-# import this module and verify_acts reads EFFECTS only when it runs.
-from . import delegation  # noqa: E402
-
-EFFECTS.update({"delegate": delegation.delegate_effects, "end_delegation": delegation.end_effects})

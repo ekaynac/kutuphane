@@ -90,7 +90,6 @@ Kütüphane uses these database roles:
 | `kutuphane` (owner) | `kutuphane migrate`, `kutuphane note standing`, `kutuphane note rollback`, `kutuphane skill clear`, `kutuphane curator …` (`KUTUPHANE_CURATOR_DSN`) | everything |
 | `kutuphane_app` | the server and every process that an agent can reach (`KUTUPHANE_DSN`) | no Standing writes, no skill clearances, no curation tables; memory rows and skill scan records are append-only |
 | `kutuphane_curator_web` | curator web only (`KUTUPHANE_CURATOR_WEB_DSN`; optional, see [Curator web](#curator-web)) | Standing events that are items of a signed passkey act; no enrollment, no revocation |
-| `kutuphane_decider` | the decider runner only (`KUTUPHANE_DECIDER_DSN`; optional, see [Decider runner](#decider-runner)) | suggestions, model call records and delegation uses; no Standing writes |
 
 Do these steps once, as the owner:
 
@@ -109,13 +108,10 @@ export KUTUPHANE_CURATOR_DSN="postgresql://kutuphane:${KUTUPHANE_DB_PASSWORD}@12
 docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 < deploy/db-roles.sql
 # only with curator web:
 docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 < deploy/db-roles-curator.sql
-# only with the decider runner:
-docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 < deploy/db-roles-decider.sql
 ```
 
 `migrate` uses `KUTUPHANE_CURATOR_DSN`; without it, it uses `KUTUPHANE_DSN`. New tables need their grants, so
-apply `deploy/db-roles.sql` (and `deploy/db-roles-curator.sql` when you run curator web, `deploy/db-roles-decider.sql`
-when you run the decider runner) after every `migrate`. The server refuses to start while a migration is pending.
+apply `deploy/db-roles.sql` (and `deploy/db-roles-curator.sql` when you run curator web) after every `migrate`. The server refuses to start while a migration is pending.
 `deploy/db-roles.sql` also takes the right to make temporary tables (`TEMP`) on the database from `PUBLIC`; the owner
 of the database keeps it. No Kütüphane process needs temporary tables.
 
@@ -310,45 +306,6 @@ KUTUPHANE_CURATOR_WEB_DSN=… .venv/bin/kutuphane curator web --port 8090
 ```
 
 Enrollment and use: [operations.md](operations.md), section 7.
-
-## Decider runner
-
-The decider runner (docs/25 §8.3, D73) asks a local model, through LLMDAP, for a suggestion on each undecided note,
-and lets a live delegation approve evidence notes through the database rules. It is optional. Use:
-[operations.md](operations.md), section 7.
-
-**Once:**
-
-1. The database role, as the owner:
-   ```sh
-   docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 \
-     -c "CREATE ROLE kutuphane_decider LOGIN PASSWORD '${KUTUPHANE_DECIDER_DB_PASSWORD}'"
-   docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 < deploy/db-roles-decider.sql
-   ```
-2. An LLMDAP subject key of its own for the runner (`KUTUPHANE_DECIDER_LLMDAP_KEY`), allowed on the decider's route
-   only (`deploy/llmdap/README.md`). The audit principal of the runner is `agent:kutuphane-decider`.
-3. Check the spec: `kutuphane decider spec deploy/deciders/qwen-notes.json`. The runner refuses a spec whose
-   `route_locality` is not `local`, and an answer whose reported model or revision (`answer` pointers) differs from
-   the spec. If the model server changes, the reported revision changes: write a new spec version. A new spec has
-   no shadow agreement and no delegation. The `spec_sha256` also covers the runner's prompt and answer code
-   (`runner_code`), so a Kütüphane update that changes that code is a new spec too.
-4. The books for suggestions, as the owner: `kutuphane grant book:adc-memory read agent:kutuphane-decider` for each
-   journal. The runner role reads note text only through the database function `decider_notes()`, which gives the
-   text of these books and of the books of live delegations only, through the text gate.
-
-**Run** (by a timer, for example every 15 minutes):
-
-```sh
-KUTUPHANE_DECIDER_DSN="postgresql://kutuphane_decider:${KUTUPHANE_DECIDER_DB_PASSWORD}@127.0.0.1:55432/kutuphane" \
-KUTUPHANE_LLMDAP_URL=http://<llmdap>:8787 KUTUPHANE_DECIDER_LLMDAP_KEY=… KUTUPHANE_DECIDER_BOOKS=adc-memory \
-  .venv/bin/kutuphane decider run --spec deploy/deciders/qwen-notes.json --shadow
-```
-
-`KUTUPHANE_DECIDER_BOOKS` (comma-separated) lists the journals for suggestions of this run; a journal where
-`agent:kutuphane-decider` holds no `read` gives no note. The books of live delegations of the spec are always in
-scope. `--shadow` writes suggestions only. `--limit` caps the model calls of one run (default 100). The model call
-holds no database lock; each suggestion and each use is a short transaction. Run `deploy/db-roles-decider.sql` again
-after every `kutuphane migrate`.
 
 ## Light install
 

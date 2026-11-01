@@ -15,10 +15,8 @@ from kutuphane.gate import Actor
 from kutuphane.policy import make_policy
 from kutuphane.source import AcceptedFinding, read_source
 from test_confirm import _curator_url, act, person, propose, seq_of, shown  # noqa: F401
-from test_curator_review17 import SUGGEST, model_call
-from test_curatorweb import CFG
-from test_decider import APP, DEC, WEB, A, J, U, note, spec
-from test_decider import dec, env  # noqa: F401  (fixtures)
+from test_curatorweb import APP_ROLE, CFG, WEB_ROLE, A, J, U
+from test_curatorweb import env  # noqa: F401  (a fixture)
 from test_ingest import PERSONAL_DOC
 from test_packages import key, trust  # noqa: F401  (key: a fixture)
 from test_quotes import books, fake  # noqa: F401  (fixtures)
@@ -26,6 +24,11 @@ from test_quotes import books, fake  # noqa: F401  (fixtures)
 PIN = ["search_path=pg_catalog, public, pg_temp"]
 CLOUD = make_policy(sensitivity="normal", egress="cloud_ok", protection="standard")
 LOCAL = make_policy(sensitivity="normal", egress="local_only", protection="standard")
+
+
+def note(conn, text, kind="finding", **kw) -> tuple[int, str]:
+    r = notes.propose(conn, Actor(A, U, channel="mcp"), {"book": J, "kind": kind, "text": text, **kw})[0]
+    return seq_of(conn, r["ref"]), r["ref"]
 
 
 # --- #1: no function resolves an object through the caller's temporary schema --------------------------------------
@@ -40,31 +43,11 @@ def test_every_function_of_ours_pins_its_search_path(conn):
 
 
 def test_no_login_role_makes_temporary_objects(env):
-    for role in (APP, WEB, DEC):
+    for role in (APP_ROLE, WEB_ROLE):
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             with env.transaction():
                 env.execute(f"SET LOCAL ROLE {role}")
                 env.execute("CREATE TEMP TABLE shadow (a int)")
-
-
-def test_a_temporary_shadow_cannot_fake_shadow_evidence(env, dec):
-    """With TEMP (a deployment that did not apply the new role scripts), the decider role makes an empty temporary
-    `standing_event` and a temporary `memory_seq` that gives negative numbers. A suggestion after a person's verdict
-    is still refused, and a suggestion takes its seq from public.memory_seq."""
-    db_name = env.execute("SELECT current_database()").fetchone()[0]
-    env.execute(f'GRANT TEMPORARY ON DATABASE "{db_name}" TO {DEC}')
-    s = spec()
-    decided, ref = note(env, "A finding that a person rejected first")
-    notes.set_standing(env, ref, "rejected", curator=U, reason="a person decided it")
-    open_seq, _ = note(env, "A finding with no decision yet")
-    calls = model_call(env), model_call(env)
-    dec.execute("CREATE TEMP TABLE standing_event (note_seq bigint)")
-    dec.execute("CREATE TEMP SEQUENCE memory_seq MINVALUE -1000000000 START -1000000000")
-    with pytest.raises(psycopg.errors.RaiseException, match="has a Standing event"):
-        dec.execute(SUGGEST, (decided, s.decider, s.sha256, calls[0]))
-    late = dec.execute(SUGGEST, (open_seq, s.decider, s.sha256, calls[1])).fetchone()[0]
-    assert late > open_seq                                  # after the note, from the real sequence
-    assert env.execute("SELECT count(*) FROM note_suggestion WHERE note_seq = %s", (decided,)).fetchone()[0] == 0
 
 
 # --- #2: a confirmation and an approval are of the signed parts ------------------------------------------------------
@@ -94,7 +77,7 @@ def test_a_confirmed_note_gains_no_citation_or_creation_link_later(env):
     for sql, params in ((LINK, (seq, J, other, J, write)), (CODE, (seq, J, "a" * 40))):
         with pytest.raises(psycopg.errors.RaiseException, match="is written"):
             with env.transaction():
-                env.execute(f"SET LOCAL ROLE {APP}")     # what the app role holds: INSERT, no UPDATE or DELETE
+                env.execute(f"SET LOCAL ROLE {APP_ROLE}")     # what the app role holds: INSERT, no UPDATE or DELETE
                 env.execute(sql, params)
     assert shown(env, ref) == ("human", A, U)
     assert notes.effective_standing(env, [seq], notes.NOW)[seq][0] == "approved"

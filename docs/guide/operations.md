@@ -143,9 +143,8 @@ own policy lines; Kütüphane's subject is `svc-kutuphane`.
 2. Put Kütüphane's subject key in `KUTUPHANE_LLMDAP_KEY`. Its hash goes in the shared gateway's keys file, next to
    the other product's subjects.
 3. Set the route names of the shared gateway: `KUTUPHANE_LLMDAP_ROUTE` (answers and question translation),
-   `KUTUPHANE_LLMDAP_EMBED_ROUTE`, `KUTUPHANE_LLMDAP_RERANK_ROUTE`, each with its route class and model. The decider
-   names its route in its spec and connects with its own subject key (`KUTUPHANE_DECIDER_LLMDAP_KEY`). Each route
-   needs a policy line `p, svc-kutuphane, llm:invoke, llm/<route>` (and one for the decider's subject).
+   `KUTUPHANE_LLMDAP_EMBED_ROUTE`, `KUTUPHANE_LLMDAP_RERANK_ROUTE`, each with its route class and model. Each route
+   needs a policy line `p, svc-kutuphane, llm:invoke, llm/<route>`.
 4. Run `GET /v1/health`: each configured route gets one real call (purpose `health`).
 
 Every call sends `x-llmdap-purpose` with one of `answer`, `search`, `index`, `translate`, `rerank`, `note`,
@@ -706,8 +705,6 @@ KUTUPHANE_CURATOR_DSN=… kutuphane curator queue --curator user:ayse [--book ad
   cannot read", with no path.
   `hidden_parts` counts these parts in the note's own citations and creation links: such a note cannot be approved
   on the phone (the curator can reject it, or get `read` on that book).
-- **No model suggestion** is in the queue, and the queue order does not use one (D67). A note that a delegation
-  holds as a sample has its normal place and no mark.
 - Each queue page is recorded as an `access_event` (action `curate_view`) with the notes and their Standing events,
   so the rollback report can list who saw a note.
 
@@ -723,8 +720,8 @@ The command prints a one-time URL (valid 15 minutes, for one passkey). Give it t
 opens it on her phone (with the Tailscale app on), taps **Create passkey** and confirms with her face, fingerprint or
 PIN. Then she taps **Sign in with passkey**.
 
-The page has three tabs: **To review** (the queue above), **My words** (the "my words" requests, below) and
-**Auto-approval** (the delegations, below). Each tab has one line that tells what it is for. The words on the page
+The page has two tabs: **To review** (the queue above) and **My words** (the "my words" requests, below). Each tab
+has one line that tells what it is for. The words on the page
 are plain English; the internal names (refs, class keys, tiers, writer ids) are under **Details** on each card,
 closed by default.
 
@@ -766,9 +763,8 @@ page says so and reloads.
 
 <img src="img/curator-sign.png" alt="The sign sheet: what the fingerprint signs, with the rule that the approval retires" width="300">
 
-After the act, the page shows the receipt ("Done. 2 approved, 1 rejected."): for each note, the suggestion of a model
-decider if there is one ("agrees with you" or "differs from you"), and for a sample of a delegation, "This was a check
-of auto-approval <id>". The page shows these only after the act. "Nothing to review." means the queue is empty.
+After the act, the page shows the receipt ("Done. 2 approved, 1 rejected."): for each note, what was decided and the
+rules that an approval retired. "Nothing to review." means the queue is empty.
 
 Rules of one act: 1–50 notes, one reason, at most one rule-role note (`decision_proposal`, `convention`) approved,
 never two notes joined by `contradicts` approved together. The transitions are the ones in the table above. iPhone
@@ -836,74 +832,6 @@ note, whether it exists or not. Nothing is stored before the signature; leaving 
   request for the same bytes. The page offers no choice; the act and the database refuse. The confirmer may confirm
   again (the latest counts) or withdraw first.
 
-### Model suggestions and delegated curate (D73)
-
-> **Frozen (D78).** The decider and delegated curate work as described below, but they get no new work until a
-> second curator or a backlog exists.
-
-A **decider** is a local model behind LLMDAP with a pinned spec file (`deploy/deciders/*.json`): the model, its
-revision, the route, the prompt and the label map. `kutuphane decider run` gives each undecided note in its books one
-**suggestion** (`approved`, `rejected` or `abstain`, and a confidence). A suggestion never changes Standing, and the
-phone page never shows it before a person decides the note. Install the runner first:
-[install.md](install.md#decider-runner).
-
-The first decider is the local Qwen (`deploy/deciders/qwen-notes.json`) in **shadow mode**: suggestions only.
-
-```sh
-kutuphane decider spec deploy/deciders/qwen-notes.json        # the decider id and spec_sha256
-KUTUPHANE_CURATOR_DSN=… kutuphane grant book:adc-memory read agent:kutuphane-decider   # once per journal
-KUTUPHANE_DECIDER_DSN=… KUTUPHANE_DECIDER_LLMDAP_KEY=… KUTUPHANE_LLMDAP_URL=… KUTUPHANE_DECIDER_BOOKS=adc-memory \
-  kutuphane decider run --spec deploy/deciders/qwen-notes.json --shadow
-KUTUPHANE_CURATOR_DSN=… kutuphane delegation agreement --spec deploy/deciders/qwen-notes.json --book adc-memory --kind finding
-```
-
-`delegation agreement` shows the **shadow agreement**: for each threshold (0.5–0.95), the notes with a suggestion
-`approved` at that confidence or more, written before the first human Standing event of the note, whose first human
-event is `approved` or `rejected`: `n`, the share approved, and the Wilson 95 % lower bound.
-
-**A delegation** lets the decider approve fresh notes of one evidence kind (`finding`, `lesson`, `dead_end` or
-`test_result`, never a rule kind) in one journal. A curator with `curate` and `read` creates it on the phone: tap
-**Auto-approval**, read the agreement in words ("When the model was at least 90 % sure, you agreed with it on 34 of 35
-notes."; the full table is under **Agreement at each level**), choose the level (default 90 %), the check rate
-("You check 1 in" N, default 10) and the days (default 14, at most 30), read the sentence "A local model may approve
-finding notes in adc-memory for 14 days. You check 1 in 10.", tap **Allow auto-approval** and sign. The page refuses
-it with fewer than 30 shadow decisions at the chosen level (`KUTUPHANE_DELEGATION_MIN_SHADOW`, a whole number of at
-least 1; curator web does not start with another value).
-
-The runner reads note text only through the database (`decider_notes()`): the journals where
-`agent:kutuphane-decider` holds `read` (the grant above) and the journals of live delegations, through the text gate.
-It reads each note again just before its model call; a note that lost `ai_input`, depends on a blocked skill or was
-decided since the list is not sent (`closed_meanwhile` in the run output). The `spec_sha256` covers the runner's
-prompt and answer code (`kutuphane decider spec` prints `runner_code`): an update that changes it is a new spec, with
-no shadow agreement and no delegation.
-
-While a delegation is live, each `decider run` (by a timer) gives the notes of its class with an `approved`
-suggestion at the threshold or more a **use**, oldest first: the database accepts a use only for the oldest such
-note (a use cannot skip a note) and only after its suggestion is committed. The database then decides:
-
-| Rule | Effect |
-|---|---|
-| the delegation ended or expired; the note has a Standing event, a `contradicts` link, or text that may not go to a model; the note was written by the runner | no use |
-| the creator no longer holds `curate` on the book | no use; the run skips the delegation |
-| a 1 in N draw (and always one after 2N unchecked uses) | a **sample**: no event; the note stays `pending` in the normal list, with no mark. The draw is fixed for each note (an HMAC under a key that only the database owner reads): a retry draws the same |
-| any other use | an `approved` event with `set_by: model:<name>@<version>` and the reason `delegated: <id>` |
-| 3 samples wait for a person | no new use until a person decides one |
-| a person's first decision on a sample is not `approved` (phone, `note standing` or `note rollback`) | the delegation ends at once (`ended:disagreement`) |
-
-Readers see the approver: `query_notes`, `neighbours` and `open_citation` give `approved_by` (`user:…` or
-`model:…`) for an approved note.
-
-```sh
-KUTUPHANE_CURATOR_DSN=… kutuphane delegation list [--book adc-memory]      # state and use counts
-KUTUPHANE_CURATOR_DSN=… kutuphane delegation report cd_<32 hex>            # every use, its model call, agreement
-KUTUPHANE_CURATOR_DSN=… kutuphane delegation end cd_<32 hex> --curator user:ayse --reason '…'
-```
-
-An end is final; a new delegation is a new signed act. On the phone, **Running now** lists the live delegations;
-**Details** shows the checks (agreed, said no, waiting, closed with no answer), **End auto-approval**, and the notes
-that the delegation approved, newest first. After an end, **Retire the N it approved** retires them in one act (at
-most 50 at a time). Nothing is retired automatically.
-
 ### Measures
 
 ```sh
@@ -916,8 +844,7 @@ KUTUPHANE_CURATOR_DSN=… kutuphane curator report --from 2026-10-01 --to 2026-1
 |---|---|
 | `curator_time` | `seconds_per_approved_note`: the visible time of the phone acts that approve a note (from the first display of the cards to the tap on **Continue** after the reason, only while the tab is visible, at most 1 hour) ÷ the notes they approve. Also the median seconds per act and per decided note, the acts with no time, and the acts signed by a synced passkey. |
 | `pending_after_7_days` | Among the notes written from `--from` to 7 days before `--to` (and at least 7 days ago): the share with no Standing event 7 days after it was written. By tier (the tier now) and by book. |
-| `decided_by` | Standing events in the period: `people_web` (phone acts), `people_cli`, `delegations`, `system`, by value. |
-| `delegations` | Each delegation live in the period: uses, approvals, the samples (agreed, disagreed, open, closed with no verdict), the coverage of its class, and the outcome counts of delegated and human approvals of the class. |
+| `decided_by` | Standing events in the period: `people_web` (phone acts), `people_cli`, `system`, by value. |
 
 ## 8. Outcomes and decision export
 

@@ -9,6 +9,12 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Remove the decider and delegated curate (D73)
+
+- Removed: the decider runner and delegated curate (D73, plan W1-1 option B). The commands `kutuphane decider …` and `kutuphane delegation …`, the curator web **Auto-approval** tab (`/delegations`, `/api/delegations`, `/api/delegations/{id}`), the `delegate` and `end_delegation` passkey actions, `deploy/db-roles-decider.sql`, `deploy/deciders/` and the settings `KUTUPHANE_DECIDER_DSN`, `KUTUPHANE_DECIDER_LLMDAP_KEY`, `KUTUPHANE_DECIDER_BOOKS` and `KUTUPHANE_DELEGATION_MIN_SHADOW` are gone. Only a person approves a note. The tables of migration 025 stay as history; there is no migration ([security.md](security.md#delegated-curate-d73-removed)).
+- Changed (receipt shape): the items of a curator web `standing` act receipt no longer have `suggestions` and `sample`. `kutuphane curator report` no longer has `delegations`, and its `decided_by` no longer has `delegations` (an event with `set_by` `model:…` counts as `system`).
+- Changed: `deploy/db-roles-curator.sql` revokes `INSERT` on `curate_delegation` and `delegation_end` from the curator web role. **Action:** after the upgrade, run `deploy/db-roles-curator.sql` again; stop any `kutuphane decider run` timer, and drop the `kutuphane_decider` role if you made one (`DROP OWNED BY kutuphane_decider; DROP ROLE kutuphane_decider;`).
+
 ### Vision 1.2 and "memory is data" (D80)
 
 - `docs/01` D80 records the nine operator decisions of 2026-11-01. R5: no new agent-memory feature merges before the T3 A/B (#121) rerun.
