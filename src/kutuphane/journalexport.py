@@ -92,9 +92,11 @@ def _records(conn, book: str, w: int) -> tuple[list[dict], dict]:
     return records, {"restricted": len(found) - len(free), "licence_unknown": len(unlicensed)}
 
 
-def _finish(conn, final, records: list[dict]) -> list[dict]:
+def _finish(conn, book: str, final, records: list[dict]) -> list[dict]:
     """Inside the export transaction, after the final decision: `ai_use` now, and the text withheld only for a note
-    that depends on a blocked skill in that decision."""
+    that depends on a blocked skill in that decision. A journal or source book restricted meanwhile refuses all."""
+    if catalog.book_state(conn, book)["policy"]["sensitivity"] == "restricted":  # Astra review #22
+        raise ValueError(f"{book} became restricted during the export: nothing was exported")
     now = decisions.rights(conn, final, [r["_seq"] for r in records])
     for r in records:
         seq = r.pop("_seq")
@@ -124,7 +126,7 @@ def export(conn, actor: Actor, book: str) -> tuple[list[dict], dict]:
         return records
 
     records = gate.guard_many(conn, actor, needs, work, action=ACTION, items=items,
-                              finish=lambda final, data: _finish(conn, final, data),
+                              finish=lambda final, data: _finish(conn, book, final, data),
                               notes_of=lambda data: [r["_seq"] for r in data])
     return records, {"records": len(records), "withheld": sum(r["withheld"] is not None for r in records),
                      **left_out, "book": book, "watermark": w}

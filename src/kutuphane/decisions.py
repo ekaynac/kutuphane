@@ -91,11 +91,14 @@ def _context_refs(conn, seqs: list[int], w: int) -> tuple[dict, dict]:
 def rights(conn, final, seqs: list[int]) -> dict:
     """{seq: (ai_use, withheld reason or None)} now, inside the export transaction after the final decision: the text
     goes out only when the note's `ai_input` and `train` (note AND every journal of its closure, `note_journal`) hold
-    and the note depends on no blocked skill in that decision (`final.blocked_notes`)."""
+    and the note depends on no blocked skill in that decision (`final.blocked_notes`). A source book that became
+    `restricted` after the work read its notes refuses the whole export (Astra review #22): nothing is handed out."""
     out = {}
-    for seq, search, ai_input, train in conn.execute(
-            "SELECT n.seq, n.search AND j.search, n.ai_input AND j.ai_input, n.train AND j.train "
-            "FROM note n JOIN note_journal j ON j.seq = n.seq WHERE n.seq = ANY(%s)", (seqs,)):
+    for seq, search, ai_input, train, restricted in conn.execute(
+            "SELECT n.seq, n.search AND j.search, n.ai_input AND j.ai_input, n.train AND j.train, "
+            f"{RESTRICTED_SOURCE} FROM note n JOIN note_journal j ON j.seq = n.seq WHERE n.seq = ANY(%s)", (seqs,)):
+        if restricted:
+            raise ValueError("a source book became restricted during the export: nothing was exported, run it again")
         reason = WITHHELD if not (ai_input and train) else gate.SKILL_WITHHELD if seq in final.blocked_notes else None
         out[seq] = {"search": _yn(search), "ai_input": _yn(ai_input), "train": _yn(train)}, reason
     return out

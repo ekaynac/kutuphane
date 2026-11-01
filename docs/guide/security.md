@@ -110,8 +110,9 @@ files; Funnel stays off.
 ## Delegated curate (D73), removed
 
 Delegated curate and the decider runner are removed (2026-11-01): only a person approves a note, by passkey act or
-owner credential. The migration 025 tables stay as history; no Kütüphane role writes them, and curator web refuses
-the `delegate` and `end_delegation` actions.
+owner credential. The migration 025 tables stay as history: migration 050 refuses any write to them, drops the
+decider read functions and revokes all rights of an existing `kutuphane_decider` role. Curator web refuses the
+`delegate` and `end_delegation` actions; `verify-acts` still checks the stored ones.
 
 ## Skill scan (SkillSpector)
 

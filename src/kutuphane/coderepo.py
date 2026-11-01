@@ -24,6 +24,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from . import db, gate, ids
+from .ids import CONTROL
 
 ROOTS_ENV = "KUTUPHANE_REPO_ROOTS"
 TIMEOUT = 5.0                 # seconds per git command (§10.3)
@@ -37,7 +38,6 @@ HEX_LEN = {"sha1": 40, "sha256": 64}
 REASONS = ("repo_removed", "repo_invalid", "commit_unknown", "commit_not_published", "branch_unknown", "not_a_file",
            "too_large", "binary", "timeout")
 
-CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 SLUG = re.compile(r"[a-z0-9][a-z0-9._-]{0,62}")
 HEX = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
 SYMBOL = re.compile(r"[A-Za-z_][A-Za-z0-9_.:$]{0,127}")

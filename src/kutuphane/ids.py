@@ -6,10 +6,12 @@ timestamps and transport metadata never do (AT-01).
 """
 import hashlib
 import json
+import re
 import unicodedata
 
 ENCODING_VERSION = 1
 SLUG = r"[a-z0-9][a-z0-9-]{0,62}"  # a book slug, unanchored: callers anchor it
+CONTROL = re.compile(r"[\x00-\x1f\x7f]")  # a control character: never in a path, a handle or a name
 PREFIX = {"content": "ct", "profile": "pf", "policy": "pl"}
 
 

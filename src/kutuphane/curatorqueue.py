@@ -444,10 +444,10 @@ def _pending_share(conn, start: datetime, end: datetime) -> dict:
 
 
 def _decided_by(conn, start: datetime, end: datetime) -> dict:
-    out = {"people_web": {}, "people_cli": {}, "system": {}}
-    for who, value, n in conn.execute(
+    out = {"people_web": {}, "people_cli": {}, "delegations": {}, "system": {}}
+    for who, value, n in conn.execute(  # delegations: D73 history (model:…); the system only tightens (R1)
             "SELECT CASE WHEN act IS NOT NULL THEN 'people_web' WHEN set_by LIKE 'user:%%' THEN 'people_cli' "
-            "ELSE 'system' END, value, count(*) "
+            "WHEN set_by LIKE 'model:%%' THEN 'delegations' ELSE 'system' END, value, count(*) "
             "FROM standing_event WHERE at >= %s AND at < %s GROUP BY 1, 2 ORDER BY 1, 2", (start, end)):
         out[who][value] = n
     return out
