@@ -17,9 +17,21 @@ M = "bellek"  # a journal that allows ai_input and train
 CURATOR = "user:ayse"
 
 
-def make(conn, book=M, *, train=True, policy=LOCAL):
-    notes.create_journal(conn, book=book, title=book, search=True, ai_input=True, train=train, policy=policy,
+def make(conn, book=M, *, train=True, ai_input=True, policy=LOCAL):
+    notes.create_journal(conn, book=book, title=book, search=True, ai_input=ai_input, train=train, policy=policy,
                          by="user:admin")
+
+
+def fresh(conn, okf_dir) -> None:
+    """A fresh installation: the same book `kitap`, a fresh journal M that allows everything, the importer U."""
+    conn.execute("DROP SCHEMA public CASCADE")
+    conn.execute("CREATE SCHEMA public")
+    db.migrate(conn)
+    catalog.publish(conn, book="kitap", title="kitap", files=read_source(okf_dir), policy=LOCAL,
+                    profile=profiles.spec("chunked"))
+    make(conn)
+    allow(conn, M, "read", "propose", agent=None)  # read: the later links name notes of the journal
+    allow(conn, "kitap", "read", agent=None)
 
 
 def note(conn, text, kind="finding", book=M, **args) -> str:
@@ -100,14 +112,7 @@ def test_round_trip_into_a_fresh_installation_keeps_the_note_ids_and_links(env, 
     ids, links = {i for (i,) in env.execute("SELECT id FROM note WHERE book = %s", (M,))}, note_links(env)
     passage_links = env.execute("SELECT type, dst_book, dst_content_id, dst_path FROM note_link "
                                 "WHERE dst_book IS NOT NULL").fetchall()
-    env.execute("DROP SCHEMA public CASCADE")  # a fresh installation: the same book and a fresh journal
-    env.execute("CREATE SCHEMA public")
-    db.migrate(env)
-    catalog.publish(env, book="kitap", title="kitap", files=read_source(okf_dir), policy=LOCAL,
-                    profile=profiles.spec("chunked"))
-    make(env)
-    allow(env, M, "read", "propose", agent=None)  # read: the later links name notes of the journal
-    allow(env, "kitap", "read", agent=None)
+    fresh(env, okf_dir)
     report = noteimport.run(env, Actor(U), M, lines)
     assert report["created"] == 5 and {i["standing"] for i in report["items"]} == {"pending"}
     assert {i["record"]: i["standing_claimed"] for i in report["items"]}[nid(memory["a"])] == "retired"
@@ -130,19 +135,38 @@ def test_the_import_validates_the_export_fields_and_refuses_withheld_text(env):
                         ({"outcomes": [{"task_ref": "t", "result": "passed", "at": "now", "principal": U,
                                         "on_behalf_of": None, "origin": "model"}]}, "at"),
                         ({"ai_use": {"search": "y"}}, "ai_use"),
-                        ({"text": None, "withheld": journalexport.WITHHELD}, "withheld")]:
+                        ({"text": None, "withheld": gate.SKILL_WITHHELD}, "withheld")]:
         with pytest.raises(ValueError, match=needle):
             noteimport.run(env, Actor(U), M, [json.dumps({**good, "id": "r2", **bad})])
 
 
-def test_text_needs_ai_input_and_train(env, monkeypatch, capsys, tmp_path):
-    make(env, train=False)
+def test_a_train_n_journal_round_trips_with_its_text_and_its_rights(env, okf_dir, monkeypatch, capsys, tmp_path):
+    make(env, ai_input=False, train=False)
     allow(env, M, "read", "propose")
     ref = note(env, "Secret plan", kind="decision_proposal", decision={"options": ["a", "b"], "choice": "b"})
     code, summary, [r] = export_cli(monkeypatch, capsys, tmp_path)
+    assert code == 0 and summary["withheld"] == 0 and r["id"] == nid(ref)
+    assert (r["text"], r["decision"], r["withheld"]) == ("Secret plan", {"options": ["a", "b"], "choice": "b"}, None)
+    assert r["ai_use"] == {"search": "y", "ai_input": "n", "train": "n"}
+    fresh(env, okf_dir)  # M allows ai_input and train here: the import must not widen the note's rights
+    [item] = noteimport.run(env, Actor(U), M, [json.dumps(r)])["items"]
+    assert item["ref"] == ref and item["status"] == "created"
+    assert env.execute("SELECT search, ai_input, train FROM note").fetchone() == (True, False, False)
+
+
+def test_a_note_with_a_blocked_skill_is_exported_without_its_text(env, monkeypatch, capsys, tmp_path):
+    make(env)
+    allow(env, M, "read", "propose")
+    ref = note(env, "Cites a skill", citations=[handle(env, "kitap")])
+    content = env.execute("SELECT current_content FROM book WHERE slug = 'kitap'").fetchone()[0]
+    env.execute("INSERT INTO skill_scan (book, content_id, skill_path, status, input_digest, tool_version, mode, "
+                "reason) VALUES ('kitap', %s, '.', 'failed', %s, '2.13.1', 'no-llm', 'test')", (content, "0" * 64))
+    code, summary, [r] = export_cli(monkeypatch, capsys, tmp_path)
     assert summary["withheld"] == 1 and r["id"] == nid(ref)
-    assert (r["text"], r["decision"], r["withheld"]) == (None, None, journalexport.WITHHELD)
-    assert r["ai_use"]["train"] == "n" and "Secret plan" not in (tmp_path / f"{M}.jsonl").read_text()
+    assert (r["text"], r["withheld"]) == (None, gate.SKILL_WITHHELD)
+    assert "Cites a skill" not in (tmp_path / f"{M}.jsonl").read_text()
+    with pytest.raises(ValueError, match="withheld"):
+        noteimport.run(env, Actor(U), M, [json.dumps(r)])
 
 
 def test_a_restricted_journal_is_refused(env):
