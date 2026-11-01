@@ -9,6 +9,12 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### `curate` grant in the database; small refactor (wave 1)
+
+- Fixed: the app database role could insert a `curate` row into `grant_tuple` directly, past the CLI check. A row-level security policy in `deploy/db-roles.sql` now refuses it; run the script again after you upgrade ([security.md](security.md#curation-boundary)).
+- Changed: a curator act with a malformed principal now gives `a curator is a user:` (before: `invalid curator: …`). One check, `authz.curator`, serves curation and `kutuphane skill clear`.
+- Design and research: refactor wave 1 (W1-2, W1-3, W1-5): one slug pattern `ids.SLUG`, dead names removed.
+
 ### Catalog read and publication facts (#159, #160)
 
 - New: `GET /v1/books` and the MCP tool `list_books`: the books and journals that you may read now, with `kind` (`book` or `journal`), the current `content_id` and `profile_id`, and `publication`. A book that you may not read is not in the list ([http-api.md](http-api.md#72-get-v1books), [mcp.md](mcp.md#518-list_books)) ([#159](https://github.com/ekaynac/kutuphane/issues/159)).
