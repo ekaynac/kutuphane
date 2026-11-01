@@ -10,7 +10,7 @@ Every command prints JSON on stdout. Errors go to stderr.
 | `0` | The command succeeded. |
 | `1` | `index`: no embeddings route is set. `show`: no such book. `kstd-check`: the check failed or there is no `kstd.yaml`. |
 | `2` | An error (bad input, policy error, database error), or `KUTUPHANE_CURATOR_DSN` is not set for a curator command. |
-| `3` | `read`, `reopen`, `decisions export`, `note standing`, `note rollback`: access denied. `ingest`, `approve-import`, `index`: the version is live, but its index is incomplete. |
+| `3` | `read`, `reopen`, `decisions export`, `journal export`, `note standing`, `note rollback`: access denied. `ingest`, `approve-import`, `index`: the version is live, but its index is incomplete. |
 | `4` | `whoami`: the token is not valid. |
 | `5` | `receive`: the package is not verified. |
 
@@ -604,9 +604,10 @@ kutuphane journal create acme-memory --search y --ai-input y \
 
 | Path | What Kütüphane does |
 |---|---|
-| Package (`export`) | Refused. A journal has no content version, and a `restricted` book is never in a package. Packages are the only path to another installation. |
+| Package (`export`) | Refused. A journal has no content version, and a `restricted` book is never in a package. |
 | Publication (`ingest`, `approve-import`) | Refused for a journal slug. |
 | Decision export | The note is left out. This applies also to each note, in any journal, with a `derived_from` link to a private journal note (also through other notes). The summary counts them in `restricted`. |
+| Journal export | Refused for a private journal. In another journal, the notes derived from a private journal note are left out, as in the decision export. |
 | Training (`--train y`) | Refused at `journal create` for a `restricted` journal. |
 | Kütüphane's own model calls (embeddings, answers) | Only `local` routes. A `cloud` route is refused before the call (`not_sent:egress_policy`), also for a note that derives from the private journal. |
 | Agents through MCP and HTTP | Only principals with `read` get the text. Kütüphane cannot see where an agent's model runs. Give `read` only to agents whose model runs locally, or create the journal with `--ai-input n`: then model readers get `text: null`. |
@@ -631,6 +632,21 @@ kutuphane note import nobetci-memory nobetci.jsonl --by user:ayse
 - With an embeddings route (`KUTUPHANE_LLMDAP_EMBED_ROUTE`), each new note gets a vector after the commit, with the egress check.
 - There is no MCP tool and no HTTP route for the import. An agent writes one note at a time with `propose_note`.
 - The command prints a report: `created`, `existing` (the same bytes were already a note), `unchanged`, `links` and one item for each record. Exit code 3: no right, or the book is not a journal; 2: the file is refused.
+
+### Export a journal
+
+Write a journal as JSONL in the `note import` shape, for a backup or a git repository:
+
+```sh
+kutuphane journal export adc-memory --out adc-memory.jsonl --by user:ayse
+```
+
+- The record format is in [agent-memory.md](agent-memory.md), section 11. Each record also has the Standing history, the writers, the outcomes and `ai_use`.
+- `--by` needs `read` on the journal and on each book that its notes cite or link. The export goes through the read gate, never the owner credential. The journal gets one `access_event` with `action = export_journal`, so the rollback report lists the export.
+- `--out` must be a new file. The command creates it with mode 600.
+- A `restricted` journal is refused (exit code 2). A note derived from a private journal, or from a file with `license: unknown`, is not in the file. The summary counts them in `restricted` and `licence_unknown`.
+- The text and the decision are present only when the note allows `ai_input` and `train`, as in the decision export (section 8). Else they are `null`, `withheld` gives the reason, and `note import` refuses that record. The summary counts them in `withheld`.
+- `note import` of the file into a journal with the same slug gives the same note ids and links. Each note is `pending` again. The import keeps only the latest Standing as a claim; the file keeps the history.
 
 ## 7. Curation
 
@@ -1085,6 +1101,7 @@ Disk encryption is a deployment duty at the volume level (D48). The application 
 | `explain` | Print the unified audit for a correlation id or an answer id. |
 | `journal create` | Create a journal. |
 | `journal restrict` | Tighten a journal. |
+| `journal export` | Write a journal as JSONL in the `note import` shape (`read` on the journal). |
 | `note standing` | Set the Standing of a note as a curator. |
 | `note rollback` | Retire a note and its derived notes; report who used them. |
 | `note import` | Import JSONL records of a local memory as `pending` notes of a journal. |

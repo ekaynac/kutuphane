@@ -13,8 +13,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import (answers, audit, authz, catalog, coderepo, curatorqueue, datascan, db, decisions, devauth, gate,
-               gitorigin, identity, kstd, llmdap, noteimport, notes, packages, passagemap, passkey, profiles, quotes,
-               search, retrieval, signing, skillscan, vectors)
+               gitorigin, identity, journalexport, kstd, llmdap, noteimport, notes, packages, passagemap, passkey,
+               profiles, quotes, search, retrieval, signing, skillscan, vectors)
 from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, make_policy
 from .source import AcceptedFinding, read_source
 
@@ -390,6 +390,26 @@ def cmd_journal_restrict(conn, args) -> int:
     return 0
 
 
+def _write_jsonl(path: str, records: list[dict]) -> None:
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)  # it can hold note text
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.writelines(json.dumps(r, ensure_ascii=False, separators=(",", ":")) + "\n" for r in records)
+
+
+def cmd_journal_export(conn, args) -> int:
+    """R3: a journal as JSONL in the `note import` shape, through the read gate as --by (never the owner role)."""
+    if os.path.lexists(args.out):
+        raise ValueError(f"{args.out} exists; the export writes a new file")
+    try:
+        records, summary = journalexport.export(conn, gate.Actor(args.by), args.book)
+    except (gate.Denied, gate.NotFound) as exc:
+        print(f"denied: {exc}", file=sys.stderr)
+        return 3
+    _write_jsonl(args.out, records)
+    _print({"out": args.out, **summary})
+    return 0
+
+
 def cmd_decisions_export(conn, args) -> int:
     """docs/24 §21.4: JSONL decision records through the read gate; text only with ai_input and train."""
     if os.path.lexists(args.out):
@@ -399,9 +419,7 @@ def cmd_decisions_export(conn, args) -> int:
     except (gate.Denied, gate.NotFound) as exc:
         print(f"denied: {exc}", file=sys.stderr)
         return 3
-    fd = os.open(args.out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)  # it can hold note text
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.writelines(json.dumps(r, ensure_ascii=False, separators=(",", ":")) + "\n" for r in records)
+    _write_jsonl(args.out, records)
     _print({"out": args.out, **summary})
     return 0
 
@@ -778,6 +796,12 @@ def parser() -> argparse.ArgumentParser:
     jt.add_argument("--no-ai-input", action="store_true")
     jt.add_argument("--no-train", action="store_true")
     jt.set_defaults(fn=cmd_journal_restrict)
+    jx = jsub.add_parser("export", help="write a journal as JSONL in the note import shape (read on the journal)")
+    jx.add_argument("book")
+    jx.add_argument("--out", required=True, help="a new file")
+    jx.add_argument("--by", required=True, help="the reader, who holds read on the journal and on every book that "
+                                                "its notes cite or link: user:<name> or agent:<name>")
+    jx.set_defaults(fn=cmd_journal_export)
     nt = sub.add_parser("note", help="notes (curation needs KUTUPHANE_CURATOR_DSN)")
     nsub = nt.add_subparsers(dest="note_cmd", required=True)
     ns = nsub.add_parser("standing", help="set the Standing of a note as a curator")

@@ -9,6 +9,11 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Journal export (R3)
+
+- New: `kutuphane journal export <journal> --out FILE --by <principal>` writes a journal as JSONL in the `note import` record shape, with the Standing history, the writers, the outcomes and `ai_use` of each note. `note import` of the file into a journal with the same slug gives the same note ids and links; each note is `pending` again. It needs `read` on the journal and on each book that its notes cite or link. A `restricted` journal is refused; notes derived from a private journal or from `license: unknown` files are left out; the text needs `ai_input` and `train`, as in the decision export ([agent-memory.md](agent-memory.md#export-a-journal-backup-git), [operations.md](operations.md#export-a-journal)).
+- Changed: `note import` accepts the export fields `standing_history`, `writers`, `outcomes`, `ai_use` and `withheld`. It checks their shape and does not store them. A record with a `withheld` reason is refused.
+
 ### Remove the decider and delegated curate (D73)
 
 - Removed: the decider runner and delegated curate (D73, plan W1-1 option B). The commands `kutuphane decider …` and `kutuphane delegation …`, the curator web **Auto-approval** tab (`/delegations`, `/api/delegations`, `/api/delegations/{id}`), the `delegate` and `end_delegation` passkey actions, `deploy/db-roles-decider.sql`, `deploy/deciders/` and the settings `KUTUPHANE_DECIDER_DSN`, `KUTUPHANE_DECIDER_LLMDAP_KEY`, `KUTUPHANE_DECIDER_BOOKS` and `KUTUPHANE_DELEGATION_MIN_SHADOW` are gone. Only a person approves a note. The tables of migration 025 stay as history; there is no migration ([security.md](security.md#delegated-curate-d73-removed)).
