@@ -257,3 +257,21 @@ def test_018_applies_to_a_database_at_015_with_data(conn):  # T38 (D's part)
     with pytest.raises(Exception, match="ask_job_id_check"):
         conn.execute("INSERT INTO ask_job (id, principal, correlation_id, question, scope, status) "
                      "VALUES ('jb_x', 'user:ayse', 'c', 'q', '{}', 'queued')")
+
+
+def test_a_background_job_keeps_the_callers_correlation_id_but_never_keys_on_it(app_env, conn, verifier, keys,
+                                                                                 fake):  # #156
+    fake.reply = REPLY
+    first, second = "im-job:0001", "im-job:0002"
+    with TestClient(app_with(app_env, verifier, fake, 1), base_url=PUBLIC) as client:
+        r = submit(client, {**bearer(keys), "X-Correlation-Id": first}, idempotency_key="im-retry-0001")
+        ours = r.headers["x-correlation-id"]
+        assert r.status_code == 202 and r.headers["x-caller-correlation-id"] == first
+        again = submit(client, {**bearer(keys), "X-Correlation-Id": second}, idempotency_key="im-retry-0001")
+        assert again.status_code == 200 and again.json()["job_id"] == r.json()["job_id"]   # the key decides, not it
+        assert wait_for(client, bearer(keys), r.json()["job_id"])["status"] == "succeeded"
+    rows = conn.execute("SELECT call_id, caller_correlation_id FROM model_call WHERE correlation_id = %s",
+                        (ours,)).fetchall()
+    assert rows and all(c == first and call.startswith(f"{first}.{ours}.") for call, c in rows)
+    assert conn.execute("SELECT caller_correlation_id FROM ask_job WHERE id = %s",
+                        (r.json()["job_id"],)).fetchone() == (first,)

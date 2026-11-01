@@ -113,11 +113,11 @@ Send an access token from the IdP as `Authorization: Bearer <token>`. Kütüphan
 
 | Check | Rule |
 |---|---|
-| Signature | A key from the JWKS file in `KUTUPHANE_OIDC_JWKS`. If the token has a `kid`, exactly one key must have that id. |
+| Signature | A key from the JWKS file of the token's issuer (`KUTUPHANE_OIDC_JWKS` for the primary issuer). If the token has a `kid`, exactly one key must have that id. |
 | Algorithm | `RS256`, `ES256` or `EdDSA`. |
 | Required claims | `exp`, `iat`, `iss`, `aud`, `sub`. |
-| `iss` | Exactly the same string as `KUTUPHANE_OIDC_ISSUER`. There is no normalization. |
-| `aud` | `KUTUPHANE_OIDC_AUDIENCE`. |
+| `iss` | Exactly the same string as `KUTUPHANE_OIDC_ISSUER`, or as one issuer of `KUTUPHANE_OIDC_ISSUERS` (section 3.4). There is no normalization. |
+| `aud` | The audience of that issuer (`KUTUPHANE_OIDC_AUDIENCE` for the primary issuer). |
 | Clock leeway | 30 seconds. |
 
 The caller is only what the verified token says. No header can set or change the principal, or the user that an
@@ -154,6 +154,24 @@ WWW-Authenticate: Bearer error="invalid_token", error_description="Authenticatio
 
 The server does not start if the MCP SDK would advertise the issuer in another form (for example, an uppercase
 host or a default port). Write `KUTUPHANE_OIDC_ISSUER` exactly as the IdP's tokens carry it.
+
+### 3.4 More than one issuer
+
+One Kütüphane can trust more issuers than the primary one (#157), for example the IdP of a consumer application
+that signs tokens for its own users and services. `KUTUPHANE_OIDC_ISSUERS` is the path of a JSON file with a list of
+issuers ([operations.md](operations.md#more-than-one-token-issuer)). Each one has its own exact `iss`, audience and
+JWKS file, and its **principal prefixes**:
+
+- A token of that issuer may name only principals that start with one of its prefixes (`principal` and the user it
+  acts for). Any other principal is `401`.
+- A principal under its prefixes comes only from that issuer: a token of the primary issuer, or of a third one,
+  that names it is `401`. So an application issuer can never name your curator, and your IdP can never name the
+  application's users.
+- `curate` is never granted to its principals, unless its entry says `"curate": true`
+  (`kutuphane grant … curate` refuses it).
+
+The protected-resource metadata (section 3.3) names only the primary issuer. The clients of another issuer get
+their tokens from it without discovery.
 
 ## 4. Results and errors
 
@@ -251,6 +269,20 @@ the handling labels (its `structuredContent.result` stays the list of hits):
 stored with the answer. Each stage is `ok`, `failed` (the search went on without it: full text only, the question
 only, or the hybrid order) or `skipped`. The table of the stages is in
 [http-api.md](http-api.md#51-get-v1search).
+
+### 4.6 Correlation id
+
+Each `tools/call`, `resources/read`, `skills/list` and `skills/get` gets a new correlation id: ours. You can send
+your own id in the request `_meta["kutuphane/correlation-id"]` (#156), with the pattern
+`^[A-Za-z0-9][A-Za-z0-9._:-]{7,63}$`. Any other value gets `-32602`, and nothing is done. The result `_meta` has
+our id under the same key, and yours under `kutuphane/caller-correlation-id` (error results too):
+
+```json
+{"_meta": {"kutuphane/correlation-id": "3f0c…", "kutuphane/caller-correlation-id": "im-req:2026-11-01.0001"}}
+```
+
+Your id is stored and passed on as for HTTP ([http-api.md](http-api.md#15-correlation-id)). It never changes a
+right, and it is never an idempotency key.
 
 ## 5. Tools
 

@@ -30,6 +30,9 @@ CHAT_PATH = "/v1/chat/completions"  # openai schema on the bridge route
 EMBED_PATH = "/v1/embeddings"       # openai schema on an LLMDAP `surface: "embeddings"` route
 RERANK_PATH = "/v1/rerank"          # openai-compatible schema on an LLMDAP `surface: "rerank"` route (#236)
 SYSTEMONE_PATH = "/v1/systemone"    # typed decisions on an LLMDAP `schema: "systemone"` route (D44, #225)
+# #165: every call names one of these as `x-llmdap-purpose`, so one shared LLMDAP chain (D76) tells our calls apart.
+# The product is the LLMDAP subject (`svc-kutuphane`), so the names carry no product prefix.
+PURPOSES = ("answer", "search", "index", "translate", "rerank", "note", "decide", "health")
 
 
 class EgressError(RuntimeError):
@@ -106,10 +109,11 @@ class Routed:
 
 
 def _record(conn, actor: Actor, bridge: Bridge, call_id: str, model: str, books, status, derived, error) -> None:
-    conn.execute("INSERT INTO model_call (correlation_id, call_id, derived_correlation_id, principal, on_behalf_of, "
-                 "route, model, http_status, error, source_books) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                 (actor.correlation_id, call_id, derived, actor.principal, actor.on_behalf_of, bridge.route, model,
-                  status, error, list(books)))
+    conn.execute("INSERT INTO model_call (correlation_id, caller_correlation_id, call_id, derived_correlation_id, "
+                 "principal, on_behalf_of, route, model, http_status, error, source_books) "
+                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                 (actor.correlation_id, actor.caller_correlation_id, call_id, derived, actor.principal,
+                  actor.on_behalf_of, bridge.route, model, status, error, list(books)))
 
 
 def _check_egress(conn, bridge: Bridge, books: list[str]) -> None:
@@ -125,9 +129,12 @@ def _check_egress(conn, bridge: Bridge, books: list[str]) -> None:
 
 
 def _post(conn, bridge: Bridge, actor: Actor, path: str, body: dict, *, model: str, source_books: list[str],
-          purpose: str | None) -> dict:
-    """One governed call: our egress check, then the bridge; every attempt lands in `model_call`."""
-    call_id = f"{actor.correlation_id}.{uuid.uuid4().hex[:12]}"
+          purpose: str) -> dict:
+    """One governed call: our egress check, then the bridge; every attempt lands in `model_call`. The call id starts
+    with the caller's correlation id when there is one (#156), so the shared LLMDAP chain holds it too."""
+    if purpose not in PURPOSES:
+        raise ValueError(f"LLMDAP purpose must be one of {', '.join(PURPOSES)}")
+    call_id = ".".join(filter(None, (actor.caller_correlation_id, actor.correlation_id, uuid.uuid4().hex[:12])))
     try:
         _check_egress(conn, bridge, source_books)
     except EgressError as exc:
@@ -138,9 +145,8 @@ def _post(conn, bridge: Bridge, actor: Actor, path: str, body: dict, *, model: s
         "authorization": f"Bearer {bridge.key}",
         "x-llmdap-correlation-id": call_id,
         "x-llmdap-for-subject": actor.on_behalf_of or actor.principal,
+        "x-llmdap-purpose": purpose,
     }
-    if purpose:
-        headers["x-llmdap-purpose"] = purpose
     request = urllib.request.Request(f"{bridge.url}/bridge/{bridge.route}{path}", data=json.dumps(body).encode(),
                                      headers=headers, method="POST")
     status = derived = None
@@ -164,7 +170,7 @@ def _post(conn, bridge: Bridge, actor: Actor, path: str, body: dict, *, model: s
 
 
 def chat(conn, bridge: Bridge, actor: Actor, *, model: str, messages: list[dict], source_books: list[str],
-         purpose: str | None = None, options: dict | None = None) -> dict:
+         purpose: str, options: dict | None = None) -> dict:
     """`source_books`: every book whose content is in `messages` (may be empty). Required, so no caller forgets.
     `options`: more request fields (for example `temperature`); they never replace the model or the messages."""
     return _post(conn, bridge, actor, CHAT_PATH, {**(options or {}), "model": model, "messages": messages,
@@ -173,7 +179,7 @@ def chat(conn, bridge: Bridge, actor: Actor, *, model: str, messages: list[dict]
 
 
 def systemone(conn, bridge: Bridge, actor: Actor, *, model: str, body: dict, source_books: list[str],
-              purpose: str | None = None) -> dict:
+              purpose: str) -> dict:
     """A typed decision on an LLMDAP `schema: "systemone"` route (D44: choice questions, class probabilities)."""
     return _post(conn, bridge, actor, SYSTEMONE_PATH, {**body, "model": model}, model=model,
                  source_books=source_books, purpose=purpose)

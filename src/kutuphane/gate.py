@@ -9,6 +9,7 @@
   `authz.allowed(skills=…, notes=…)`.
 - Every decision, allowed or not, is written to `access_event` with the policy and grant rows behind it.
 """
+import re
 import uuid
 from dataclasses import dataclass, field, replace
 
@@ -27,6 +28,15 @@ class NotFound(LookupError):
 
 
 CHANNELS = ("cli", "http", "mcp")
+# #156: a consumer's own correlation id (migration 046 holds the same pattern). It is stored and echoed next to ours,
+# and never decides a right, an idempotency key or anything else.
+CALLER_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,63}\Z")
+
+
+def caller_id(value):
+    if value is not None and not (isinstance(value, str) and CALLER_ID.match(value)):
+        raise ValueError("the caller's correlation id must match ^[A-Za-z0-9][A-Za-z0-9._:-]{7,63}$")
+    return value
 
 
 @dataclass(frozen=True)
@@ -38,20 +48,22 @@ class Actor:
     # the request came through. Only the server entry points set the channel; anything else is the CLI.
     client_id: str | None = None
     channel: str = "cli"
+    caller_correlation_id: str | None = None
 
     def __post_init__(self):
         if self.channel not in CHANNELS:
             raise ValueError(f"channel must be one of {', '.join(CHANNELS)}")
+        caller_id(self.caller_correlation_id)
 
 
 def log_event(conn, actor: Actor, action: str, obj: str, mode: str, d: authz.Decision, policy_id, content_id, path,
          reason: str | None = None, profile_id=None, items=None, memory_seq=None) -> None:
-    conn.execute("INSERT INTO access_event (correlation_id, principal, on_behalf_of, action, object, mode, allowed, "
-                 "reason, policy_id, grant_ids, delegation_id, content_id, path, profile_id, items, memory_seq) "
-                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                 (actor.correlation_id, actor.principal, actor.on_behalf_of, action, obj, mode, d.allowed,
-                  reason or d.reason, policy_id, list(d.grant_ids), d.delegation_id, content_id, path, profile_id,
-                  Jsonb(items) if items is not None else None, memory_seq))
+    conn.execute("INSERT INTO access_event (correlation_id, caller_correlation_id, principal, on_behalf_of, action, "
+                 "object, mode, allowed, reason, policy_id, grant_ids, delegation_id, content_id, path, profile_id, "
+                 "items, memory_seq) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                 (actor.correlation_id, actor.caller_correlation_id, actor.principal, actor.on_behalf_of, action, obj,
+                  mode, d.allowed, reason or d.reason, policy_id, list(d.grant_ids), d.delegation_id, content_id,
+                  path, profile_id, Jsonb(items) if items is not None else None, memory_seq))
 
 
 def guard(conn, actor: Actor, obj: str, modes: list[str], fetch, *, action: str, content_id=None, path=None,

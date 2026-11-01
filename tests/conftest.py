@@ -10,7 +10,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 TEST_DSN_ENV = "KUTUPHANE_TEST_DSN"
 # Migrations that add a column which today's write path fills, and that do not depend on the migrations after the
 # step under test: a test that writes with today's code into an old schema applies them first.
-WRITE_PATH_COLUMNS = ("047_note_applies_to.sql",)
+WRITE_PATH_COLUMNS = ("046_caller_correlation.sql", "047_note_applies_to.sql")
 
 
 def make_pdf(text: str) -> bytes:

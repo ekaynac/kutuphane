@@ -67,11 +67,19 @@ Every response has these headers:
 
 ### 1.5 Correlation id
 
-Each request gets a new correlation id. The audit records use it.
+Each request gets a new correlation id: ours. The audit records use it.
 
-- `GET /v1/search` and `POST /v1/ask` give it in the body as `correlation_id`.
-- `GET /v1/notes` and `GET /v1/notes/{book}/{id}/neighbours` give it in the header `X-Correlation-Id`. The body
-  stays the same bytes for the same request.
+You can also send your own id in the request header `X-Correlation-Id` (#156). Kütüphane stores it next to ours, as
+`caller_correlation_id`, in `access_event`, `model_call` and `write_record` (and on a background job, for its model
+calls). It is a label only: it never changes a right, and it is never an idempotency key.
+
+- The pattern is `^[A-Za-z0-9][A-Za-z0-9._:-]{7,63}$`. Any other value gets `400`, and nothing is done.
+- Every response of a route that needs a token (errors too, after the token is verified) has the header
+  `X-Correlation-Id` with **our** id, and `X-Caller-Correlation-Id` with yours when you sent one.
+- `GET /v1/search` and `POST /v1/ask` also give our id in the body as `correlation_id`.
+- The model calls of the request send `<your id>.<our id>.<n>` as the LLMDAP correlation id, so the LLMDAP chain
+  holds your id too.
+- `kutuphane explain <id>` accepts either id ([operations.md](operations.md)).
 
 ### 1.6 Text for a model
 

@@ -9,6 +9,13 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Identity and trace: caller correlation id, more issuers, LLMDAP purposes (#156, #157, #165)
+
+- New: send your own correlation id in `X-Correlation-Id` (MCP: `_meta["kutuphane/correlation-id"]`). Kütüphane stores it next to its own id as `caller_correlation_id` in `access_event`, `model_call`, `write_record` and a background job, puts it at the start of the LLMDAP correlation id, and returns both ids on every response (`X-Correlation-Id` + `X-Caller-Correlation-Id`; MCP result `_meta`). A malformed id is `400` (MCP `-32602`). It never decides a right or an idempotency key. `kutuphane explain` accepts either id ([http-api.md](http-api.md#15-correlation-id), [mcp.md](mcp.md#46-correlation-id)) ([#156](https://github.com/ekaynac/kutuphane/issues/156)).
+- New: `KUTUPHANE_OIDC_ISSUERS`, a JSON file of more token issuers, each with its exact issuer, audience, JWKS and principal prefixes. Its tokens may name only its own principals, and no other issuer may name them. `grant … curate` refuses its principals unless the entry says `"curate": true` ([operations.md](operations.md#more-than-one-token-issuer)) ([#157](https://github.com/ekaynac/kutuphane/issues/157)).
+- Changed: every model call sends `x-llmdap-purpose`, one of `answer`, `search`, `index`, `translate`, `rerank`, `note`, `decide`, `health`. The decider's purpose was `curator-decider`; it is now `decide`. The guide tells how to run Core against a shared LLMDAP (D76) ([operations.md](operations.md#a-shared-llmdap-d76)) ([#165](https://github.com/ekaynac/kutuphane/issues/165)).
+- Migration `046_caller_correlation.sql` adds `caller_correlation_id` to `access_event`, `model_call`, `write_record` and `ask_job`. After `migrate`, apply `deploy/db-roles.sql` as usual.
+
 ### Agent memory: one Scope context; runbook feedback removed (#164, D78)
 
 - New: `propose_note` and `POST /v1/notes` accept `applies_to` (`{platform, version}`, the shape of the kstd `applies_to` of files). It is part of the note id; a note without it keeps its id ([mcp.md](mcp.md#59-propose_note)) ([#164](https://github.com/ekaynac/kutuphane/issues/164)).

@@ -1,5 +1,6 @@
 """AT-11 (Core side; the LLMDAP side waits for #223): only verified token claims decide who is calling."""
 import json
+import os
 import time
 from pathlib import Path
 
@@ -175,3 +176,114 @@ def test_dev_token_carries_client_id(monkeypatch, tmp_path):
                              client_id="adc-orchestrator")
     actor = dev.verify(raw)
     assert (actor.principal, actor.client_id) == ("agent:adc", "adc-orchestrator")
+
+
+# --- #157: more than one issuer, each bound to principal prefixes -------------------------------------------------
+
+ISS_B, AUD_B, PREFIXES_B = "https://inframedic.test/auth", "kutuphane-im", ["user:inframedic.", "agent:inframedic-"]
+
+
+def _jwks(tmp_path, key, name: str):
+    path = tmp_path / name
+    jwk = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(key.public_key()))
+    path.write_text(json.dumps({"keys": [{**jwk, "kid": "k1", "use": "sig", "alg": "RS256"}]}))
+    return path
+
+
+def _issuers(tmp_path, keys, monkeypatch, **extra):
+    entry = {"issuer": ISS_B, "audience": AUD_B, "jwks": str(_jwks(tmp_path, keys[1], "b.json")),
+             "principal_prefixes": PREFIXES_B, **extra}
+    path = tmp_path / "issuers.json"
+    path.write_text(json.dumps([entry]))
+    monkeypatch.setenv("KUTUPHANE_OIDC_ISSUER", ISS)
+    monkeypatch.setenv("KUTUPHANE_OIDC_AUDIENCE", AUD)
+    monkeypatch.setenv("KUTUPHANE_OIDC_JWKS", str(_jwks(tmp_path, keys[0], "a.json")))
+    monkeypatch.setenv("KUTUPHANE_OIDC_ISSUERS", str(path))
+    return path
+
+
+def b_token(keys, **claims):
+    return token(keys, key=1, **{"iss": ISS_B, "aud": AUD_B, **claims})
+
+
+@pytest.fixture
+def two(keys, tmp_path, monkeypatch):
+    _issuers(tmp_path, keys, monkeypatch)
+    return Verifier.from_env()
+
+
+def test_two_issuers_on_one_verifier(two, keys):
+    assert two.verify(token(keys)).principal == "user:ayse"                                  # the primary, as before
+    assert two.verify(b_token(keys, sub="inframedic.ayse")).principal == "user:inframedic.ayse"
+    agent = two.verify(b_token(keys, sub="inframedic-triage", **{"kutuphane/principal_type": "agent"}))
+    assert agent.principal == "agent:inframedic-triage"
+    acting = two.verify(b_token(keys, sub="inframedic.ayse", act={"sub": "inframedic-triage"}))
+    assert (acting.principal, acting.on_behalf_of) == ("agent:inframedic-triage", "user:inframedic.ayse")
+
+
+@pytest.mark.parametrize("make", [
+    lambda k: b_token(k, sub="ayse"),                                           # B names a primary user
+    lambda k: b_token(k, sub="inframedic.ayse", act={"sub": "kobra-7"}),        # B names a primary agent
+    lambda k: b_token(k, sub="ayse", act={"sub": "inframedic-triage"}),         # B acts for a primary user
+    lambda k: b_token(k, sub="inframedic-triage"),                              # the agent prefix, used for a user
+    lambda k: token(k, sub="inframedic.ayse"),                                  # the primary names a B user
+    lambda k: token(k, act={"sub": "inframedic-triage"}),                       # the primary names a B agent
+])
+def test_a_cross_prefix_token_is_refused(two, keys, make):
+    with pytest.raises(AuthenticationError, match="may not name"):
+        two.verify(make(keys))
+
+
+@pytest.mark.parametrize("make", [
+    lambda k: token(k, key=1, iss=ISS_B, aud=AUD, sub="inframedic.ayse"),       # B with the primary's audience
+    lambda k: token(k, key=0, iss=ISS_B, aud=AUD_B, sub="inframedic.ayse"),     # B's issuer, the primary's key
+    lambda k: token(k, key=1, sub="ayse"),                                      # the primary's issuer, B's key
+    lambda k: token(k, key=1, iss=ISS_B + "/", aud=AUD_B, sub="inframedic.ayse"),  # not exactly B's issuer
+])
+def test_each_issuer_keeps_its_own_key_audience_and_exact_name(two, keys, make):
+    with pytest.raises(AuthenticationError):
+        two.verify(make(keys))
+
+
+@pytest.mark.parametrize("change", [
+    {"principal_prefixes": []},                                     # an issuer with no prefix would own everything
+    {"principal_prefixes": ["role:inframedic."]},                   # roles are Kütüphane's, never a token's
+    {"principal_prefixes": ["user:"]},                              # a whole kind
+    {"principal_prefixes": ["user:Inframedic."]},                   # not the principal alphabet
+    {"issuer": ISS},                                                # the primary again
+    {"audience": ""},
+    {"curate": "yes"},
+    {"groups": ["x"]},                                              # unknown key
+])
+def test_a_bad_issuer_config_stops_the_start(keys, tmp_path, monkeypatch, change):
+    path = _issuers(tmp_path, keys, monkeypatch)
+    entry = {**json.loads(path.read_text())[0], **change}
+    path.write_text(json.dumps([entry]))
+    with pytest.raises(RuntimeError, match="KUTUPHANE_OIDC_ISSUERS"):
+        Verifier.from_env()
+
+
+def test_two_extra_issuers_may_not_share_a_prefix(keys, tmp_path, monkeypatch):
+    path = _issuers(tmp_path, keys, monkeypatch)
+    entry = json.loads(path.read_text())[0]
+    path.write_text(json.dumps([entry, {**entry, "issuer": "https://other.test",
+                                        "principal_prefixes": ["user:inframedic.ops."]}]))
+    with pytest.raises(RuntimeError, match="overlap"):
+        Verifier.from_env()
+
+
+def test_curate_is_refused_to_another_issuers_principals_by_default(conn, keys, tmp_path, monkeypatch, capsys):
+    from kutuphane import cli, identity
+    path = _issuers(tmp_path, keys, monkeypatch)
+    with pytest.raises(authz.AuthzError, match="curate"):
+        identity.refuse_curate("user:inframedic.ayse")
+    identity.refuse_curate("user:ayse")                                       # the primary's people: as before
+    monkeypatch.setenv("KUTUPHANE_DSN", os.environ["KUTUPHANE_TEST_DSN"])
+    monkeypatch.setenv("KUTUPHANE_CURATOR_DSN", os.environ["KUTUPHANE_TEST_DSN"])
+    assert cli.main(["grant", "book:kitap", "curate", "user:inframedic.ayse"]) != 0
+    assert "curate" in capsys.readouterr().err
+    assert not conn.execute("SELECT 1 FROM grant_tuple WHERE subject = 'user:inframedic.ayse'").fetchone()
+    assert cli.main(["grant", "book:kitap", "read", "user:inframedic.ayse"]) == 0     # other modes: as before
+    path.write_text(json.dumps([{**json.loads(path.read_text())[0], "curate": True}]))  # explicitly configured
+    identity.refuse_curate("user:inframedic.ayse")
+    assert cli.main(["grant", "book:kitap", "curate", "user:inframedic.ayse"]) == 0

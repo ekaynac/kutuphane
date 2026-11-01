@@ -7,10 +7,11 @@ offline. A model call Kütüphane made but LLMDAP did not record is reported as 
 import json
 from pathlib import Path
 
-ACCESS_FIELDS = ("at", "principal", "on_behalf_of", "action", "object", "mode", "allowed", "reason", "policy_id",
-                 "grant_ids", "delegation_id", "content_id", "path", "profile_id", "items")
-CALL_FIELDS = ("at", "call_id", "principal", "on_behalf_of", "route", "model", "source_books", "http_status", "error",
-               "derived_correlation_id")
+ACCESS_FIELDS = ("at", "correlation_id", "caller_correlation_id", "principal", "on_behalf_of", "action", "object",
+                 "mode", "allowed", "reason", "policy_id", "grant_ids", "delegation_id", "content_id", "path",
+                 "profile_id", "items")
+CALL_FIELDS = ("at", "correlation_id", "caller_correlation_id", "call_id", "principal", "on_behalf_of", "route",
+               "model", "source_books", "http_status", "error", "derived_correlation_id")
 EXPECTED_OK = {"llm.authz", "llm.result"}  # a completed call leaves both on LLMDAP's side
 EXPECTED_REFUSED = {"llm.authz"}           # a call LLMDAP refused still leaves its authorization record
 
@@ -26,9 +27,12 @@ def read_llmdap_export(path: Path) -> list[dict]:
     return records
 
 
-def _rows(conn, sql: str, correlation_id: str, fields) -> list[dict]:
+def _rows(conn, table: str, correlation_id: str, fields) -> list[dict]:
+    """Our id, or the caller's (#156): one caller id may name several of our requests."""
     out = []
-    for row in conn.execute(sql, (correlation_id,)):
+    for row in conn.execute(f"SELECT {', '.join(fields)} FROM {table} "
+                            "WHERE correlation_id = %(id)s OR caller_correlation_id = %(id)s ORDER BY id",
+                            {"id": correlation_id}):
         item = dict(zip(fields, row))
         item["at"] = item["at"].isoformat()
         out.append(item)
@@ -36,10 +40,8 @@ def _rows(conn, sql: str, correlation_id: str, fields) -> list[dict]:
 
 
 def explain(conn, correlation_id: str, llmdap_records: list[dict]) -> dict:
-    access = _rows(conn, f"SELECT {', '.join(ACCESS_FIELDS)} FROM access_event WHERE correlation_id = %s ORDER BY id",
-                   correlation_id, ACCESS_FIELDS)
-    calls = _rows(conn, f"SELECT {', '.join(CALL_FIELDS)} FROM model_call WHERE correlation_id = %s ORDER BY id",
-                  correlation_id, CALL_FIELDS)
+    access = _rows(conn, "access_event", correlation_id, ACCESS_FIELDS)
+    calls = _rows(conn, "model_call", correlation_id, CALL_FIELDS)
     by_id = {}
     for rec in llmdap_records:
         by_id.setdefault(rec.get("correlationId"), []).append(rec)

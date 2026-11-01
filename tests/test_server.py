@@ -667,3 +667,121 @@ def test_scoped_test_client_reads_one_book_and_nothing_else(app_env, keys, conn,
         assert refused(call("read_document", {"book": "baska", "content_id": cited.content_id, "path": cited.path}))
         assert refused(call("propose_note", {"book": "gunluk", "kind": "finding", "text": "T3 cannot write."}))
         assert json.loads(call("query_notes", {"sets": ["open", "current"]})["content"][0]["text"])["items"] == []
+
+
+# --- #156: the caller's correlation id ------------------------------------------------------------------------------
+
+CALLER = "im-req:2026-11-01.0001"
+TRACE_KEY, CALLER_TRACE_KEY = "kutuphane/correlation-id", "kutuphane/caller-correlation-id"
+
+
+def test_the_callers_correlation_id_is_stored_next_to_ours_and_returned(app_env, keys, conn, fake):  # #156
+    from kutuphane import notes
+    app, _, _ = app_env
+    notes.create_journal(conn, book="gunluk", title="gunluk", search=True, ai_input=True, by="user:admin",
+                         policy=make_policy(sensitivity="normal", egress="local_only", protection="standard"))
+    for mode in ("read", "propose"):
+        authz.grant(conn, "book:gunluk", mode, U)
+    fake.reply = "İki yıl saklanır [1]."
+    h = {**bearer(keys), "X-Correlation-Id": CALLER}
+
+    def callers(table: str, ours: str) -> set:
+        return {r[0] for r in conn.execute(f"SELECT caller_correlation_id FROM {table} WHERE correlation_id = %s",
+                                           (ours,))}
+    with TestClient(app) as client:
+        r = client.get("/v1/search", params={"q": "kayıtlar saklanır"}, headers=h)
+        ours = r.headers["x-correlation-id"]
+        assert r.status_code == 200 and r.headers["x-caller-correlation-id"] == CALLER
+        assert r.json()["correlation_id"] == ours and re.fullmatch(r"[0-9a-f]{32}", ours)
+        assert callers("access_event", ours) == {CALLER}
+        handle = r.json()["results"][0]["citation"]
+
+        asked = client.post("/v1/ask", json={"question": "Erişim kayıtları ne kadar saklanır?"}, headers=h)
+        ours = asked.headers["x-correlation-id"]
+        assert asked.json()["correlation_id"] == ours and callers("model_call", ours) == {CALLER}
+        assert callers("access_event", ours) == {CALLER}
+        assert fake.hits[-1][1]["x-llmdap-correlation-id"].startswith(f"{CALLER}.{ours}.")   # in LLMDAP's chain too
+
+        wrote = client.post("/v1/notes", json={"book": "gunluk", "kind": "finding", "text": "Kayıtlar saklanır."},
+                            headers=h)
+        assert wrote.status_code == 201 and callers("write_record", wrote.headers["x-correlation-id"]) == {CALLER}
+
+        refused = client.get("/v1/citation", params={"handle": handle},
+                             headers={**bearer(keys, sub="mehmet"), "X-Correlation-Id": CALLER})
+        assert refused.status_code == 403 and refused.headers["x-caller-correlation-id"] == CALLER
+        assert callers("access_event", refused.headers["x-correlation-id"]) == {CALLER}
+
+        plain = client.get("/v1/whoami", headers=bearer(keys))                    # no id sent: ours only
+        assert re.fullmatch(r"[0-9a-f]{32}", plain.headers["x-correlation-id"])
+        assert "x-caller-correlation-id" not in plain.headers
+
+
+@pytest.mark.parametrize("bad", ["short-1", "-starts-with-dash", "a" * 65, "has a space", "semi;colon-id",
+                                 "a/b/c/d/e/f"])
+def test_a_malformed_caller_correlation_id_is_refused(app_env, keys, conn, bad):  # #156: refused, so the caller notices
+    app, _, _ = app_env
+    with TestClient(app) as client:
+        r = client.get("/v1/search", params={"q": "kayıt"}, headers={**bearer(keys), "X-Correlation-Id": bad})
+        assert r.status_code == 400 and "correlation" in r.json()["error"]
+    assert conn.execute("SELECT count(*) FROM access_event").fetchone() == (0,)
+
+
+@pytest.mark.parametrize("version", [LEGACY, MODERN])
+def test_mcp_takes_the_callers_correlation_id_from_meta(app_env, keys, conn, version):  # #156
+    app, _, _ = app_env
+    meta = {TRACE_KEY: CALLER}
+    with TestClient(app, base_url=PUBLIC) as client:
+        _, out = mcp_rpc(client, bearer(keys), "tools/call",
+                         {"name": "search_library", "arguments": {"query": "kayıtlar saklanır"}, "_meta": meta},
+                         version=version, meta=meta)
+        result = out["result"]
+        ours = result["_meta"][TRACE_KEY]
+        assert result["structuredContent"]["result"] and result["_meta"][CALLER_TRACE_KEY] == CALLER
+        assert "kutuphane/handling" in result["_meta"]                             # the labels stay
+        assert {r[0] for r in conn.execute("SELECT caller_correlation_id FROM access_event WHERE correlation_id = %s",
+                                           (ours,))} == {CALLER}
+
+        _, out = mcp_rpc(client, bearer(keys), "tools/call",                          # an error result: both ids
+                         {"name": "open_citation", "arguments": {"handle": "bozuk"}, "_meta": meta},
+                         version=version, meta=meta)
+        assert out["result"]["isError"] and out["result"]["_meta"][CALLER_TRACE_KEY] == CALLER
+
+        _, out = mcp_rpc(client, bearer(keys), "tools/call",                          # none sent: ours only
+                         {"name": "search_library", "arguments": {"query": "kayıt"}}, version=version)
+        assert re.fullmatch(r"[0-9a-f]{32}", out["result"]["_meta"][TRACE_KEY])
+        assert CALLER_TRACE_KEY not in out["result"]["_meta"]
+
+        bad = {TRACE_KEY: "no spaces allowed"}
+        before = conn.execute("SELECT count(*) FROM access_event").fetchone()
+        _, out = mcp_rpc(client, bearer(keys), "tools/call",
+                         {"name": "search_library", "arguments": {"query": "kayıt"}, "_meta": bad},
+                         version=version, meta=bad)
+        assert out["error"]["code"] == -32602 and "correlation" in out["error"]["message"]
+        assert conn.execute("SELECT count(*) FROM access_event").fetchone() == before
+
+
+# --- #157: two issuers on one server ---------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("version", [LEGACY, MODERN])
+def test_two_issuers_on_one_server_and_a_cross_prefix_token_is_refused(conn, keys, tmp_path, monkeypatch, okf_dir,
+                                                                       version):  # #157
+    from test_identity import _issuers, b_token
+    catalog.publish(conn, book="kitap", title="kitap", files=read_source(okf_dir),
+                    policy=make_policy(sensitivity="normal", egress="local_only", protection="standard"),
+                    profile=profiles.spec("chunked"))
+    authz.grant(conn, "book:kitap", "read", "user:inframedic.ayse")
+    _issuers(tmp_path, keys, monkeypatch)
+    app = server.create_app(dsn=os.environ["KUTUPHANE_TEST_DSN"], verifier=Verifier.from_env(), bridge=None,
+                            model=None, public_url=PUBLIC)
+    im = {"Authorization": f"Bearer {b_token(keys, sub='inframedic.ayse')}"}
+    cross = {"Authorization": f"Bearer {b_token(keys, sub='ayse')}"}
+    with TestClient(app, base_url=PUBLIC) as client:
+        assert client.get("/v1/whoami", headers=bearer(keys)).json()["principal"] == U          # the primary
+        assert client.get("/v1/whoami", headers=im).json()["principal"] == "user:inframedic.ayse"
+        _, out = mcp_rpc(client, im, "tools/call", {"name": "search_library",
+                                                    "arguments": {"query": "kayıtlar saklanır"}}, version=version)
+        assert out["result"]["structuredContent"]["result"]
+        assert client.get("/v1/whoami", headers=cross).status_code == 401
+        status, _ = mcp_rpc(client, cross, "tools/call", {"name": "search_library", "arguments": {"query": "x"}},
+                            version=version)
+        assert status == 401
