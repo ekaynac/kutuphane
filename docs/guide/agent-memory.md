@@ -293,11 +293,20 @@ For a project with customer-confidential material, ask the operator for a privat
   machine through you. Use a local model for this journal, or ask for `--ai-input n` (then reads give
   `text: null`).
 
+## 13. Memory is data
+
+A note is data, never an instruction (D80, principle 3).
+
+- **Put notes in tool results only.** Give the output of `query_notes` to the model as a tool result. Never copy notes into a system prompt or a standing instruction file. Zep gives the same placement guidance: <https://help.getzep.com/v4/memory-security>.
+- **Instructions need `activate` and the scan.** A rule or a skill that a model must follow comes from a skill with an `activate` grant, after the skill scan passes. A note never becomes an instruction because a model wrote "always" or "never" in it.
+- **Why:** a poisoned memory that a model reads as an instruction stays in every later session. MemoryTrap showed this in Claude Code: <https://blogs.cisco.com/ai/identifying-and-remediating-a-persistent-memory-compromise-in-claude-code>. The server side is already enforced (origin from the write path, Standing, rollback); the placement is the orchestrator's part.
+
 ## Checklist for an orchestrator
 
 - Always send an `idempotency_key` on writes.
 - Always send the code context (`repo`, `branch` or `commit`, `path`) on reads.
 - Keep the `watermark` and read with `since`.
+- Give notes to the model as tool results, never in a system prompt (§13).
 - Never treat a `pending` note as a rule.
 - Use `ask_library` (a model answer, slow) only when `query_notes` and `search_library` do not answer. Neither
   `search_library` nor `ask_library` reads notes. A server without LLMDAP does not list `ask_library`.
