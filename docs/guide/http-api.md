@@ -559,7 +559,8 @@ List notes in the journals that you may read. No model call. MCP: `query_notes`
 | `written_after`, `written_before` | none | ISO 8601 times. |
 | `since` | none | An integer watermark. |
 | `text` | none | Full-text search. |
-| `unfixed`, `collapse`, `include_unverified` | `false` | `true`, `1`, `false` or `0`. |
+| `unfixed`, `collapse`, `include_unverified`, `exclude_failed` | `false` | `true`, `1`, `false` or `0`. |
+| `min_passed` | `0` | An integer, 0–100. |
 | `order` | `newest` | `newest`, `oldest`, `relevance`. |
 | `budget_tokens` | `2000` | An integer, 200–16000. |
 | `max_bytes` | `32768` | An integer, 8192–131072. |

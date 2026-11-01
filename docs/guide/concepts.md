@@ -157,7 +157,9 @@ note is current when all of these are true:
 | `open` | `pending` notes |
 | `history` | `rejected`, `retired` and `test_result` notes |
 
-A pending note is never current. Outcomes never change Standing.
+A pending note is never current. Outcomes never change Standing. An `evidence` note that nobody used for 90 days
+(no `passed` outcome, no Standing event) expires: `pending` becomes `rejected`, `approved` becomes `retired`
+([operations.md](operations.md#expiry-of-unused-evidence-r1)). `rule` notes never expire.
 
 **File books.** For file books, kstd gives origin, validity (`valid_from`, `valid_to`) and applicability. Standing
 exists for notes only. The block ontology of `../09-ontology-v2.md` (blocks and their facets) is frozen (D78): it is
@@ -232,8 +234,9 @@ whole skill, or a failed scan blocks the skill for agents, also with `activate`.
 ## Outcomes
 
 - **Outcomes** (`record_outcome`): `passed`, `failed`, `reverted` or `reopened` for a task, on one exact note or
-  passage version. Reads show the counts. They never change Standing. For a runbook, record the outcome on its
-  passage handle (`record_runbook_feedback` was removed, D78).
+  passage version. Reads show the counts, and `query_notes` filters on them (`min_passed`, `exclude_failed`). They
+  never change Standing, but a `passed` outcome restarts the expiry clock of a note. For a runbook, record the
+  outcome on its passage handle (`record_runbook_feedback` was removed, D78).
 
 ## Answers and jobs
 

@@ -493,7 +493,8 @@ Rules:
 | (new note) → `pending` | system, implicit: no event = `pending` |
 | `pending` → `approved` | curator |
 | `pending` → `rejected` (never accepted, D68) | curator |
-| `approved` → `retired` (accepted before; withdrawn or replaced) | curator, or the system by supersession (§8.3) |
+| `approved` → `retired` (accepted before; withdrawn or replaced) | curator, or the system by supersession (§8.3) or expiry (§8.4) |
+| `pending` → `rejected` (an `evidence` note that nobody used; `retired` if it was approved before) | the system by expiry (§8.4) |
 | `rejected` / `retired` → `pending` (reopen) | curator |
 
 **`rejected` and `retired` are separate (D68):** `retired` shows its successor (`supersedes`) and keeps "was accepted from … to …"; `rejected` was never accepted, and an agent that proposes the same bytes again gets `standing: rejected` in its receipt, so it can stop. #77 counts them apart.
@@ -520,6 +521,24 @@ When a curator approves note S, the system retires note P in the same transactio
 
 The event has `set_by = system`, `cause_seq` = the approval event of S. A partial scope overlap does nothing; the curator narrows or retires P. A successor that loses approval does not reopen P (`docs/09` §3.3).
 
+### 8.4 Expiry of evidence (R1, 2026-11-01)
+
+Evidence that nobody uses expires (`docs/23` P4). The operator runs it from cron:
+```
+KUTUPHANE_CURATOR_DSN=… kutuphane note expire [--days N] [--dry-run]   # N: KUTUPHANE_EVIDENCE_EXPIRY_DAYS, else 90
+```
+- **The clock** of a note is the last of: its `written_at`, its last Standing event (any `set_by`), its last `passed` outcome. A `failed`, `reverted` or `reopened` outcome does not move the clock.
+- An `evidence` note (§8.1) whose clock is more than N days old, and whose effective Standing (§4.2) is `pending` or `approved`, gets a system event with `reason = expired` and no `cause_seq`:
+
+  | Was | Becomes |
+  |---|---|
+  | `pending`, never approved | `rejected` (never accepted, D68) |
+  | `approved`, or `pending` after an earlier approval | `retired` |
+- `rule` notes (`decision_proposal`, `convention`) never expire.
+- **"My words" (D70 R3):** a confirmation neither exempts a note nor moves its clock. It says whose words the note holds, not that anybody uses them; and it is open only for 24 hours after the write, so it is never more than a day after `written_at`.
+- One run is one transaction under the memory lock, with one `correlation_id` on its events. It is idempotent: an expired note is out, and the command never moves a note that is out. The Standing event is the audit record (`set_by = system`, `reason = expired`). A curator can reopen an expired note; the reopen event restarts its clock. The queue (#77) shows nothing new: an expired note leaves the `pending` set.
+- **Database (migration 049):** a system event without `cause_seq` must have `reason = expired`, and a system `rejected` event must have that reason. A trigger allows exactly the two moves in the table, on `evidence` notes only, with no `act`. The system still only tightens. The app role and curator web cannot insert such an event.
+
 ## 9. The read path (#71)
 
 ### 9.1 `query_notes` (MCP) / `GET /v1/notes` (HTTP)
@@ -536,6 +555,8 @@ query_notes(book: list[str] | None = None,       # intersected with the readable
             since: int | None = None,            # changes after this watermark (§9.5)
             text: str | None = None,             # websearch_to_tsquery over tsv; search-permitted notes only
             unfixed: bool = False, collapse: bool = False, include_unverified: bool = False,
+            min_passed: int = 0,                 # 0..100: at least this many `passed` outcomes (§21.2)
+            exclude_failed: bool = False,        # no note whose latest outcome is `failed` or `reverted`
             order: str = "newest",               # newest | oldest | relevance (text only)
             budget_tokens: int = 2000,           # 200..16000, an estimate
             max_bytes: int = 32768,              # 8192..131072, a hard limit
@@ -1017,7 +1038,7 @@ record_outcome(ref: str,            # a note reference book@nt_… or a passage 
 - **Idempotency:** the key is **required**, because a retried outcome that counts twice makes a false label. The rules are those of §6.4: scope `(principal, on_behalf_of)`; a retry with the same request returns the first receipt (HTTP 200, else 201); the same key with another request → 409.
 - The outcome counts in the daily write limit of §6.1 step 4 (`KUTUPHANE_NOTE_WRITES_PER_DAY`).
 - Every outcome takes `seq` from `memory_seq` under the memory advisory lock (§4).
-- **Standing does not change.** No outcome writes a Standing event, and the "current" predicate (§9.2) does not read outcomes. An outcome is a measurement; only a curator changes authority (R1: uncertainty never increases authority).
+- **Standing does not change.** No outcome writes a Standing event, and the "current" predicate (§9.2) does not read outcomes. An outcome is a measurement; only a curator changes authority (R1: uncertainty never increases authority). Since 2026-11-01 a `passed` outcome restarts the expiry clock of a note (§8.4): it keeps evidence in, and never brings a note in.
 
 ### 21.2 Where outcomes are shown
 
@@ -1025,6 +1046,7 @@ record_outcome(ref: str,            # a note reference book@nt_… or a passage 
 |---|---|
 | `query_notes`, `neighbours`, `open_citation` (note) | item key `outcomes`: the non-zero counts per result, rows with `seq ≤ w`, in the order `passed, failed, reverted, reopened`. `as_of` gives the old counts; for `since`, a new outcome is a memory event of its note. |
 | `open_citation` (passage) | the same `outcomes` key for that passage at its version |
+| `query_notes` filters (R2) | `min_passed: n` (0–100): only notes with at least n `passed` rows; `exclude_failed: true`: no note whose latest row is `failed` or `reverted`. Both read the rows with `seq ≤ w`, so the result is deterministic and `as_of` repeats it. |
 | `kutuphane decisions export` | the outcome rows of each decision note (§21.4) |
 
 ### 21.3 Decision fields and the `train` right

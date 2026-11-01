@@ -428,6 +428,13 @@ def cmd_note_rollback(conn, args) -> int:
     return 0
 
 
+def cmd_note_expire(conn, args) -> int:
+    """R1 (docs/24 §8.4): the evidence notes that nobody used for N days leave the sets; safe to run from cron."""
+    days = args.days if args.days is not None else notes.expiry_days()
+    _print(notes.expire(conn, days=days, dry_run=args.dry_run))
+    return 0
+
+
 def cmd_note_import(conn, args) -> int:
     """Bulk import (docs/24 §23): JSONL records of an orchestrator's local memory become `pending` notes of a
     journal, written as the principal named by --by, who must hold `propose` on the journal now."""
@@ -797,6 +804,10 @@ def parser() -> argparse.ArgumentParser:
     ni.add_argument("--by", required=True, help="the importer, who holds propose on the journal: user:<name> "
                                                 "(origin unknown) or agent:<name> (origin model)")
     ni.set_defaults(fn=cmd_note_import)
+    nx = nsub.add_parser("expire", help="expire the evidence notes that nobody used for N days (system events)")
+    nx.add_argument("--days", type=int, help=f"default: {notes.EXPIRY_ENV}, else {notes.EXPIRY_DEFAULT}")
+    nx.add_argument("--dry-run", action="store_true", help="list the notes; write nothing")
+    nx.set_defaults(fn=cmd_note_expire, curator_db=True)
     dc = sub.add_parser("decisions", help="decision records of journals (docs/24 §21)")
     dcsub = dc.add_subparsers(dest="decisions_cmd", required=True)
     de = dcsub.add_parser("export", help="write JSONL decision records the principal may read; text only with "

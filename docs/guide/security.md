@@ -99,6 +99,10 @@ migration 029).
   live `curate` row from the app role. The app role can still revoke or delete one.
 - The CLI trusts its operator. So the curator credential is the boundary. An agent that can read it can curate as
   any user. Keep it out of every environment that an agent can read.
+- `kutuphane note expire` writes system events with no curator, also with `KUTUPHANE_CURATOR_DSN`. The database
+  accepts a system event without a cause only with the reason `expired`, on an `evidence` note, and only as
+  `pending` → `rejected` (never approved) or `approved` (or `pending` after an approval) → `retired` (migration
+  049). The system only tightens.
 - Memory rows (`note`, `write_record`, `note_link`, `note_citation`, `outcome`) are append-only for the app role.
   The citations and the creation links of a note are part of its id: the database writes them only in the
   transaction that writes the note (migration 039). So a later insert cannot change a note that a person confirmed

@@ -778,6 +778,8 @@ request on the same data gives the same bytes.
 | `unfixed` | boolean | no | `false` | Only findings without a `fixed_by` link to an approved or pending note. |
 | `collapse` | boolean | no | `false` | One item per `same_as` cluster. Notes joined by `contradicts` are never collapsed. |
 | `include_unverified` | boolean | no | `false` | Also give approved notes that a failed code check excludes, with `current: false`. |
+| `min_passed` | integer | no | `0` | 0–100. Only notes with at least this many `passed` outcomes ([`record_outcome`](#514-record_outcome)). |
+| `exclude_failed` | boolean | no | `false` | Leave out each note whose latest outcome is `failed` or `reverted`. A note with no outcome stays. |
 | `order` | string | no | `newest` | `newest`, `oldest`, `relevance` (needs `text`). |
 | `budget_tokens` | integer | no | `2000` | 200–16000. An estimate: response bytes ÷ 4. |
 | `max_bytes` | integer | no | `32768` | 8192–131072. A hard limit on the whole response. |
