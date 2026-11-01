@@ -42,10 +42,8 @@ kutuphane ingest tests/fixtures/okf-kitap --book ornek \
   --sensitivity normal --egress local_only --protection standard
 kutuphane journal create team-memory --search y --ai-input y \
   --sensitivity normal --egress local_only --protection standard --by user:admin
-kutuphane grant book:ornek read agent:adc
-kutuphane grant book:team-memory read agent:adc
-kutuphane grant book:team-memory propose agent:adc
-kutuphane grant book:team-memory curate user:ayse
+for g in "book:ornek read" "book:team-memory read" "book:team-memory propose"; do kutuphane grant $g agent:adc; done
+KUTUPHANE_CURATOR_DSN="$KUTUPHANE_DSN" kutuphane grant book:team-memory curate user:ayse
 kutuphane search agent:adc "politika"
 
 # 3. A development token and the server (KUTUPHANE_DEV=1 only on a development machine)
@@ -58,7 +56,6 @@ KUTUPHANE_OIDC_AUDIENCE=kutuphane KUTUPHANE_OIDC_JWKS=deploy/dev/jwks.json \
   uvicorn --factory kutuphane.server:app_from_env --host 127.0.0.1 --port 8090 &
 
 # 4. Connect an MCP client, write a note, accept it
-KUTUPHANE_PROBE_TOKEN="$TOKEN" python3 deploy/mcp_probe.py http://127.0.0.1:8090 --journal team-memory
 claude mcp add --transport http kutuphane http://127.0.0.1:8090/mcp --header "Authorization: Bearer $TOKEN"
 curl -s -X POST http://127.0.0.1:8090/v1/notes -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
