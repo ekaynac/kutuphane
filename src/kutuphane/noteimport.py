@@ -3,7 +3,9 @@
 - One JSON object per line (JSONL), close to the nöbetçi local SQLite shape (`FIELDS`). Every record becomes a note
   through the propose rules of `notes.py`: the same canonical body and note id, secret scan, rights by derivation.
 - **Standing:** every note is `pending`. A `standing` in the record is kept as a claim (`note_import`), never as an
-  event; only a curator sets Standing (§8.2).
+  event; only a curator sets Standing (§8.2). The fields that `journal export` adds (`standing_history`, `writers`,
+  `outcomes`, `ai_use`, `withheld`) are validated and not stored: the export file keeps them. A `withheld` record
+  (the export left out its text) is refused.
 - **Origin (D70):** computed from the importer over the CLI channel: an `agent:` importer is `model`, a `user:`
   importer is `unknown`. An `origin` in the record is a claim (`write_record.origin_requested`); `human`,
   `assisted` and `tool` are refused with the notice `origin-claim-refused`.
@@ -31,7 +33,11 @@ from . import gate, notes, origin as origins, secretscan
 from .gate import Actor
 
 FIELDS = ("id", "kind", "text", "standing", "role", "window", "scope", "commit", "origin", "created_at",
-          "updated_at", "citations", "links", "class_key", "decision", "applies_to")
+          "updated_at", "citations", "links", "class_key", "decision", "applies_to",
+          "standing_history", "writers", "outcomes", "ai_use", "withheld")  # the last five: `journal export`
+EXPORTED = {"standing_history": ("value", "set_by", "reason", "at"),  # validated, never stored (the file keeps them)
+            "writers": ("principal", "on_behalf_of", "channel", "client_id", "origin", "at"),
+            "outcomes": ("task_ref", "result", "at", "principal", "on_behalf_of", "origin")}
 PROPOSED = ("kind", "text", "scope", "commit", "origin", "citations", "class_key", "decision",
             "applies_to")  # to notes.Draft
 KIND_TIME = {k: "as_of" if k == "test_result" else "durable" for k in notes.KINDS}  # §8.1
@@ -99,6 +105,27 @@ def _links(rid: str, value) -> tuple[list, list]:
     return creation, later
 
 
+def _exported(obj: dict) -> None:
+    """The fields that only `journal export` writes: their shape is checked, their content is never trusted."""
+    if obj.get("withheld") is not None:
+        raise ValueError(f"withheld: the export left out the text ({obj['withheld']}); the record cannot be imported")
+    for name, keys in EXPORTED.items():
+        value = obj.get(name, [])
+        if not isinstance(value, list) or any(not isinstance(e, dict) or set(e) != set(keys) for e in value):
+            raise ValueError(f"{name} must be a list of {{{', '.join(keys)}}}")
+        for e in value:
+            if any(v is not None and not isinstance(v, str) for v in e.values()):
+                raise ValueError(f"{name}: every value must be a string or null")
+            if _time(f"{name}.at", e["at"]) is None:
+                raise ValueError(f"{name}.at is required")
+            if name == "standing_history" and e["value"] not in notes.STANDINGS:
+                raise ValueError(f"standing_history.value must be one of {', '.join(notes.STANDINGS)}")
+    ai_use = obj.get("ai_use")
+    if ai_use is not None and (not isinstance(ai_use, dict) or set(ai_use) != {"search", "ai_input", "train"}
+                               or set(ai_use.values()) - {"y", "n"}):
+        raise ValueError("ai_use must be {search, ai_input, train} of y or n")
+
+
 def _record(line: int, obj) -> Record:
     if not isinstance(obj, dict):
         raise ValueError("not a JSON object")
@@ -116,6 +143,7 @@ def _record(line: int, obj) -> Record:
         raise ValueError(f"window must be {KIND_TIME[kind]} for kind {kind} (a note has no own time window)")
     if obj.get("standing") not in (None, *notes.STANDINGS):
         raise ValueError(f"standing must be one of {', '.join(notes.STANDINGS)}")
+    _exported(obj)
     creation, later = _links(rid, obj.get("links"))
     return Record(line, rid, {k: obj[k] for k in PROPOSED if k in obj}, creation, later, obj.get("standing"),
                   _time("created_at", obj.get("created_at")), _time("updated_at", obj.get("updated_at")))

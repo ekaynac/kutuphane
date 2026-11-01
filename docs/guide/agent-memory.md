@@ -271,8 +271,10 @@ into a journal later. Export it as JSONL, one record on each line:
 | `window` | Optional. `as_of` for `test_result`, else `durable`. A note has no own time window. |
 | `origin` | Optional. Kept as a claim (`origin_requested`). `human`, `assisted` and `tool` are refused with the notice `origin-claim-refused`. |
 | `created_at`, `updated_at` | Optional. ISO 8601 with a time zone. Kept as provenance. `written_at` of the note is the import time. |
-| `scope`, `commit`, `citations`, `class_key`, `decision` | Optional. As for `propose_note`. Code citations need the repository in the journal (`kutuphane repo add`). |
+| `scope`, `commit`, `citations`, `class_key`, `decision`, `applies_to` | Optional. As for `propose_note`. Code citations need the repository in the journal (`kutuphane repo add`). |
 | `links` | Optional, at most 20. `{"type", "record"}` names a record of this file or of an earlier import into the same journal. `{"type", "ref"}` names an existing note or passage. |
+| `standing_history`, `writers`, `outcomes`, `ai_use` | Optional. Written by `journal export` (below). Kütüphane checks their shape and does not store them. |
+| `withheld` | Optional. Written by `journal export`. A record with a `withheld` reason has no text: the import refuses it. |
 
 Other fields are refused.
 
@@ -286,13 +288,51 @@ Other fields are refused.
   changes. Give the correction a new id and a `supersedes` link to the old record.
 - The operator runs the import (operations.md, section 6). There is no MCP tool for it.
 
+### Export a journal (backup, git)
+
+The operator writes a journal as JSONL in the same record shape, one note on each line, in note order:
+
+```sh
+kutuphane journal export adc-memory --out adc-memory.jsonl --by user:ayse
+```
+
+Each record has the import fields and also:
+
+| Field | Content |
+|---|---|
+| `id` | The note id (`nt_…`). |
+| `standing` | The Standing now. |
+| `origin` | The origin that reads show. |
+| `created_at` | When the note was written. |
+| `links` | Every link of the note. A note in the file is `{"type", "record"}`; any other note or passage is `{"type", "ref"}`. |
+| `standing_history` | Every Standing event: `value`, `set_by`, `reason`, `at`. |
+| `writers` | Every propose write of the note: `principal`, `on_behalf_of`, `channel`, `client_id`, `origin`, `at`. |
+| `outcomes` | Every outcome: `task_ref`, `result`, `at`, `principal`, `on_behalf_of`, `origin`. |
+| `ai_use` | The rights of the note now: `search`, `ai_input`, `train` (`y` or `n`). |
+| `withheld` | `null`, or the reason why `text` and `decision` are `null`. |
+
+- **Round trip:** `note import` of the file into a journal with the same slug (for example in a new installation)
+  gives the same note ids and the same links. Each note is `pending` again; `standing` is kept as a claim.
+  Import keeps only the note, its links and its latest Standing as a claim; keep the export file if you need the
+  history.
+- Into a journal with another slug, a note with a `derived_from` or `supersedes` link to a note of the file gets a
+  new id: the note id includes the book of its creation links.
+- A `ref` must exist where you import: the cited books and the linked notes of other journals.
+- The text and the decision are in the file only when the note allows `ai_input` and `train`, as in the decision
+  export (step 8). Else `withheld` gives the reason, and the record does not import. For a full backup, create the
+  journal with `--train y`.
+- A private journal (step 12) is refused. A note derived from a private journal, or from a file with
+  `license: unknown`, is not in the file. A link to such a note is a `ref`.
+- `--by` needs `read` on the journal and on each book that its notes cite or link. The export goes through the
+  read gate and is in the audit, so a rollback report lists it (step 10).
+
 ## 12. Private project memory
 
 For a project with customer-confidential material, ask the operator for a private journal:
 `--sensitivity restricted --egress local_only` (operations.md, section 6, "Private journals").
 
-- Its notes never leave the installation: no package, no decision export, no training use. Nothing federates
-  journals today; a package is the only path to another installation.
+- Its notes never leave the installation: no package, no decision export, no journal export, no training use.
+  Nothing federates journals today.
 - Kütüphane sends its text only to `local` model routes. A note with a `derived_from` link to it keeps the same
   limits.
 - Your MCP reads still get the text when you have `read`. If your model runs in a cloud, the text leaves the
