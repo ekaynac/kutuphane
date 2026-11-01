@@ -1245,7 +1245,7 @@ An orchestrator can start with a local memory in the shape of notes (nöbetçi-m
 
 ### 23.1 `kutuphane note import <journal> <file.jsonl> --by <principal>`
 
-One JSON object per line. Fields: `id` (required; `[A-Za-z0-9._:-]{1,128}`, unique in the file), `kind`, `text` (required), `standing`, `role`, `window`, `scope`, `commit`, `origin`, `created_at`, `updated_at`, `citations`, `links`, `class_key`, `decision`. Another field refuses the file.
+One JSON object per line. Fields: `id` (required; `[A-Za-z0-9._:-]{1,128}`, unique in the file), `kind`, `text` (required), `standing`, `role`, `window`, `scope`, `commit`, `origin`, `created_at`, `updated_at`, `citations`, `links`, `class_key`, `decision`, `applies_to`, and the export fields of §23.4. Another field refuses the file.
 
 | Field | Changes |
 |---|---|
@@ -1283,10 +1283,22 @@ A private journal is a journal with `sensitivity: restricted`, `egress: local_on
 | decision export | text withheld without `train`; references and hashes exported | every note with a `restricted` book in `source_books` is left out; the summary counts them (`restricted`) |
 | `journal create --train y` | allowed | refused for `restricted` |
 | model calls of Kütüphane | the egress check of `source_books` (§6.2) | unchanged: a `cloud` route is refused before the call |
-| federation | none: a package is the only path between installations (kstd L3 is not built) | unchanged |
+| federation | none: a package is the only path between installations (kstd L3 is not built) | unchanged; a journal that is not private can leave as a journal export (§23.4) |
 
 Delivery to an agent over MCP or HTTP is decided by `read` (and `ai_input` for model readers). Kütüphane cannot see where the agent's model runs; the operator gives `read` only to agents with a local model, or creates the journal with `ai_input: n`.
 
 ### 23.3 Tests (`tests/test_note_import.py`)
 
 Pending with provenance and a refused origin claim; an agent importer stores `model` and the database refuses `unknown` for it; only the CLI imports; links by record id (creation and later, symmetric `same_as`, a passage `ref`); re-import is a no-op, a later batch links to an earlier record, a changed record refuses the file; the same bytes as an existing note are one more write; 16 invalid files write nothing; `propose` and `read` are needed and logged; the daily limit; code citations; embeddings after the commit; the CLI; a private journal on a `cloud` route is refused for import and propose; a private journal is not exported, not published, not in the decision export (also a derived note), and refuses `train`; a `restricted` book is not in a package; 027 applies on a database with notes.
+
+### 23.4 R3 (D80): `kutuphane journal export <journal> --out FILE --by <principal>`
+
+The way back: one record per note in the §23.1 shape, so a journal is a backup and a git path (`src/kutuphane/journalexport.py`).
+
+- **Record.** `id` is the note id. A link to a note of the file is `{type, record}`; any other target is `{type, ref}`. An import into a journal with the same slug gives the same note ids and links. Into another slug, a note with a creation link to a note of the file gets a new id, because its body names the target's book (§3).
+- **Extra fields.** `standing_history` [{value, set_by, reason, at}], `writers` (the propose `write_record` rows), `outcomes`, `ai_use` (note AND journal closure now) and `withheld`. `standing` is the Standing now; `origin` is the shown origin (docs/25 §7.6).
+- **The import of these fields** (operator choice B, no migration). It validates them and stores none of them: the latest Standing stays `standing_claimed`; the file keeps the history. `ai_use` narrows a new note's rights (journal AND sources AND `ai_use`), never widens them; an existing note keeps its rights. A `withheld` record is refused.
+- **Rights.** `read` on the journal and on every book that its notes cite or link, by `gate.guard_many` (pre-decision on the journal before any read of its notes). One `access_event` `export_journal` with `items = [{ref, standing_seq}]`, so §20 finds the export. Never the owner credential.
+- **Text.** The text and decision go out with `ai_use` also when `ai_input` or `train` is `n` (docs/23 principle 5: an asset leaves with its rights; those rights limit model use, not a copy). The decision export (§21.4) is training data and keeps its gate.
+- **Refused or left out.** A `restricted` journal is refused. A note with a `restricted` book in `source_books`, or derived from a `license: unknown` file (#143), is left out and counted. A note that depends on a blocked skill (D71, the final decision) has `text` and `decision` null and `withheld` set.
+- **Tests** (`tests/test_journal_export.py`): the shape with history, writers and outcomes; a round trip into a fresh installation (the same ids, note links and passage links; `pending`; no Standing event); a `train n` journal round-trips with its text and keeps `train n` and `ai_input n` in a looser journal; a blocked skill withholds the text and the record does not import; the import validates the extra fields; restricted and `license: unknown` refusals; `read` on the journal and every named book.

@@ -646,8 +646,10 @@ kutuphane journal export adc-memory --out adc-memory.jsonl --by user:ayse
 - `--by` needs `read` on the journal and on each book that its notes cite or link. The export goes through the read gate, never the owner credential. The journal gets one `access_event` with `action = export_journal`, so the rollback report lists the export.
 - `--out` must be a new file. The command creates it with mode 600.
 - A `restricted` journal is refused (exit code 2). A note derived from a private journal, or from a file with `license: unknown`, is not in the file. The summary counts them in `restricted` and `licence_unknown`.
-- The text and the decision are present only when the note allows `ai_input` and `train`, as in the decision export (section 8). Else they are `null`, `withheld` gives the reason, and `note import` refuses that record. The summary counts them in `withheld`.
+- The file holds the text and the decision of every note, also with `--train n` or `--ai-input n`: these rights limit model use, not a backup copy. Each record has its `ai_use`. Keep the file as safe as the journal. The decision export (section 8) is training data, so it keeps the `ai_input` and `train` gate.
+- A note that depends on a skill that a scan blocks has `text` and `decision` `null`, and `withheld` gives the reason. `note import` refuses that record. The summary counts them in `withheld`.
 - `note import` of the file into a journal with the same slug gives the same note ids and links. Each note is `pending` again. The import keeps only the latest Standing as a claim; the file keeps the history.
+- The import never widens the rights. A new note gets the journal's rights AND its sources' rights AND the record's `ai_use`. So a note from a `--train n` journal stays `train n` in a journal with `--train y`.
 
 ## 7. Curation
 

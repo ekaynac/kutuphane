@@ -6,6 +6,8 @@
   event; only a curator sets Standing (§8.2). The fields that `journal export` adds (`standing_history`, `writers`,
   `outcomes`, `ai_use`, `withheld`) are validated and not stored: the export file keeps them. A `withheld` record
   (the export left out its text) is refused.
+- **Rights:** journal AND derivation, as `propose`; a record's `ai_use` narrows a new note further (a note exported
+  from a stricter journal keeps its limits), never widens it. A note that already exists keeps its rights.
 - **Origin (D70):** computed from the importer over the CLI channel: an `agent:` importer is `model`, a `user:`
   importer is `unknown`. An `origin` in the record is a claim (`write_record.origin_requested`); `human`,
   `assisted` and `tool` are refused with the notice `origin-claim-refused`.
@@ -59,6 +61,7 @@ class Record:
     updated_at: datetime | None = None
     draft: notes.Draft | None = None
     resolved: list = field(default_factory=list)  # later links as [(type, notes._target)]
+    ai_use: dict | None = None                    # the exported rights: they narrow a new note's rights, never widen
 
 
 def read(path) -> list[str]:
@@ -106,7 +109,8 @@ def _links(rid: str, value) -> tuple[list, list]:
 
 
 def _exported(obj: dict) -> None:
-    """The fields that only `journal export` writes: their shape is checked, their content is never trusted."""
+    """The fields that only `journal export` writes: their shape is checked. Only `ai_use` has an effect: it narrows
+    the rights of a new note (`_write_note`); the others are never trusted or stored."""
     if obj.get("withheld") is not None:
         raise ValueError(f"withheld: the export left out the text ({obj['withheld']}); the record cannot be imported")
     for name, keys in EXPORTED.items():
@@ -146,7 +150,8 @@ def _record(line: int, obj) -> Record:
     _exported(obj)
     creation, later = _links(rid, obj.get("links"))
     return Record(line, rid, {k: obj[k] for k in PROPOSED if k in obj}, creation, later, obj.get("standing"),
-                  _time("created_at", obj.get("created_at")), _time("updated_at", obj.get("updated_at")))
+                  _time("created_at", obj.get("created_at")), _time("updated_at", obj.get("updated_at")),
+                  ai_use=obj.get("ai_use"))
 
 
 def _parse(lines) -> list[Record]:
@@ -285,6 +290,10 @@ def _needs(records: list[Record]) -> dict:
 def _write_note(conn, actor: Actor, r: Record, excerpts: dict) -> tuple[dict, tuple | None]:
     d = r.draft
     allow_search, allow_ai, allow_train, books, found = notes._derive(conn, d)
+    if r.ai_use:  # an exported note keeps its rights in a looser journal: a claim may narrow, never widen
+        allow_search, allow_ai, allow_train = (allow_search and r.ai_use["search"] == "y",
+                                               allow_ai and r.ai_use["ai_input"] == "y",
+                                               allow_train and r.ai_use["train"] == "y")
     row = conn.execute("SELECT seq FROM note WHERE book = %s AND id = %s", (d.book, d.id)).fetchone()
     seq = row[0] if row else notes._insert_note(conn, d, allow_search, allow_ai, allow_train, books)
     stored, notice = origins.compute(actor, d.origin_requested)

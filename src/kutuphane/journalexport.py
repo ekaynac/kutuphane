@@ -14,15 +14,16 @@
   and `items = [{ref, standing_seq}]` (AT-09: rollback finds the export).
 - **Refusals, as packages and the decision export:** a `restricted` journal is refused; a note with a `restricted`
   book in its `source_books` (count `restricted`) or derived from a file with `license: unknown` (count
-  `licence_unknown`, #143) is left out; the text and decision only go out with `decisions.rights` (`ai_input` and
-  `train`, no blocked skill), else they are null and `withheld` gives the reason. A withheld record does not import.
+  `licence_unknown`, #143) is left out; a note that depends on a blocked skill (D71) has `text` and `decision` null
+  and `withheld` set, and does not import.
+- **Rights travel with the note (docs/23 principle 5):** `ai_input` and `train` limit model use, not a copy, so the
+  text goes out with `ai_use` (note AND journal closure now). The decision export, a training set, gates on them.
 """
 from . import catalog, decisions, gate, noteimport, notes, notesquery
 from . import origin as origins
 from .gate import Actor
 
 ACTION = "export_journal"
-WITHHELD = decisions.WITHHELD
 
 _NOTES = f"""
 SELECT n.seq, n.id, n.kind, n.body, n.class_key, n.scope_repo, n.scope_branch, n.scope_paths, n.observed_commit,
@@ -92,10 +93,12 @@ def _records(conn, book: str, w: int) -> tuple[list[dict], dict]:
 
 
 def _finish(conn, final, records: list[dict]) -> list[dict]:
-    """Inside the export transaction, after the final decision: the text and decision by `decisions.rights` now."""
+    """Inside the export transaction, after the final decision: `ai_use` now, and the text withheld only for a note
+    that depends on a blocked skill in that decision."""
     now = decisions.rights(conn, final, [r["_seq"] for r in records])
     for r in records:
-        r["ai_use"], r["withheld"] = now[r.pop("_seq")]
+        seq = r.pop("_seq")
+        r["ai_use"], r["withheld"] = now[seq][0], gate.SKILL_WITHHELD if seq in final.blocked_notes else None
         if r["withheld"]:
             r["text"], r["decision"] = None, None
     return records

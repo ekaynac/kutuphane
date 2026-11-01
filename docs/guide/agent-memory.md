@@ -273,7 +273,8 @@ into a journal later. Export it as JSONL, one record on each line:
 | `created_at`, `updated_at` | Optional. ISO 8601 with a time zone. Kept as provenance. `written_at` of the note is the import time. |
 | `scope`, `commit`, `citations`, `class_key`, `decision`, `applies_to` | Optional. As for `propose_note`. Code citations need the repository in the journal (`kutuphane repo add`). |
 | `links` | Optional, at most 20. `{"type", "record"}` names a record of this file or of an earlier import into the same journal. `{"type", "ref"}` names an existing note or passage. |
-| `standing_history`, `writers`, `outcomes`, `ai_use` | Optional. Written by `journal export` (below). Kütüphane checks their shape and does not store them. |
+| `standing_history`, `writers`, `outcomes` | Optional. Written by `journal export` (below). Kütüphane checks their shape and does not store them. |
+| `ai_use` | Optional. Written by `journal export`: `{"search", "ai_input", "train"}`, each `y` or `n`. A new note gets the rights of the journal and of its sources, and an `n` here also makes that right `n`. A `y` never opens a right that the journal or a source closes. A note that already exists keeps its rights. |
 | `withheld` | Optional. Written by `journal export`. A record with a `withheld` reason has no text: the import refuses it. |
 
 Other fields are refused.
@@ -309,7 +310,7 @@ Each record has the import fields and also:
 | `writers` | Every propose write of the note: `principal`, `on_behalf_of`, `channel`, `client_id`, `origin`, `at`. |
 | `outcomes` | Every outcome: `task_ref`, `result`, `at`, `principal`, `on_behalf_of`, `origin`. |
 | `ai_use` | The rights of the note now: `search`, `ai_input`, `train` (`y` or `n`). |
-| `withheld` | `null`, or the reason why `text` and `decision` are `null`. |
+| `withheld` | `null`, or the reason why `text` and `decision` are `null`: the note depends on a skill that a scan blocks. |
 
 - **Round trip:** `note import` of the file into a journal with the same slug (for example in a new installation)
   gives the same note ids and the same links. Each note is `pending` again; `standing` is kept as a claim.
@@ -318,9 +319,11 @@ Each record has the import fields and also:
 - Into a journal with another slug, a note with a `derived_from` or `supersedes` link to a note of the file gets a
   new id: the note id includes the book of its creation links.
 - A `ref` must exist where you import: the cited books and the linked notes of other journals.
-- The text and the decision are in the file only when the note allows `ai_input` and `train`, as in the decision
-  export (step 8). Else `withheld` gives the reason, and the record does not import. For a full backup, create the
-  journal with `--train y`.
+- The file holds the text and the decision of every note, with its `ai_use`. `ai_input` and `train` limit what a
+  model may do with the text, not a copy for a backup, and the rights go with the note: an import into a journal
+  with looser rights keeps the note's own limits (the `ai_use` row above). Keep the file as safe as the journal.
+- A note that depends on a skill that a scan blocks has `text` and `decision` `null`, and `withheld` gives the
+  reason. The import refuses that record.
 - A private journal (step 12) is refused. A note derived from a private journal, or from a file with
   `license: unknown`, is not in the file. A link to such a note is a `ref`.
 - `--by` needs `read` on the journal and on each book that its notes cite or link. The export goes through the
