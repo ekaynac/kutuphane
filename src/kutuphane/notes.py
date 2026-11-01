@@ -55,8 +55,8 @@ MEMORY_LOCK = 0x6B75747570  # pg_advisory_xact_lock key of every memory write
 NOW = 2 ** 63 - 1  # a watermark above every seq: "the rows committed now"
 WITHHELD = "rights do not allow AI input"
 
-BOOK = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}\Z")
-REF = re.compile(r"^([a-z0-9][a-z0-9-]{0,62})@(nt_[0-9a-f]{64})\Z")
+BOOK = re.compile(rf"^{ids.SLUG}\Z")
+REF = re.compile(rf"^({ids.SLUG})@(nt_[0-9a-f]{{64}})\Z")
 REPO = re.compile(r"^[a-z0-9][a-z0-9._-]{0,62}\Z")
 CLASS_KEY = re.compile(r"^[a-z0-9][a-z0-9._:/-]{0,79}\Z")
 COMMIT = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?\Z")

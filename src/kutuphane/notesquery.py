@@ -16,7 +16,6 @@ import binascii
 import inspect
 import json
 import math
-import re
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 
@@ -28,7 +27,6 @@ from .search import SearchChanged
 SETS = ("current", "open", "history")
 ORDERS = ("newest", "oldest", "relevance")
 DIRECTIONS = ("out", "in", "both")
-LINK_TYPES = ("derived_from", "same_as", "about", "fixed_by", "violates", "decided_by", "supersedes", "contradicts")
 NOTE_ORIGINS = ("human", "assisted", "model", "unknown")  # the shown origin (docs/25 §7.6)
 CITES = "cites"  # neighbours of a passage: the edge from a note that cites it (G32); a citation, not a link type
 ROLES = ("rule", "evidence")
@@ -41,10 +39,6 @@ MAX_REFS = 50
 MAX_PATHS = 20
 RANK_NORMALIZATION = 4
 WITHHELD = "rights do not allow AI input"
-_SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}\Z")
-_REPO = re.compile(r"^[a-z0-9][a-z0-9._-]{0,62}\Z")
-_CLASS_KEY = re.compile(r"^[a-z0-9][a-z0-9._:/-]{0,79}\Z")
-_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 
 def _dumps(obj) -> str:
@@ -71,11 +65,11 @@ class Context:
 
     def __post_init__(self):
         search._context({k: v for k, v in (("platform", self.platform), ("version", self.version)) if v is not None})
-        if self.repo is not None and not (isinstance(self.repo, str) and _REPO.match(self.repo)):
+        if self.repo is not None and not (isinstance(self.repo, str) and notes.REPO.match(self.repo)):
             raise ValueError("repo must be a repository slug")
         for name in ("branch", "path", "commit"):
             value = getattr(self, name)
-            if value is not None and (not isinstance(value, str) or not value or _CONTROL.search(value)
+            if value is not None and (not isinstance(value, str) or not value or notes.CONTROL.search(value)
                                       or len(value) > 1000):
                 raise ValueError(f"{name} must be a non-empty string without control characters")
         if self.path is not None and (self.path.startswith("/") or ".." in self.path.split("/")):
@@ -405,7 +399,7 @@ def _item(note: Note, is_current: bool, recurrence: int, graph: Graph, for_model
                                                             "paths": list(note.scope_paths)},
             **({"applies_to": note.applies_to} if note.applies_to is not None else {}),  # #164: old bytes kept
             "observed_commit": note.observed_commit, "written_at": _iso(note.written_at),
-            "recurrence": recurrence, "links": {t: links[t] for t in LINK_TYPES if t in links},
+            "recurrence": recurrence, "links": {t: links[t] for t in notes.LINK_TYPES if t in links},
             "outcomes": outcomes,
             "citations": [_citation(k, ref, st) for k, ref, st in note.citations]}
     if note.standing == "retired":
@@ -641,13 +635,13 @@ def query_notes(conn, actor: Actor, *, for_model: bool, book=None, sets=("curren
     `min_passed`, `exclude_failed` (R2): only notes with at least that many `passed` outcomes; no note whose latest
     outcome is `failed` or `reverted` (the outcome rows with seq <= the watermark, so `as_of` reads them as they were).
     `readable_out`, if given, gets the books (slugs) of the final read set, for the handling labels (handling.py)."""
-    wanted = _strings("book", book, pattern=_SLUG)
+    wanted = _strings("book", book, pattern=notes.BOOK)
     if wanted is not None and len(wanted) > MAX_BOOKS:
         raise ValueError(f"at most {MAX_BOOKS} books")
     sets = _sets(list(sets))
     kinds = _kinds(kind, role)
     origins = _strings("origin", origin, NOTE_ORIGINS)
-    if class_key is not None and not (isinstance(class_key, str) and _CLASS_KEY.match(class_key)):
+    if class_key is not None and not (isinstance(class_key, str) and notes.CLASS_KEY.match(class_key)):
         raise ValueError("invalid class_key")
     named = _strings("refs", refs)
     if named is not None:
@@ -838,7 +832,7 @@ def neighbours(conn, actor: Actor, *, for_model: bool, ref: str, types=None, dep
                platform=None, version=None,
                max_nodes: int = 50, budget_tokens: int = 2000, max_bytes: int = 32768, as_of=None,
                attempts: int = 2) -> dict:
-    types = _strings("types", types, LINK_TYPES + (CITES,))
+    types = _strings("types", types, notes.LINK_TYPES + (CITES,))
     depth = _int("depth", depth, 1, 2)
     if direction not in DIRECTIONS:
         raise ValueError(f"direction must be one of {', '.join(DIRECTIONS)}")
