@@ -256,8 +256,16 @@ def test_a_skill_blocked_in_the_new_version_withholds_a_note_on_the_old_passage(
     reader = Actor("agent:kobra-7", "user:ayse", channel="mcp")
     assert notesquery.open_note(conn, reader, for_model=True, ref=cited)["note"]["text"] is not None
     fake.verdict("DO_NOT_INSTALL")
-    result = publish(conn, folder("Özetle ve kaydet.\n", "Kaynak listesi: üç belge ve bir ek.\n"))
+    result = publish(conn, folder("Özetle ve kaydet.\n", "Kaynak listesi: üç belge. Bir ek de var.\n"))
     assert any(s["blocking"] for s in result.skill_scans) and result.passage_map["overlap"] == 1
     item = notesquery.open_note(conn, reader, for_model=True, ref=cited)["note"]
     assert (item["text"], item["withheld"]) == (None, gate.SKILL_WITHHELD)
     assert item["citations"][0]["status"] == "moved"
+
+
+def test_a_changed_operator_or_case_in_a_new_content_version_is_not_an_overlap():
+    """Astra review #21: `>=` to `<=` keeps every word and changes the meaning."""
+    old = "Allow requests when retries >= 3."
+    assert choose(old, 0, [(0, "Allow requests when retries <= 3.")], same_content=False) == (None, "none")
+    assert choose(old, 0, [(0, "allow requests when retries >= 3.")], same_content=False) == (None, "none")
+    assert choose(old, 0, [(0, "# Retries\n\n" + old + " Then log it.")], same_content=False) == (0, "overlap")

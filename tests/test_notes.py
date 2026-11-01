@@ -833,3 +833,36 @@ def test_016_applies_on_015_with_data(conn):  # T38
             authz.grant(c, "book:kitap", "propose", U)
     finally:
         conn.execute("DROP SCHEMA IF EXISTS mig_a CASCADE")
+
+
+def test_047_keeps_runbook_feedback_that_an_old_server_commits_during_the_upgrade(conn, conn2):
+    """Astra review #21: the emptiness check must not miss a row that is committed while 047 waits for its lock."""
+    import threading
+    from importlib.resources import files
+    conn.execute("DROP SCHEMA public CASCADE")
+    conn.execute("CREATE SCHEMA public")
+    scripts = sorted((f for f in files("kutuphane.migrations").iterdir() if f.name.endswith(".sql")),
+                     key=lambda f: f.name)
+    for script in scripts:
+        if script.name < "047":
+            conn.execute(script.read_text())
+    with conn2.transaction():  # the old server: its feedback row is not committed when 047 starts
+        conn2.execute("INSERT INTO book (slug, title) VALUES ('k', 'k')")
+        conn2.execute("INSERT INTO content_version (book, id, manifest) VALUES ('k', 'c', '{}')")
+        conn2.execute("INSERT INTO runbook_feedback (correlation_id, book, content_id, path, outcome, principal) "
+                      "VALUES ('x', 'k', 'c', 'a.md', 'worked', 'user:a')")
+        step = next(s for s in scripts if s.name.startswith("047"))
+        errors = []
+
+        def run():
+            try:
+                with conn.transaction():
+                    conn.execute(step.read_text())
+            except Exception as e:  # noqa: BLE001 (reported below)
+                errors.append(e)
+        t = threading.Thread(target=run)
+        t.start()
+        t.join(1.0)  # 047 now waits for the old server's lock
+    t.join(10)
+    assert not errors and not t.is_alive()
+    assert conn.execute("SELECT count(*) FROM runbook_feedback").fetchone()[0] == 1

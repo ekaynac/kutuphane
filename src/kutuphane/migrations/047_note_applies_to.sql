@@ -5,6 +5,8 @@ ALTER TABLE note ADD COLUMN applies_to jsonb
                                   AND applies_to - 'platform' - 'version' = '{}'::jsonb));
 
 -- D78: `record_outcome` replaces runbook feedback. The table goes only when it is empty: feedback data is kept.
+-- Astra review #21: lock first, so a feedback row that an old server commits during the upgrade is seen, not dropped.
+LOCK TABLE runbook_feedback IN ACCESS EXCLUSIVE MODE;
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM runbook_feedback) THEN

@@ -426,8 +426,8 @@ be in a skill that a scan blocks.
 
 `outcomes` has the non-zero counts of `record_outcome` for this passage. `status` says where the passage is in the
 book's current version (#140): `current`; `moved`, with `moved_to` (the passage of the same path that replaces it)
-and `match` (`exact`: the same text; `overlap`: it holds at least half of the word pairs, or the whole old text when
-the content changed); or `stale` (no passage
+and `match` (`exact`: the same text; `overlap`: it holds at least half of the word pairs, or the whole old text, with its
+operators and case, when the content changed); or `stale` (no passage
 replaces it). The text is always the text of the handle that you opened. `publication` says who published or
 approved the version of the handle (section 5.18); it is `null` for a version without a publication record.
 

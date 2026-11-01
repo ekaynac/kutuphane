@@ -9,6 +9,13 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Astra review #21 fixes
+
+- Fixed: across a new content version, an `overlap` successor now must hold the whole old passage text with its operators and case. Before, `retries >= 3` could map to `retries <= 3`; such a citation is now `stale` ([operations.md](operations.md#re-index-and-note-citations)).
+- Fixed: the curator queue and the origin confirmation showed "Applies everywhere (no scope)" on a rule that had only an `applies_to` bound. The card now shows the bound ("Applies to vcenter; version >=7,<8") and says "everywhere" only when the note has neither a scope nor `applies_to` ([operations.md](operations.md)).
+- Fixed: migration `047_note_applies_to.sql` now locks `runbook_feedback` before it checks that the table is empty, so a feedback row that an old server commits during the upgrade is kept.
+- Migration `048_passage_map_operators.sql` removes the `overlap` rows of a changed content version. After `migrate`, run `kutuphane reindex-map <book>` for each book whose passages notes cite. No role script changes. On the main database, a read-only count gives the same `overlap` answer for all 6 such rows.
+
 ### `curate` grant in the database; small refactor (wave 1)
 
 - Fixed: the app database role could insert a `curate` row into `grant_tuple` directly, past the CLI check. A row-level security policy in `deploy/db-roles.sql` now refuses it; run the script again after you upgrade ([security.md](security.md#curation-boundary)).

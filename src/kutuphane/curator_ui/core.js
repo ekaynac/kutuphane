@@ -33,13 +33,18 @@ function firstLine(text, n = 120) {
   return line.length > n ? line.slice(0, n - 1) + "…" : line;
 }
 function fileName(path) { return path.split("/").pop(); }
-// Where a note applies (its scope) and the commit it saw: parts of the note id, so always on the card (not in Details).
+// #164: the kstd Scope bound of a note, e.g. "esxi, vcenter; version >=7,<8".
+function appliesTo(a) { return a && [(a.platform || []).join(", "), a.version && `version ${a.version}`].filter(Boolean).join("; "); }
+// Where a note applies (its scope and applies_to bound) and the commit it saw: parts of the note id, so always on the
+// card (not in Details). "Everywhere" only when neither bound is set (Astra review #21).
 function where(item) {
   const parts = [];
   if (item.scope) {
     const s = item.scope;
     parts.push(`Applies to ${s.repo}${s.branch ? ` (branch ${s.branch})` : ""}${s.paths.length ? ": " + s.paths.join(", ") : ""}`);
-  } else if (item.role === "rule") parts.push("Applies everywhere (no scope)");
+  }
+  if (item.applies_to) parts.push(`${item.scope ? "on" : "Applies to"} ${appliesTo(item.applies_to)}`);
+  if (!item.scope && !item.applies_to && item.role === "rule") parts.push("Applies everywhere (no scope)");
   if (item.commit) parts.push(`seen at commit ${item.commit.slice(0, 12)}`);
   if (!parts.length) return null;
   const text = parts.join(" · ");
