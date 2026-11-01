@@ -59,10 +59,10 @@ _OPENER = urllib.request.build_opener(_NoRedirect)
 
 ROUTE_CLASSES = ("local", "cloud")
 # G13: never a default. `local` skips the egress check (_check_egress), so a default would turn a cloud route the
-# operator did not declare into one that gets `local_only` text. compose.yaml sets `local` for its own LLMDAP; the
-# CLI on the host reads no compose file, so it stops and names the setting.
-ROUTE_CLASS_HINT = ("local or cloud: does the route keep the data on premises? compose.yaml sets local for its own "
-                    "LLMDAP; outside compose there is no default")
+# operator did not declare into one that gets `local_only` text. deploy/compose.full.yaml sets `local` for its own
+# LLMDAP; the CLI on the host reads no compose file, so it stops and names the setting.
+ROUTE_CLASS_HINT = ("local or cloud: does the route keep the data on premises? deploy/compose.full.yaml sets local "
+                    "for its own LLMDAP; outside compose there is no default")
 
 
 @dataclass(frozen=True)

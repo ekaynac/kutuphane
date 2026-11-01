@@ -5,9 +5,12 @@ This page tells you how to install Kütüphane. There are four ways:
 | Way | For | Model calls |
 |---|---|---|
 | [Development](#development-install) | a developer laptop, tests, the quick start | none, or the stub models |
-| [Light install](#light-install) | Postgres, Core and the ingress proxy; no LLMDAP, only open source parts (#76) | none: full-text search, no answers |
-| [Full stack](#full-stack) | one server (D15): Postgres, Core, the ingress proxy, LLMDAP | through LLMDAP |
-| [Local models](#local-models-overlay) | the full stack with real models on the same machine (D61) | nothing leaves the machine |
+| [Light install](#light-install) | `compose.yaml`: Postgres, Core and the ingress proxy; no LLMDAP, only open source parts (#76) | none: full-text search, no answers |
+| [Full stack](#full-stack) | `deploy/compose.full.yaml`, one server (D15): Postgres, Core, the ingress proxy, LLMDAP | through LLMDAP |
+| [Local models](#local-models) | the full stack with real models on the same machine (D61) | nothing leaves the machine |
+
+There are two compose files. Both have the project name `kutuphane` and the same `postgres` service, so they use the
+same database container and the same volume (`kutuphane_pgdata`).
 
 ## Requirements
 
@@ -43,19 +46,26 @@ tokens need `KUTUPHANE_DEV=1`. Never set it on a production machine.
 
 ## Full stack
 
-The compose file `compose.yaml` starts these services:
+The compose file `deploy/compose.full.yaml` (project `kutuphane`) starts these services. Put
+`COMPOSE_FILE=deploy/compose.full.yaml` in `.env`: then every `docker compose` command on this page, run from the
+repository root, uses the full stack. Without it, `docker compose` uses the light `compose.yaml`. The other way is to
+name the file and the `.env` in each command: `docker compose -f deploy/compose.full.yaml --env-file .env …`.
 
 | Service | Profile | Networks | Purpose |
 |---|---|---|---|
-| `postgres` | (always) | `db`, `dev` | pgvector/pgvector 0.8.0 on PostgreSQL 17 |
+| `postgres` | (always) | `db`, `dev`, `curator-db` | pgvector/pgvector 0.8.0 on PostgreSQL 17 |
 | `core` | `app` | `db`, `web`, `gateway` | the API, MCP server and web UI (`/ui`) on port 8080 |
 | `ingress` | `app` | `edge`, `web` | nginx; the only way in from users; publishes `${KUTUPHANE_BIND:-127.0.0.1}:8080` |
-| `llmdap` | `app` | `gateway`, `models` | the LLMDAP bridge; the only way to the model servers |
+| `llmdap` | `app` | `gateway`, `models`, `outbound` | the LLMDAP bridge; the only way to the model servers |
 | `model-stub` | `dev-models` | `models` | deterministic stand-in models; never for measurements |
 | `laya` | `decision-models` | `models` | the typed-decision model (labelling work) |
+| `embedder`, `spark-chat` | `local-models` | `models` (`spark-chat` also `spark`) | [local models](#local-models) |
+| `reranker-gpu` | `gpu-rerank` | `models` | [GPU reranker](#gpu-reranker) |
+| `curator`, `tailscale` | `curator` | `curator-db`, `curator`; `curator`, `tailnet` | [curator web](#curator-web) |
 
-`db`, `web`, `gateway` and `models` are internal networks. Core reaches only Postgres and LLMDAP. Only LLMDAP
-reaches the model servers.
+`db`, `web`, `gateway`, `models`, `curator-db` and `curator` are internal networks. `outbound` is internal too,
+except for a [hosted decision model](#local-models). Core reaches only Postgres and LLMDAP. Only LLMDAP reaches the
+model servers. The paths in the file are relative to `deploy/`.
 
 ### 1. Secrets and settings
 
@@ -63,18 +73,23 @@ Put these in `.env` (git-ignored). Do not put secrets anywhere else.
 
 | Variable | Value |
 |---|---|
+| `COMPOSE_FILE` | `deploy/compose.full.yaml` (see above) |
 | `KUTUPHANE_DB_PASSWORD` | the owner role password |
 | `KUTUPHANE_APP_DB_PASSWORD` | the app role password (`kutuphane_app`) |
 | `KUTUPHANE_PUBLIC_URL` | the public URL of the ingress, for example `https://kb.example.org` |
 | `KUTUPHANE_OIDC_ISSUER` | the IdP issuer, exactly as its tokens carry it |
 | `KUTUPHANE_OIDC_AUDIENCE` | the token audience (compose default `kutuphane`) |
-| `KUTUPHANE_OIDC_JWKS_FILE` | the host path of the IdP's JWKS file (compose mounts it at `/run/kutuphane/jwks.json`) |
-| `KUTUPHANE_ANSWER_MODEL` | the answer model name, pinned on the chat route |
+| `KUTUPHANE_OIDC_JWKS_FILE` | the host path of the IdP's JWKS file (compose mounts it at `/run/kutuphane/jwks.json`; default `deploy/jwks.json`) |
+| `KUTUPHANE_ANSWER_MODEL` | the answer model name, pinned on the chat route (full stack default: [local models](#local-models)) |
 | `KUTUPHANE_LLMDAP_KEY` | Core's LLMDAP subject key (see step 3) |
-| `KUTUPHANE_LLMDAP_ROUTE`, `KUTUPHANE_LLMDAP_EMBED_ROUTE`, `KUTUPHANE_LLMDAP_RERANK_ROUTE` | the route names |
-| `KUTUPHANE_EMBED_MODEL`, `KUTUPHANE_RERANK_MODEL` | the pinned model names of those routes |
-| `KUTUPHANE_REPO_DIR` | optional: the host folder of bare git mirrors (default `./deploy/repos`) |
+| `KUTUPHANE_LLMDAP_ROUTE`, `KUTUPHANE_LLMDAP_EMBED_ROUTE`, `KUTUPHANE_LLMDAP_RERANK_ROUTE` | the route names (full stack default: [local models](#local-models)) |
+| `KUTUPHANE_EMBED_MODEL`, `KUTUPHANE_RERANK_MODEL` | the pinned model names of those routes (full stack default: [local models](#local-models)) |
+| `KUTUPHANE_LLMDAP_ROUTES` | the routes file of LLMDAP (full stack default `routes.local.json`; see step 3) |
+| `KUTUPHANE_REPO_DIR` | optional: the host folder of bare git mirrors (default `deploy/repos`) |
 | `KUTUPHANE_BIND` | optional: the address that the ingress publishes on (default `127.0.0.1`) |
+
+Give `KUTUPHANE_OIDC_JWKS_FILE` and `KUTUPHANE_REPO_DIR` as absolute paths: the full stack reads a relative path
+from `deploy/`, the light install from the repository root.
 
 The server refuses to start when `KUTUPHANE_PUBLIC_URL` or an OIDC setting is missing, and when
 `KUTUPHANE_LLMDAP_URL` is set without `KUTUPHANE_ANSWER_MODEL`.
@@ -129,8 +144,9 @@ LLMDAP is the gateway for every model call. Its setup is in `deploy/llmdap/READM
    `deploy/llmdap/config/keys.json`.
 3. Copy `deploy/llmdap/bridge.env.example` to `deploy/llmdap/bridge.env` and fill the audit key and the digest key.
 
-The routes are in `deploy/llmdap/config/routes.json` (stub models), `routes.local.json` (local models) and
-`routes.hosted.json` (a hosted decision model). `policy.csv` grants Core `llm:invoke` on the routes.
+The routes are in `deploy/llmdap/config/routes.json` (stub models), `routes.local.json` (local models, the default)
+and `routes.hosted.json` (a hosted decision model). `KUTUPHANE_LLMDAP_ROUTES` in `.env` names the file that LLMDAP
+reads. `policy.csv` grants Core `llm:invoke` on the routes.
 
 ### 4. Start
 
@@ -138,6 +154,10 @@ The routes are in `deploy/llmdap/config/routes.json` (stub models), `routes.loca
 docker compose --profile app up -d --build                        # real model servers on the models network
 docker compose --profile app --profile dev-models up -d --build   # or: with the stub models
 ```
+
+For model servers other than the [local models](#local-models), set the six route and model settings and
+`KUTUPHANE_LLMDAP_ROUTES` in `.env`. The stub models: `KUTUPHANE_LLMDAP_ROUTES=routes.json` and the dev values in
+`deploy/llmdap/README.md`.
 
 ### 5. Check
 
@@ -152,9 +172,9 @@ protocol versions through the proxy. Add `--journal <book>` to also propose a no
 
 The web UI is at `/ui/` (in Turkish). It searches, asks and opens citations with your token.
 
-## Local models overlay
+## Local models
 
-The overlay `deploy/compose.local-models.yaml` adds real models. Nothing leaves the machine:
+The profile `local-models` of the full stack adds real models. Nothing leaves the machine:
 
 | Route | Service | Model |
 |---|---|---|
@@ -163,20 +183,29 @@ The overlay `deploy/compose.local-models.yaml` adds real models. Nothing leaves 
 | `rerank` | `embedder` | `BAAI/bge-reranker-v2-m3` |
 | `rerank-gpu` | `reranker-gpu` (GPU, profile `gpu-rerank`) | `BAAI/bge-reranker-v2-m3` (the same weights) |
 
-The overlay sets Core's route and model settings itself. Download the pinned weights into the Hugging Face cache
-once (`deploy/llmdap/README.md`, section "Local models"). Then:
+The full stack's defaults are these routes and models: Core's route and model settings and LLMDAP's routes file
+(`routes.local.json`) need no line in `.env`. A value in `.env` overrides its default. The CLI on the host reads no
+compose file: give it the settings that it needs in its own environment ([operations.md](operations.md)).
+
+Download the pinned weights into the Hugging Face cache once (`deploy/llmdap/README.md`, section "Local models").
+Then:
 
 ```sh
-docker compose -f compose.yaml -f deploy/compose.local-models.yaml \
-  --profile app --profile decision-models --profile local-models up -d --build
+docker compose --profile app --profile decision-models --profile local-models up -d --build
 ```
 
 Vectors are stored per model name. After you change the embedding model, run `kutuphane index <book>` for each
 book.
 
-**Hosted decision model.** `deploy/compose.hosted.yaml` gives LLMDAP an outbound network for one hosted route. Every
-hosted call needs an `llm:egress` grant in `policy.csv`. Core's own routes stay `local` unless you set a
-`*_ROUTE_CLASS` to `cloud`. A `local_only` book never goes to a `cloud` route.
+**Hosted decision model.** `KUTUPHANE_LLMDAP_OFFLINE=false` in `.env` makes the network `outbound` of LLMDAP a
+network with a way out, for one hosted route (`KUTUPHANE_LLMDAP_ROUTES=routes.hosted.json` in `.env`; the API key
+goes into `bridge.env`). Without `KUTUPHANE_LLMDAP_OFFLINE`, or with `true`, `outbound` is internal. Every hosted call
+needs an `llm:egress` grant in `policy.csv`. Core's own routes stay `local` unless you set a `*_ROUTE_CLASS` to
+`cloud`. A `local_only` book never goes to a `cloud` route. Start LLMDAP again:
+
+```sh
+docker compose --profile app --profile decision-models up -d llmdap
+```
 
 ### GPU reranker
 
@@ -190,7 +219,7 @@ The GPU memory is the host memory, shared with the chat model. The service may t
 shows 15 GB or more `available`. Never stop the host's vLLM to make space.
 
 ```sh
-docker compose -f compose.yaml -f deploy/compose.local-models.yaml --profile gpu-rerank up -d --no-deps reranker-gpu
+docker compose --profile gpu-rerank up -d --no-deps reranker-gpu
 ```
 
 Then set the one switch in `.env` and start Core again (or export it for the host CLI):
@@ -239,14 +268,15 @@ context). Core cannot reach it, and it cannot reach Core.
 **Start and check:**
 
 ```sh
-docker compose -f compose.yaml -f deploy/compose.curator.yaml --profile curator up -d --build
+docker compose --profile curator up -d --build
 python3 deploy/curator_probe.py https://kutuphane-curator.<tailnet>.ts.net    # from a device of the operator
 ```
 
 `curator_probe.py` checks that only HTTPS 443 answers with the strict headers, that Funnel is off in the sidecar,
 that the curator container publishes no port, that Core cannot reach it, and that a POST from another origin is
-refused. Run it again after a restart of the sidecar. The overlay also attaches Postgres to the internal network
-`curator-db`; the next `up` recreates the Postgres container for that (the data volume stays).
+refused. Run it again after a restart of the sidecar. Both compose files attach Postgres to the internal network
+`curator-db`, so curator web needs no change to the Postgres container. Without the two WebAuthn settings of step 4,
+curator web stops at its start and names them; without the role password, its database login fails.
 
 ### Host install with tailscale serve
 
@@ -310,13 +340,13 @@ Enrollment and use: [operations.md](operations.md), section 7.
 ## Light install
 
 The light install has no LLMDAP and no model server (#76). An orchestrator can use Kütüphane over MCP with no
-proprietary part. The compose file `deploy/compose.light.yaml` (project `kutuphane-light`) starts three containers:
+proprietary part. The compose file `compose.yaml` starts three containers:
 
 | Service | Networks | Purpose |
 |---|---|---|
-| `postgres` | `db`, `dev` | pgvector/pgvector 0.8.0 on PostgreSQL 17; `127.0.0.1:${KUTUPHANE_DB_PORT:-55432}` for the CLI on the host |
+| `postgres` | `db`, `dev`, `curator-db` | pgvector/pgvector 0.8.0 on PostgreSQL 17; `127.0.0.1:55432` for the CLI on the host |
 | `core` | `db`, `web` | the API, MCP server and web UI, built from this repository; no model settings |
-| `ingress` | `edge`, `web` | nginx; publishes `${KUTUPHANE_BIND:-127.0.0.1}:${KUTUPHANE_PORT:-8080}` |
+| `ingress` | `edge`, `web` | nginx; publishes `${KUTUPHANE_BIND:-127.0.0.1}:8080` |
 
 Core reaches only Postgres. It makes no model call.
 
@@ -342,45 +372,45 @@ What you lose:
 Core to the `embedder` container would skip the LLMDAP grant and the signed audit chain. So the light install has no
 embedder. The server refuses to start when an embedding or rerank route is set without `KUTUPHANE_LLMDAP_URL`
 (`LLMDAP not configured: set KUTUPHANE_LLMDAP_URL, …`). For vectors and rerank on local models, use the
-[full stack](#full-stack) with the [local models overlay](#local-models-overlay).
+[full stack](#full-stack) with [local models](#local-models).
 
 ### Steps
 
 1. Put these in `.env`: `KUTUPHANE_DB_PASSWORD`, `KUTUPHANE_APP_DB_PASSWORD`, `KUTUPHANE_PUBLIC_URL`,
    `KUTUPHANE_OIDC_ISSUER` and `KUTUPHANE_OIDC_JWKS_FILE` (as in the full stack, step 1). Optional:
-   `KUTUPHANE_OIDC_AUDIENCE`, `KUTUPHANE_DB_PORT`, `KUTUPHANE_PORT`, `KUTUPHANE_BIND`, `KUTUPHANE_REPO_DIR`.
+   `KUTUPHANE_OIDC_AUDIENCE`, `KUTUPHANE_BIND`, `KUTUPHANE_REPO_DIR`. Do not set `COMPOSE_FILE`.
    - Give `KUTUPHANE_OIDC_JWKS_FILE` and `KUTUPHANE_REPO_DIR` as absolute paths. Compose reads a relative path from
-     `deploy/`.
+     the repository root.
    - A variable in your shell overrides the same variable in `.env`. Start compose from a shell that does not export
      the variables of another installation.
-   - The compose file gives Core no `KUTUPHANE_LLMDAP_*` and no `KUTUPHANE_ANSWER_MODEL` setting.
+   - The compose file gives Core no `KUTUPHANE_LLMDAP_*` and no `KUTUPHANE_ANSWER_MODEL` setting. Without
+     `KUTUPHANE_PUBLIC_URL` or `KUTUPHANE_OIDC_ISSUER`, Core does not start, and its log names the setting.
 2. Start Postgres, make the app role (once), and migrate:
 
    ```sh
-   docker compose -f deploy/compose.light.yaml --env-file .env up -d --wait postgres
+   docker compose up -d --wait postgres
    set -a; . ./.env; set +a
-   docker compose -f deploy/compose.light.yaml --env-file .env exec -T postgres psql -U kutuphane -d kutuphane \
+   docker compose exec -T postgres psql -U kutuphane -d kutuphane \
      -v ON_ERROR_STOP=1 -c "CREATE ROLE kutuphane_app LOGIN PASSWORD '${KUTUPHANE_APP_DB_PASSWORD}'"
-   export KUTUPHANE_CURATOR_DSN="postgresql://kutuphane:${KUTUPHANE_DB_PASSWORD}@127.0.0.1:${KUTUPHANE_DB_PORT:-55432}/kutuphane"
+   export KUTUPHANE_CURATOR_DSN="postgresql://kutuphane:${KUTUPHANE_DB_PASSWORD}@127.0.0.1:55432/kutuphane"
    .venv/bin/kutuphane migrate
-   docker compose -f deploy/compose.light.yaml --env-file .env exec -T postgres psql -U kutuphane -d kutuphane \
-     -v ON_ERROR_STOP=1 < deploy/db-roles.sql
+   docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 < deploy/db-roles.sql
    ```
 
    After every upgrade, run `migrate` and `db-roles.sql` again (full stack, step 2).
-3. Add books, journals and rights with the CLI on the host, as in the `README.md` quick start (step 2). Use the
-   database port `KUTUPHANE_DB_PORT` in `KUTUPHANE_DSN`. Do not set `KUTUPHANE_LLMDAP_*` in that shell.
+3. Add books, journals and rights with the CLI on the host, as in the `README.md` quick start (step 2). Do not set
+   `KUTUPHANE_LLMDAP_*` in that shell.
 4. Start Core and the ingress proxy:
 
    ```sh
-   docker compose -f deploy/compose.light.yaml --env-file .env up -d --build --wait
+   docker compose up -d --build --wait
    ```
 
 5. Check:
 
    ```sh
    curl -s http://127.0.0.1:8080/healthz
-   docker compose -f deploy/compose.light.yaml --env-file .env exec -T core python -I - --light < deploy/egress_probe.py
+   docker compose exec -T core python -I - --light < deploy/egress_probe.py
    KUTUPHANE_PROBE_TOKEN=<access token> python3 deploy/mcp_probe.py http://127.0.0.1:8080 --journal <journal>
    ```
 
@@ -390,8 +420,11 @@ Tokens come from your IdP. For a test, use development tokens (README quick star
 `KUTUPHANE_OIDC_ISSUER` to `<KUTUPHANE_PUBLIC_URL>/dev` and `KUTUPHANE_OIDC_JWKS_FILE` to the `jwks.json` of
 `kutuphane dev-keys`.
 
-The light install has its own volume (`kutuphane-light_pgdata`). It shares no data with `compose.yaml`. To add
-models later, move to the full stack and run `kutuphane index <book>` for each book.
+The light install and the full stack use the same database volume (`kutuphane_pgdata`). To add models later, set
+`COMPOSE_FILE=deploy/compose.full.yaml` in `.env`, start the [full stack](#full-stack), and run
+`kutuphane index <book>` for each book. A light install made from the earlier `deploy/compose.light.yaml` has the
+project `kutuphane-light` and the volume `kutuphane-light_pgdata`: put `COMPOSE_PROJECT_NAME=kutuphane-light` in
+`.env` to keep using them.
 
 ## Optional: SkillSpector
 
@@ -416,7 +449,7 @@ export KUTUPHANE_SKILLSPECTOR_PROXY=http://127.0.0.1:9  # optional: block its OS
 
 ## Reboot and restart
 
-- `postgres`, `core`, `ingress` and `llmdap` (and, in the local-models overlay, `embedder` and `spark-chat`) have
+- `postgres`, `core`, `ingress` and `llmdap` (and, with the profile `local-models`, `embedder` and `spark-chat`) have
   `restart: unless-stopped`. Docker starts them again after a crash and after a host reboot, if the Docker daemon
   starts at boot (`systemctl is-enabled docker`). A service that you stopped with `docker compose … stop` stays
   stopped. The light install has the same policy for its three services. `laya`, `model-stub` and the curator
@@ -426,13 +459,13 @@ export KUTUPHANE_SKILLSPECTOR_PROXY=http://127.0.0.1:9  # optional: block its OS
   the others. If it stops after 5 failures, check `free -g` (15 GB or more `available`) and start it again (below).
 - Check the result with `GET /v1/health` (a token is necessary; [http-api.md](http-api.md#33-get-v1health)): each
   dependency is `true` when it answers now. `/healthz` shows only that the process answers.
-- The database (`pgdata`; `kutuphane-light_pgdata` in the light install) and the LLMDAP audit chain
+- The database (`pgdata`) and the LLMDAP audit chain
   (`llmdap-audit`) are named volumes. They stay.
-- Start the host's vLLM before you use the local-models overlay. Without it, `ask_library` fails; search and notes
+- Start the host's vLLM before you use local models. Without it, `ask_library` fails; search and notes
   still work.
 - If the GPU reranker stopped after its retries, wait until the host's vLLM is up, check `free -g` (15 GB or more
   `available`), then start it again:
-  `docker compose -f compose.yaml -f deploy/compose.local-models.yaml --profile gpu-rerank up -d --no-deps reranker-gpu`.
+  `docker compose --profile gpu-rerank up -d --no-deps reranker-gpu`.
   It is ready in about one minute (`docker compose … ps reranker-gpu` shows `healthy`). Until then, with
   `KUTUPHANE_LLMDAP_RERANK_ROUTE=rerank-gpu`, searches keep the hybrid order and say `"rerank": "failed"` in their
   `retrieval` status.
@@ -445,7 +478,7 @@ export KUTUPHANE_SKILLSPECTOR_PROXY=http://127.0.0.1:9  # optional: block its OS
 1. Pull or check out the new version.
 2. Run `kutuphane migrate` with the owner DSN, then apply `deploy/db-roles.sql` (step 2).
 3. Rebuild and start: `docker compose --profile app up -d --build` (light install:
-   `docker compose -f deploy/compose.light.yaml --env-file .env up -d --build --wait`).
+   `docker compose up -d --build --wait`).
 4. If you use SkillSpector and the pin changed, install the new pin into a new folder, point
    `KUTUPHANE_SKILLSPECTOR_BIN` at it, and run `kutuphane skill rescan`.
 5. Read `changelog.md` for changes that need an action, for example a re-ingest or a re-index.

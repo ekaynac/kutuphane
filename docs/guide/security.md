@@ -277,10 +277,11 @@ Code citations read bare mirrors that an administrator registers (`kutuphane rep
 
 ## Egress (network)
 
-- `db`, `web`, `gateway` and `models` are internal compose networks with no route out. Core is on `db`, `web` and
-  `gateway` only.
-- Only the ingress publishes a port. Only LLMDAP reaches the model servers. The hosted overlay gives LLMDAP an
-  outbound network, and each hosted call still needs an `llm:egress` grant.
+- `db`, `web`, `gateway`, `models`, `curator-db` and `curator` are internal compose networks with no route out. Core
+  is on `db`, `web` and `gateway` only.
+- Only the ingress publishes a port. Only LLMDAP reaches the model servers. LLMDAP's network `outbound` is internal
+  too; `KUTUPHANE_LLMDAP_OFFLINE=false` (a hosted decision model) gives it a way out, and each hosted call still
+  needs an `llm:egress` grant.
 - `deploy/egress_probe.py` proves it from inside Core: no default route, outside names do not resolve, forbidden
   addresses refuse a connection.
 - SkillSpector sends dependency names to `api.osv.dev` unless you block it (see "Skill scan" above).

@@ -8,7 +8,7 @@ LLMDAP's bridge-only image (`llmdap-bridge`, LLMDAP #237) is the only way to the
 | File | In git | Content |
 |---|---|---|
 | `config/routes.json` | yes | bridge routes: `chat`, `emb` (embeddings), `rerank`. The dev routes point to `model-stub`. |
-| `config/routes.local.json` | yes | the same routes on real local models (`deploy/compose.local-models.yaml`, D61), plus `rerank-gpu` |
+| `config/routes.local.json` | yes | the same routes on real local models (profile `local-models` of `deploy/compose.full.yaml`, D61), plus `rerank-gpu` |
 | `config/policy.csv` | yes | `p, svc-kutuphane, llm:invoke, llm/<route>` |
 | `config/keys.json` | **no** | Core's subject key, as a **hash** only (`GATEWAY_SUBJECT_KEYS_FILE`) |
 | `bridge.env` | **no** | audit signing key, digest key, auth mode (copy `bridge.env.example`) |
@@ -26,14 +26,16 @@ docker run --rm llmdap-bridge:0.28.0-llmdap1.18.0 \
 #    put the JSON entry from entry.txt into config/keys.json:
 #    {"version":1,"subjects":[{"subject":"svc-kutuphane","groups":[],"keys":[<entry>]}]}
 # 3. bridge.env from bridge.env.example (audit key: openssl genpkey -algorithm ed25519 | base64 -w0)
-# 4. .env: KUTUPHANE_LLMDAP_KEY=<contents of core.key>, plus the route names and models below
+# 4. .env: COMPOSE_FILE=deploy/compose.full.yaml, KUTUPHANE_LLMDAP_KEY=<contents of core.key>, plus the dev values
+#    below (the defaults of deploy/compose.full.yaml are the local models)
 docker compose --profile app --profile dev-models up -d
 ```
 
-Core settings (`.env`; the local-models overlay sets them itself):
+Settings (`.env`):
 
-| Setting | Dev value | Local models |
+| Setting | Dev value | Local models (the compose default) |
 |---|---|---|
+| `KUTUPHANE_LLMDAP_ROUTES` (LLMDAP's routes file) | `routes.json` | `routes.local.json` |
 | `KUTUPHANE_LLMDAP_ROUTE` | `chat` | `chat` |
 | `KUTUPHANE_ANSWER_MODEL` | `stub-chat` | `RadixArk/Qwen3.8-27B-NVFP4` |
 | `KUTUPHANE_LLMDAP_EMBED_ROUTE` | `emb` | `emb` |
@@ -43,7 +45,7 @@ Core settings (`.env`; the local-models overlay sets them itself):
 
 ## Local models (D61)
 
-Nothing leaves the machine. `deploy/compose.local-models.yaml` points LLMDAP at `config/routes.local.json`:
+Nothing leaves the machine. LLMDAP reads `config/routes.local.json` (the default of `KUTUPHANE_LLMDAP_ROUTES`):
 
 - `chat` → `spark-chat` (nginx, `deploy/spark-chat/`) → the host's vLLM on port 8000 (`RadixArk/Qwen3.8-27B-NVFP4`).
   The proxy forwards only `POST /v1/chat/completions` and forces `chat_template_kwargs.enable_thinking=false`
@@ -69,8 +71,7 @@ p = ["config.json", "pytorch_model.bin", "model.safetensors", "tokenizer.json", 
 d("BAAI/bge-m3", revision="5617a9f61b028005a4858fdac845db406aefb181", allow_patterns=p)
 d("BAAI/bge-reranker-v2-m3", revision="953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e", allow_patterns=p)'
 chmod -R a+rX ~/.cache/huggingface/hub/models--BAAI--bge-m3 ~/.cache/huggingface/hub/models--BAAI--bge-reranker-v2-m3
-docker compose -f compose.yaml -f deploy/compose.local-models.yaml \
-  --profile app --profile decision-models --profile local-models up -d --build
+docker compose --profile app --profile decision-models --profile local-models up -d --build
 ```
 
 Vectors are stored per model name, so an index built with `stub-embed` stays apart; run `kutuphane index <book>` to

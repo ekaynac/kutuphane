@@ -24,7 +24,7 @@ Every command prints JSON on stdout. Errors go to stderr.
 | `KUTUPHANE_CURATOR_DSN` | The owner role. | `migrate`, `note standing`, `note rollback`, `note expire`. |
 
 Keep `KUTUPHANE_CURATOR_DSN` out of every environment that an agent can read.
-The `core` container in `compose.yaml` gets only `KUTUPHANE_DSN`.
+The `core` container of both compose files gets only `KUTUPHANE_DSN`.
 
 Without `KUTUPHANE_CURATOR_DSN`, `migrate` uses `KUTUPHANE_DSN`. Use this only for a one-role development database.
 `note standing`, `note rollback` and `note expire` stop with exit code 2 when `KUTUPHANE_CURATOR_DSN` is not set:
@@ -48,7 +48,8 @@ The server does not start when the database schema does not match the code. Run 
 
 ### Variables
 
-All `KUTUPHANE_*` variables that the code, `compose.yaml` and `deploy/` read:
+All `KUTUPHANE_*` variables that the code, the compose files (`compose.yaml`, `deploy/compose.full.yaml`) and
+`deploy/` read:
 
 | Variable | Default | Effect |
 |---|---|---|
@@ -67,15 +68,17 @@ All `KUTUPHANE_*` variables that the code, `compose.yaml` and `deploy/` read:
 | `KUTUPHANE_OIDC_ISSUERS` | none | Path of a JSON file with more token issuers, each bound to principal prefixes ([more than one token issuer](#more-than-one-token-issuer)). Set it for the CLI too: `grant … curate` reads it. |
 | `KUTUPHANE_LLMDAP_URL` | compose: `http://llmdap:8787` | LLMDAP gateway URL. Without it, the server makes no model call: full-text search only, no answers ([light install](install.md#light-install)). |
 | `KUTUPHANE_LLMDAP_KEY` | none | Core's LLMDAP subject key. |
-| `KUTUPHANE_LLMDAP_ROUTE` | none | LLMDAP route for answers and question translation. |
+| `KUTUPHANE_LLMDAP_ROUTE` | none; full stack compose: `chat` | LLMDAP route for answers and question translation. |
 | `KUTUPHANE_LLMDAP_ROUTE_CLASS` | compose: `local`; no default outside compose | `local` or `cloud`. A `local_only` book never goes to a `cloud` route. |
-| `KUTUPHANE_ANSWER_MODEL` | none | Answer model on `KUTUPHANE_LLMDAP_ROUTE`. Required by the server when `KUTUPHANE_LLMDAP_URL` is set. `ask --model` sets it for the CLI. |
-| `KUTUPHANE_LLMDAP_EMBED_ROUTE` | none | LLMDAP embeddings route. Without it, search is full text only. |
+| `KUTUPHANE_ANSWER_MODEL` | none; full stack compose: `RadixArk/Qwen3.8-27B-NVFP4` | Answer model on `KUTUPHANE_LLMDAP_ROUTE`. Required by the server when `KUTUPHANE_LLMDAP_URL` is set. `ask --model` sets it for the CLI. |
+| `KUTUPHANE_LLMDAP_EMBED_ROUTE` | none; full stack compose: `emb` | LLMDAP embeddings route. Without it, search is full text only. |
 | `KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS` | compose: `local`; no default outside compose | Route class of the embeddings route. |
-| `KUTUPHANE_EMBED_MODEL` | none | Pinned embedding model of the route, for example `BAAI/bge-m3`. |
-| `KUTUPHANE_LLMDAP_RERANK_ROUTE` | none; local-models overlay: `rerank` | LLMDAP rerank route. Without it, there is no reranking. Local models: `rerank` (CPU) or `rerank-gpu` (GPU, [install.md](install.md#gpu-reranker)). |
+| `KUTUPHANE_EMBED_MODEL` | none; full stack compose: `BAAI/bge-m3` | Pinned embedding model of the route. |
+| `KUTUPHANE_LLMDAP_RERANK_ROUTE` | none; full stack compose: `rerank` | LLMDAP rerank route. Without it, there is no reranking. Local models: `rerank` (CPU) or `rerank-gpu` (GPU, [install.md](install.md#gpu-reranker)). |
 | `KUTUPHANE_LLMDAP_RERANK_ROUTE_CLASS` | compose: `local`; no default outside compose | Route class of the rerank route. |
-| `KUTUPHANE_RERANK_MODEL` | none | Pinned rerank model, for example `BAAI/bge-reranker-v2-m3`. |
+| `KUTUPHANE_RERANK_MODEL` | none; full stack compose: `BAAI/bge-reranker-v2-m3` | Pinned rerank model. |
+| `KUTUPHANE_LLMDAP_ROUTES` | `routes.local.json` | Compose only (full stack): the routes file of LLMDAP in `deploy/llmdap/config/`: `routes.local.json`, `routes.json` (stub models) or `routes.hosted.json`. |
+| `KUTUPHANE_LLMDAP_OFFLINE` | `true` | Compose only (full stack): `false` makes LLMDAP's network `outbound` a network with a way out, for a hosted decision model ([install.md](install.md#local-models)). Any other value stops compose. |
 | `KUTUPHANE_VLLM_IMAGE` | `vllm-node:latest` | Compose only (profile `gpu-rerank`): the local vLLM image of `reranker-gpu`. It is never pulled. |
 | `KUTUPHANE_INDEX_BATCH` | `8` | Passages per embedding call. |
 | `KUTUPHANE_INDEX_BATCH_CHARS` | `8000` | Embedded characters per call. A longer passage goes alone. |
@@ -102,7 +105,7 @@ Set them on the host. Without them, the command stops and its message names the 
 A route class never has a default outside compose. `local` skips the egress check, so a wrong default would send
 `local_only` text to a cloud route. Set `local` only for a route that keeps the data on premises. The CLI stops with
 `LLMDAP not configured: set KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS (…: local or cloud …)` before it publishes anything.
-The routes and models that `deploy/compose.local-models.yaml` sets are not defaults either: without
+The routes and models that the full stack compose sets for the local models are not code defaults either: without
 `KUTUPHANE_LLMDAP_EMBED_ROUTE` on the host, `search` and `ask` use full text only.
 
 ### More than one token issuer
@@ -138,9 +141,9 @@ One LLMDAP can serve Kütüphane and another product. Each product connects with
 own policy lines; Kütüphane's subject is `svc-kutuphane`.
 
 1. Set `KUTUPHANE_LLMDAP_URL` to the shared gateway. Core must reach it: a Core on the host reaches it directly. In
-   `compose.yaml`, the `llmdap` service starts with the `app` profile and the `gateway` network is internal, so
-   there is no compose mode without Kütüphane's own `llmdap` yet; the shared gateway must be on a network that the
-   `core` container joins.
+   `deploy/compose.full.yaml`, the `llmdap` service starts with the `app` profile and the `gateway` network is
+   internal, so there is no compose mode without Kütüphane's own `llmdap` yet; the shared gateway must be on a
+   network that the `core` container joins.
 2. Put Kütüphane's subject key in `KUTUPHANE_LLMDAP_KEY`. Its hash goes in the shared gateway's keys file, next to
    the other product's subjects.
 3. Set the route names of the shared gateway: `KUTUPHANE_LLMDAP_ROUTE` (answers and question translation),
@@ -1066,7 +1069,7 @@ kutuphane explain <answer_id> --answer --llmdap-export audit.jsonl
 Kütüphane stores audit records in the database: `access_event` (access and deliveries), `model_call` (model calls), `answer` (answers) and `standing_event` (Standing changes).
 LLMDAP keeps its signed audit chain in the `llmdap-audit` volume. Back it up.
 
-Service logs:
+Service logs (the full stack: `COMPOSE_FILE=deploy/compose.full.yaml` in `.env`, [install.md](install.md#full-stack)):
 
 ```sh
 docker compose --profile app logs -f core

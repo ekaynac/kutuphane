@@ -70,8 +70,8 @@ curl -s -H "Authorization: Bearer $TOKEN" 'http://127.0.0.1:8090/v1/notes?book=t
 
 Any MCP client that speaks streamable HTTP with a bearer token works; `claude mcp add` is one example. Without a
 model service, search is full text only, and `tools/list` has no `ask_library` and no job tools. To run the same in
-containers with no LLMDAP and only open source parts, use the light install (`deploy/compose.light.yaml`). For the
-full stack (ingress, LLMDAP, local models, two database roles) read `docs/guide/install.md`.
+containers with no LLMDAP and only open source parts, use the light install (`compose.yaml`). For the full stack
+(`deploy/compose.full.yaml`: ingress, LLMDAP, local models, two database roles) read `docs/guide/install.md`.
 
 ## MCP tools
 

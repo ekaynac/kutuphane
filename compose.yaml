@@ -1,24 +1,21 @@
-# Single box (D15). Network layout (docs/07 §3, AT-10): one internal network per conversation, so every service
-# reaches only the peers it talks to.
-#   db      (internal): postgres, core
-#   web     (internal): ingress, core
-#   gateway (internal): core, llmdap
-#   models  (internal): llmdap and the model servers
-#   edge              : the ingress proxy, the only bridge between users and core
-# Core therefore has no path to anything but Postgres and LLMDAP. Only LLMDAP reaches the model servers.
+# Light install (#76): Postgres, Kütüphane Core and the ingress proxy. No LLMDAP and no model server: only open
+# source images and the Core image of this repository. The full stack (LLMDAP, models, curator web) is
+# deploy/compose.full.yaml.
+#   db  (internal): postgres, core
+#   web (internal): ingress, core
+#   edge          : the ingress proxy, the only way in
+# Core has no network to any model. Search is full text only; answers (`ask_library`, `POST /v1/ask`) give 503.
+# The local embedder of the full stack is not part of this file: Core calls a model only through LLMDAP (D3), which
+# grants the call and keeps the signed audit chain (AT-09). A direct call would bypass both.
 #
-# Dev: `docker compose up -d --wait postgres` (port 55432 on localhost for tests).
-# App: `docker compose --profile app up -d --build` (needs the KUTUPHANE_* variables in .env and
-#      deploy/llmdap/bridge.env + config/keys.json; see deploy/llmdap/README.md).
-# Dev models: add `--profile dev-models` for the deterministic stand-in model server (never for measurements).
-# Real local models (D61): the overlay deploy/compose.local-models.yaml (its header has the start command).
-# No LLMDAP, no models (#76): the separate file deploy/compose.light.yaml (project `kutuphane-light`).
-# Restart (#141): postgres, core, ingress and llmdap have `restart: unless-stopped`, so they come back after a crash
-# or a host reboot (the Docker daemon must start at boot). `docker compose stop` keeps them stopped.
+# Dev and tests: `docker compose up -d --wait postgres` (port 55432 on localhost).
+# Light install (docs/guide/install.md, "Light install"): `docker compose up -d --build --wait`.
+# Restart (#141): postgres, core and ingress have `restart: unless-stopped`, so they come back after a crash or a
+# host reboot (the Docker daemon must start at boot). `docker compose stop` keeps them stopped.
 name: kutuphane
 
 services:
-  postgres:
+  postgres:   # the same service as deploy/compose.full.yaml, so either file keeps the running container
     image: pgvector/pgvector:0.8.0-pg17
     restart: unless-stopped
     environment:
@@ -26,51 +23,36 @@ services:
       POSTGRES_USER: kutuphane
       POSTGRES_PASSWORD: ${KUTUPHANE_DB_PASSWORD:?set KUTUPHANE_DB_PASSWORD}
     ports:
-      - "127.0.0.1:55432:5432"   # dev and tests only; drop in production
+      - "127.0.0.1:55432:5432"   # dev, tests and the CLI on the host; drop in production
     volumes:
       - pgdata:/var/lib/postgresql/data
-    networks: [db, dev]
+    networks: [db, dev, curator-db]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U kutuphane -d kutuphane"]
       interval: 2s
       retries: 30
 
   core:
-    profiles: [app]
     build: .
     restart: unless-stopped
     environment:
-      # The app role (deploy/db-roles.sql): it cannot write Standing. The owner credential never enters this container.
+      # The app role (deploy/db-roles.sql). No KUTUPHANE_LLMDAP_* and no KUTUPHANE_ANSWER_MODEL: no model calls.
+      # The server refuses to start without the public URL and the issuer; the dev database needs neither.
       KUTUPHANE_DSN: postgresql://kutuphane_app:${KUTUPHANE_APP_DB_PASSWORD:-}@postgres:5432/kutuphane
       KUTUPHANE_PUBLIC_URL: ${KUTUPHANE_PUBLIC_URL:-}
       KUTUPHANE_OIDC_ISSUER: ${KUTUPHANE_OIDC_ISSUER:-}
       KUTUPHANE_OIDC_AUDIENCE: ${KUTUPHANE_OIDC_AUDIENCE:-kutuphane}
       KUTUPHANE_OIDC_JWKS: /run/kutuphane/jwks.json
-      KUTUPHANE_ANSWER_MODEL: ${KUTUPHANE_ANSWER_MODEL:-}
-      KUTUPHANE_LLMDAP_URL: ${KUTUPHANE_LLMDAP_URL:-http://llmdap:8787}
-      KUTUPHANE_LLMDAP_ROUTE: ${KUTUPHANE_LLMDAP_ROUTE:-}
-      KUTUPHANE_LLMDAP_KEY: ${KUTUPHANE_LLMDAP_KEY:-}
-      KUTUPHANE_LLMDAP_ROUTE_CLASS: ${KUTUPHANE_LLMDAP_ROUTE_CLASS:-local}
-      KUTUPHANE_LLMDAP_EMBED_ROUTE: ${KUTUPHANE_LLMDAP_EMBED_ROUTE:-}
-      KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS: ${KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS:-local}
-      KUTUPHANE_EMBED_MODEL: ${KUTUPHANE_EMBED_MODEL:-}
-      KUTUPHANE_LLMDAP_RERANK_ROUTE: ${KUTUPHANE_LLMDAP_RERANK_ROUTE:-}
-      KUTUPHANE_LLMDAP_RERANK_ROUTE_CLASS: ${KUTUPHANE_LLMDAP_RERANK_ROUTE_CLASS:-local}
-      KUTUPHANE_RERANK_MODEL: ${KUTUPHANE_RERANK_MODEL:-}
       KUTUPHANE_REPO_ROOTS: /srv/repos
-      # docs/25 §7: the base of the "my words" confirmation URL (curator web), and how long a request is open.
-      KUTUPHANE_CURATOR_URL: ${KUTUPHANE_CURATOR_URL:-}
-      KUTUPHANE_CONFIRM_HOURS: ${KUTUPHANE_CONFIRM_HOURS:-24}
     volumes:
       - ${KUTUPHANE_OIDC_JWKS_FILE:-./deploy/jwks.json}:/run/kutuphane/jwks.json:ro
       # Bare mirrors for code citations (docs/24 §10.2), kept current by the operator: core only reads them.
       - ${KUTUPHANE_REPO_DIR:-./deploy/repos}:/srv/repos:ro
-    networks: [db, web, gateway]
+    networks: [db, web]
     depends_on:
       postgres: {condition: service_healthy}
 
   ingress:
-    profiles: [app]
     image: nginx:1.27-alpine
     restart: unless-stopped
     volumes:
@@ -80,62 +62,12 @@ services:
     networks: [edge, web]
     depends_on: [core]
 
-  llmdap:
-    profiles: [app]
-    # LLMDAP's bridge-only image (LLMDAP #237): loaded from its release tarball or built from the LLMDAP repo
-    # (`docker build -f deploy/bridge/Dockerfile .`). Never a moving tag.
-    image: ${LLMDAP_BRIDGE_IMAGE:-llmdap-bridge:0.28.0-llmdap1.18.0}
-    restart: unless-stopped
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]
-    env_file: deploy/llmdap/bridge.env
-    volumes:
-      - llmdap-audit:/var/lib/llmdap/audit        # the signed chain (AT-09): back it up
-      - ./deploy/llmdap/config:/etc/llmdap:ro       # routes.json, policy.csv, keys.json (hashes only)
-    networks: [gateway, models]
-    stop_grace_period: 35s
-
-  model-stub:
-    profiles: [dev-models]
-    image: python:3.12-slim
-    command: ["python", "-I", "/srv/model_stub.py"]
-    read_only: true
-    cap_drop: [ALL]
-    volumes:
-      - ./deploy/model_stub.py:/srv/model_stub.py:ro
-    networks: [models]
-  laya:
-    profiles: [decision-models]
-    # Typed-decision model (Laya 0.4.6, open weights) behind the LLMDAP `systemone` route `laya` (#225).
-    build: deploy/laya
-    image: kutuphane-laya:0.4.6
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]
-    tmpfs: [/tmp]
-    environment:
-      # "multilingual" must be the Hub repo convaiinnovations/laya-multilingual (pinned revision e4e9ddf),
-      # not the built-in subfolder of convaiinnovations/laya; Laya serves it as model "multilingual".
-      LAYA_EXTRA_MODELS: '{"laya-multilingual": "convaiinnovations/laya-multilingual"}'
-      LAYA_MODELS: laya-multilingual
-      LAYA_DEFAULT_MODEL: laya-multilingual
-      LAYA_REVISION: reviewed      # load only the reviewed commit SHA (laya.revisions.PINNED_REVISIONS)
-      LAYA_THREADS: "8"
-      LAYA_DEVICE: cpu
-    volumes:
-      - ${HF_CACHE:-~/.cache/huggingface}:/hf:ro   # pinned Hub revision; the container has no network out
-    networks: [models]
-  # Real model servers (vLLM, Ollama, ...) join `models` only; the routes in deploy/llmdap/config/routes.json name them.
-
 volumes:
   pgdata:
-  llmdap-audit:
 
 networks:
   db: {internal: true}
   web: {internal: true}
-  gateway: {internal: true}
-  models: {internal: true}
+  curator-db: {internal: true}   # postgres only here; curator web joins it in the full stack
   edge: {}
   dev: {}

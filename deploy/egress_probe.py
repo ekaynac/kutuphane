@@ -1,7 +1,8 @@
 """AT-10 network half: run INSIDE the core container; exit 0 only if core reaches nothing but its allowed peers.
 
-    docker compose --profile app exec -T core python -I - [host:port ...] < deploy/egress_probe.py
-    docker compose -f deploy/compose.light.yaml exec -T core python -I - --light < deploy/egress_probe.py
+    docker compose -f deploy/compose.full.yaml --env-file .env --profile app exec -T core python -I - [host:port ...] \
+        < deploy/egress_probe.py
+    docker compose exec -T core python -I - --light < deploy/egress_probe.py
 
 Allowed: postgres and llmdap; with `--light` (the light install, #76), postgres only, and llmdap is forbidden too.
 The ingress proxy shares the `web` network with core, so core can open a connection to
