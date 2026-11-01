@@ -55,7 +55,6 @@ TEXT_TYPES = {
     ".sh": "text/x-sh", ".py": "text/x-python", ".js": "text/javascript", ".ts": "text/x-typescript",
     ".html": HTML, ".htm": HTML, ".xml": "application/xml", ".csv": CSV,
 }
-SEARCHED_TYPES = frozenset(TEXT_TYPES.values()) | {PDF}
 
 
 class SourceError(ValueError):

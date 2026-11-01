@@ -18,7 +18,7 @@ fused by reciprocal rank (RRF). Without a vector the order is full text alone. O
 import re
 from dataclasses import dataclass
 
-from . import authz, gate, kstd, profiles
+from . import authz, gate, ids, kstd, profiles
 from .gate import Actor, NotFound
 from .ids import normalize_path
 
@@ -96,7 +96,7 @@ SELECT c.book, c.content_id, c.profile_id, c.path, c.ordinal, c.page, c.start_ch
 
 
 MAX_SCOPE_BOOKS = 50
-_SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}\Z")
+_SLUG = re.compile(rf"^{ids.SLUG}\Z")
 
 
 @dataclass(frozen=True)

@@ -137,6 +137,26 @@ def test_the_app_role_cannot_touch_curation_tables(db, people):
     assert run(db, "SELECT count(*) FROM standing_event", role=APP)[0] == 0  # RLS keeps reads open
 
 
+def test_the_app_role_cannot_make_a_curator(db):
+    """D79 in the database: the app role writes every grant but a live curate row; it may still take one away."""
+    GRANT = "INSERT INTO grant_tuple (object, relation, subject) VALUES (%s, %s, %s) RETURNING id"
+    refused(db, GRANT, (f"book:{J}", "curate", M), role=APP, error=psycopg.errors.InsufficientPrivilege,
+            match="row-level security")
+    refused(db, "UPDATE grant_tuple SET relation = 'curate', subject = %s WHERE subject = %s AND relation = 'read'",
+            (M, U), role=APP, error=psycopg.errors.InsufficientPrivilege, match="row-level security")
+    for mode in ("read", "member"):
+        run(db, GRANT, (f"book:{J}" if mode == "read" else "role:hukuk", mode, M), role=APP)
+    [cid] = run(db, GRANT, (f"book:{J}", "curate", M))                    # the owner makes the curator
+    run(db, "UPDATE grant_tuple SET revoked_at = now() WHERE id = %s", (cid,), role=APP)
+    refused(db, "UPDATE grant_tuple SET revoked_at = NULL WHERE id = %s", (cid,), role=APP,
+            error=psycopg.errors.InsufficientPrivilege, match="row-level security")
+    refused(db, "INSERT INTO delegation (delegator, delegate, object, mode, expires_at) "
+                "VALUES (%s, %s, %s, 'curate', now() + interval '1 hour')", (U, A, f"book:{J}"), role=APP,
+            error=psycopg.errors.CheckViolation)
+    assert run(db, "SELECT count(*) FROM grant_tuple WHERE id = %s", (cid,), role=WEB) == (1,)
+    assert run(db, "SELECT count(*) FROM grant_tuple WHERE id = %s", (cid,), role=APP) == (1,)
+
+
 def test_sessions_and_challenges_are_bounded_and_bound(db, people):
     su, sm = people["sessions"]
     refused(db, SESSION, (secrets.token_bytes(32), U, "enrollment", None, "9 hours"), role=WEB,

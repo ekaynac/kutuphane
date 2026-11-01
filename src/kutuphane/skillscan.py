@@ -434,10 +434,7 @@ def clear(conn, book: str, skill_path: str, *, curator: str, reason: str) -> dic
     credential (the app role cannot write skill_clearance) and a curator who holds `curate` on the book now. The
     clearance covers exactly those bytes and that report: another version of the skill, or another tool version,
     is a new proposal."""
-    if not isinstance(curator, str) or not authz.PRINCIPAL.match(curator) or not curator.startswith("user:"):
-        raise ValueError("a curator is a user:")
-    if not isinstance(reason, str) or not 1 <= len(reason) <= MAX_REASON:
-        raise ValueError(f"reason must be 1..{MAX_REASON} characters")
+    authz.curator(curator, reason)
     [(slug, content_id)] = _current(conn, book)
     with conn.transaction():
         if not authz.direct(conn, curator, f"book:{slug}", "curate").allowed:

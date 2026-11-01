@@ -30,6 +30,14 @@ REVOKE INSERT, UPDATE, DELETE ON origin_confirmation, origin_withdrawal FROM kut
 REVOKE INSERT, UPDATE, DELETE ON note_suggestion, curate_delegation, delegation_use, delegation_end FROM kutuphane_app;
 -- Security review #17 (029): the key of the sample draw is the owner's only.
 REVOKE ALL ON delegation_sample_key FROM kutuphane_app;
+-- D79: only the owner makes a curator. The app writes every other grant row, and may revoke or delete a curate row
+-- (that only takes a right away). Every other role reads grant_tuple as before; the owner bypasses RLS.
+ALTER TABLE grant_tuple ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS grant_tuple_select ON grant_tuple;
+CREATE POLICY grant_tuple_select ON grant_tuple FOR SELECT USING (true);
+DROP POLICY IF EXISTS grant_tuple_app ON grant_tuple;
+CREATE POLICY grant_tuple_app ON grant_tuple FOR ALL TO kutuphane_app
+    USING (true) WITH CHECK (relation <> 'curate' OR revoked_at IS NOT NULL);
 -- Astra review #19 (038): no login role makes temporary tables or sequences, which PostgreSQL would search before
 -- `public` in a function without a pinned search path. TEMP is a right of PUBLIC by default, so it goes from PUBLIC
 -- (the owner of the database keeps it); defense in depth next to the pinned paths of migration 038.

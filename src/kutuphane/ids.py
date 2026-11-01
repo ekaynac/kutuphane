@@ -9,6 +9,7 @@ import json
 import unicodedata
 
 ENCODING_VERSION = 1
+SLUG = r"[a-z0-9][a-z0-9-]{0,62}"  # a book slug, unanchored: callers anchor it
 PREFIX = {"content": "ct", "profile": "pf", "policy": "pl"}
 
 

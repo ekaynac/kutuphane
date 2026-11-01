@@ -95,6 +95,8 @@ migration 029).
 - `kutuphane note standing`, `kutuphane note rollback`, `kutuphane skill clear`, `kutuphane curator …` and
   `kutuphane grant … curate …` need `KUTUPHANE_CURATOR_DSN`. The named curator must hold `curate` on the book now.
   `curate` is for users only, granted directly, never delegated.
+- The database enforces this too: a row-level security policy on `grant_tuple` (`deploy/db-roles.sql`) refuses a
+  live `curate` row from the app role. The app role can still revoke or delete one.
 - The CLI trusts its operator. So the curator credential is the boundary. An agent that can read it can curate as
   any user. Keep it out of every environment that an agent can read.
 - Memory rows (`note`, `write_record`, `note_link`, `note_citation`, `outcome`) are append-only for the app role.
