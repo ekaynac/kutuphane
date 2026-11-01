@@ -1,6 +1,6 @@
-# Knowledge standard — draft 0.3
+# Knowledge standard — draft 0.3.1
 
-**Status:** DRAFT 0.3, 2026-10-27 (draft 0.2: 2026-10-20). The working name is `kstd` (operator question Q5). **Since D59 (2026-10-22) this draft is a contribution and a test tool, not a standard proposed alone:** it is re-checked against the existing work in `docs/13-landscape.md` and brought to the matching communities.
+**Status:** DRAFT 0.3.1, 2026-11-01 (draft 0.3: 2026-10-27; draft 0.2: 2026-10-20). The working name is `kstd` (operator question Q5). **Since D59 (2026-10-22) this draft is a contribution and a test tool, not a standard proposed alone:** it is re-checked against the existing work in `docs/13-landscape.md` and brought to the matching communities. **Since D78 (2026-11-01) the normative text is what the reference implementation (`kstd/reference/decide.py`) and its cases (`kstd/tests/decision`) test.** The other kinds and operations are in Appendix A; §13 lists the change.
 - **History:** draft 0.1 merged three round-3 proposals (Claude, Astra, Mythos). Astra and Mythos critiqued it in round 4. Draft 0.3 makes the core minimal (D74, `docs/22` §3). The changes from 0.2 are in §11; the change log 0.1 → 0.2 is in §12. The sources are in `docs/research/2026-10-20-round{3,4}-*` and `docs/research/2026-10-27-*`.
 - **Language:** ASD-STE100 Simplified Technical English. **MUST**, **MUST NOT** and **MAY** are normative.
 
@@ -30,18 +30,18 @@ It serves an organization node (on-prem, air-gapped possible) and a network of n
 
 An artifact identity and a statement identity are separate. A correction of rights changes a statement; the artifact keeps its identity.
 
-**Statement kinds (closed):**
+**Statement kinds (closed; D78: no new kinds):**
 
 | Kind | Body | Effect |
 |---|---|---|
 | `item` | names artifacts; declares origin, rights, inputs, applicability, personal data | makes the artifacts knowledge that the node can evaluate |
 | `acceptance` | `accepted`, `rejected` or `withdrawn` for an item, in a scope; a withdrawal names a successor or a terminal reason; a rejection names its reason. A body (a council, the IESG) can be recorded as the source's decision maker, but a local acceptance needs a named person or a delegated agent (D68). | eligibility for ordinary use |
 | `mandate` | rule authority for an item, in a scope | the item can impose a requirement |
-| `contest` | a dispute of an item, with a reason | a visible mark and a review; removes nothing |
-| `policy` | permissions and prohibitions on actions, with conditions; delegations | the input to the decision rule |
+| `handling` | `export` and `route` values for an item (§5.3 Handling) | a restriction or a loosening under rule 4 |
+| `hold` | a named `owner` and a review deadline (`review_by`) for an item | rule 8: no rule authority until the deadline |
 | `status` | a signed, sequenced status stream of an issuer: withdrawals, holds, supersessions, with an expiry | freshness across nodes |
-| `use_record` | `use` (written by `deliver`) or `outcome` (signed by the actor; it references the `use` record). Not called "receipt": in SCITT a receipt is a log inclusion proof, and in DPV/ISO 27560 a consent record. | audit; the trigger for reviews |
-| `disposition` | an erasure: its scope, completion, exceptions and unresolved copies | honest erasure |
+
+The node policy (permissions and prohibitions on actions, with conditions) is the node's configuration, an input to the decision rule; it is not a statement kind in the reference. The kinds `contest`, `policy`, `use_record` and `disposition` are not in the reference implementation: see Appendix A.
 
 A field outside this standard MUST NOT change a decision. A validator ignores it, with a notice; it does not make the statement unreadable (§7).
 
@@ -54,9 +54,8 @@ A field outside this standard MUST NOT change a decision. A validator ignores it
 | **attest** | Add a statement. A statement MUST NOT give powers that its issuer does not have. |
 | **decide** | Apply the decision rule (§4). Result: `permit`, `deny` or `escalate`, with a reason. |
 | **deliver** | Release content or metadata to a person, a model, a tool or a node, as typed data, with the required notices. Write a `use` record. |
-| **erase** | Execute a disposition. Remove the retained data and the recorded derivatives in its scope. Record completion, exceptions and unresolved copies. |
 
-**Transfer between nodes** is a composition: `deliver` to a node → `register` at the receiver → a `use_record`. A package is in quarantine until it passes registration and the receiver's acceptance policy.
+Transfer between nodes and `erase` are not in the reference implementation: see Appendix A.
 
 **Actions** in policies: `read`, `infer`, `derive`, `train` (a kind of `derive`), `forward`, `activate`.
 - Reading an item never permits activating it.
@@ -105,7 +104,7 @@ Each profile is required only by the operations in its row. A node that does not
 | **Rule authority** | acceptance, mandate, applicability (conditions, exclusions, valid time) | ordinary use (acceptance); a request for rule authority (all three) | `pending` (not in the ordinary view); evidence only; `escalate` when authority is needed | **moved** from the core |
 | **Activation** | an `activate` permission in a scope | an agent runs the item as an instruction or a skill | read only | **moved** from the core |
 | **Tags** | discovery tags and access tags from a controlled list (docs/19 §5) | a policy that names an access tag | a discovery tag changes no decision; an access tag is a restriction (rule 4) | new as a profile (0.2 removed labels from the core) |
-| **Federation, status, erasure** | status streams with a maximum age, trust per issuer × kind × scope × action, use records, dispositions | rule authority of imported items (rule 6); transfer between nodes; `erase` | an imported item without a current status keeps evidence authority only | **moved** from the core (L3) |
+| **Status** | status streams with a maximum age, trust per issuer × kind × scope × action | rule authority of imported items (rule 6) | an imported item without a current status keeps evidence authority only | **moved** from the core (L3); use records, dispositions, transfer and `erase` moved to Appendix A in 0.3.1 |
 
 ### 5.3 Properties and their behaviors
 
@@ -121,7 +120,7 @@ The behaviors are the same as in 0.2. The level or profile of each property is i
 | **Acceptance** | `pending` (default), `accepted`, `rejected`, `suspended`, `withdrawn` | Only `accepted` is eligible for ordinary use. `suspended` stops ordinary use until fresh authorization or a successful status check. `withdrawn` is history: it was accepted once. `rejected` is history too, but it was **never** accepted (D68). |
 | **Mandate** | present in a scope / absent | Only an accepted item with a mandate can be cited as a requirement. Without one, an accepted item is evidence. |
 | **Handling** | export: `normal` / `restricted`; route: `cloud_ok` / `local_only` | `restricted`: never leaves the node. `local_only`: processed only in the locations that the node declares as under its control; a request to a cloud destination (`cloud` or `cloud:<host>`) is denied. Derivatives inherit the stricter value. Before an administrator confirms the value: `restricted` + `local_only`. |
-| **Activation** (`policy`) | a permission for `activate`, in a scope | Only then can an agent run the item as an instruction or a skill. The item can still be read as evidence. |
+| **Activation** (node policy) | a permission for `activate`, in a scope | Only then can an agent run the item as an instruction or a skill. The item can still be read as evidence. |
 
 ## 6. State transitions
 
@@ -134,10 +133,8 @@ Each change records: trigger, actor, scope, reason, policy version, prior statem
 | `pending` → `rejected` | a decision not to accept, with a reason | the same approvers as for acceptance | only under delegation | a new proposal (a new item); the rejection stays in history |
 | `accepted` → `suspended` | approval expiry, a hold, a failed dependency, a stale status | policy engine, or a hold owner | yes, if the policy declares it | fresh authorization, or a successful status check |
 | `accepted` → `withdrawn` | correction, replacement, withdrawal; supersession only in the shared scope and time | the issuer, or a prior replacement rule | only under a replacement rule | a new acceptance; the withdrawal stays in history |
-| contest mark set | a contest from a trusted issuer | the contest issuer | yes (mark only) | the issuer withdraws it, or a reviewer closes it |
 | local permission → suspended | its source item is withdrawn, and the permission depends on continued acceptance | system | yes | the source is accepted again, and the grant holder confirms |
 | package: quarantined → registered / rejected | registration checks and the acceptance policy | the receiving node; a person or a delegated agent | as the policy declares | a resubmitted package |
-| retained → erased | a valid disposition | the custodian | execution can be automatic | none |
 | mandate, handling, rights, delegation changed | a new statement | an issuer with that power | tightening: yes, from an admissible issuer (rule 4 of §4); from any other issuer: `escalate`, never `deny`; loosening: rule 4 of §4 | a new statement |
 
 ## 7. Conformance levels
@@ -146,8 +143,8 @@ Each change records: trigger, actor, scope, reason, policy version, prior statem
 |---|---|---|
 | **L0 Described** | One manifest file (§8). Unsigned. A tool that ignores every field still reads the files. **Reading the bytes is not permission to use them.** A validator gives the three results below. | Declared. `unknown` gives no permission. |
 | **L1 Verifiable** | Signed statements (DSSE) and packages, multihash, agile algorithms, revision checks, derive with inputs. | Bound to exact versions. |
-| **L2 Governed** | The decision rule with its test suite, acceptance, mandates, delegation, activation, handling, use records, honest erasure, a tamper-evident append-only audit. Storage is free. | Enforced. |
-| **L3 Federated** | Signed status streams with a maximum age per source (as in TUF timestamps and OCSP stapling; the stream can travel in packages, so air-gapped nodes conform), withdrawal delivery, trust policy per issuer × kind × scope × action, use-record tracking. | Enforced across nodes. A controlled transfer needs an L2 receiver; a public release does not. |
+| **L2 Governed** | The decision rule with its test suite, acceptance, mandates, delegation, activation, handling, a tamper-evident append-only audit. Storage is free. | Enforced. |
+| **L3 Federated** | Signed status streams with a maximum age per source (as in TUF timestamps and OCSP stapling; the stream can travel in packages, so air-gapped nodes conform), trust policy per issuer × kind × scope × action. | Enforced across nodes. |
 
 **Three validation results** (Astra, docs/22 §3). A validator keeps them separate:
 1. **Readable and importable.** The bytes parse in one way only (no aliases, no merge keys, no duplicate keys). The core envelope (§5.1) is complete, and each listed digest matches its file. Each stated value has an allowed form: SPDX expression, `ai_use` term `y` / `n`, personal-data value, origin value, dates, paths. A failure blocks registration (in L0: publication).
@@ -266,3 +263,46 @@ Five different things have different licenses:
   - outcome ranking;
   - SKOS labels;
   - the agreement history.
+
+## 13. Changes in 0.3.1 (D78, 2026-11-01)
+
+- **The normative text is what the reference tests.** The statement kinds `contest`, `policy`, `use_record` and `disposition`, the operation `erase`, transfer between nodes, use-record tracking and withdrawal delivery move to Appendix A. They are not deleted; they are not in the reference implementation.
+- **The federation profile becomes the status profile (§5.2).** Rule 6 (status freshness) and the `status` kind stay normative: the decision cases test them.
+- **No new statement kinds** (D78). The kinds `handling` and `hold` are now in the §2 table: the reference and its cases used them before, and the table did not list them.
+- The decision results do not change. No conformance case changes.
+
+## Appendix A. Not in the reference implementation
+
+This appendix is not normative. Its text is kept from draft 0.3. A kind or an operation comes back into the normative text only when a consumer request (an issue) needs its behavior (D53, D78), with its reference code and its conformance cases.
+
+**Statement kinds:**
+
+| Kind | Body | Effect |
+|---|---|---|
+| `contest` | a dispute of an item, with a reason | a visible mark and a review; removes nothing |
+| `policy` | permissions and prohibitions on actions, with conditions; delegations | the input to the decision rule |
+| `use_record` | `use` (written by `deliver`) or `outcome` (signed by the actor; it references the `use` record). Not called "receipt": in SCITT a receipt is a log inclusion proof, and in DPV/ISO 27560 a consent record. | audit; the trigger for reviews |
+| `disposition` | an erasure: its scope, completion, exceptions and unresolved copies | honest erasure |
+
+The reference decision rule reports an untrusted withdrawal as the notice `contested-by:<issuer>`; it reads no `contest` statement.
+
+**Operations:**
+
+| Operation | Effect |
+|---|---|
+| **erase** | Execute a disposition. Remove the retained data and the recorded derivatives in its scope. Record completion, exceptions and unresolved copies. |
+
+**Transfer between nodes** is a composition: `deliver` to a node → `register` at the receiver → a `use_record`. A package is in quarantine until it passes registration and the receiver's acceptance policy.
+
+`kstd/reference/erase.py` and `kstd/tests/erasure` stay as an informative check of the erasure reach (§5.3 Inputs); they are not a conformance requirement.
+
+**Profile fields:** use records, dispositions, transfer between nodes and `erase` (from the 0.3 federation profile).
+
+**State transitions:**
+
+| Transition | Trigger | Actor | Automatic? | Reversal |
+|---|---|---|---|---|
+| contest mark set | a contest from a trusted issuer | the contest issuer | yes (mark only) | the issuer withdraws it, or a reviewer closes it |
+| retained → erased | a valid disposition | the custodian | execution can be automatic | none |
+
+**Conformance levels (0.3 text):** L2 also required use records and honest erasure; L3 also required withdrawal delivery and use-record tracking, and "a controlled transfer needs an L2 receiver; a public release does not".

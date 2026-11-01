@@ -1,5 +1,7 @@
 # Knowledge ontology v2 — draft
 
+> **Status note (D78, 2026-11-01):** the block ontology of §1–§3 (units and the block rule, block identity and continuity, `review_by`, split marks, continuity links, annotation events) is **frozen**: it was never built and gets no new work. **Role** and **Time basis** are not separate facets: on notes they are derived from the note `kind` (`KIND_ROLE`, `KIND_TIME`); on files they do not exist. `holder` and `issued` have no behavior.
+
 **Status:** APPROVED as v2.0 by the operator on 2026-10-15 (D54); all five decisions in §7 are "yes". The draft numbering 0.1/0.2 stays for history.
 **Co-authors:** Claude, Astra (GPT-6), Claude Mythos 5.1.
 - Round 1: three independent proposals, merged into 0.1.

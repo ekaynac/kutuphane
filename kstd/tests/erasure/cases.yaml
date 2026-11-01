@@ -1,4 +1,4 @@
-# kstd erasure reach — conformance cases (draft 0.2, docs/11 §3 `erase`, §5 Inputs).
+# kstd erasure reach — informative cases (docs/11 Appendix A `erase`, §5 Inputs; not a conformance requirement, D78).
 # Each case: the statements, the items to erase, and the expected {erased, kept, unresolved, scope_unknown}.
 
 base: &stmts

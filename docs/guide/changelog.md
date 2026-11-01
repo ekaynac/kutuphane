@@ -9,6 +9,12 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Frozen list and `curate` grant credential (D78, D79)
+
+- Changed: `kutuphane grant … curate …` needs `KUTUPHANE_CURATOR_DSN`. Without it the CLI refuses with exit code 2. Before, the app credential could make a curator ([security.md](security.md#curation-boundary)).
+- Changed: the guide no longer names Role and Time basis as facets; they follow from the note kind ([concepts.md](concepts.md#kinds)). The decider, delegated curate and "my words" are frozen: they work, with no new work ([operations.md](operations.md)).
+- Design and research: D78 (the frozen list) and D79 (areas A/B/C, vision 1.1) in `docs/01`; `docs/23` vision 1.1; `docs/11` draft 0.3.1 moves the kinds that the reference does not implement to an appendix; `docs/09` status note.
+
 ### Note query: folder scope, `refs` and `paths` (#152, #155, #153)
 
 - Fixed: a folder prefix in `path` (it ends with `/`) matched every note whose scope glob has no literal head, for example `*.log` matched `src/`. Now a folder matches a glob only when a file below the folder can match it, with the glob rules of the write path (`*` and `?` do not match `/`) ([mcp.md](mcp.md#513-query_notes)) ([#152](https://github.com/ekaynac/kutuphane/issues/152)).

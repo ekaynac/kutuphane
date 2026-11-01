@@ -2,7 +2,7 @@
 
 kstd (working name) is the written contract for the rules that Kütüphane enforces: who stands behind a file, what
 may be done with it and with what is derived from it, and how a withdrawal reaches its users. The specification is
-`../11-standard-draft.md` (draft 0.3). The conformance cases and a small reference evaluator are in `kstd/`
+`../11-standard-draft.md` (draft 0.3.1). The conformance cases and a small reference evaluator are in `kstd/`
 (`kstd/README.md`).
 
 Kütüphane implements level **L0 (Described)**: one manifest file, `kstd.yaml`, at the root of a folder.

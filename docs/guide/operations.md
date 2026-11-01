@@ -472,7 +472,7 @@ kutuphane grant role:<name> member user:<name>
 | `use` | Reserved. You can grant it, but no code path checks it today. |
 | `activate` | An agent can use agent instructions (K3) from the book. |
 | `propose` | Write notes, links and outcomes in a journal. |
-| `curate` | Change the Standing of notes. Give it to users only. It is never delegated. |
+| `curate` | Change the Standing of notes. Give it to users only. It is never delegated. `grant … curate …` needs `KUTUPHANE_CURATOR_DSN` (the curator credential); without it the CLI refuses with exit code 2. |
 | `member` | With `role:<name>`: add the subject to the role. |
 
 The subject is `user:<name>`, `agent:<name>` or `role:<name>#member`.
@@ -744,6 +744,8 @@ id that the person signed. Else the note shows `pending` and the origin of the w
 
 ### "My words": confirm the origin of a note (D70 R3, R7)
 
+> **Frozen (D78).** "My words" works as described below, but it gets no new work.
+
 The server never stores `human` from a token. When an agent (or a person over HTTP) proposes a note with
 `origin: human` or `assisted`, the note gets the write-path origin (`model` or `unknown`) with the notice
 `origin-claim-refused`, and the receipt gets a confirmation URL: `<KUTUPHANE_CURATOR_URL>/c/<book>/<nt_id>`. The
@@ -778,6 +780,9 @@ note, whether it exists or not. Nothing is stored before the signature; leaving 
   again (the latest counts) or withdraw first.
 
 ### Model suggestions and delegated curate (D73)
+
+> **Frozen (D78).** The decider and delegated curate work as described below, but they get no new work until a
+> second curator or a backlog exists.
 
 A **decider** is a local model behind LLMDAP with a pinned spec file (`deploy/deciders/*.json`): the model, its
 revision, the route, the prompt and the label map. `kutuphane decider run` gives each undecided note in its books one

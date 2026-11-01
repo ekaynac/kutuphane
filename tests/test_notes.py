@@ -610,6 +610,18 @@ def test_no_mcp_tool_or_http_route_changes_standing(verifier):  # T17
     assert not [r.path for r in app.routes if "standing" in getattr(r, "path", "")]
 
 
+def test_grant_curate_needs_the_curator_credential(env, monkeypatch, capsys):  # #67 comment, D78
+    grant = ["grant", f"book:{J}", "curate", "user:kurator"]
+    monkeypatch.setenv("KUTUPHANE_DSN", os.environ["KUTUPHANE_TEST_DSN"])
+    monkeypatch.delenv(db.CURATOR_DSN_ENV, raising=False)
+    assert cli.main(grant) == 2 and db.CURATOR_DSN_ENV in capsys.readouterr().err
+    assert row(env, "SELECT count(*) FROM grant_tuple WHERE relation = 'curate'") == (0,)
+    assert cli.main(["grant", f"book:{J}", "read", "user:kurator"]) == 0  # other modes keep the app credential
+    monkeypatch.setenv(db.CURATOR_DSN_ENV, os.environ["KUTUPHANE_TEST_DSN"])
+    assert cli.main(grant) == 0
+    assert row(env, "SELECT count(*) FROM grant_tuple WHERE relation = 'curate'") == (1,)
+
+
 def test_curation_needs_curate_and_the_curator_credential(env, monkeypatch, capsys):  # T18
     ref = propose(env, mcp())["ref"]
     monkeypatch.delenv(db.CURATOR_DSN_ENV, raising=False)
