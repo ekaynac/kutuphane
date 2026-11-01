@@ -11,13 +11,15 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from . import ids
+
 # propose: write notes and links into a journal (docs/24 §4.2). curate: may be named as a curator by the CLI; only
 # user principals hold it, directly, and no delegation carries it (the database refuses both, migration 016).
 MODES = ("discover", "read", "use", "activate", "propose", "curate")
 NOT_DELEGABLE = ("curate",)
 # At most 128 characters in all, so a principal is always a valid LLMDAP chain label (x-llmdap-for-subject).
 PRINCIPAL = re.compile(r"^(user|agent|role):[a-z0-9][a-z0-9._@-]{0,121}\Z")
-OBJECT = re.compile(r"^book:[a-z0-9][a-z0-9-]{0,62}\Z")
+OBJECT = re.compile(rf"^book:{ids.SLUG}\Z")
 
 
 class AuthzError(ValueError):
