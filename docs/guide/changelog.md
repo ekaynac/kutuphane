@@ -9,6 +9,12 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Vision 1.2 and "memory is data" (D80)
+
+- `docs/01` D80 records the nine operator decisions of 2026-11-01. R5: no new agent-memory feature merges before the T3 A/B (#121) rerun.
+- `docs/23` is version 1.2: the positioning, five principles, and the research §7 sentence changes. D73 is deleted, not frozen.
+- `agent-memory.md` §13: notes reach a model only as tool results; instructions need `activate` and the scan.
+
 ### Astra review #21 fixes
 
 - Fixed: across a new content version, an `overlap` successor now must hold the whole old passage text with its operators and case. Before, `retries >= 3` could map to `retries <= 3`; such a citation is now `stale` ([operations.md](operations.md#re-index-and-note-citations)).
