@@ -7,7 +7,7 @@ import pytest
 from kutuphane import authz, cli, db, decisions, gate, notes
 from kutuphane.gate import Actor
 from kutuphane.notesquery import open_note, query_notes
-from test_notes import A, J, U, allow, env, http, journal, mcp, row  # noqa: F401 (env is a fixture)
+from test_notes import A, J, U, allow, env, http, journal, mcp, rights, row  # noqa: F401 (env is a fixture)
 
 J2 = "hafiza-iki"
 CURATOR = "user:kurator"
@@ -171,7 +171,7 @@ def test_a_restricted_source_journal_restricts_notes_derived_from_it(env):  # T4
     notes.restrict_journal(env, J2, ai_input=True)
     item = {i["ref"]: i for i in query_notes(env, mcp(), for_model=True, sets=["open"])["items"]}[note]
     assert item["text"] is None and item["withheld"]
-    assert notes.item_info(env, seq_of(env, note))["ai_use"] == {"search": "y", "ai_input": "n"}
+    assert rights(env, seq_of(env, note)) == (True, False)
     later = derived(env, "derived from the derived note", note)
     assert row(env, "SELECT ai_input FROM note WHERE id = %s", later.split("@")[1]) == (False,)
     # a person over HTTP still reads the text; search is unchanged

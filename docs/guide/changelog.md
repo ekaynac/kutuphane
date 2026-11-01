@@ -12,6 +12,8 @@ For the terms, read [concepts.md](concepts.md).
 ### Refactor wave 2 (W2-2 to W2-5)
 
 - Changed: `open_citation` and `GET /v1/citation` read a passage handle with the same rule as the note tools. The `400` error text is now `malformed passage handle` (it was `malformed citation handle`). A handle with a book slug that is not valid, a content id without `ct_`, a profile id without `pf_`, a negative ordinal or a control character now gets this `400` before any read ([http-api.md](http-api.md), [mcp.md](mcp.md)).
+- Changed: `kutuphane note rollback` with a malformed `--curator` now gives `a curator is a user:` (before: `invalid curator: …`), as the other curator acts do (`authz.curator`).
+- Removed (internal, no command, tool or route): `llmdap.systemone` and `SYSTEMONE_PATH` (no caller since D73), `catalog.whole_profile` and `notes.item_info`. The LLMDAP `systemone` routes in `deploy/llmdap/config/` stay.
 
 ### Two compose files (W1-4)
 

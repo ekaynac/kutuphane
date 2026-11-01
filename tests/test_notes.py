@@ -15,6 +15,7 @@ from starlette.testclient import TestClient
 import kutuphane
 from kutuphane import (authz, canonical, catalog, cli, db, gate, ids, kstd, notes, notesquery, packages, profiles,
                        retrieval, search, server)
+from kutuphane import origin as origins
 from kutuphane.gate import Actor
 from kutuphane.identity import Verifier
 from kutuphane.policy import make_policy
@@ -87,6 +88,12 @@ def row(conn, sql, *params):
     return conn.execute(sql, params).fetchone()
 
 
+def rights(conn, seq) -> tuple:
+    """A note's (search, ai_input) ANDed with the current rights of the journals of its closure."""
+    return row(conn, "SELECT n.search AND j.search, n.ai_input AND j.ai_input "
+                     "FROM note n JOIN note_journal j ON j.seq = n.seq WHERE n.seq = %s", seq)
+
+
 def note_count(conn) -> int:
     return row(conn, "SELECT count(*) FROM note")[0]
 
@@ -123,15 +130,16 @@ def test_a_user_token_is_model_over_mcp_and_unknown_over_http(env):  # T3
     assert propose(env, mcp(U, None), text="over mcp")["origin"] == "model"
     assert propose(env, http(client_id="kutuphane-ui"), text="over http")["origin"] == "unknown"
     assert propose(env, http(), text="asks for model", origin="model")["origin"] == "model"
-    assert notes.item_info(env, row(env, "SELECT seq FROM note WHERE body = 'over http'")[0])["origin"] == "unknown"
+    seq = row(env, "SELECT seq FROM note WHERE body = 'over http'")[0]
+    assert origins.shown(env, [seq], None)[seq][0] == "unknown"
 
 
 def test_the_shown_origin_is_the_lowest_over_the_writes(env):
     propose(env, http(), text="same")
     seq = row(env, "SELECT seq FROM note")[0]
-    assert notes.item_info(env, seq)["origin"] == "unknown"
+    assert origins.shown(env, [seq], None)[seq][0] == "unknown"
     propose(env, mcp(), text="same")
-    assert notes.item_info(env, seq) == {"origin": "model", "ai_use": {"search": "y", "ai_input": "y"}}
+    assert origins.shown(env, [seq], None)[seq] == ("model", None, None) and rights(env, seq) == (True, True)
 
 
 # --- T4, T5, T6: authorization before work, rollback, secrets --------------------------------------------------
@@ -509,7 +517,7 @@ def test_a_journal_without_ai_input_never_calls_a_model_and_withholds_text(env, 
     to_person = notes.propose(env, http(), {"book": "ozel", "kind": "finding", "text": "PRIVATE finding"})[0]
     assert {c["text"] for c in to_person["candidates"]} == {"private finding", "Private finding"}
     seq = row(env, "SELECT seq FROM note WHERE book = 'ozel' ORDER BY seq LIMIT 1")[0]
-    assert kstd.allows(notes.item_info(env, seq), "ai_input") is False
+    assert rights(env, seq) == (True, False)
 
 
 def test_rights_follow_derivation(env, okf_dir, tmp_path, fake):  # T16
@@ -550,7 +558,7 @@ def test_journals_from_the_cli_and_restriction_only_tightens(conn, monkeypatch, 
     assert json.loads(capsys.readouterr().out) == {"book": J, "search": True, "ai_input": False, "train": False}
     allow(conn, J, "read", "propose")
     propose(conn, http(), text="after restriction")
-    assert notes.item_info(conn, row(conn, "SELECT seq FROM note")[0])["ai_use"] == {"search": "y", "ai_input": "n"}
+    assert rights(conn, row(conn, "SELECT seq FROM note")[0]) == (True, False)
     with pytest.raises(ValueError):
         notes.restrict_journal(conn, J)
 

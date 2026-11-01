@@ -424,19 +424,6 @@ def recurrence(conn, seq: int, w: int) -> int:
                         "AND seq <= %s", (members, w)).fetchone()[0]
 
 
-def item_info(conn, note_seq: int) -> dict:
-    """kstd-shaped item information of a note, for `server._text` and `kstd.allows`: its rights ANDed with the
-    current ones of the journals of its closure, and its shown origin now (docs/25 §7.6) with the kstd origin
-    details of a live confirmation (`assisted` + `reviewed_by`; `human` + `entered_by` and `confirmed_by`)."""
-    row = conn.execute("SELECT n.search AND j.search, n.ai_input AND j.ai_input "
-                       "FROM note n JOIN note_journal j ON j.seq = n.seq WHERE n.seq = %s", (note_seq,)).fetchone()
-    if row is None:
-        raise NotFound(f"no such note: {note_seq}")
-    yn = {True: "y", False: "n"}
-    shown = origins.shown(conn, [note_seq], None)[note_seq]
-    return {"origin": shown[0], **origins.details(*shown), "ai_use": {"search": yn[row[0]], "ai_input": yn[row[1]]}}
-
-
 # --- journals (CLI) ------------------------------------------------------------------------------------------
 
 def create_journal(conn, *, book: str, title: str, search: bool, ai_input: bool, policy: dict, by: str,
@@ -882,13 +869,6 @@ def link(conn, actor: Actor, src: str, kind: str, dst: str) -> tuple[dict, bool]
 
 # --- Standing (the CLI here; curator web through curation.apply, docs/25) -------------------------------------
 
-def _curation(curator, reason) -> None:
-    if not _principal("curator", curator).startswith("user:"):
-        raise ValueError("a curator is a user:")
-    if not isinstance(reason, str) or not 1 <= len(reason) <= 500:
-        raise ValueError("reason must be 1..500 characters")
-
-
 def _curated(conn, ref: str, curator: str, columns: str = "seq"):
     """The note row of a curator act; the curator must hold `curate` on its book now (`curate` is never delegated)."""
     book, note_id = parse_ref(ref)
@@ -958,7 +938,7 @@ def rollback(conn, ref: str, *, curator: str, reason: str) -> dict:
     """Retire a note and every note whose own `derived_from` chain reaches it, then report who used them (§20).
     The caller connects with the owner credential. The curator needs `curate` on the root's book only: each derived
     note gets a system event (the system only tightens), `cause_seq` = the root event, in the same transaction."""
-    _curation(curator, reason)
+    authz.curator(curator, reason)
     with conn.transaction():
         _lock(conn)
         root = _curated(conn, ref, curator)[0]
