@@ -9,6 +9,11 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Journal export (R3)
+
+- New: `kutuphane journal export <journal> --out FILE --by <principal>` writes a journal as JSONL in the `note import` record shape, with the Standing history, the writers, the outcomes and `ai_use` of each note. `note import` of the file into a journal with the same slug gives the same note ids and links; each note is `pending` again. It needs `read` on the journal and on each book that its notes cite or link. A `restricted` journal is refused; notes derived from a private journal or from `license: unknown` files are left out; the text needs `ai_input` and `train`, as in the decision export ([agent-memory.md](agent-memory.md#export-a-journal-backup-git), [operations.md](operations.md#export-a-journal)).
+- Changed: `note import` accepts the export fields `standing_history`, `writers`, `outcomes`, `ai_use` and `withheld`. It checks their shape and does not store them. A record with a `withheld` reason is refused.
+
 ### Expiry of unused evidence and outcome filters (R1, R2)
 
 - New: `kutuphane note expire [--days N] [--dry-run]` (owner credential; days from `KUTUPHANE_EVIDENCE_EXPIRY_DAYS`, default 90). An `evidence` note whose clock (the last of its write, its last Standing event and its last `passed` outcome) is older than the days gets a system event with the reason `expired`: `pending` becomes `rejected`, `approved` becomes `retired` (a pending note that was approved before: `retired`, D68). `rule` notes never expire. The command is idempotent; run it from a timer ([operations.md](operations.md#expiry-of-unused-evidence-r1)).

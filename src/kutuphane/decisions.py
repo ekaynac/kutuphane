@@ -29,11 +29,14 @@ from .gate import Actor
 ACTION = "export_decisions"
 WITHHELD = "rights do not allow AI training (ai_input and train)"
 
-_DECISIONS = """
+# A note with a `restricted` book in its sources (book policy now): Sensitivity owns export (docs/09 §1)
+RESTRICTED_SOURCE = """EXISTS (SELECT 1 FROM book b JOIN policy_version p ON p.id = b.current_policy
+                WHERE b.slug = ANY(n.source_books) AND p.doc->>'sensitivity' = 'restricted')"""
+
+_DECISIONS = f"""
 SELECT n.seq, n.book, n.id, n.body, n.class_key, n.scope_repo, n.scope_branch, n.scope_paths, n.observed_commit,
        n.written_at, n.options, n.choice, n.search AND j.search, n.ai_input AND j.ai_input, n.train AND j.train,
-       EXISTS (SELECT 1 FROM book b JOIN policy_version p ON p.id = b.current_policy
-                WHERE b.slug = ANY(n.source_books) AND p.doc->>'sensitivity' = 'restricted')
+       {RESTRICTED_SOURCE}
   FROM note n JOIN note_journal j ON j.seq = n.seq
  WHERE n.book = ANY(%s) AND n.kind = 'decision_proposal' AND n.seq <= %s
  ORDER BY n.book, n.seq
@@ -59,18 +62,22 @@ def _by_note(rows) -> dict:
     return out
 
 
-def _context_refs(conn, seqs: list[int], w: int) -> tuple[dict, dict]:
-    """({seq: [(book, citation ref)]}, {seq: [(book, {type, ref})]} creation links), in order. The book is None for
-    a code citation (the note's own repositories). The read filter runs in `_finish`, on the final decision."""
-    citations = {}
+def citations(conn, seqs: list[int]) -> dict:
+    """{seq: [(book, citation ref)]} in order. The book is None for a code citation (the note's own repositories)."""
+    out = {}
     for seq, kind, book, content_id, profile_id, path, ordinal, repo, commit, start, end, symbol in conn.execute(
             "SELECT note_seq, kind, cite_book, content_id, profile_id, path, ordinal, repo, commit, line_start, "
             "line_end, symbol FROM note_citation WHERE note_seq = ANY(%s) ORDER BY note_seq, n", (seqs,)):
         if kind == "code":
-            citations.setdefault(seq, []).append(
-                (None, str(coderepo.CodeCitation(repo, commit, path, start, end, symbol))))
+            out.setdefault(seq, []).append((None, str(coderepo.CodeCitation(repo, commit, path, start, end, symbol))))
         else:
-            citations.setdefault(seq, []).append((book, f"{book}@{content_id}/{profile_id}/{path}#{ordinal}"))
+            out.setdefault(seq, []).append((book, f"{book}@{content_id}/{profile_id}/{path}#{ordinal}"))
+    return out
+
+
+def _context_refs(conn, seqs: list[int], w: int) -> tuple[dict, dict]:
+    """(`citations`, {seq: [(book, {type, ref})]} creation links), in order. The read filter runs in `_finish`, on
+    the final decision."""
     links = {}
     for src, type_, n_book, n_id, p_book, p_ct, p_pf, p_path, p_ord in conn.execute(
             "SELECT l.src, l.type, d.book, d.id, l.dst_book, l.dst_content_id, l.dst_profile_id, l.dst_path, "
@@ -78,7 +85,20 @@ def _context_refs(conn, seqs: list[int], w: int) -> tuple[dict, dict]:
             "WHERE l.src = ANY(%s) AND l.creation AND l.seq <= %s ORDER BY l.src, l.type, l.seq", (seqs, w)):
         ref = f"{n_book}@{n_id}" if n_book else f"{p_book}@{p_ct}/{p_pf}/{p_path}#{p_ord}"
         links.setdefault(src, []).append((n_book or p_book, {"type": type_, "ref": ref}))
-    return citations, links
+    return citations(conn, seqs), links
+
+
+def rights(conn, final, seqs: list[int]) -> dict:
+    """{seq: (ai_use, withheld reason or None)} now, inside the export transaction after the final decision: the text
+    goes out only when the note's `ai_input` and `train` (note AND every journal of its closure, `note_journal`) hold
+    and the note depends on no blocked skill in that decision (`final.blocked_notes`)."""
+    out = {}
+    for seq, search, ai_input, train in conn.execute(
+            "SELECT n.seq, n.search AND j.search, n.ai_input AND j.ai_input, n.train AND j.train "
+            "FROM note n JOIN note_journal j ON j.seq = n.seq WHERE n.seq = ANY(%s)", (seqs,)):
+        reason = WITHHELD if not (ai_input and train) else gate.SKILL_WITHHELD if seq in final.blocked_notes else None
+        out[seq] = {"search": _yn(search), "ai_input": _yn(ai_input), "train": _yn(train)}, reason
+    return out
 
 
 def _passage_states(conn, handles: set) -> dict:
@@ -128,31 +148,22 @@ def _records(conn, actor: Actor, books: list[str]) -> tuple[list[dict], int, int
 
 def _finish(conn, final, data):
     """Inside the export transaction, right after the final read decision (Astra review #14): a reference is kept
-    only when its book is readable in that decision, and the text, options and choice only when the note's
-    `ai_input` and `train` (note AND every journal of its closure, `note_journal`) still hold now and the note
-    depends on no blocked skill in that decision (`final.blocked_notes`); else the record is cut to references and
-    hashes."""
+    only when its book is readable in that decision, and the text, options and choice only by `rights`; else the
+    record is cut to references and hashes."""
     records, w, restricted = data
     read = final.objects("read")
-    rights = {seq: rest for seq, *rest in conn.execute(
-        "SELECT n.seq, n.search AND j.search, n.ai_input AND j.ai_input, n.train AND j.train "
-        "FROM note n JOIN note_journal j ON j.seq = n.seq WHERE n.seq = ANY(%s)",
-        ([r["_seq"] for r in records],))}
+    now = rights(conn, final, [r["_seq"] for r in records])
     kept = []  # per record: the passage handles it keeps
     for r in records:
         seq = r.pop("_seq")
-        search, ai_input, train = rights[seq]
         cited = [(book, ref) for book, ref in r.pop("_citations") if book is None or f"book:{book}" in read]
         r["context"]["citations"] = [ref for _book, ref in cited]
         r["context"]["links"] = [link for book, link in r.pop("_links") if f"book:{book}" in read]
         kept.append([ref for book, ref in cited if book is not None]
                     + [link["ref"] for link in r["context"]["links"] if not notesquery.is_note_ref(link["ref"])])
-        r["ai_use"] = {"search": _yn(search), "ai_input": _yn(ai_input), "train": _yn(train)}
-        if not (ai_input and train):
-            r["context"]["text"], r["options"], r["choice"], r["withheld"] = None, None, None, WITHHELD
-        elif seq in final.blocked_notes:
-            r["context"]["text"], r["options"], r["choice"] = None, None, None
-            r["withheld"] = gate.SKILL_WITHHELD
+        r["ai_use"], withheld = now[seq]
+        if withheld:
+            r["context"]["text"], r["options"], r["choice"], r["withheld"] = None, None, None, withheld
     states = _passage_states(conn, {h for hs in kept for h in hs})
     for r, hs in zip(records, kept):
         r["context"]["passages"] = {h: states[h] for h in hs}
