@@ -36,7 +36,8 @@ def check_integrity(conn, seq: int, note_id: str) -> None:
 
 def _note(conn, ref: str):
     book, note_id = notes_.parse_ref(ref)
-    row = conn.execute("SELECT seq, kind, scope_repo, scope_branch, scope_paths FROM note WHERE book = %s AND id = %s",
+    row = conn.execute("SELECT seq, kind, scope_repo, scope_branch, scope_paths, applies_to FROM note "
+                       "WHERE book = %s AND id = %s",
                        (book, note_id)).fetchone()
     if row is None:
         raise gate.NotFound(f"no such note: {ref}")
@@ -59,7 +60,7 @@ def prepare(conn, *, principal: str, items: list[dict], reason: str, need_read: 
     for item in items:
         if set(item) - {"ref", "to", "was"} or item.get("to") not in notes_.STANDINGS:
             raise ValueError(f"an item is {{ref, to}}; to is one of {', '.join(notes_.STANDINGS)}")
-        book, note_id, (seq, kind, repo, branch, paths) = _note(conn, item["ref"])
+        book, note_id, (seq, kind, repo, branch, paths, applies_to) = _note(conn, item["ref"])
         for mode in modes:
             if not authz.direct(conn, principal, f"book:{book}", mode).allowed:
                 raise gate.Denied(f"{principal} does not hold {mode} on book:{book}")
@@ -73,7 +74,8 @@ def prepare(conn, *, principal: str, items: list[dict], reason: str, need_read: 
         if item["to"] == "rejected" and notes_._ever_approved(conn, seq):
             raise ValueError(f"{item['ref']} was approved before: rejected means never accepted (D68); use retired")
         out.append({"ref": item["ref"], "id": note_id, "book": book, "seq": seq, "kind": kind,
-                     "scope": (repo, branch, sorted(paths)), "current": current, "was": event, "to": item["to"]})
+                     "scope": (repo, branch, sorted(paths), applies_to), "current": current, "was": event,
+                     "to": item["to"]})
     approved = [i for i in out if i["to"] == "approved"]
     if sum(i["kind"] in ROLE_RULE for i in approved) > 1:
         raise ValueError("at most one rule-role approval per act: a rule is read alone")
@@ -100,11 +102,11 @@ def retirements(conn, prepared: list[dict]) -> list[dict]:
     for item in prepared:
         if item["to"] != "approved" or item["kind"] not in ROLE_RULE:
             continue
-        for p_seq, p_id, repo, branch, paths in conn.execute(
-                "SELECT p.seq, p.id, p.scope_repo, p.scope_branch, p.scope_paths FROM note_link l "
+        for p_seq, p_id, repo, branch, paths, applies_to in conn.execute(
+                "SELECT p.seq, p.id, p.scope_repo, p.scope_branch, p.scope_paths, p.applies_to FROM note_link l "
                 "JOIN note p ON p.seq = l.dst_note WHERE l.src = %s AND l.type = 'supersedes' AND l.creation "
                 "AND p.book = %s ORDER BY p.seq", (item["seq"], item["book"])).fetchall():
-            if p_seq in items or (repo, branch, sorted(paths)) != item["scope"]:
+            if p_seq in items or (repo, branch, sorted(paths), applies_to) != item["scope"]:
                 continue
             current, event = notes_.effective_standing(conn, [p_seq], notes_.NOW)[p_seq]
             if current == "approved":

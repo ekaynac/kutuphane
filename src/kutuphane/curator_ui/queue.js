@@ -157,6 +157,8 @@ function risks(item, g) {
 }
 
 function row(dl, label, value) { if (value) dl.append(el("dt", null, label), el("dd", null, value)); }
+// #164: the kstd Scope bound of a note, e.g. "esxi, vcenter; version >=7,<8".
+function appliesTo(a) { return a && [(a.platform || []).join(", "), a.version && `version ${a.version}`].filter(Boolean).join("; "); }
 
 function details(item, g) {
   const d = el("details", "details");
@@ -166,6 +168,7 @@ function details(item, g) {
   row(dl, "Kind", `${item.kind} (${item.role === "rule" ? "a rule" : "evidence"}) in ${item.book}`);
   row(dl, "Scope", item.scope ? `${item.scope.repo}${item.scope.branch ? "@" + item.scope.branch : ""} ` +
                                 `${item.scope.paths.join(", ") || "(whole repository)"}` : "Everywhere (no scope)");
+  row(dl, "Applies to", appliesTo(item.applies_to));
   row(dl, "Class key", item.class_key || "none");
   row(dl, "Commit", item.commit);
   row(dl, "Written", item.written_at);

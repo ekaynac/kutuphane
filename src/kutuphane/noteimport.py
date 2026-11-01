@@ -31,8 +31,9 @@ from . import gate, notes, origin as origins, secretscan
 from .gate import Actor
 
 FIELDS = ("id", "kind", "text", "standing", "role", "window", "scope", "commit", "origin", "created_at",
-          "updated_at", "citations", "links", "class_key", "decision")
-PROPOSED = ("kind", "text", "scope", "commit", "origin", "citations", "class_key", "decision")  # to notes.Draft
+          "updated_at", "citations", "links", "class_key", "decision", "applies_to")
+PROPOSED = ("kind", "text", "scope", "commit", "origin", "citations", "class_key", "decision",
+            "applies_to")  # to notes.Draft
 KIND_TIME = {k: "as_of" if k == "test_result" else "durable" for k in notes.KINDS}  # §8.1
 RECORD_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}\Z")
 MAX_RECORDS = 10_000

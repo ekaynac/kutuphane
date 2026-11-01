@@ -22,19 +22,22 @@ SELECT n.seq, n.id, n.kind, n.body, n.class_key, n.scope_repo, n.scope_branch, n
                  THEN l.dst_note_book || '@' || d.id
                  ELSE l.dst_book || '@' || l.dst_content_id || '/' || l.dst_profile_id || '/' || l.dst_path || '#'
                       || l.dst_ordinal END)
-               FROM note_link l LEFT JOIN note d ON d.seq = l.dst_note WHERE l.src = n.seq AND l.creation)
+               FROM note_link l LEFT JOIN note d ON d.seq = l.dst_note WHERE l.src = n.seq AND l.creation),
+       n.applies_to
   FROM note n WHERE n.seq = ANY(%s)
 """
 
 
 def _computed(row) -> tuple[str, dict]:
-    kind, text, class_key, repo, branch, paths, commit, options, choice, cited, links = row
+    kind, text, class_key, repo, branch, paths, commit, options, choice, cited, links, applies_to = row
     body = {"v": 1, "kind": kind, "text": text, "class_key": class_key,
             "scope": None if repo is None else {"repo": repo, "branch": branch, "paths": list(paths)},
             "commit": commit, "citations": list(cited),
             "links": sorted(links, key=lambda link: (link["type"], link["target"]))}
     if options is not None:
         body["decision"] = {"options": list(options), "choice": choice}
+    if applies_to is not None:
+        body["applies_to"] = applies_to
     return "nt_" + ids.sha256_hex(ids.canonical(body)), body
 
 

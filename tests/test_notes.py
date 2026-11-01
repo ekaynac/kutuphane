@@ -13,8 +13,8 @@ from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 from starlette.testclient import TestClient
 
 import kutuphane
-from kutuphane import (authz, catalog, cli, db, gate, ids, kstd, notes, notesquery, packages, profiles, retrieval,
-                       search, server)
+from kutuphane import (authz, canonical, catalog, cli, db, gate, ids, kstd, notes, notesquery, packages, profiles,
+                       retrieval, search, server)
 from kutuphane.gate import Actor
 from kutuphane.identity import Verifier
 from kutuphane.policy import make_policy
@@ -692,6 +692,23 @@ def test_supersession_retires_only_a_predecessor_with_the_same_scope(env, code):
         "retired"
 
 
+def test_applies_to_is_part_of_the_id_and_of_the_same_scope(env, code):  # #164
+    authz.grant(env, f"book:{J}", "curate", "user:kurator")
+    plain = notes.Draft({"book": J, "kind": "convention", "text": "pin the pool"})
+    assert "applies_to" not in plain.body  # a note without it keeps the id it had before #164
+    bound = {"platform": ["vcenter", "esxi"], "version": ">=7,<8"}
+    r = propose(env, mcp(), kind="convention", text="pin the pool", applies_to=bound)
+    assert r["ref"] != f"{J}@{plain.id}"
+    stored = row(env, "SELECT seq, applies_to FROM note")
+    assert stored[1] == {"platform": ["esxi", "vcenter"], "version": ">=7,<8"}
+    assert canonical.canonical_of(env, stored[0])[0] == r["ref"].split("@")[1]  # the stored parts give the id
+    assert propose(env, mcp(), kind="convention", text="pin the pool", applies_to="vcenter")["ref"] != r["ref"]
+    notes.set_standing(env, r["ref"], "approved", curator="user:kurator", reason="r")
+    new = propose(env, mcp(), kind="convention", text="pin the pool to 8", applies_to={"version": ">=8"},
+                  links=[{"type": "supersedes", "ref": r["ref"]}])["ref"]
+    assert notes.set_standing(env, new, "approved", curator="user:kurator", reason="r").get("retired", []) == []
+
+
 def test_a_supersedes_link_from_evidence_retires_nothing(env):
     authz.grant(env, f"book:{J}", "curate", "user:kurator")
     old = propose(env, mcp(), text="old")["ref"]
@@ -717,6 +734,11 @@ def test_a_supersedes_link_from_evidence_retires_nothing(env):
     ({"origin": "person"}, "origin"),
     ({"idempotency_key": "short"}, "idempotency_key"),
     ({"extra": 1}, "fields"),
+    ({"applies_to": {"platform": []}}, "applies_to"),
+    ({"applies_to": {"version": "7.x"}}, "applies_to"),
+    ({"applies_to": {"os": "linux"}}, "applies_to"),
+    ({"applies_to": {}}, "applies_to"),
+    ({"applies_to": {"platform": ["a\nb"]}}, "applies_to"),
     ({"citations": ["x"] * 21}, "citations"),
 ])
 def test_invalid_requests_are_refused_before_any_io(env, args, needle):

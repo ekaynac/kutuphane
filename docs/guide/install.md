@@ -368,7 +368,7 @@ Core reaches only Postgres. It makes no model call.
 | Function | Light install |
 |---|---|
 | `search_library`, `GET /v1/search` | Full text only. No vector search, no rerank, no question translation. |
-| `open_citation`, `read_document`, notes, links, outcomes, decisions, feedback, code citations | The same as in the full stack. |
+| `open_citation`, `read_document`, notes, links, outcomes, decisions, code citations | The same as in the full stack. |
 | `ask_library`, `POST /v1/ask`, the job tools | Not available. `tools/list` does not list `ask_library`, `job_status`, `job_result` and `job_cancel`. `POST /v1/ask` gives HTTP `503` `answers are not available: this install has no model gateway (LLMDAP); search is full text only`, also with `background: true`: no job is made. |
 | Model audit | No model call, so no `model_call` row and no LLMDAP audit chain. |
 

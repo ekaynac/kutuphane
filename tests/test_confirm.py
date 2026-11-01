@@ -17,6 +17,8 @@ from starlette.testclient import TestClient
 from kutuphane import (authz, confirm, curatorweb, db, decisions, kstd, notes, notesquery, origin, packages, passkey,
                        server)
 from kutuphane.gate import Actor
+
+from conftest import WRITE_PATH_COLUMNS
 from softauthn import SoftAuthenticator
 from test_curatorweb import (CFG, H, ORIGIN, WEB_ROLE, A, J, M, U, enroll, env, login,  # noqa: F401
                              submit, web_dsn)
@@ -445,8 +447,8 @@ def test_024_applies_to_a_database_with_requests_and_keeps_the_origins(conn):  #
     conn.execute("CREATE TABLE schema_migration (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())")
     for script in sorted((f for f in files("kutuphane.migrations").iterdir() if f.name.endswith(".sql")),
                          key=lambda f: f.name):
-        if script.name >= "024":
-            break
+        if script.name >= "024" and script.name not in WRITE_PATH_COLUMNS:
+            continue
         conn.execute(script.read_text())
         conn.execute("INSERT INTO schema_migration (name) VALUES (%s)", (script.name,))
     notes.create_journal(conn, book=J, title=J, search=True, ai_input=True,

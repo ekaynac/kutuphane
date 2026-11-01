@@ -20,7 +20,7 @@ import re
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 
-from . import authz, coderepo, gate, notes, outcomes, passagemap, profiles
+from . import authz, coderepo, gate, kstd, notes, outcomes, passagemap, profiles, search
 from . import origin as origins
 from .gate import Actor
 from .search import SearchChanged
@@ -60,13 +60,17 @@ def _size(obj) -> int:
 
 @dataclass(frozen=True)
 class Context:
-    """The request context: the code target (`repo` + `commit`, or `repo` + `branch`) and the scope values."""
+    """The request context: the code target (`repo` + `commit`, or `repo` + `branch`) and the scope values, with the
+    kstd Scope values `platform` and `version` (#164, the `context` of search)."""
     repo: str | None = None
     branch: str | None = None
     path: str | None = None    # one path, or a directory prefix that ends with "/"
     commit: str | None = None
+    platform: str | None = None
+    version: str | None = None
 
     def __post_init__(self):
+        search._context({k: v for k, v in (("platform", self.platform), ("version", self.version)) if v is not None})
         if self.repo is not None and not (isinstance(self.repo, str) and _REPO.match(self.repo)):
             raise ValueError("repo must be a repository slug")
         for name in ("branch", "path", "commit"):
@@ -102,6 +106,7 @@ class Note:
     confirmed_by: str | None = None  # with a live confirmation: the person who confirmed
     rank: float = 0.0
     skill_blocked: bool = False  # depends on a blocked skill (read only for model readers)
+    applies_to: dict | None = None  # the kstd Scope bound (#164)
     w: int = 0
     standing: str = "pending"
     standing_seq: int | None = None
@@ -155,7 +160,10 @@ def _glob_prefix_ok(glob: str, prefix: str) -> bool:
 def scope_verdict(note: Note, ctx: Context) -> str:
     """`match`, `mismatch` (a bounded dimension that the context contradicts) or `needs_context` (a bounded
     dimension that the context does not give)."""
-    missing = False
+    bound = kstd.scope_verdict(note.applies_to, ctx.platform, ctx.version)  # the rule of files (#137)
+    if bound == "mismatch":
+        return "mismatch"
+    missing = bound == "needs_context"
     if note.scope_repo is not None:
         if ctx.repo is None:
             missing = True
@@ -248,7 +256,8 @@ SELECT n.seq, n.book, n.id, n.kind, n.body, n.class_key, n.scope_repo, n.scope_b
        CASE WHEN %(text)s::text IS NULL THEN 0
             ELSE ts_rank_cd(n.tsv, websearch_to_tsquery(%(cfg)s::regconfig, %(text)s::text), %(norm)s) END,
        CASE WHEN %(blocks)s THEN note_skill_blocked(n.seq) ELSE false END,
-       (SELECT e.set_by FROM standing_event e WHERE e.note_seq = n.seq AND e.seq <= %(w)s ORDER BY e.seq DESC LIMIT 1)
+       (SELECT e.set_by FROM standing_event e WHERE e.note_seq = n.seq AND e.seq <= %(w)s ORDER BY e.seq DESC LIMIT 1),
+       n.applies_to
   FROM note n JOIN note_journal j ON j.seq = n.seq
  WHERE n.book = ANY(%(books)s::text[]) AND n.seq <= %(w)s
    AND (%(seqs)s::bigint[] IS NULL OR n.seq = ANY(%(seqs)s::bigint[]))
@@ -272,7 +281,7 @@ def _load(conn, books, w: int, paths: list, *, seqs=None, refs=None, kinds=None,
         "after": after, "before": before, "text": text, "cfg": profiles.FTS_CONFIG, "norm": RANK_NORMALIZATION,
         "paths": files, "blocks": blocks}).fetchall()
     out = [Note(*r[:12], dict(zip(files, r[12])), origin=r[13], rank=float(r[14]), w=w, skill_blocked=r[15],
-                approved_by=r[16]) for r in rows]
+                approved_by=r[16], applies_to=r[17]) for r in rows]
     standing = notes.effective_standing(conn, [n.seq for n in out], w)
     for n in out:
         n.standing, n.standing_seq = standing[n.seq]
@@ -394,6 +403,7 @@ def _item(note: Note, is_current: bool, recurrence: int, graph: Graph, for_model
             "class_key": note.class_key,
             "scope": None if note.scope_repo is None else {"repo": note.scope_repo, "branch": note.scope_branch,
                                                             "paths": list(note.scope_paths)},
+            **({"applies_to": note.applies_to} if note.applies_to is not None else {}),  # #164: old bytes kept
             "observed_commit": note.observed_commit, "written_at": _iso(note.written_at),
             "recurrence": recurrence, "links": {t: links[t] for t in LINK_TYPES if t in links},
             "outcomes": outcomes,
@@ -618,6 +628,7 @@ def _targets_out(targets: dict) -> dict:
 
 def query_notes(conn, actor: Actor, *, for_model: bool, book=None, sets=("current",), kind=None, role=None,
                 origin=None, class_key=None, refs=None, repo=None, branch=None, path=None, paths=None, commit=None,
+                platform=None, version=None,
                 commits=None, written_after=None, written_before=None, since=None, text=None, unfixed: bool = False,
                 collapse: bool = False, include_unverified: bool = False, order: str = "newest",
                 budget_tokens: int = 2000, max_bytes: int = 32768, as_of=None, cursor=None,
@@ -646,7 +657,7 @@ def query_notes(conn, actor: Actor, *, for_model: bool, book=None, sets=("curren
         many = sorted(set(many) | ({path} if path is not None else set()))
         if len(many) > MAX_PATHS:
             raise ValueError(f"at most {MAX_PATHS} paths")
-    ctxs = [Context(repo, branch, p, commit) for p in (many if many is not None else [path])]
+    ctxs = [Context(repo, branch, p, commit, platform, version) for p in (many if many is not None else [path])]
     ctx = ctxs[0]  # repo, branch and commit (the code targets) are the same in each
     rng = None
     if commits is not None:
@@ -815,6 +826,7 @@ def _kept(group: list, graph: Graph) -> set:
 
 def neighbours(conn, actor: Actor, *, for_model: bool, ref: str, types=None, depth: int = 1,
                direction: str = "both", sets=("current",), repo=None, branch=None, path=None, commit=None,
+               platform=None, version=None,
                max_nodes: int = 50, budget_tokens: int = 2000, max_bytes: int = 32768, as_of=None,
                attempts: int = 2) -> dict:
     types = _strings("types", types, LINK_TYPES + (CITES,))
@@ -822,7 +834,7 @@ def neighbours(conn, actor: Actor, *, for_model: bool, ref: str, types=None, dep
     if direction not in DIRECTIONS:
         raise ValueError(f"direction must be one of {', '.join(DIRECTIONS)}")
     sets = _sets(list(sets))
-    ctx = Context(repo, branch, path, commit)
+    ctx = Context(repo, branch, path, commit, platform, version)
     max_nodes = _int("max_nodes", max_nodes, 1, MAX_NODES)
     budget_tokens = _int("budget_tokens", budget_tokens, *BUDGET_TOKENS)
     max_bytes = _int("max_bytes", max_bytes, *MAX_BYTES)
@@ -975,13 +987,13 @@ def _links(conn, frontier, passage, direction: str, types, w: int) -> list:
 # --- notes in open_citation (§9.4) --------------------------------------------------------------------------
 
 def open_note(conn, actor: Actor, *, for_model: bool, ref: str, repo=None, branch=None, path=None,
-              commit=None, attempts: int = 2, readable_out: set | None = None) -> dict:
+              commit=None, platform=None, version=None, attempts: int = 2, readable_out: set | None = None) -> dict:
     """One note with its full text (the `ai_input` and skill-block gates apply) and any Standing, `current` from the shared
     predicate. The gates of `query_notes`: citations, link counts and the successor come from the whole read set,
     which is decided again at the end; a lost book runs it all again once, then `SearchChanged`. `readable_out`: as
     in `query_notes`."""
     book, note_id = notes.parse_ref(ref)
-    ctx = Context(repo, branch, path, commit)
+    ctx = Context(repo, branch, path, commit, platform, version)
     obj = f"book:{book}"
     first = authz.decide(conn, actor.principal, actor.on_behalf_of, obj, ["read"])
     if not first.allowed:
@@ -1058,6 +1070,7 @@ def register_mcp(mcp, deps) -> None:
                           origin: list[str] | None = None, class_key: str | None = None,
                           refs: list[str] | None = None, repo: str | None = None, branch: str | None = None,
                           path: str | None = None, paths: list[str] | None = None, commit: str | None = None,
+                          platform: str | None = None, version: str | None = None,
                           commits: str | None = None, written_after: str | None = None,
                           written_before: str | None = None, since: int | None = None, text: str | None = None,
                           unfixed: bool = False, collapse: bool = False, include_unverified: bool = False,
@@ -1065,7 +1078,8 @@ def register_mcp(mcp, deps) -> None:
                           as_of: int | None = None, cursor: str | None = None) -> CallToolResult:
         """List agent notes in the journals you may read (needs read on each journal): fast SQL filters, no model
         call. `sets`: current (approved, in your context), open (pending, not accepted), history. Context: repo,
-        branch, path (or `paths`: up to 20, each item names the paths it matches), commit. `refs` (up to 50 note
+        branch, path (or `paths`: up to 20, each item names the paths it matches), commit, platform and version
+        (a note with `applies_to` needs them, as files do). `refs` (up to 50 note
         references): only these notes, each with `standing` and `standing_seq`. Use `since` with the last watermark to
         get changes and `left` tombstones; `cursor` for the next page."""
         args, labels = {k: v for k, v in locals().items() if k in _PARAMS[_QUERY]}, {}  # the tool arguments
@@ -1076,10 +1090,12 @@ def register_mcp(mcp, deps) -> None:
     async def neighbours(ref: str, types: list[str] | None = None, depth: int = 1, direction: str = "both",
                          sets: list[str] = ["current"], repo: str | None = None,  # noqa: B006
                          branch: str | None = None, path: str | None = None, commit: str | None = None,
+                         platform: str | None = None, version: str | None = None,
                          max_nodes: int = 50, budget_tokens: int = 2000, max_bytes: int = 32768,
                          as_of: int | None = None) -> dict:
         """The notes linked to a note reference or a passage handle (depth 1 or 2), only those you may read (needs
-        read on their journals) and that are in `sets` in your context."""
+        read on their journals) and that are in `sets` in your context (repo, branch, path, commit, platform,
+        version)."""
         args = {k: v for k, v in locals().items() if k in _PARAMS[_NEIGHBOURS]}
         return await run_in_threadpool(lambda: run(_NEIGHBOURS, **args))
 
@@ -1108,6 +1124,7 @@ def _query_args(p) -> dict:
     return {"book": many("book"), "sets": many("sets", ["current"]), "kind": many("kind"), "role": many("role"),
             "origin": many("origin"), "class_key": p.get("class_key"), "refs": many("refs"), "repo": p.get("repo"),
             "branch": p.get("branch"), "path": p.get("path"), "paths": many("paths"), "commit": p.get("commit"),
+            "platform": p.get("platform"), "version": p.get("version"),
             "commits": p.get("commits"),
             "written_after": p.get("written_after"), "written_before": p.get("written_before"),
             "since": number("since"), "text": p.get("text"), "unfixed": flag("unfixed"),
@@ -1145,7 +1162,8 @@ def http_routes(deps, endpoint) -> list:
         body = await run_in_threadpool(respond(
             actor, neighbours, ref=f"{p['book']}@{p['id']}", types=q.getlist("types") or None,
             direction=q.get("direction", "both"), sets=args["sets"], repo=args["repo"], branch=args["branch"],
-            path=args["path"], commit=args["commit"], budget_tokens=args["budget_tokens"],
+            path=args["path"], commit=args["commit"], platform=args["platform"], version=args["version"],
+            budget_tokens=args["budget_tokens"],
             max_bytes=args["max_bytes"], as_of=args["as_of"], **extra))
         return Response(_dumps(body), media_type="application/json",
                         headers={"X-Correlation-Id": actor.correlation_id})

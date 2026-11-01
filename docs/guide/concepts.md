@@ -148,6 +148,7 @@ note is current when all of these are true:
 1. its Standing is `approved`;
 2. it is not a `test_result`;
 3. its scope matches the request context (`repo`, `branch`, `path`), and a scoped `rule` note has that context;
+   the same holds for its kstd Scope bound `applies_to` (`platform`, `version`; #164), with the rule of files;
 4. each code citation into a repository with a target in the request is `verified`.
 
 | Set | Contains |
@@ -228,11 +229,11 @@ proposal to the curator (origin `tool`), never an approval. A `DO_NOT_INSTALL` r
 whole skill, or a failed scan blocks the skill for agents, also with `activate`. Only a curator lifts the block
 (`kutuphane skill clear`). `SAFE` gives no right. See [security.md](security.md#skill-scan-skillspector).
 
-## Outcomes and feedback
+## Outcomes
 
 - **Outcomes** (`record_outcome`): `passed`, `failed`, `reverted` or `reopened` for a task, on one exact note or
-  passage version. Reads show the counts. They never change Standing.
-- **Runbook feedback** (`record_runbook_feedback`): `worked`, `failed` or `changed` for one exact file version.
+  passage version. Reads show the counts. They never change Standing. For a runbook, record the outcome on its
+  passage handle (`record_runbook_feedback` was removed, D78).
 
 ## Answers and jobs
 

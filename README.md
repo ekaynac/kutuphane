@@ -85,7 +85,6 @@ The endpoint is `/mcp`. It is stateless and serves MCP 2025-11-25 and 2026-07-28
 | `ask_library` | answer with `[n]` citations, or `not_in_library`; can run as a background job (only with LLMDAP) |
 | `reopen_answer` | show a stored answer and its evidence again, with no model call |
 | `read_document` | read one text document of one version (agent instructions need `activate`) |
-| `record_runbook_feedback` | record `worked`, `failed` or `changed` for one runbook version |
 | `job_status`, `job_result`, `job_cancel` | follow, read or cancel a background `ask_library` job (only with LLMDAP) |
 | `propose_note` | write a note into a journal; it starts `pending` |
 | `link_notes` | link a note to a note or passage (`same_as`, `contradicts`, `about`, `fixed_by`, …) |

@@ -954,7 +954,7 @@ kutuphane reject-import <id> --by user:admin --reason '…'
 ### Packages from an application (HTTP and MCP, #139)
 
 An application can send a signed package without the CLI: `POST /v1/packages`
-([http-api.md](http-api.md#13-packages)) or the MCP tool `submit_package` ([mcp.md](mcp.md#517-submit_package)).
+([http-api.md](http-api.md#12-packages)) or the MCP tool `submit_package` ([mcp.md](mcp.md#516-submit_package)).
 The checks are the same as `receive`. Nothing is published: a person still runs `approve-import` (no route and no
 tool approves).
 

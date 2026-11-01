@@ -103,8 +103,6 @@ The ingress proxy (`deploy/nginx.conf`) accepts a body of at most 1 MiB (`413` a
 | `GET` | `/v1/jobs/{job_id}/result` | bearer | The answer of a succeeded job. | `200` |
 | `POST` | `/v1/jobs/{job_id}/cancel` | bearer | Cancel a background job. | `200` |
 | `GET` | `/v1/files/{book}/{content_id}/{path}` | bearer | Download a file of one version. | `200` |
-| `GET` | `/v1/feedback` | bearer | The runbook feedback of one file version. | `200` |
-| `POST` | `/v1/feedback` | bearer | Record runbook feedback. | `201` |
 | `POST` | `/v1/notes` | bearer | Write a note into a journal. | `201`, `200` |
 | `POST` | `/v1/notes/links` | bearer | Link a note to a note or a passage. | `201`, `200` |
 | `POST` | `/v1/citations/verify` | bearer | Check code citations. | `200` |
@@ -270,6 +268,7 @@ Open a passage handle, or a note reference. MCP: `open_citation` ([mcp.md](mcp.m
 | `branch` | no | Note references only. The context: a branch. |
 | `path` | no | Note references only. The context: a path, or a folder prefix that ends with `/`. |
 | `commit` | no | Note references only. The context: a full commit id. Needs `repo`. |
+| `platform`, `version` | no | Note references only. The kstd Scope context (#164), as `GET /v1/notes`. |
 
 **Response `200` for a passage:**
 
@@ -376,7 +375,7 @@ curl -s -H "Authorization: Bearer $TOKEN" "$KUTUPHANE_PUBLIC_URL/v1/answers/5e1c
 
 ### 6.3 `GET /v1/jobs/{job_id}`
 
-The state of a background ask job. MCP: `job_status` ([mcp.md](mcp.md#57-job_status)).
+The state of a background ask job. MCP: `job_status` ([mcp.md](mcp.md#56-job_status)).
 
 **Response `200`:**
 
@@ -397,7 +396,7 @@ curl -s -H "Authorization: Bearer $TOKEN" "$KUTUPHANE_PUBLIC_URL/v1/jobs/jb_0123
 ### 6.4 `GET /v1/jobs/{job_id}/result`
 
 The answer of a succeeded job, in the shape of `GET /v1/answers/{answer_id}`. Current rights apply.
-MCP: `job_result` ([mcp.md](mcp.md#58-job_result)).
+MCP: `job_result` ([mcp.md](mcp.md#57-job_result)).
 
 **Errors:** `400` (`job has no result: <status>`), `401`, `403`, `404`.
 
@@ -409,7 +408,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 ### 6.5 `POST /v1/jobs/{job_id}/cancel`
 
 Cancel a background job. A queued job stops at once. A running job stops before its model call or before it
-stores its answer. MCP: `job_cancel` ([mcp.md](mcp.md#59-job_cancel)).
+stores its answer. MCP: `job_cancel` ([mcp.md](mcp.md#58-job_cancel)).
 
 **Response `200`:** the job status, as `GET /v1/jobs/{job_id}`. No body is needed.
 
@@ -443,66 +442,12 @@ curl -s -H "Authorization: Bearer $TOKEN" -o backup.md \
   "$KUTUPHANE_PUBLIC_URL/v1/files/runbooks/ct_9f…/backup.md"
 ```
 
-## 8. Runbook feedback
-
-MCP: `record_runbook_feedback` ([mcp.md](mcp.md#56-record_runbook_feedback)). Both methods need `read` on the
-book.
-
-### 8.1 `POST /v1/feedback`
-
-**Body (JSON object):**
-
-| Field | Type | Required | Limits |
-|---|---|---|---|
-| `book` | string | yes | The book slug. |
-| `content_id` | string | yes | The content version id. |
-| `path` | string | yes | The file path in that version. |
-| `outcome` | string | yes | `worked`, `failed` or `changed`. |
-| `tested_on` | string | no | 1–200 characters, not blank. |
-| `note` | string | no | At most 2000 characters. |
-
-**Response `201`:** `{"id": <integer>}`
-
-**Errors:** `400` (`JSON body required`, `JSON object required`,
-`book, content_id, path and outcome are required strings`, `outcome must be one of worked, failed, changed`),
-`401`, `403`, `404` (the file is not in that version).
-
-```sh
-curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  "$KUTUPHANE_PUBLIC_URL/v1/feedback" \
-  -d '{"book": "runbooks", "content_id": "ct_9f…", "path": "backup.md", "outcome": "worked", "tested_on": "staging-2"}'
-```
-
-### 8.2 `GET /v1/feedback`
-
-The feedback on exactly this file version. Feedback on other versions is not included.
-
-| Query parameter | Required |
-|---|---|
-| `book` | yes |
-| `content_id` | yes |
-| `path` | yes |
-
-**Response `200`:**
-
-```json
-[{"at": "2026-10-27T10:00:00.123456+00:00", "outcome": "worked", "principal": "user:ayse", "on_behalf_of": null,
-  "tested_on": "staging-2", "note": null}]
-```
-
-**Errors:** `400` (a missing or unsafe `path`), `401`, `403`.
-
-```sh
-curl -s -G -H "Authorization: Bearer $TOKEN" "$KUTUPHANE_PUBLIC_URL/v1/feedback" \
-  -d book=runbooks -d content_id=ct_9f… -d path=backup.md
-```
-
-## 9. Notes (agent memory)
+## 8. Notes (agent memory)
 
 The note rules (kinds, links, Standing, the `current` set) are in [agent-memory.md](agent-memory.md).
-The argument limits are the same as for the MCP tools ([mcp.md](mcp.md#510-propose_note)).
+The argument limits are the same as for the MCP tools ([mcp.md](mcp.md#59-propose_note)).
 
-### 9.1 `POST /v1/notes`
+### 8.1 `POST /v1/notes`
 
 Write a note into a journal. MCP: `propose_note`.
 
@@ -510,11 +455,11 @@ Write a note into a journal. MCP: `propose_note`.
 `decision`, `origin`, `idempotency_key`. `book`, `kind` and `text` are required. Any other field is refused.
 
 **Response:** `201` for a new write, `200` for an idempotent retry. The body is the receipt
-([mcp.md](mcp.md#510-propose_note)).
+([mcp.md](mcp.md#59-propose_note)).
 
 Over HTTP, the server computes the origin from the token: a person (`user:…` without `act`) gets `unknown`; an agent
 path gets `model`. A refused `human` or `assisted` request gives the key `confirmation` (`{"url", "expires_at"}`):
-the person confirms on that curator web page with a passkey ([mcp.md](mcp.md#516-confirm_origin)).
+the person confirms on that curator web page with a passkey ([mcp.md](mcp.md#515-confirm_origin)).
 
 **Errors:** `400` (`JSON body required`, `fields: …`, validation, `text refused: credential-like content (…)`, a
 code citation refused), `401`, `403`, `404`, `409`, `429`.
@@ -525,9 +470,9 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/
   -d '{"book": "adc-memory", "kind": "finding", "text": "The retry job ignores the backoff limit.", "idempotency_key": "run-42.note-1"}'
 ```
 
-### 9.2 `POST /v1/notes/links`
+### 8.2 `POST /v1/notes/links`
 
-Link a note to a note or a passage. MCP: `link_notes` ([mcp.md](mcp.md#511-link_notes)).
+Link a note to a note or a passage. MCP: `link_notes` ([mcp.md](mcp.md#510-link_notes)).
 
 **Body (JSON object):** exactly `{"src", "type", "dst"}`.
 
@@ -543,10 +488,10 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/
   -d '{"src": "adc-memory@nt_3f…", "type": "same_as", "dst": "adc-memory@nt_9a…"}'
 ```
 
-### 9.3 `GET /v1/notes`
+### 8.3 `GET /v1/notes`
 
 List notes in the journals that you may read. No model call. MCP: `query_notes`
-([mcp.md](mcp.md#513-query_notes)).
+([mcp.md](mcp.md#512-query_notes)).
 
 | Query parameter | Default | Notes |
 |---|---|---|
@@ -556,7 +501,7 @@ List notes in the journals that you may read. No model call. MCP: `query_notes`
 | `role` | none | Repeat for more: `rule`, `evidence`. |
 | `origin` | none | Repeat for more: `human`, `assisted`, `model`, `unknown` (the shown origin). |
 | `class_key` | none | |
-| `repo`, `branch`, `path`, `commit` | none | The context. |
+| `repo`, `branch`, `path`, `commit`, `platform`, `version` | none | The context. `platform` and `version` are the kstd Scope context of a note's `applies_to` (#164), as `query_notes`. |
 | `paths` | none | Repeat for more: 1–20 context paths, as `query_notes` `paths`. |
 | `refs` | none | Repeat for more: 1–50 note references, as `query_notes` `refs`. |
 | `commits` | none | `A..B`. Needs `repo`. |
@@ -571,7 +516,7 @@ List notes in the journals that you may read. No model call. MCP: `query_notes`
 | `cursor` | none | `next_cursor` of the page before. |
 
 **Response `200`:** `{"items", "left", "books", "watermark", "next_cursor", "excluded", "targets"}`
-([mcp.md](mcp.md#513-query_notes)). The correlation id is in the header `X-Correlation-Id`.
+([mcp.md](mcp.md#512-query_notes)). The correlation id is in the header `X-Correlation-Id`.
 
 **Errors:** `400` (`<name> must be an integer`, `<name> must be true or false`, validation), `401`, `409`.
 
@@ -580,10 +525,10 @@ curl -s -G -H "Authorization: Bearer $TOKEN" "$KUTUPHANE_PUBLIC_URL/v1/notes" \
   -d book=adc-memory -d sets=current -d sets=open -d repo=adc -d branch=main
 ```
 
-### 9.4 `GET /v1/notes/{book}/{id}/neighbours`
+### 8.4 `GET /v1/notes/{book}/{id}/neighbours`
 
 The notes linked to the note `{book}@{id}`. `{id}` is `nt_` and 64 hex characters. MCP: `neighbours`
-([mcp.md](mcp.md#514-neighbours)). Over HTTP, the root is always a note. To start from a passage, use the MCP tool.
+([mcp.md](mcp.md#513-neighbours)). Over HTTP, the root is always a note. To start from a passage, use the MCP tool.
 
 | Query parameter | Default | Notes |
 |---|---|---|
@@ -591,7 +536,7 @@ The notes linked to the note `{book}@{id}`. `{id}` is `nt_` and 64 hex character
 | `depth` | `1` | 1–2. |
 | `direction` | `both` | `out`, `in`, `both`. |
 | `sets` | `current` | Repeat for more. |
-| `repo`, `branch`, `path`, `commit` | none | The context. |
+| `repo`, `branch`, `path`, `commit`, `platform`, `version` | none | The context. |
 | `max_nodes` | `50` | 1–200. |
 | `budget_tokens` | `2000` | 200–16000. |
 | `max_bytes` | `32768` | 8192–131072. |
@@ -607,10 +552,10 @@ curl -s -G -H "Authorization: Bearer $TOKEN" \
   "$KUTUPHANE_PUBLIC_URL/v1/notes/adc-memory/nt_3f…/neighbours" -d depth=2 -d direction=out
 ```
 
-### 9.5 `GET /v1/notes/{book}/{id}/confirmation`
+### 8.5 `GET /v1/notes/{book}/{id}/confirmation`
 
 The "my words" confirmation of the note `{book}@{id}` (D70 R3). MCP: `confirm_origin`
-([mcp.md](mcp.md#516-confirm_origin)). It needs `read` on the book and writes nothing.
+([mcp.md](mcp.md#515-confirm_origin)). It needs `read` on the book and writes nothing.
 
 **Response `200`:** `{"ref", "origin", "confirmation": {"state", "url"?, "expires_at"?, "claim"?, "entered_by"?,
 "confirmed_by"?}}`. `state` is `open`, `confirmed`, `expired` or `none`.
@@ -621,12 +566,12 @@ The "my words" confirmation of the note `{book}@{id}` (D70 R3). MCP: `confirm_or
 curl -s -H "Authorization: Bearer $TOKEN" "$KUTUPHANE_PUBLIC_URL/v1/notes/adc-memory/nt_3f…/confirmation"
 ```
 
-## 10. Code citations
+## 9. Code citations
 
-### 10.1 `POST /v1/citations/verify`
+### 9.1 `POST /v1/citations/verify`
 
 Check code citations of the repositories of a journal against a branch or a commit. No code text is returned.
-MCP: `verify_citations` ([mcp.md](mcp.md#512-verify_citations)).
+MCP: `verify_citations` ([mcp.md](mcp.md#511-verify_citations)).
 
 **Body (JSON object):**
 
@@ -647,12 +592,12 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/
   -d '{"book": "adc-memory", "citations": ["adc@3f2c…e1:src/run.py:40-52#retry_job"], "at": "main"}'
 ```
 
-## 11. Outcomes
+## 10. Outcomes
 
-### 11.1 `POST /v1/outcomes`
+### 10.1 `POST /v1/outcomes`
 
 Record how a note or a passage worked in a task. Outcomes never change Standing.
-MCP: `record_outcome` ([mcp.md](mcp.md#515-record_outcome)).
+MCP: `record_outcome` ([mcp.md](mcp.md#514-record_outcome)).
 
 **Body (JSON object):** exactly these four fields. All are required.
 
@@ -677,9 +622,9 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/
   -d '{"ref": "adc-memory@nt_3f…", "task_ref": "run-42", "result": "passed", "idempotency_key": "run-42.outcome-1"}'
 ```
 
-## 12. MCP and OAuth metadata
+## 11. MCP and OAuth metadata
 
-### 12.1 `POST /mcp`
+### 11.1 `POST /mcp`
 
 The MCP endpoint. It is stateless and serves the protocol versions 2025-11-25 and 2026-07-28. The MCP SDK does
 the token check and the transport checks. Read [mcp.md](mcp.md).
@@ -692,7 +637,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/
   -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {"_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {}}}}'
 ```
 
-### 12.2 `GET /.well-known/oauth-protected-resource`
+### 11.2 `GET /.well-known/oauth-protected-resource`
 
 The OAuth protected-resource metadata (RFC 9728). It needs no token. When `KUTUPHANE_PUBLIC_URL` has a path, the
 route is `/.well-known/oauth-protected-resource` followed by that path. The route also answers `OPTIONS`.
@@ -704,29 +649,29 @@ The body names the resource (`KUTUPHANE_PUBLIC_URL`) and has one `authorization_
 curl -s "$KUTUPHANE_PUBLIC_URL/.well-known/oauth-protected-resource"
 ```
 
-## 13. Packages
+## 12. Packages
 
 A consumer application sends a package that it signed with `kutuphane export`. The guide for the whole flow is in
 [operations.md](operations.md#packages-from-an-application-http-and-mcp-139).
 
-### 13.1 `POST /v1/packages`
+### 12.1 `POST /v1/packages`
 
 Receive a signed package. The checks are the same as `kutuphane receive`: a trusted and unrevoked key, the
 signature, every digest, the content id, the origin lists, a sequence newer than any approved one. Then the scan
 and the diff. Nothing is published: a person approves it with `kutuphane approve-import`.
-MCP: `submit_package` ([mcp.md](mcp.md#517-submit_package)).
+MCP: `submit_package` ([mcp.md](mcp.md#516-submit_package)).
 
 **Body:** the package bytes (the tar file). Any content type; `application/x-tar` is usual. At most the package
 limit (`MAX_PACKAGE_BYTES`: the source limit + 1 MiB).
 
 **Needs:** `propose` on the book that the manifest names. Without it: `403`, and nothing is stored.
 
-**Response:** `201`. The body is the import status (section 13.2). A package that fails a check is kept and its
+**Response:** `201`. The body is the import status (section 12.2). A package that fails a check is kept and its
 status is `refused`, with the `reasons`.
 
 **Errors:** `400` (`not a readable package: …`, the manifest book is a journal), `401`, `403`, `413` (too large).
 
-### 13.2 `GET /v1/packages/{id}`
+### 12.2 `GET /v1/packages/{id}`
 
 The status of an import that you submitted (the same principal and the same user acted for). For anyone else:
 `404`.

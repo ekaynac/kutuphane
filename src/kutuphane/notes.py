@@ -61,7 +61,7 @@ COMMIT = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?\Z")
 IDEMPOTENCY_KEY = re.compile(r"^[A-Za-z0-9._:-]{8,128}\Z")
 CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 PROPOSE_FIELDS = ("book", "kind", "text", "citations", "scope", "commit", "links", "class_key", "decision", "origin",
-                  "idempotency_key")
+                  "idempotency_key", "applies_to")
 
 
 # --- references ----------------------------------------------------------------------------------------------
@@ -172,6 +172,27 @@ def _scope(value) -> dict | None:
     return {"repo": repo, "branch": branch, "paths": paths}
 
 
+def _applies(value) -> dict | None:
+    """#164: the kstd Scope bound {platform?, version?} of `kstd.applies_to` (a string names one platform). The
+    platforms are sorted, so the same bound gives the same note id."""
+    if value is None:
+        return None
+    errors = kstd._applies_errors("applies_to", value)
+    if errors:
+        raise ValueError(errors[0])
+    if isinstance(value, dict) and (not value or set(value) - set(kstd.APPLIES_KEYS)):
+        raise ValueError("applies_to must be {platform?, version?}")
+    bound = kstd.applies_to(value)
+    platforms = bound.get("platform", [])
+    if len(platforms) > MAX_PATHS or len(bound.get("version", "")) > 100 \
+            or any(len(p) > 200 or not p.isprintable() for p in platforms):
+        raise ValueError(f"applies_to: at most {MAX_PATHS} printable platforms of 1..200 characters, a version "
+                         "range of at most 100")
+    if platforms:
+        bound["platform"] = sorted(set(platforms))
+    return bound
+
+
 def _decision(value, kind: str) -> tuple[list[str] | None, str | None]:
     """docs/24 §21.3: the options offered (in order) and the choice of a decision note, or (None, None)."""
     if value is None:
@@ -211,6 +232,7 @@ class Draft:
         if self.class_key is not None and not CLASS_KEY.match(self.class_key):
             raise ValueError("class_key must match [a-z0-9][a-z0-9._:/-]{0,79}")
         self.scope = _scope(args.get("scope"))
+        self.applies_to = _applies(args.get("applies_to"))
         self.commit = _string("commit", args.get("commit"), optional=True)
         if self.commit is not None and (self.scope is None or not COMMIT.match(self.commit)):
             raise ValueError("commit must be a full commit id and needs scope.repo")
@@ -253,12 +275,15 @@ class Draft:
                      "links": [{"type": k, "target": t} for k, t in links]}
         if self.options is not None:  # only when given: a note without it keeps its id (§21.3)
             self.body["decision"] = {"options": self.options, "choice": self.choice}
+        if self.applies_to is not None:  # the same rule for the Scope bound (#164)
+            self.body["applies_to"] = self.applies_to
         self.id = "nt_" + ids.sha256_hex(ids.canonical(self.body))
         self.ref = f"{self.book}@{self.id}"
         # §6.4: every argument except the key, with the defaults filled in, so MCP and HTTP retries are equal. An
-        # absent decision is left out, so the digests of requests made before it existed do not change.
+        # absent decision or applies_to is left out, so the digests of requests made before them do not change.
         self.digest = ids.request_digest({f: args.get(f) for f in PROPOSE_FIELDS
-                                          if f != "idempotency_key" and (f != "decision" or self.options)}
+                                          if f != "idempotency_key" and (f != "decision" or self.options)
+                                          and (f != "applies_to" or self.applies_to)}
                                          | {"citations": args.get("citations") or [],
                                             "links": args.get("links") or []})
 
@@ -586,10 +611,11 @@ def _embed(conn, embedder: llmdap.Routed | None, actor: Actor, draft: Draft, all
 
 _NOTE_INSERT = """
 INSERT INTO note (book, id, profile_id, kind, body, norm_sha256, class_key, scope_repo, scope_branch, scope_paths,
-                  scope_path_re, observed_commit, search, ai_input, train, source_books, options, choice, tsv)
+                  scope_path_re, observed_commit, search, ai_input, train, source_books, options, choice, tsv,
+                  applies_to)
 VALUES (%(book)s, %(id)s, %(profile)s, %(kind)s, %(body)s, %(norm)s, %(class_key)s, %(repo)s, %(branch)s, %(paths)s,
         %(path_re)s, %(commit)s, %(search)s, %(ai_input)s, %(train)s, %(books)s, %(options)s, %(choice)s,
-        CASE WHEN %(search)s THEN to_tsvector(%(fts)s::regconfig, %(body)s) END)
+        CASE WHEN %(search)s THEN to_tsvector(%(fts)s::regconfig, %(body)s) END, %(applies_to)s)
 RETURNING seq
 """
 
@@ -619,7 +645,8 @@ def _insert_note(conn, draft: Draft, allow_search: bool, allow_ai: bool, allow_t
         "norm": normalized_sha256(draft.text), "class_key": draft.class_key, "repo": scope["repo"],
         "branch": scope["branch"], "paths": scope["paths"], "path_re": [glob_re(p) for p in scope["paths"]],
         "commit": draft.commit, "search": allow_search, "ai_input": allow_ai, "train": allow_train, "books": books,
-        "options": draft.options, "choice": draft.choice, "fts": profile["settings"]["fts"]}).fetchone()[0]
+        "options": draft.options, "choice": draft.choice, "fts": profile["settings"]["fts"],
+        "applies_to": None if draft.applies_to is None else Jsonb(draft.applies_to)}).fetchone()[0]
 
 
 def _insert_parts(conn, draft: Draft, seq: int, write_seq: int, found: dict, excerpts: dict) -> None:
@@ -1019,6 +1046,11 @@ class Link(TypedDict):
     ref: str
 
 
+class AppliesTo(TypedDict):
+    platform: NotRequired[list[str]]
+    version: NotRequired[str]
+
+
 class Decision(TypedDict):
     options: list[str]
     choice: str
@@ -1030,16 +1062,18 @@ def register_mcp(mcp, deps) -> None:
     async def propose_note(book: str, kind: str, text: str, citations: list[str] = [], scope: Scope | None = None,
                            commit: str | None = None, links: list[Link] = [], class_key: str | None = None,
                            decision: Decision | None = None, origin: str | None = None,
-                           idempotency_key: str | None = None) -> dict:
+                           idempotency_key: str | None = None, applies_to: AppliesTo | None = None) -> dict:
         """Write a note into a journal (needs propose). kind: finding, decision_proposal, dead_end, convention,
         lesson, test_result. citations: passage handles or code citations repo@commit:path:start-end[#symbol].
         links: [{type, ref}] (derived_from, supersedes, same_as, contradicts, about, fixed_by, violates,
         decided_by) to older notes (book@nt_…) or passages. decision (decision_proposal only): {options: the 2..20
         options offered, in order; choice: the one chosen}. The note starts pending; only a curator approves it.
-        The same bytes again are the same note (recurrence + 1). Give an idempotency_key to retry safely."""
+        The same bytes again are the same note (recurrence + 1). Give an idempotency_key to retry safely.
+        applies_to: the platforms and the version range (e.g. ">=7,<8") the note holds for; a reader gives its
+        platform and version in the query context."""
         args = {"book": book, "kind": kind, "text": text, "citations": citations, "scope": scope, "commit": commit,
                 "links": links, "class_key": class_key, "decision": decision, "origin": origin,
-                "idempotency_key": idempotency_key}
+                "idempotency_key": idempotency_key, "applies_to": applies_to}
         receipt, _ = await run_in_threadpool(op_propose, deps.dsn, deps.stages.embedder, deps.mcp_actor(), args)
         return receipt
 

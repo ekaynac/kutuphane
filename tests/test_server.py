@@ -260,17 +260,10 @@ def test_server_needs_the_answer_model_with_a_model_gateway(conn, monkeypatch, v
         server.app_from_env()
 
 
-def test_feedback_over_http(app_env, keys):  # AT-15 through the API
-    app, published, _ = app_env
+def test_runbook_feedback_is_gone(app_env, keys):  # D78: record_outcome on the passage replaces it
+    app, _, _ = app_env
     with TestClient(app) as client:
-        h = bearer(keys)
-        body = {"book": "kitap", "content_id": published.content_id, "path": "runbook/yedek-geri-yukleme.md",
-                "outcome": "worked", "tested_on": "postgres-17"}
-        assert client.post("/v1/feedback", json=body, headers=h).status_code == 201
-        listed = client.get("/v1/feedback", params={k: body[k] for k in ("book", "content_id", "path")}, headers=h)
-        assert [f["outcome"] for f in listed.json()] == ["worked"]
-        assert client.post("/v1/feedback", json={**body, "outcome": 3}, headers=h).status_code == 400
-        assert client.post("/v1/feedback", json=body, headers=bearer(keys, sub="mehmet")).status_code == 403
+        assert client.post("/v1/feedback", json={}, headers=bearer(keys)).status_code in (404, 405)
 
 
 MCP_HEADERS = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
@@ -415,7 +408,7 @@ def test_feature_hooks_add_tools_and_routes_with_the_server_gate(app_env, keys, 
 
 MODERN, LEGACY = "2026-07-28", "2025-11-25"
 TOOLS = ["search_library", "open_citation", "ask_library", "reopen_answer", "read_document",
-         "record_runbook_feedback", "job_status", "job_result", "job_cancel",
+         "job_status", "job_result", "job_cancel",
          "propose_note", "link_notes", "verify_citations", "query_notes", "neighbours",
          "record_outcome", "confirm_origin", "submit_package", "package_status"]  # then FEATURES, in order
 ANSWER_TOOLS = {"ask_library", "job_status", "job_result", "job_cancel"}  # only with LLMDAP (#121)
