@@ -4,8 +4,6 @@ not configure. The answer never names a route, a model or an address: a caller l
 The model checks are real governed calls with fixed, book-free inputs (purpose `health`), so each one is in
 `model_call` like any other call. `llmdap` is true when the bridge answered at least one of them (any HTTP status).
 """
-from __future__ import annotations
-
 from . import llmdap, retrieval
 from .gate import Actor
 
