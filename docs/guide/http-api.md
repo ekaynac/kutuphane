@@ -297,7 +297,7 @@ except `publication`. `publication` says who published or approved the version o
 **Response `200` for a note:** `{"citation", "note", "targets", "watermark"}`. `note` is a note item, as in
 `GET /v1/notes`.
 
-**Errors:** `400` (`malformed citation handle`), `401`, `403`, `404`, `409`.
+**Errors:** `400` (`malformed passage handle`), `401`, `403`, `404`, `409`.
 
 ```sh
 curl -s -G -H "Authorization: Bearer $TOKEN" "$KUTUPHANE_PUBLIC_URL/v1/citation" \

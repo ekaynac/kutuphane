@@ -9,6 +9,10 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Refactor wave 2 (W2-2 to W2-5)
+
+- Changed: `open_citation` and `GET /v1/citation` read a passage handle with the same rule as the note tools. The `400` error text is now `malformed passage handle` (it was `malformed citation handle`). A handle with a book slug that is not valid, a content id without `ct_`, a profile id without `pf_`, a negative ordinal or a control character now gets this `400` before any read ([http-api.md](http-api.md), [mcp.md](mcp.md)).
+
 ### Two compose files (W1-4)
 
 - Changed: two compose files in place of five. `compose.yaml` is now the light install (Postgres, Core, ingress; no LLMDAP). `deploy/compose.full.yaml` is the full stack, with the profiles `app`, `dev-models`, `decision-models`, `local-models`, `gpu-rerank` and `curator`. `deploy/compose.light.yaml`, `deploy/compose.local-models.yaml`, `deploy/compose.curator.yaml` and `deploy/compose.hosted.yaml` are removed. Both files have the project `kutuphane`, so the container, volume and network names stay ([install.md](install.md#full-stack)).
