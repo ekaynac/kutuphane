@@ -33,7 +33,7 @@ from .gate import Actor
 
 RUNNER = "kutuphane-decider/1"  # the prompt framing and the answer parsing below; a change is a new runner version
 PRINCIPAL = "agent:kutuphane-decider"
-PURPOSE = "curator-decider"
+PURPOSE = "decide"
 DSN_ENV = "KUTUPHANE_DECIDER_DSN"
 KEY_ENV = "KUTUPHANE_DECIDER_LLMDAP_KEY"
 BOOKS_ENV = "KUTUPHANE_DECIDER_BOOKS"

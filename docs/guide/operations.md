@@ -63,6 +63,7 @@ All `KUTUPHANE_*` variables that the code, `compose.yaml` and `deploy/` read:
 | `KUTUPHANE_OIDC_AUDIENCE` | `kutuphane` | Expected token audience. |
 | `KUTUPHANE_OIDC_JWKS` | compose: `/run/kutuphane/jwks.json` | Path of the JWKS file. Required. |
 | `KUTUPHANE_OIDC_JWKS_FILE` | `./deploy/jwks.json` | Compose only: the host file that is mounted as the JWKS. |
+| `KUTUPHANE_OIDC_ISSUERS` | none | Path of a JSON file with more token issuers, each bound to principal prefixes ([more than one token issuer](#more-than-one-token-issuer)). Set it for the CLI too: `grant … curate` reads it. |
 | `KUTUPHANE_LLMDAP_URL` | compose: `http://llmdap:8787` | LLMDAP gateway URL. Without it, the server makes no model call: full-text search only, no answers ([light install](install.md#light-install)). |
 | `KUTUPHANE_LLMDAP_KEY` | none | Core's LLMDAP subject key. |
 | `KUTUPHANE_LLMDAP_ROUTE` | none | LLMDAP route for answers and question translation. |
@@ -102,6 +103,55 @@ A route class never has a default outside compose. `local` skips the egress chec
 `LLMDAP not configured: set KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS (…: local or cloud …)` before it publishes anything.
 The routes and models that `deploy/compose.local-models.yaml` sets are not defaults either: without
 `KUTUPHANE_LLMDAP_EMBED_ROUTE` on the host, `search` and `ask` use full text only.
+
+### More than one token issuer
+
+The primary issuer is `KUTUPHANE_OIDC_ISSUER`, `KUTUPHANE_OIDC_AUDIENCE` and `KUTUPHANE_OIDC_JWKS`. To trust more
+issuers (#157), for example a consumer application that signs tokens for its own users and services, write their
+list in a JSON file and set `KUTUPHANE_OIDC_ISSUERS` to its path. The values below are placeholders: use the
+issuer, audience and JWKS that the application's operator gives you.
+
+```json
+[{"issuer": "<the exact iss of the application's tokens>",
+  "audience": "<the aud of its tokens, for example kutuphane>",
+  "jwks": "/etc/kutuphane/<application>-jwks.json",
+  "principal_prefixes": ["user:<application>.", "agent:<application>-"],
+  "curate": false}]
+```
+
+| Key | Rule |
+|---|---|
+| `issuer` | Required. Compared exactly with `iss`, as for the primary issuer. Not the primary issuer, and each issuer once. |
+| `audience` | Required. The `aud` that its tokens must carry. |
+| `jwks` | Required. The path of its JWKS file. |
+| `principal_prefixes` | Required, one or more. Each is `user:` or `agent:` and the start of a name in the principal alphabet (`a-z`, `0-9`, `.`, `_`, `@`, `-`). Its tokens may name only principals under these prefixes, and only its tokens may name them. The prefixes of two issuers never overlap. |
+| `curate` | Optional, default `false`. With `false`, `kutuphane grant <book> curate <principal>` refuses a principal under its prefixes. |
+
+A file that breaks a rule stops the server at start, and the message names `KUTUPHANE_OIDC_ISSUERS`. The grants of
+these principals are made as for any other: `kutuphane grant book:<slug> read user:<application>.<name>`. With
+compose, mount the file and each JWKS file into the `core` container, and give the container paths.
+
+### A shared LLMDAP (D76)
+
+One LLMDAP can serve Kütüphane and another product. Each product connects with its own subject key (D52) and has its
+own policy lines; Kütüphane's subject is `svc-kutuphane`.
+
+1. Set `KUTUPHANE_LLMDAP_URL` to the shared gateway. Core must reach it: a Core on the host reaches it directly. In
+   `compose.yaml`, the `llmdap` service starts with the `app` profile and the `gateway` network is internal, so
+   there is no compose mode without Kütüphane's own `llmdap` yet; the shared gateway must be on a network that the
+   `core` container joins.
+2. Put Kütüphane's subject key in `KUTUPHANE_LLMDAP_KEY`. Its hash goes in the shared gateway's keys file, next to
+   the other product's subjects.
+3. Set the route names of the shared gateway: `KUTUPHANE_LLMDAP_ROUTE` (answers and question translation),
+   `KUTUPHANE_LLMDAP_EMBED_ROUTE`, `KUTUPHANE_LLMDAP_RERANK_ROUTE`, each with its route class and model. The decider
+   names its route in its spec and connects with its own subject key (`KUTUPHANE_DECIDER_LLMDAP_KEY`). Each route
+   needs a policy line `p, svc-kutuphane, llm:invoke, llm/<route>` (and one for the decider's subject).
+4. Run `GET /v1/health`: each configured route gets one real call (purpose `health`).
+
+Every call sends `x-llmdap-purpose` with one of `answer`, `search`, `index`, `translate`, `rerank`, `note`,
+`decide` and `health`, so the shared chain shows what each call was for. The subject tells the products apart, so
+the names have no product prefix. The LLMDAP correlation id of a call is `<our id>.<n>`, or
+`<caller id>.<our id>.<n>` when the request had a caller id ([http-api.md](http-api.md#15-correlation-id)).
 
 ## 2. Ingest a folder into a book
 
@@ -1003,7 +1053,7 @@ kutuphane explain <answer_id> --answer --llmdap-export audit.jsonl
 ```
 
 - `whoami` reads the token from stdin, never from the command line. It prints `principal` and `on_behalf_of`.
-- `explain` prints the unified audit for a correlation id: `access`, `model_calls` and `complete`. With `--answer`, the id is an answer id.
+- `explain` prints the unified audit for a correlation id: `access`, `model_calls` and `complete`. The id is ours, or a caller's own id (#156; one caller id can name several requests). Each row has `correlation_id` and `caller_correlation_id`. With `--answer`, the id is an answer id.
 - `--llmdap-export` takes the JSONL from `llmdap-audit-export`. `complete` is `false` when a model call has no LLMDAP record.
 - `ask` prints the `correlation_id` of each answer.
 

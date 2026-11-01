@@ -620,18 +620,18 @@ RETURNING seq
 """
 
 _WRITE_INSERT = """
-INSERT INTO write_record (correlation_id, action, note_seq, creates, principal, on_behalf_of, channel, client_id,
-                          origin_requested, origin, notice, idempotency_key, request_sha256)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+INSERT INTO write_record (correlation_id, caller_correlation_id, action, note_seq, creates, principal, on_behalf_of,
+                          channel, client_id, origin_requested, origin, notice, idempotency_key, request_sha256)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 RETURNING seq
 """
 
 
 def _write_record(conn, actor: Actor, action: str, note_seq, creates: bool, requested, stored: str, notice,
                   key=None, digest=None) -> int:
-    return conn.execute(_WRITE_INSERT, (actor.correlation_id, action, note_seq, creates, actor.principal,
-                                        actor.on_behalf_of, actor.channel, actor.client_id, requested, stored,
-                                        notice, key, digest)).fetchone()[0]
+    return conn.execute(_WRITE_INSERT, (actor.correlation_id, actor.caller_correlation_id, action, note_seq, creates,
+                                        actor.principal, actor.on_behalf_of, actor.channel, actor.client_id, requested,
+                                        stored, notice, key, digest)).fetchone()[0]
 
 
 def _insert_note(conn, draft: Draft, allow_search: bool, allow_ai: bool, allow_train: bool, books: list[str]) -> int:

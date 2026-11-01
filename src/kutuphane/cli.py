@@ -145,6 +145,8 @@ def cmd_grant(conn, args) -> int:
     if args.mode == "member":
         _print({"id": authz.add_member(conn, args.object, args.subject)})
     else:
+        if args.mode == "curate":
+            identity.refuse_curate(args.subject)
         _print({"id": authz.grant(conn, args.object, args.mode, args.subject)})
     return 0
 

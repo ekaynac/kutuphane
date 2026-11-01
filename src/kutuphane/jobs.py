@@ -93,10 +93,11 @@ def submit(conn, actor: Actor, question: str, scope: search.Scope,
         if open_jobs >= MAX_OPEN:
             raise ids.LimitExceeded(f"at most {MAX_OPEN} open jobs per principal")
         job_id = f"jb_{uuid.uuid4().hex}"
-        conn.execute("INSERT INTO ask_job (id, principal, on_behalf_of, correlation_id, question, scope, "
-                     "idempotency_key, request_sha256, status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'queued')",
-                     (job_id, actor.principal, actor.on_behalf_of, actor.correlation_id, question, Jsonb(doc),
-                      idempotency_key, digest))
+        conn.execute("INSERT INTO ask_job (id, principal, on_behalf_of, correlation_id, caller_correlation_id, "
+                     "question, scope, idempotency_key, request_sha256, status) "
+                     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'queued')",
+                     (job_id, actor.principal, actor.on_behalf_of, actor.correlation_id, actor.caller_correlation_id,
+                      question, Jsonb(doc), idempotency_key, digest))
     return {"job_id": job_id, "status": "queued"}, True
 
 
@@ -156,7 +157,8 @@ def claim(conn, lease_seconds: float = LEASE_SECONDS):
         "UPDATE ask_job SET status = 'running', started_at = now(), lease_until = now() + make_interval(secs => %s) "
         "WHERE id = (SELECT id FROM ask_job WHERE status = 'queued' ORDER BY created_at, id "
         "            FOR UPDATE SKIP LOCKED LIMIT 1) "
-        "RETURNING id, principal, on_behalf_of, correlation_id, question, scope", (lease_seconds,)).fetchone()
+        "RETURNING id, principal, on_behalf_of, correlation_id, caller_correlation_id, question, scope",
+        (lease_seconds,)).fetchone()
 
 
 def renew(conn, job_id: str, lease_seconds: float = LEASE_SECONDS) -> bool:
@@ -171,8 +173,8 @@ def run(conn, dsn: str, job, ask, safe_error, lease_seconds: float = LEASE_SECON
     both hooks: `check()` before the model call and before the store, `commit(answer id)` in the transaction that
     stores the answer, which records the success. `safe_error(exc)` is the short message stored for a failure (the
     HTTP error classes)."""
-    job_id, principal, on_behalf_of, correlation_id, question, scope = job
-    actor = Actor(principal, on_behalf_of, correlation_id=correlation_id)
+    job_id, principal, on_behalf_of, correlation_id, caller_correlation_id, question, scope = job
+    actor = Actor(principal, on_behalf_of, correlation_id=correlation_id, caller_correlation_id=caller_correlation_id)
     done = threading.Event()
 
     def heartbeat_loop():

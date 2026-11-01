@@ -19,7 +19,8 @@ This page describes what Kütüphane protects, against whom, and how. The design
 | A credential is indexed | an API key in an ingested file or a note | the secret scan refuses the book or the note |
 | A poisoned note spreads | agents derive notes from a false finding | `kutuphane note rollback` retires the whole `derived_from` closure and reports every use |
 | A git mirror is a trap | alternates, grafts or config that make git read other files or run commands | the repository confinement checks |
-| A forged token | a token from another issuer | the issuer is compared exactly; the JWKS is pinned |
+| A forged token | a token from another issuer | the issuer is compared exactly; the JWKS is pinned per issuer |
+| A consumer's issuer names our people | an application IdP signs a token for `user:<curator>` | each extra issuer is bound to its principal prefixes, both ways; `curate` is refused to its principals by default |
 
 Out of scope: the host and its administrators, the database owner credential, disk encryption (a deployment duty,
 D48), and execution of agent instructions after `activate` (that belongs to the agent host).
@@ -30,6 +31,12 @@ D48), and execution of agent instructions after `activate` (that belongs to the 
 - The verifier checks the signature against the JWKS file (`KUTUPHANE_OIDC_JWKS`), the audience and the issuer.
   The issuer is compared as an exact string. The protected-resource metadata advertises the same string. The
   server refuses to start when the MCP SDK would rewrite the issuer.
+- More issuers (`KUTUPHANE_OIDC_ISSUERS`, #157) each have their own exact issuer, audience and JWKS, and principal
+  prefixes. A token may name only the principals of its own issuer: those under its prefixes for an extra issuer,
+  and those under no extra issuer's prefix for the primary one. `kutuphane grant … curate` refuses a principal of an
+  extra issuer unless its entry says `"curate": true` ([operations.md](operations.md#more-than-one-token-issuer)).
+- A caller's correlation id (`X-Correlation-Id`, #156) is a label in the audit records only. It never decides a
+  right or an idempotency key.
 - The principal is `user:<sub>`. A token with `kutuphane/principal_type: agent` gives `agent:<sub>`. A token with
   `act.sub` is that agent acting for the user `sub`.
 - `client_id` (else `azp`) is recorded with each write. It never changes rights or origin.

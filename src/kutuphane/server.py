@@ -1,7 +1,9 @@
 """HTTP API and Kütüphane MCP (M1e): one ASGI app, the same functions as the CLI.
 
 - The caller is ONLY what a verified access token says (D50, AT-11): `Authorization: Bearer <jwt>`; no header can
-  set or change the principal or the user acted for. Each request gets a fresh correlation id.
+  set or change the principal or the user acted for. Each request gets a fresh correlation id. A caller's own id
+  (HTTP `X-Correlation-Id`, MCP `_meta["kutuphane/correlation-id"]`) is stored next to ours, and every response
+  names both (#156); it never decides anything.
 - Every content path is the authorization gate the library already uses (search, citations, files, answers).
 - Errors are short and uniform (401/403/404/400/409/429/502); no stack traces or internals in responses.
 - MCP: the SDK v2 `MCPServer`, stateless; it serves 2025-11-25 clients (with `initialize`) and 2026-07-28 clients
@@ -10,6 +12,7 @@
   handling labels under `_meta["kutuphane/handling"]` (`handling.py`).
 """
 import contextlib
+import contextvars
 import dataclasses
 import functools
 import logging
@@ -289,6 +292,17 @@ def _error(exc: Exception) -> Response:
     return JSONResponse({"error": message}, status_code=status, headers=headers)
 
 
+# #156: the caller's id comes in under the name that carries ours out; theirs is echoed beside it.
+CORRELATION_HEADER, CALLER_CORRELATION_HEADER = "X-Correlation-Id", "X-Caller-Correlation-Id"
+CORRELATION_KEY, CALLER_CORRELATION_KEY = "kutuphane/correlation-id", "kutuphane/caller-correlation-id"
+
+
+def trace_headers(actor: Actor) -> dict:
+    caller = actor.caller_correlation_id
+    return {CORRELATION_HEADER: actor.correlation_id, **({CALLER_CORRELATION_HEADER: caller} if caller else {})}
+
+
+
 class SecurityHeaders:
     """Strict headers on every response. The UI renders model output as plain text and loads nothing external
     (Astra review #3): a CSP that only allows this origin makes that a property, not a convention."""
@@ -349,15 +363,21 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
         scheme, _, token = request.headers.get("authorization", "").partition(" ")
         if scheme.lower() != "bearer":
             raise identity.AuthenticationError("bearer token required")
-        return dataclasses.replace(verifier.verify(token.strip()), channel="http")  # set here, never by the client
+        # The channel is set here, never by the client; a malformed caller id is a 400 (Actor checks it).
+        return dataclasses.replace(verifier.verify(token.strip()), channel="http",
+                                   caller_correlation_id=request.headers.get(CORRELATION_HEADER))
 
     def endpoint(work):
         async def handler(request: Request) -> Response:
+            actor = None
             try:
                 actor = actor_of(request)
-                return await work(request, actor)
+                response = await work(request, actor)
             except Exception as exc:  # mapped to a uniform status; unknown errors propagate (500, logged)
-                return _error(exc)
+                response = _error(exc)
+            if actor is not None:
+                response.headers.update(trace_headers(actor))
+            return response
         return handler
 
     async def h_search(request, actor):
@@ -618,12 +638,38 @@ def _mcp_errors(tool):
     return wrapper
 
 
+# #156: (our id, the caller's id) of the MCP request being served; one id for every `_mcp_actor()` of it.
+_TRACE: contextvars.ContextVar[tuple[str, str | None] | None] = contextvars.ContextVar("kutuphane_trace", default=None)
+TRACED_METHODS = ("tools/call", "resources/read", "skills/list", "skills/get")  # the calls served for a caller
+
+
+async def _trace(ctx, call_next):
+    """MCP middleware: the caller's id from `_meta` (a malformed one is -32602, before anything runs), ours, and
+    both in the result's `_meta`, error results included."""
+    if ctx.method not in TRACED_METHODS:
+        return await call_next(ctx)
+    try:
+        caller = gate.caller_id((ctx.meta or {}).get(CORRELATION_KEY))
+    except ValueError as exc:
+        raise MCPError(code=INVALID_PARAMS, message=f"_meta {CORRELATION_KEY}: {exc}") from None
+    ours = uuid.uuid4().hex
+    reset = _TRACE.set((ours, caller))
+    try:
+        result = await call_next(ctx)
+    finally:
+        _TRACE.reset(reset)
+    trace = {CORRELATION_KEY: ours, **({CALLER_CORRELATION_KEY: caller} if caller else {})}
+    return {**result, "_meta": {**result.get("_meta", {}), **trace}}
+
+
 def _mcp_actor() -> Actor:
     token = get_access_token()
     if token is None or not token.claims:
         raise identity.AuthenticationError("no verified token")
+    ours, caller = _TRACE.get() or (uuid.uuid4().hex, None)
     return Actor(token.claims["kutuphane_principal"], token.claims["kutuphane_on_behalf_of"],
-                 correlation_id=uuid.uuid4().hex, client_id=token.claims.get("kutuphane_client_id"), channel="mcp")
+                 correlation_id=ours, client_id=token.claims.get("kutuphane_client_id"), channel="mcp",
+                 caller_correlation_id=caller)
 
 
 def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_url: str,
@@ -639,7 +685,8 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
         raise RuntimeError(f"issuer {verifier.issuer!r} would be advertised as {str(auth.issuer_url)!r}: "
                            "write KUTUPHANE_OIDC_ISSUER exactly as the IdP's tokens carry it, in that normal form")
     mcp = _Server("kutuphane", dsn=dsn, token_verifier=_Verifier(verifier),
-                  extensions=[_ClientCredentials(), _Skills(dsn)], cache_hints=CACHE_HINTS, auth=auth)
+                  extensions=[_ClientCredentials(), _Skills(dsn)], cache_hints=CACHE_HINTS, auth=auth,
+                  middleware=[_trace])
 
     @mcp.tool()
     @_mcp_errors

@@ -123,7 +123,7 @@ def fake():
 
 def ask(conn, bridge, actor, books=()):
     return llmdap.chat(conn, bridge, actor, model="qwen", messages=[{"role": "user", "content": "özetle"}],
-                       source_books=list(books), purpose="test")
+                       source_books=list(books), purpose="answer")
 
 
 def test_call_is_recorded_and_joined_with_llmdap_audit(conn, fake, okf_dir):  # AT-09 (Core side)
@@ -138,7 +138,7 @@ def test_call_is_recorded_and_joined_with_llmdap_audit(conn, fake, okf_dir):  # 
     path, headers = fake.hits[-1]
     assert path == f"/bridge/{ROUTE}/v1/chat/completions"
     assert headers["x-llmdap-correlation-id"].startswith(actor.correlation_id + ".")
-    assert headers["x-llmdap-purpose"] == "test"
+    assert headers["x-llmdap-purpose"] == "answer"
 
     report = audit.explain(conn, actor.correlation_id, fake.audit)
     assert report["complete"]
@@ -245,3 +245,29 @@ def test_refused_connection_is_not_sent(conn):
         ask(conn, llmdap.Bridge("http://127.0.0.1:9", ROUTE, KEY, "local"), actor)
     report = audit.explain(conn, actor.correlation_id, [])
     assert report["model_calls"][0]["llmdap_status"] == "not_sent" and report["complete"]
+
+
+@pytest.mark.parametrize("purpose", [None, "test", "kutuphane.search", "Answer"])
+def test_every_call_names_a_purpose_from_the_fixed_list(conn, fake, purpose):  # #165
+    with pytest.raises(ValueError, match="purpose"):
+        llmdap.chat(conn, fake.bridge(), Actor("user:ayse"), model="qwen", messages=[], source_books=[],
+                    purpose=purpose)
+    assert fake.hits == [] and conn.execute("SELECT count(*) FROM model_call").fetchone() == (0,)
+    assert llmdap.PURPOSES == ("answer", "search", "index", "translate", "rerank", "note", "decide", "health")
+
+
+def test_explain_accepts_the_callers_correlation_id(conn, fake, okf_dir):  # #156
+    r = catalog.publish(conn, book="kitap", title="kitap", files=read_source(okf_dir),
+                        policy=make_policy(sensitivity="normal", egress="local_only", protection="standard"),
+                        profile=catalog.whole_profile())
+    authz.grant(conn, "book:kitap", "read", "user:ayse")
+    actor = Actor("user:ayse", caller_correlation_id="im-req:0042")
+    gate.deliver_file(conn, actor, "kitap", r.content_id, "index.md")
+    ask(conn, fake.bridge(), actor)
+    assert fake.hits[-1][1]["x-llmdap-correlation-id"].startswith(f"im-req:0042.{actor.correlation_id}.")
+    by_ours, by_theirs = (audit.explain(conn, cid, fake.audit) for cid in (actor.correlation_id, "im-req:0042"))
+    assert by_theirs["complete"] and by_theirs["access"] == by_ours["access"]
+    assert by_theirs["model_calls"] == by_ours["model_calls"]
+    assert by_ours["access"][0]["caller_correlation_id"] == "im-req:0042"
+    with pytest.raises(ValueError, match="correlation"):
+        Actor("user:ayse", caller_correlation_id="bad id")
