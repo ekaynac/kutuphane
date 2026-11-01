@@ -271,22 +271,21 @@ does not spend a turn to find it out. The **Needs:** line of each tool below has
 | 3 | [`ask_library`](#53-ask_library) | Answer a question with citations. Only with LLMDAP. | `POST /v1/ask` |
 | 4 | [`reopen_answer`](#54-reopen_answer) | Show a stored answer again. | `GET /v1/answers/{answer_id}` |
 | 5 | [`read_document`](#55-read_document) | Read a text file of one version. | `GET /v1/files/{book}/{content_id}/{path}` |
-| 6 | [`record_runbook_feedback`](#56-record_runbook_feedback) | Record how a runbook worked. | `POST /v1/feedback` |
-| 7 | [`job_status`](#57-job_status) | The state of a background job. Only with LLMDAP. | `GET /v1/jobs/{job_id}` |
-| 8 | [`job_result`](#58-job_result) | The answer of a succeeded job. Only with LLMDAP. | `GET /v1/jobs/{job_id}/result` |
-| 9 | [`job_cancel`](#59-job_cancel) | Cancel a background job. Only with LLMDAP. | `POST /v1/jobs/{job_id}/cancel` |
-| 10 | [`propose_note`](#510-propose_note) | Write a note into a journal. | `POST /v1/notes` |
-| 11 | [`link_notes`](#511-link_notes) | Link a note to a note or a passage. | `POST /v1/notes/links` |
-| 12 | [`verify_citations`](#512-verify_citations) | Check code citations against a branch or commit. | `POST /v1/citations/verify` |
-| 13 | [`query_notes`](#513-query_notes) | List notes with filters. | `GET /v1/notes` |
-| 14 | [`neighbours`](#514-neighbours) | The notes linked to a note or a passage. | `GET /v1/notes/{book}/{id}/neighbours` |
-| 15 | [`record_outcome`](#515-record_outcome) | Record how a note or passage worked in a task. | `POST /v1/outcomes` |
-| 16 | [`confirm_origin`](#516-confirm_origin) | Ask the person to confirm whose words a note holds. | `GET /v1/notes/{book}/{id}/confirmation` |
-| 17 | [`submit_package`](#517-submit_package) | Submit a signed package for a person to approve. | `POST /v1/packages` |
-| 18 | [`package_status`](#518-package_status) | The status of a package that you submitted. | `GET /v1/packages/{id}` |
+| 6 | [`job_status`](#56-job_status) | The state of a background job. Only with LLMDAP. | `GET /v1/jobs/{job_id}` |
+| 7 | [`job_result`](#57-job_result) | The answer of a succeeded job. Only with LLMDAP. | `GET /v1/jobs/{job_id}/result` |
+| 8 | [`job_cancel`](#58-job_cancel) | Cancel a background job. Only with LLMDAP. | `POST /v1/jobs/{job_id}/cancel` |
+| 9 | [`propose_note`](#59-propose_note) | Write a note into a journal. | `POST /v1/notes` |
+| 10 | [`link_notes`](#510-link_notes) | Link a note to a note or a passage. | `POST /v1/notes/links` |
+| 11 | [`verify_citations`](#511-verify_citations) | Check code citations against a branch or commit. | `POST /v1/citations/verify` |
+| 12 | [`query_notes`](#512-query_notes) | List notes with filters. | `GET /v1/notes` |
+| 13 | [`neighbours`](#513-neighbours) | The notes linked to a note or a passage. | `GET /v1/notes/{book}/{id}/neighbours` |
+| 14 | [`record_outcome`](#514-record_outcome) | Record how a note or passage worked in a task. | `POST /v1/outcomes` |
+| 15 | [`confirm_origin`](#515-confirm_origin) | Ask the person to confirm whose words a note holds. | `GET /v1/notes/{book}/{id}/confirmation` |
+| 16 | [`submit_package`](#516-submit_package) | Submit a signed package for a person to approve. | `POST /v1/packages` |
+| 17 | [`package_status`](#517-package_status) | The status of a package that you submitted. | `GET /v1/packages/{id}` |
 
 No tool changes Standing or origin. Only a curator changes Standing, on the command line or in curator web
-([operations.md](operations.md)). Only a person confirms an origin, in curator web with a passkey (section 5.16).
+([operations.md](operations.md)). Only a person confirms an origin, in curator web with a passkey (section 5.15).
 
 **Handles used below:**
 
@@ -381,6 +380,7 @@ be in a skill that a scan blocks.
 | `branch` | string | no | none | Note references only. Not empty, no control characters, at most 1000 characters. |
 | `path` | string | no | none | Note references only. A relative path, or a folder prefix that ends with `/`. No `..`. |
 | `commit` | string | no | none | Note references only. A full commit id. Needs `repo`. |
+| `platform`, `version` | string | no | none | Note references only. The kstd Scope context, as `query_notes`. |
 
 **Result for a passage handle:**
 
@@ -397,7 +397,7 @@ the content changed); or `stale` (no passage
 replaces it). The text is always the text of the handle that you opened.
 
 **Result for a note reference:** `{"citation", "note", "targets", "watermark"}`. `note` is one note item, as in
-`query_notes` (section 5.13).
+`query_notes` (section 5.12).
 
 The result `_meta` has the handling labels (section 4.4). For a note, they cover its journal and its source books.
 
@@ -522,32 +522,7 @@ input), `404`.
  "params": {"name": "read_document", "arguments": {"book": "runbooks", "content_id": "ct_9f…", "path": "backup.md"}}}
 ```
 
-### 5.6 `record_runbook_feedback`
-
-Record how applying a runbook went, for that exact file version.
-
-**Needs:** `read` on the book.
-
-| Argument | Type | Required | Default | Limits |
-|---|---|---|---|---|
-| `book` | string | yes | — | The book slug. |
-| `content_id` | string | yes | — | The content version id. |
-| `path` | string | yes | — | The file path in that version. |
-| `outcome` | string | yes | — | `worked`, `failed` or `changed`. |
-| `tested_on` | string | no | none | 1–200 characters, not blank. Where you tested it. |
-| `note` | string | no | none | At most 2000 characters. |
-
-**Result:** `{"id": <integer>}`.
-
-**Errors:** `400`, `403`, `404` (the file is not in that version).
-
-```json
-{"jsonrpc": "2.0", "id": 7, "method": "tools/call",
- "params": {"name": "record_runbook_feedback", "arguments": {"book": "runbooks", "content_id": "ct_9f…",
-            "path": "backup.md", "outcome": "worked", "tested_on": "staging-2"}}}
-```
-
-### 5.7 `job_status`
+### 5.6 `job_status`
 
 The state of a background `ask_library` job. Only on a server with LLMDAP, as `job_result` and `job_cancel`.
 
@@ -574,7 +549,7 @@ failed, for example `interrupted` or `forbidden`.
  "params": {"name": "job_status", "arguments": {"job_id": "jb_0123456789abcdef0123456789abcdef"}}}
 ```
 
-### 5.8 `job_result`
+### 5.7 `job_result`
 
 The answer of a succeeded job, in the same shape as `reopen_answer`. Current rights apply. The `id` in the result
 is the answer id: keep it to call `reopen_answer` later.
@@ -591,7 +566,7 @@ readable now), `404`.
  "params": {"name": "job_result", "arguments": {"job_id": "jb_0123456789abcdef0123456789abcdef"}}}
 ```
 
-### 5.9 `job_cancel`
+### 5.8 `job_cancel`
 
 Cancel a background job. A queued job stops at once. A running job stops before its model call, or before it
 stores its answer. A finished job does not change.
@@ -610,7 +585,7 @@ cancel.
  "params": {"name": "job_cancel", "arguments": {"job_id": "jb_0123456789abcdef0123456789abcdef"}}}
 ```
 
-### 5.10 `propose_note`
+### 5.9 `propose_note`
 
 Write a note into a journal. A note starts `pending`. Only a curator approves it. The same bytes again in the same
 book are the same note: the receipt has `status: existing` and `recurrence` goes up by 1.
@@ -626,10 +601,11 @@ book are the same note: the receipt has `status: existing` and `recurrence` goes
 | `citations` | list of strings | no | `[]` | At most 20. Passage handles or code citations. A code citation must name a repository of this journal and a published commit. |
 | `scope` | object | no | none | `{"repo": <slug>, "branch": <name>, "paths": [<glob>]}`. `repo` is required and must be a live repository of the journal. At most 20 `paths`. Globs: `**` any characters, `*` any except `/`, `?` one character except `/`. |
 | `commit` | string | no | none | The observed commit: a full commit id (40 or 64 hex). Needs `scope`. |
+| `applies_to` | object | no | none | The kstd Scope bound of the note (#164), the same shape as a file's kstd `applies_to`: `{"platform": [<name>, …], "version": "<range>"}`, one or both, for example `{"platform": ["vcenter"], "version": ">=7,<8"}`. At most 20 platforms of 1–200 printable characters; a version range such as `>=7,<8` of at most 100 characters. It is part of the note id. A note without it keeps the id that it had before. |
 | `links` | list of objects | no | `[]` | At most 20 `{"type", "ref"}`. Types: `derived_from`, `supersedes`, `same_as`, `contradicts`, `about`, `fixed_by`, `violates`, `decided_by`. `ref` is a note reference or a passage handle. A passage can be the target of `derived_from` or `about` only. `same_as` stays in one book. The same link two times is refused. |
 | `class_key` | string | no | none | `[a-z0-9][a-z0-9._:/-]{0,79}`. |
 | `decision` | object | no | none | `kind: decision_proposal` only. `{"options": [...], "choice": "..."}`: 2–20 different options of 1–500 characters, in the order offered; `choice` is one of them. |
-| `origin` | string | no | none | `human`, `assisted`, `model`, `tool`, `unknown`. The server computes the origin. Over MCP it stores `model`. A request for a higher value is refused with a notice. A refused `human` or `assisted` opens a confirmation request (section 5.16). |
+| `origin` | string | no | none | `human`, `assisted`, `model`, `tool`, `unknown`. The server computes the origin. Over MCP it stores `model`. A request for a higher value is refused with a notice. A refused `human` or `assisted` opens a confirmation request (section 5.15). |
 | `idempotency_key` | string | no | none | `[A-Za-z0-9._:-]{8,128}` (section 7). |
 
 `derived_from` and `supersedes` exist only as creation links. `derived_from` makes the rights of the note follow
@@ -674,7 +650,7 @@ or linked note does not exist), `409`, `429`.
             "idempotency_key": "run-42.note-1"}}}
 ```
 
-### 5.11 `link_notes`
+### 5.10 `link_notes`
 
 Link a note to a note or a passage, after the note exists. The same link again is kept once.
 
@@ -698,7 +674,7 @@ Link a note to a note or a passage, after the note exists. The same link again i
             "dst": "adc-memory@nt_9a…"}}}
 ```
 
-### 5.12 `verify_citations`
+### 5.11 `verify_citations`
 
 Check code citations of the repositories of a journal against a branch or a commit. No code text is returned.
 
@@ -737,7 +713,7 @@ A target is `null` in `targets` when it could not be resolved.
             "citations": ["adc@3f2c…e1:src/run.py:40-52#retry_job"], "at": "main"}}}
 ```
 
-### 5.13 `query_notes`
+### 5.12 `query_notes`
 
 List agent notes in the journals that you may read. It uses fast SQL filters and makes no model call. The same
 request on the same data gives the same bytes.
@@ -750,7 +726,7 @@ request on the same data gives the same bytes.
 | `sets` | list of strings | no | `["current"]` | `current`, `open`, `history`. |
 | `kind` | list of strings | no | none | The note kinds. |
 | `role` | list of strings | no | none | `rule`, `evidence`. |
-| `origin` | list of strings | no | none | `human`, `assisted`, `model`, `unknown`: the shown origin (section 5.16). |
+| `origin` | list of strings | no | none | `human`, `assisted`, `model`, `unknown`: the shown origin (section 5.15). |
 | `class_key` | string | no | none | As `propose_note`. |
 | `refs` | list of strings | no | none | 1–50 note references (`book@nt_…`). Only these notes. Each item also has `standing_seq`: the event of its effective Standing (`null` before the first event). A note that you may not read is left out without an error. The other filters and `sets` still apply: to get the Standing of any named note, give `sets: ["current", "open", "history"]`. |
 | `repo` | string | no | none | The context: a repository slug. |
@@ -758,6 +734,7 @@ request on the same data gives the same bytes.
 | `path` | string | no | none | The context: one path, or a folder prefix that ends with `/`. A folder prefix matches a scope glob only when a file below the folder can match it: `*.log` matches only files in the root folder, so it does not match `src/`. |
 | `paths` | list of strings | no | none | 1–20 context paths, as `path` (`path`, if given, is one more). One query, one budget, one order. A note is in the result when one path puts it in `sets`; the scope rule for each path is the same as for `path`. Each item also has `paths`: the context paths that put it in `sets`. |
 | `commit` | string | no | none | The context: a full commit id. Needs `repo`. |
+| `platform`, `version` | string | no | none | The kstd Scope context (#164), as the `context` of `search_library`: a platform name, and a version of numbers with dots (`7.0.3`). A note with `applies_to` that the context contradicts is left out. A rule-role note with an `applies_to` bound that the context does not give is not current (`excluded.needs_context`); evidence stays current. A note without `applies_to` does not change. An item has `applies_to` only when the note has one. |
 | `commits` | string | no | none | `A..B` with two full commit ids. Notes whose observed commit is in that range. Needs `repo`. At most 10,000 commits. |
 | `written_after` | string | no | none | ISO 8601 time. Without a time zone, UTC. |
 | `written_before` | string | no | none | ISO 8601 time. |
@@ -797,7 +774,7 @@ The sets:
 - A passage citation keeps the handle that the note stores and has `status`, as a passage in `open_citation`
   (section 5.2): `current`, `moved` (with `moved_to` and `match`) or `stale`. A re-index never drops a citation.
 - A retired item has `successor`: the note that supersedes it, or `null`.
-- `origin` is the shown origin. With a live confirmation (section 5.16), the item also has `entered_by` (the writer
+- `origin` is the shown origin. With a live confirmation (section 5.15), the item also has `entered_by` (the writer
   of the request) and `confirmed_by` (the person who confirmed).
 - `approved_by` (after `standing`): for an approved item, who approved it: a curator (`user:…`) or a model through a
   signed delegation (`model:<name>@<version>`, D73); `null` for other items. `neighbours` and `open_citation` items
@@ -818,7 +795,7 @@ The sets:
             "repo": "adc", "branch": "main", "path": "src/db/q.py"}}}
 ```
 
-### 5.14 `neighbours`
+### 5.13 `neighbours`
 
 The notes linked to a note reference or a passage handle, to depth 1 or 2. Only notes that you may read and that
 are in `sets` in your context are nodes. An edge to an excluded node is dropped.
@@ -832,7 +809,7 @@ are in `sets` in your context are nodes. An edge to an excluded node is dropped.
 | `depth` | integer | no | `1` | 1–2. |
 | `direction` | string | no | `both` | `out`, `in`, `both`. |
 | `sets` | list of strings | no | `["current"]` | As `query_notes`. |
-| `repo`, `branch`, `path`, `commit` | string | no | none | The context, as `query_notes`. |
+| `repo`, `branch`, `path`, `commit`, `platform`, `version` | string | no | none | The context, as `query_notes`. |
 | `max_nodes` | integer | no | `50` | 1–200. |
 | `budget_tokens` | integer | no | `2000` | 200–16000. |
 | `max_bytes` | integer | no | `32768` | 8192–131072. |
@@ -861,7 +838,7 @@ edge has `dst` = your handle and `original`: the handle that the note stores (#1
  "params": {"name": "neighbours", "arguments": {"ref": "adc-memory@nt_3f…", "depth": 2, "direction": "out"}}}
 ```
 
-### 5.15 `record_outcome`
+### 5.14 `record_outcome`
 
 Record how a note or a passage worked in a task. The outcome is for that exact version. Outcomes are counts on the
 item. They never change its Standing, and the `current` rule never reads them.
@@ -886,7 +863,7 @@ A retry with the same key gives the first receipt.
             "result": "passed", "idempotency_key": "run-42.outcome-1"}}}
 ```
 
-### 5.16 `confirm_origin`
+### 5.15 `confirm_origin`
 
 Ask the person to confirm whose words a note holds (D70 R3). The server never stores `human` from a token: a token
 is not a person's act on exact bytes. Only the person can confirm, in curator web, with a passkey act over the exact
@@ -933,7 +910,7 @@ person who confirmed can withdraw the confirmation; then the origin is the write
  "params": {"name": "confirm_origin", "arguments": {"ref": "adc-memory@nt_3f…"}}}
 ```
 
-### 5.17 `submit_package`
+### 5.16 `submit_package`
 
 Submit a package that you signed with `kutuphane export`. The checks are the same as `kutuphane receive`. Nothing is
 published: a person approves it with `kutuphane approve-import` ([operations.md](operations.md#packages-from-an-application-http-and-mcp-139)).
@@ -944,13 +921,13 @@ published: a person approves it with `kutuphane approve-import` ([operations.md]
 |---|---|---|---|---|
 | `package_base64` | string | yes | — | The package bytes in base64, at most the package limit. |
 
-**Result:** the import status, as `GET /v1/packages/{id}` ([http-api.md](http-api.md#132-get-v1packagesid)):
+**Result:** the import status, as `GET /v1/packages/{id}` ([http-api.md](http-api.md#122-get-v1packagesid)):
 `{"id", "status", "issuer", "book", "sequence", "content_id", "findings", "diff", "reasons", "received_at",
 "decided_at"}`. `status` is `received`, `findings` or `refused`. `diff` is `null` without a current `read` on the book.
 
 **Errors:** `400` (not base64, not a readable package, a journal), `403`, too large.
 
-### 5.18 `package_status`
+### 5.17 `package_status`
 
 The status of a package that you submitted: `received`, `findings`, `approved` or `refused`.
 

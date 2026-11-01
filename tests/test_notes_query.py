@@ -9,6 +9,7 @@ import subprocess
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from psycopg.types.json import Jsonb
 from starlette.testclient import TestClient
 
 from kutuphane import authz, coderepo, notesquery, server
@@ -35,7 +36,7 @@ def journal(conn, book, search=True, ai_input=True, readers=(U,)):
 
 
 def note(conn, book, body, kind="finding", *, repo=None, branch=None, paths=(), commit=None, class_key=None,
-         origin="model", creation_links=(), cites=()):
+         origin="model", creation_links=(), cites=(), applies_to=None):
     """A note and its creating propose write, its creation links ([(type, dst seq)]) and its code citations
     ([(commit, start, end, excerpt sha)]), in one transaction (039: the parts are written with the note). The seq."""
     nid = "nt_" + hashlib.sha256(f"{book}\n{body}\n{creation_links}".encode()).hexdigest()
@@ -43,11 +44,11 @@ def note(conn, book, body, kind="finding", *, repo=None, branch=None, paths=(), 
     with conn.transaction():
         seq = conn.execute(
             "INSERT INTO note (book, id, profile_id, kind, body, norm_sha256, class_key, scope_repo, scope_branch, "
-            "scope_paths, scope_path_re, observed_commit, search, ai_input, source_books, tsv) VALUES "
+            "scope_paths, scope_path_re, observed_commit, search, ai_input, source_books, tsv, applies_to) VALUES "
             "(%s, %s, 'pf_journal', %s, %s, '\\x00', %s, %s, %s, %s, %s, %s, %s, true, %s, "
-            " CASE WHEN %s THEN to_tsvector('turkish', %s) END) RETURNING seq",
+            " CASE WHEN %s THEN to_tsvector('turkish', %s) END, %s) RETURNING seq",
             (book, nid, kind, body, class_key, repo, branch, list(paths), [_glob_re(p) for p in paths], commit,
-             s, [book], s, body)).fetchone()[0]
+             s, [book], s, body, Jsonb(applies_to) if applies_to else None)).fetchone()[0]
         principal, behalf, channel = ("agent:kobra-7", U, "mcp") if origin == "model" else (U, None, "http")
         wseq = conn.execute(
             "INSERT INTO write_record (correlation_id, action, note_seq, creates, principal, on_behalf_of, channel, "
@@ -160,6 +161,30 @@ def test_bounded_rule_needs_context_in_query_and_neighbours(mem):  # T23
     assert [x["ref"] for x in n["nodes"]] == [ref(mem, bounded), ref(mem, rule)]
     assert refs(q(mem, repo="adc", path="src/api/x.py")) == [ref(mem, rule)]  # the globs do not match
     assert refs(q(mem, repo="adc", path="src/")) == [ref(mem, ev), ref(mem, bounded), ref(mem, rule)]
+
+
+def test_applies_to_scope_verdicts(mem):  # #164: the kstd Scope verdict, with the note scope, in one Context
+    rule = approved(mem, "mem", "pin the vcenter pool", "convention",
+                    applies_to={"platform": ["vcenter"], "version": ">=7,<8"})
+    ev = approved(mem, "mem", "vcenter 7 drops idle sessions", applies_to={"platform": ["vcenter"]})
+    free = approved(mem, "mem", "unbounded finding")
+    link(mem, ev, "about", rule)
+    out = q(mem)  # no platform: the bounded rule needs context, the bounded evidence stays current
+    assert refs(out) == [ref(mem, free), ref(mem, ev)] and out["excluded"]["needs_context"] == 1
+    assert "applies_to" not in out["items"][0]  # a note without applies_to: the same item bytes as before
+    assert out["items"][1]["applies_to"] == {"platform": ["vcenter"]}
+    assert refs(q(mem, platform="vcenter")) == [ref(mem, free), ref(mem, ev)]  # the version is still missing
+    assert refs(q(mem, platform="vcenter", version="7.0.3")) == [ref(mem, free), ref(mem, ev), ref(mem, rule)]
+    assert refs(q(mem, platform="vcenter", version="8.0")) == [ref(mem, free), ref(mem, ev)]  # mismatch
+    mismatch = q(mem, platform="esxi", version="7.0")
+    assert refs(mismatch) == [ref(mem, free)] and mismatch["excluded"]["needs_context"] == 0
+    n = neighbours(mem, PERSON, for_model=False, ref=ref(mem, ev), platform="vcenter", version="7.1")
+    assert [x["ref"] for x in n["nodes"]] == [ref(mem, rule)]
+    assert neighbours(mem, PERSON, for_model=False, ref=ref(mem, ev), platform="esxi")["nodes"] == []
+    assert open_note(mem, PERSON, for_model=False, ref=ref(mem, rule), platform="vcenter",
+                     version="7")["note"]["current"] is True
+    with pytest.raises(ValueError, match="version"):
+        q(mem, version="seven")
 
 
 # --- filters ------------------------------------------------------------------------------------------------

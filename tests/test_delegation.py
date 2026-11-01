@@ -16,6 +16,8 @@ from starlette.testclient import TestClient
 
 from kutuphane import authz, cli, curatorweb, db, decider, delegation, notes, notesquery, passkey
 from kutuphane.gate import Actor
+
+from conftest import WRITE_PATH_COLUMNS
 from softauthn import SoftAuthenticator
 from test_curatorweb import CFG, H, ORIGIN, enroll, login, web_dsn
 from test_decider import (APP, DEC, J, LOCAL, M, MODEL, U, WEB, A, act_row, apply_roles, drop_roles, note,
@@ -380,8 +382,8 @@ def test_025_applies_over_notes_and_cli_events(conn):  # M1
     conn.execute("CREATE TABLE schema_migration (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())")
     for script in sorted((f for f in files("kutuphane.migrations").iterdir() if f.name.endswith(".sql")),
                          key=lambda f: f.name):
-        if script.name >= "025":
-            break
+        if script.name >= "025" and script.name not in WRITE_PATH_COLUMNS:
+            continue
         conn.execute(script.read_text())
         conn.execute("INSERT INTO schema_migration (name) VALUES (%s)", (script.name,))
     notes.create_journal(conn, book=J, title=J, search=True, ai_input=True, policy=LOCAL, by="user:admin")

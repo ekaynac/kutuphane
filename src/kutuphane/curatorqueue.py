@@ -90,20 +90,21 @@ def tiers(conn, rows: dict, w: int) -> dict:
     `w`. Else the tier of its kind. The reason never names the other note (it may be in an unreadable book)."""
     seqs = list(rows)
     links = conn.execute(
-        "SELECT l.src, l.type, l.dst_note, d.scope_repo, d.scope_branch, d.scope_paths FROM note_link l "
+        "SELECT l.src, l.type, l.dst_note, d.scope_repo, d.scope_branch, d.scope_paths, d.applies_to "
+        "FROM note_link l "
         "JOIN note d ON d.seq = l.dst_note WHERE l.seq <= %(w)s AND l.src = ANY(%(s)s) "
         "AND ((l.type = 'supersedes' AND l.creation) OR l.type = 'contradicts') "
-        "UNION ALL SELECT l.dst_note, l.type, l.src, NULL, NULL, NULL FROM note_link l "
+        "UNION ALL SELECT l.dst_note, l.type, l.src, NULL, NULL, NULL, NULL FROM note_link l "
         "WHERE l.seq <= %(w)s AND l.type = 'contradicts' AND l.dst_note = ANY(%(s)s)", {"w": w, "s": seqs}).fetchall()
     standing = notes.effective_standing(conn, {r[2] for r in links}, w)
     out = {s: (TIER_OF_KIND[kind], WHY[TIER_OF_KIND[kind]]) for s, (kind, _scope) in rows.items()}
-    for src, type_, dst, repo, branch, paths in links:
+    for src, type_, dst, repo, branch, paths, applies_to in links:
         if standing[dst][0] != "approved":
             continue
         kind, scope = rows[src]
         if type_ == "contradicts":
             out[src] = (1, WHY_CONTRADICTS)
-        elif notes.KIND_ROLE[kind] == "rule" and scope == (repo, branch, sorted(paths or [])) and \
+        elif notes.KIND_ROLE[kind] == "rule" and scope == (repo, branch, sorted(paths or []), applies_to) and \
                 out[src][1] != WHY_CONTRADICTS:
             out[src] = (1, WHY_SUPERSEDES)
     return out
@@ -118,7 +119,7 @@ SELECT n.seq FROM note n
 
 _ROWS = """
 SELECT seq, book, id, kind, body, class_key, scope_repo, scope_branch, scope_paths, observed_commit, options, choice,
-       written_at
+       written_at, applies_to
   FROM note WHERE seq = ANY(%s)
 """
 
@@ -128,7 +129,7 @@ def _rows(conn, seqs) -> dict:
 
 
 def _scope(row) -> tuple:
-    return row[6], row[7], sorted(row[8] or [])
+    return row[6], row[7], sorted(row[8] or []), row[13]
 
 
 def _groups(conn, book_list: list[str], w: int) -> tuple[list[dict], dict]:
@@ -286,13 +287,15 @@ def _items(conn, seqs: list[int], rows: dict, w: int, readable: set, tier: dict)
     links = _links(conn, seqs, readable, w)
     out = {}
     for s in seqs:
-        seq, book, note_id, kind, text, class_key, repo, branch, paths, commit, options, choice, written = rows[s]
+        seq, book, note_id, kind, text, class_key, repo, branch, paths, commit, options, choice, written, \
+            applies_to = rows[s]
         value, event = standing[s]
         shown_origin, entered_by, confirmed_by = shown.get(s, (None, None, None))
         item = {"ref": f"{book}@{note_id}", "book": book, "kind": kind, "role": notes.KIND_ROLE[kind],
                 "standing": value, "was": event, "pending": value == "pending",
                 "why": tier[s][1] if s in tier else None, "text": text, "class_key": class_key,
                 "scope": {"repo": repo, "branch": branch, "paths": list(paths)} if repo else None,
+                "applies_to": applies_to,
                 "commit": commit,
                 "decision": {"options": list(options), "choice": choice} if options is not None else None,
                 "written_at": notesquery._iso(written), "writers": writers.get(s, []), "origin": shown_origin,
@@ -444,11 +447,12 @@ def _pending_share(conn, start: datetime, end: datetime) -> dict:
     at written_at + 7 days, by tier (the tier at the current watermark) and by book."""
     rows = conn.execute(
         "SELECT n.seq, n.book, n.kind, n.scope_repo, n.scope_branch, n.scope_paths, NOT EXISTS ("
-        "  SELECT 1 FROM standing_event e WHERE e.note_seq = n.seq AND e.at <= n.written_at + %(d)s) "
+        "  SELECT 1 FROM standing_event e WHERE e.note_seq = n.seq AND e.at <= n.written_at + %(d)s), n.applies_to "
         "FROM note n WHERE n.written_at >= %(s)s AND n.written_at <= %(e)s::timestamptz - %(d)s "
         "AND n.written_at + %(d)s <= clock_timestamp() ORDER BY n.seq",
         {"s": start, "e": end, "d": timedelta(days=PENDING_DAYS)}).fetchall()
-    tier = tiers(conn, {r[0]: (r[2], (r[3], r[4], sorted(r[5] or []))) for r in rows}, notes.NOW) if rows else {}
+    tier = tiers(conn, {r[0]: (r[2], (r[3], r[4], sorted(r[5] or []), r[7])) for r in rows}, notes.NOW) \
+        if rows else {}
 
     def part(key):
         counts = {}

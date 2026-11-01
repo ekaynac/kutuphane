@@ -40,7 +40,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import (answers, catalog, coderepo, confirm, db, feedback, gate, handling, identity, ids, jobs, kstd, llmdap,
+from . import (answers, catalog, coderepo, confirm, db, gate, handling, identity, ids, jobs, kstd, llmdap,
                notes, notesquery, outcomes, packages, quotes, retrieval, search, skills, snippets)
 from . import health, passagemap
 from .gate import Actor
@@ -243,24 +243,6 @@ def op_file(dsn, actor: Actor, book: str, content_id: str, path: str,
     return _run(dsn, go)
 
 
-def op_feedback(dsn, actor: Actor, body) -> dict:
-    if not isinstance(body, dict):
-        raise BadRequest("JSON object required")
-    fields = {k: body.get(k) for k in ("book", "content_id", "path", "outcome", "tested_on", "note")}
-    if not all(isinstance(fields[k], str) for k in ("book", "content_id", "path", "outcome")):
-        raise BadRequest("book, content_id, path and outcome are required strings")
-    for k in ("tested_on", "note"):
-        if fields[k] is not None and not isinstance(fields[k], str):
-            raise BadRequest(f"{k} must be a string")
-    fields["path"] = normalize_path(fields["path"])
-    return {"id": _run(dsn, lambda c: feedback.record(c, actor, **fields))}
-
-
-def op_feedback_list(dsn, actor: Actor, book: str, content_id: str, path: str) -> list[dict]:
-    return _run(dsn, lambda c: feedback.for_version(c, actor, book=book, content_id=content_id,
-                                                    path=normalize_path(path)))
-
-
 # --- HTTP --------------------------------------------------------------------------------------------------
 
 ERRORS = [  # order matters: subclasses first
@@ -398,7 +380,7 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
 
     async def h_citation(request, actor):
         q = request.query_params
-        context = {k: q[k] for k in ("repo", "branch", "path", "commit") if k in q}
+        context = {k: q[k] for k in ("repo", "branch", "path", "commit", "platform", "version") if k in q}
         return JSONResponse(await run_in_threadpool(op_citation, dsn, actor, q.get("handle", ""), False, context))
 
     async def h_ask(request, actor):
@@ -436,17 +418,6 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
         data, media_type = await run_in_threadpool(op_file, dsn, actor, p["book"], p["content_id"], p["path"])
         return Response(data, media_type=media_type, headers={"X-Content-Type-Options": "nosniff",
                                                               "Content-Disposition": "attachment"})
-
-    async def h_feedback(request, actor):
-        if request.method == "POST":
-            try:
-                body = await request.json()
-            except ValueError:
-                raise BadRequest("JSON body required") from None
-            return JSONResponse(await run_in_threadpool(op_feedback, dsn, actor, body), status_code=201)
-        q = request.query_params
-        return JSONResponse(await run_in_threadpool(op_feedback_list, dsn, actor, q.get("book", ""),
-                                                    q.get("content_id", ""), q.get("path", "")))
 
     async def h_health(_request):
         return JSONResponse({"ok": True})
@@ -489,7 +460,6 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
         Route("/v1/jobs/{job_id}/result", endpoint(h_job_result)),
         Route("/v1/jobs/{job_id}/cancel", endpoint(h_job_cancel), methods=["POST"]),
         Route("/v1/files/{book}/{content_id}/{path:path}", endpoint(h_file)),
-        Route("/v1/feedback", endpoint(h_feedback), methods=["GET", "POST"]),
         *(route for f in features if hasattr(f, "http_routes") for route in f.http_routes(deps, endpoint)),
         Mount("/", app=mcp_http_app(mcp, public_url)),  # serves /mcp and the protected-resource metadata
     ], lifespan=lifespan)
@@ -693,11 +663,14 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
     @mcp.tool()
     @_mcp_errors
     async def open_citation(handle: str, repo: str | None = None, branch: str | None = None,
-                            path: str | None = None, commit: str | None = None) -> CallToolResult:
+                            path: str | None = None, commit: str | None = None, platform: str | None = None,
+                            version: str | None = None) -> CallToolResult:
         """Open a citation handle: the exact passage of that version, if you may read it now (needs read on the
         book; agents also need activate for an instruction passage). A note reference (book@nt_…) gives the note,
-        with `current` in the optional context (repo, branch, path, commit)."""
-        context, labels = {"repo": repo, "branch": branch, "path": path, "commit": commit}, {}
+        with `current` in the optional context (repo, branch, path, commit, platform, version)."""
+        context = {"repo": repo, "branch": branch, "path": path, "commit": commit, "platform": platform,
+                   "version": version}
+        labels: dict = {}
         cited = await run_in_threadpool(op_citation, dsn, _mcp_actor(), handle, True, context, labels)
         return _handled(cited, labels)
 
@@ -735,16 +708,6 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
         if media_type not in TEXT_TYPES:
             raise BadRequest("not a text document; use search_library and open_citation for its passages")
         return _handled(data.decode("utf-8"), labels, structured=True)
-
-    @mcp.tool()
-    @_mcp_errors
-    async def record_runbook_feedback(book: str, content_id: str, path: str, outcome: str,
-                                      tested_on: str | None = None, note: str | None = None) -> dict:
-        """Record how applying a runbook went: outcome is worked, failed or changed (for that exact version; needs
-        read on the book)."""
-        return await run_in_threadpool(op_feedback, dsn, _mcp_actor(),
-                                       {"book": book, "content_id": content_id, "path": path, "outcome": outcome,
-                                        "tested_on": tested_on, "note": note})
 
     if answering:
         @mcp.tool()

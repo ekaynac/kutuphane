@@ -241,7 +241,8 @@ def _page_item(conn, principal: str, book: str, note_id: str, seq: int, request:
              for link in body["links"]]
     return {"ref": f"{book}@{note_id}", "book": book, "kind": body["kind"], "role": notes.KIND_ROLE[body["kind"]],
             "text": body["text"], "class_key": body["class_key"], "scope": body["scope"], "commit": body["commit"],
-            "citations": citations, "links": links, "decision": body.get("decision"),
+            "applies_to": body.get("applies_to"), "citations": citations, "links": links,
+            "decision": body.get("decision"),
             "integrity": None if whole else "note-integrity",
             "origin": shown[0], "entered_by": shown[1], "confirmed_by": shown[2],
             "request": request.out() if request else None,

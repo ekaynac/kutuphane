@@ -68,7 +68,7 @@ The receipt:
   `confirmation: {"url", "expires_at"}`. Give the URL to the person, or call `confirm_origin` (a 2026-07-28 client
   shows the URL itself). Only the person can confirm, in curator web with a passkey, within 24 hours. Then the note
   shows `origin: human` with `entered_by` (you) and `confirmed_by` (the person). Change one byte and it is another
-  note with origin `model` ([mcp.md](mcp.md#516-confirm_origin)).
+  note with origin `model` ([mcp.md](mcp.md#515-confirm_origin)).
 - `status: existing` means the same bytes were already there. Its `standing` is the real value. If it is
   `rejected`, stop proposing it.
 - `candidates` lists similar notes (`normalized`, `vector`, `class`). The server never merges them. Decide, and link
