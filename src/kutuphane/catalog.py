@@ -16,12 +16,16 @@ applies it: ingest and package approval, Astra review #19); an accepted one is i
 credential finding.
 
 Skill scans (D71, skillscan.py): the skill folders are scanned before the transaction (a subprocess must not hold
-the book lock); the records are written in it, so a block is in force as soon as the version is."""
+the book lock); the records are written in it, so a block is in force as soon as the version is.
+
+Publication facts (#160, migration 045): each publication records who stood behind it, `approved_by` and `channel`
+(`ingest`, or `import` with its package_import row: the issuer key and the sequence). `publications` reads them for
+the book list, the file list and citations; a publication from before migration 045 shows them as null."""
 from dataclasses import dataclass, field
 
 from psycopg.types.json import Jsonb
 
-from . import agentfiles, ids, kstd, passagemap, profiles, skillscan
+from . import agentfiles, authz, ids, kstd, passagemap, profiles, skillscan
 from .policy import check_policy
 from .source import SourceFile
 
@@ -80,7 +84,12 @@ def _check_personal_data(files: list[SourceFile], policy: dict, manifest) -> Non
                          f"the file in kstd.yaml, or publish with --egress local_only")
 
 
-def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dict, profile: dict) -> Published:
+def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dict, profile: dict,
+            approved_by: str | None = None, package_import: int | None = None) -> Published:
+    """`approved_by`: the principal who publishes (`ingest`) or approves the package `package_import` (#160)."""
+    if approved_by is not None and not authz.PRINCIPAL.match(approved_by):
+        raise ValueError(f"approved_by must be a principal such as user:<name>, not {approved_by!r}")
+    channel = None if approved_by is None else "import" if package_import is not None else "ingest"
     if len({f.path for f in files}) != len(files):
         raise ValueError("duplicate file paths: the content id would not cover every stored file")
     policy = check_policy(policy)
@@ -140,8 +149,9 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
                      "updated_at = now() WHERE slug = %s", (title, content_id, profile_id, policy_id, book))
         mapped = passagemap.map_book(conn, book)  # #140: cited and linked passages of earlier versions follow to it
         conn.execute("INSERT INTO publication (book, content_id, profile_id, policy_id, accepted_findings, "
-                     "data_findings) VALUES (%s, %s, %s, %s, %s, %s)",
-                     (book, content_id, profile_id, policy_id, Jsonb(accepted), Jsonb(found)))
+                     "data_findings, approved_by, channel, package_import) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                     (book, content_id, profile_id, policy_id, Jsonb(accepted), Jsonb(found), approved_by, channel,
+                      package_import))
     return Published(book, content_id, profile_id, policy_id, new_content=current[0] != content_id,
                      new_policy=current[1] != policy_id, quarantined=quarantined, accepted_findings=accepted,
                      data_findings=found, skill_scans=skillscan.summary(scans) + carried, passage_map=mapped)
@@ -157,16 +167,57 @@ def book_state(conn, book: str) -> dict | None:
     versions = [r[0] for r in conn.execute("SELECT id FROM content_version WHERE book = %s ORDER BY created_at",
                                            (book,))]
     pubs = [{"content_id": c, "profile_id": pf, "policy_id": pl, "published_at": t.isoformat(), "accepted_findings": a,
-             "data_findings": d}
-            for c, pf, pl, t, a, d in conn.execute("SELECT content_id, profile_id, policy_id, published_at, "
-                                                   "accepted_findings, data_findings FROM publication "
-                                                   "WHERE book = %s ORDER BY id", (book,))]
+             "data_findings": d, "approved_by": by, "channel": ch}
+            for c, pf, pl, t, a, d, by, ch in conn.execute("SELECT content_id, profile_id, policy_id, published_at, "
+                                                           "accepted_findings, data_findings, approved_by, channel "
+                                                           "FROM publication WHERE book = %s ORDER BY id", (book,))]
     quarantined = [{"path": p, "reason": r} for p, r in conn.execute(
         "SELECT path, reason FROM quarantine WHERE book = %s AND content_id = %s AND profile_id = %s ORDER BY path",
         (book, row[2], row[6]))]
     return {"book": row[0], "title": row[1], "content_id": row[2], "profile_id": row[6], "policy_id": row[3],
             "policy": row[4], "files": row[5], "quarantined": quarantined, "content_versions": versions,
             "publications": pubs}
+
+
+def publications(conn, keys) -> dict:
+    """{(book, content_id, profile_id): publication facts} of the latest publication of each version (#160)."""
+    keys = sorted(set(keys))
+    rows = conn.execute(
+        "SELECT DISTINCT ON (p.book, p.content_id, p.profile_id) p.book, p.content_id, p.profile_id, p.published_at, "
+        "p.channel, p.approved_by, i.issuer, i.sequence FROM publication p "
+        "JOIN unnest(%s::text[], %s::text[], %s::text[]) AS k(book, content_id, profile_id) "
+        "ON (p.book, p.content_id, p.profile_id) = (k.book, k.content_id, k.profile_id) "
+        "LEFT JOIN package_import i ON i.id = p.package_import "
+        "ORDER BY p.book, p.content_id, p.profile_id, p.id DESC",
+        ([k[0] for k in keys], [k[1] for k in keys], [k[2] for k in keys]))
+    return {(b, c, pf): {"content_id": c, "published_at": t.isoformat(), "channel": ch, "approved_by": by,
+                         "issuer_key": key, "sequence": seq}
+            for b, c, pf, t, ch, by, key, seq in rows}
+
+
+def books(conn, slugs) -> list[dict]:
+    """The book list entries (#159) of `slugs`, by slug: a journal has no content version and no publication."""
+    rows = conn.execute("SELECT b.slug, b.title, j.book IS NOT NULL, b.current_content, b.current_profile, "
+                        "b.current_policy FROM book b LEFT JOIN journal j ON j.book = b.slug "
+                        "WHERE b.slug = ANY(%s) ORDER BY b.slug", (list(slugs),)).fetchall()
+    pubs = publications(conn, [(r[0], r[3], r[4]) for r in rows if r[3] is not None])
+    return [{"book": slug, "title": title, "kind": "journal" if journal else "book", "content_id": content,
+             "profile_id": profile, "policy_id": policy, "publication": pubs.get((slug, content, profile))}
+            for slug, title, journal, content, profile, policy in rows]
+
+
+def files_page(conn, book: str, content_id: str, profile_id: str, cursor: str | None, limit: int) -> list[dict]:
+    """Up to `limit` manifest entries of one version after the path `cursor`, by path, each with its passage count
+    in `profile_id` (0: not indexed)."""
+    rows = conn.execute(
+        "SELECT m.entry->>'path', m.entry->>'sha256', (m.entry->>'size')::bigint, m.entry->>'media_type', "
+        "(SELECT count(*) FROM chunk k WHERE k.book = c.book AND k.content_id = c.id AND k.profile_id = %s "
+        " AND k.path = m.entry->>'path') "
+        "FROM content_version c CROSS JOIN LATERAL jsonb_array_elements(c.manifest) AS m(entry) "
+        "WHERE c.book = %s AND c.id = %s AND (%s::text IS NULL OR m.entry->>'path' COLLATE \"C\" > %s) "
+        "ORDER BY m.entry->>'path' COLLATE \"C\" LIMIT %s",
+        (profile_id, book, content_id, cursor, cursor, limit))
+    return [{"path": p, "sha256": s, "size": n, "media_type": t, "passages": k} for p, s, n, t, k in rows]
 
 
 def current_policy(conn, book: str) -> str | None:

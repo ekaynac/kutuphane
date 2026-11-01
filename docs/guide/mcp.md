@@ -303,18 +303,20 @@ does not spend a turn to find it out. The **Needs:** line of each tool below has
 | 3 | [`ask_library`](#53-ask_library) | Answer a question with citations. Only with LLMDAP. | `POST /v1/ask` |
 | 4 | [`reopen_answer`](#54-reopen_answer) | Show a stored answer again. | `GET /v1/answers/{answer_id}` |
 | 5 | [`read_document`](#55-read_document) | Read a text file of one version. | `GET /v1/files/{book}/{content_id}/{path}` |
-| 6 | [`job_status`](#56-job_status) | The state of a background job. Only with LLMDAP. | `GET /v1/jobs/{job_id}` |
-| 7 | [`job_result`](#57-job_result) | The answer of a succeeded job. Only with LLMDAP. | `GET /v1/jobs/{job_id}/result` |
-| 8 | [`job_cancel`](#58-job_cancel) | Cancel a background job. Only with LLMDAP. | `POST /v1/jobs/{job_id}/cancel` |
-| 9 | [`propose_note`](#59-propose_note) | Write a note into a journal. | `POST /v1/notes` |
-| 10 | [`link_notes`](#510-link_notes) | Link a note to a note or a passage. | `POST /v1/notes/links` |
-| 11 | [`verify_citations`](#511-verify_citations) | Check code citations against a branch or commit. | `POST /v1/citations/verify` |
-| 12 | [`query_notes`](#512-query_notes) | List notes with filters. | `GET /v1/notes` |
-| 13 | [`neighbours`](#513-neighbours) | The notes linked to a note or a passage. | `GET /v1/notes/{book}/{id}/neighbours` |
-| 14 | [`record_outcome`](#514-record_outcome) | Record how a note or passage worked in a task. | `POST /v1/outcomes` |
-| 15 | [`confirm_origin`](#515-confirm_origin) | Ask the person to confirm whose words a note holds. | `GET /v1/notes/{book}/{id}/confirmation` |
-| 16 | [`submit_package`](#516-submit_package) | Submit a signed package for a person to approve. | `POST /v1/packages` |
-| 17 | [`package_status`](#517-package_status) | The status of a package that you submitted. | `GET /v1/packages/{id}` |
+| 6 | [`list_books`](#518-list_books) | The books and journals that you may read. | `GET /v1/books` |
+| 7 | [`list_files`](#519-list_files) | The files of a book's current version, a page at a time. | `GET /v1/books/{book}/files` |
+| 8 | [`job_status`](#56-job_status) | The state of a background job. Only with LLMDAP. | `GET /v1/jobs/{job_id}` |
+| 9 | [`job_result`](#57-job_result) | The answer of a succeeded job. Only with LLMDAP. | `GET /v1/jobs/{job_id}/result` |
+| 10 | [`job_cancel`](#58-job_cancel) | Cancel a background job. Only with LLMDAP. | `POST /v1/jobs/{job_id}/cancel` |
+| 11 | [`propose_note`](#59-propose_note) | Write a note into a journal. | `POST /v1/notes` |
+| 12 | [`link_notes`](#510-link_notes) | Link a note to a note or a passage. | `POST /v1/notes/links` |
+| 13 | [`verify_citations`](#511-verify_citations) | Check code citations against a branch or commit. | `POST /v1/citations/verify` |
+| 14 | [`query_notes`](#512-query_notes) | List notes with filters. | `GET /v1/notes` |
+| 15 | [`neighbours`](#513-neighbours) | The notes linked to a note or a passage. | `GET /v1/notes/{book}/{id}/neighbours` |
+| 16 | [`record_outcome`](#514-record_outcome) | Record how a note or passage worked in a task. | `POST /v1/outcomes` |
+| 17 | [`confirm_origin`](#515-confirm_origin) | Ask the person to confirm whose words a note holds. | `GET /v1/notes/{book}/{id}/confirmation` |
+| 18 | [`submit_package`](#516-submit_package) | Submit a signed package for a person to approve. | `POST /v1/packages` |
+| 19 | [`package_status`](#517-package_status) | The status of a package that you submitted. | `GET /v1/packages/{id}` |
 
 No tool changes Standing or origin. Only a curator changes Standing, on the command line or in curator web
 ([operations.md](operations.md)). Only a person confirms an origin, in curator web with a passkey (section 5.15).
@@ -418,7 +420,7 @@ be in a skill that a scan blocks.
 
 ```json
 {"citation": "runbooks@ct_9f…/pf_41…/backup.md#3", "page": null, "line": 40,
- "text": "…", "item": {…}, "outcomes": {"passed": 2}, "status": "moved",
+ "text": "…", "item": {…}, "publication": {…}, "outcomes": {"passed": 2}, "status": "moved",
  "moved_to": "runbooks@ct_9f…/pf_77…/backup.md#2", "match": "exact"}
 ```
 
@@ -426,7 +428,8 @@ be in a skill that a scan blocks.
 book's current version (#140): `current`; `moved`, with `moved_to` (the passage of the same path that replaces it)
 and `match` (`exact`: the same text; `overlap`: it holds at least half of the word pairs, or the whole old text when
 the content changed); or `stale` (no passage
-replaces it). The text is always the text of the handle that you opened.
+replaces it). The text is always the text of the handle that you opened. `publication` says who published or
+approved the version of the handle (section 5.18); it is `null` for a version without a publication record.
 
 **Result for a note reference:** `{"citation", "note", "targets", "watermark"}`. `note` is one note item, as in
 `query_notes` (section 5.12).
@@ -968,6 +971,68 @@ The status of a package that you submitted: `received`, `findings`, `approved` o
 | Argument | Type | Required | Default | Limits |
 |---|---|---|---|---|
 | `import_id` | integer | yes | — | The `id` from `submit_package`. |
+
+### 5.18 `list_books`
+
+The books and journals that you may read now (#159). A book that you may not read is not in the list, and nothing
+in the result names it.
+
+**Needs:** `read` on each book that is listed. Each listed book gets one `list_books` event in the audit log.
+
+No arguments.
+
+**Result:** a list, in `structuredContent.result`, sorted by book slug:
+
+```json
+[{"book": "runbooks", "title": "Runbooks", "kind": "book", "content_id": "ct_9f…", "profile_id": "pf_41…",
+  "policy_id": "pl_…",
+  "publication": {"content_id": "ct_9f…", "published_at": "2026-11-01T09:12:00+00:00", "channel": "import",
+                  "approved_by": "user:ayse", "issuer_key": "ed25519:3c…", "sequence": 4}},
+ {"book": "adc-memory", "title": "ADC memory", "kind": "journal", "content_id": null, "profile_id": "pf_…",
+  "policy_id": "pl_…", "publication": null}]
+```
+
+- `kind`: `book` (files, a content version) or `journal` (notes only; read them with `query_notes`).
+- `publication` (#160): the latest publication of the current version. `channel` is `ingest` (`approved_by`: who
+  ran `kutuphane ingest`) or `import` (`approved_by`: who ran `kutuphane approve-import`; `issuer_key` and
+  `sequence`: the signing key fingerprint and the sequence of the package). A publication made before migration 045
+  has `null` in `channel`, `approved_by`, `issuer_key` and `sequence`. A journal has no publication.
+
+**Errors:** `401`.
+
+### 5.19 `list_files`
+
+The files of the current version of one book, a page at a time, with the kstd item information of each file (#159).
+
+**Needs:** `read` on the book, as `read_document`. A book that you may not read and a book that does not exist give
+the same `forbidden` error. The listing is one `list_files` event in the audit log.
+
+| Argument | Type | Required | Default | Limits |
+|---|---|---|---|---|
+| `book` | string | yes | — | The book slug. |
+| `cursor` | string | no | none | The `next_cursor` of the previous page. |
+| `limit` | integer | no | 100 | 1 to 500 files. |
+
+**Result:**
+
+```json
+{"book": "runbooks", "content_id": "ct_9f…", "profile_id": "pf_41…", "publication": {…},
+ "files": [{"path": "backup.md", "sha256": "…", "size": 2048, "media_type": "text/markdown", "passages": 6,
+            "item": {"issuer": "…", "origin": "human", "license": "CC-BY-4.0", "ai_use": {"search": "y"},
+                     "personal_data": "no", "valid_from": "2026-01-01", "valid_to": null,
+                     "applies_to": {"platform": ["Postgres 17"]}, "current": true, "scope": "unbounded", …}}],
+ "next_cursor": "backup.md"}
+```
+
+- The files are sorted by path. `next_cursor` is `null` on the last page.
+- `passages`: the number of passages of the file in the served profile (0: not indexed, for example quarantined, or
+  kstd `ai_use.search` is not `y`).
+- `item`: the kstd item information, as in `search_library`; `null` for a book without `kstd.yaml` and for
+  `kstd.yaml` itself.
+- `publication`: as in `list_books`.
+- The listing gives names and facts, never file content. `read_document` reads a text file, with its own checks.
+
+**Errors:** `400` (`limit` out of range), `403`, `404` (a journal: it has no files).
 
 ## 6. Background jobs
 
