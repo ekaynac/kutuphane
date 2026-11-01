@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from kutuphane import coderepo, confirm, curatorweb, db, identity, llmdap
 
 ROOT = Path(__file__).resolve().parent.parent
-COMPOSE_FILES = ("compose.yaml", "deploy/compose.light.yaml", "deploy/compose.curator.yaml")
+COMPOSE_FILES = ("compose.yaml", "deploy/compose.full.yaml")
 URL, KEY, ROUTE = "http://127.0.0.1:9", "llmdap_sk_" + "k" * 43, "emb"
 JWKS = json.dumps({"keys": [{**json.loads(jwt.algorithms.ECAlgorithm.to_jwk(ec.generate_private_key(ec.SECP256R1())
                                                                             .public_key())), "kid": "k1"}]})
@@ -36,6 +36,10 @@ def compose_values() -> dict[str, set[str]]:
 
 SAME_DEFAULT = {"KUTUPHANE_OIDC_AUDIENCE": identity.DEFAULT_AUDIENCE, "KUTUPHANE_CONFIRM_HOURS": str(confirm.DEFAULT_HOURS)}
 ROUTES = {env["route_class"]: env for env in (llmdap.ENV, llmdap.EMBED_ENV, llmdap.RERANK_ENV)}
+# The full stack's local-models routes and models: compose defaults, never CLI defaults. Without them the host CLI uses
+# no such route (operations.md); no gate depends on them, unlike the route classes.
+LOCAL_MODELS = {"KUTUPHANE_LLMDAP_ROUTE", "KUTUPHANE_ANSWER_MODEL", "KUTUPHANE_LLMDAP_EMBED_ROUTE",
+                "KUTUPHANE_EMBED_MODEL", "KUTUPHANE_LLMDAP_RERANK_ROUTE", "KUTUPHANE_RERANK_MODEL"}
 
 
 def _bridge(m, class_env):
@@ -72,7 +76,7 @@ def bare_env(monkeypatch):
 
 def test_every_compose_value_is_the_cli_default_or_named(bare_env, tmp_path):  # G13
     values = compose_values()
-    assert set(values) == set(SAME_DEFAULT) | set(NAMED)
+    assert set(values) == set(SAME_DEFAULT) | set(NAMED) | LOCAL_MODELS
     for var, default in SAME_DEFAULT.items():
         assert values[var] == {default}, var
     for var, trigger in NAMED.items():
@@ -97,7 +101,7 @@ def test_a_route_class_is_never_defaulted(bare_env, class_env):  # G13: no defau
     with pytest.raises(RuntimeError) as err:
         _bridge(bare_env, class_env)
     message = str(err.value)
-    assert f"set {class_env}" in message and "local or cloud" in message and "compose.yaml sets local" in message
+    assert f"set {class_env}" in message and "local or cloud" in message and "compose.full.yaml sets local" in message
     bare_env.setenv(class_env, "onprem")
     with pytest.raises(RuntimeError, match=f"{class_env} must be local or cloud"):
         _bridge(bare_env, class_env)

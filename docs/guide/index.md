@@ -19,7 +19,7 @@ documents (`docs/01`–`docs/24`) explain why; this guide explains how.
 | Page | Content |
 |---|---|
 | [concepts.md](concepts.md) | books, content versions, profiles, passages, journals, notes, links, Standing, origin, rights, grants, delegation, `activate` |
-| [install.md](install.md) | development install, light install (no LLMDAP), full stack, local models overlay, database roles, reboot, upgrade |
+| [install.md](install.md) | development install, light install (no LLMDAP), full stack, local models, database roles, reboot, upgrade |
 | [operations.md](operations.md) | the CLI: ingest, index, search and ask, grants, journals, curation, outcomes, decision export, code repositories, packages, audit, backups |
 | [mcp.md](mcp.md) | the MCP endpoint, protocol versions, authentication, every tool, background jobs, idempotency |
 | [http-api.md](http-api.md) | every HTTP route |

@@ -1,0 +1,295 @@
+# The full stack (D15): Kütüphane, LLMDAP and the model servers on one box. The light install is ../compose.yaml.
+# Network layout (docs/07 §3, AT-10): one internal network per conversation, so every service reaches only the peers
+# it talks to.
+#   db         (internal): postgres, core
+#   web        (internal): ingress, core
+#   gateway    (internal): core, llmdap
+#   models     (internal): llmdap and the model servers
+#   curator-db (internal): postgres, curator;  curator (internal): curator, tailscale
+#   outbound   : llmdap only; internal unless KUTUPHANE_LLMDAP_OFFLINE=false (the hosted decision model)
+#   edge, spark, tailnet: the ingress proxy, spark-chat and the tailscale sidecar, each the one way in or out
+# Core therefore has no path to anything but Postgres and LLMDAP. Only LLMDAP reaches the model servers.
+#
+# Paths in this file are relative to deploy/; the .env file is the one in the repository root. Run from the root
+# with COMPOSE_FILE=deploy/compose.full.yaml in .env, or name both: `docker compose -f deploy/compose.full.yaml
+# --env-file .env …` (docs/guide/install.md, "Full stack"). Profiles:
+#   app             core, ingress, llmdap. The routes and models default to the local models (routes.local.json);
+#                   for other model servers, set them and KUTUPHANE_LLMDAP_ROUTES in .env (deploy/llmdap/README.md)
+#   dev-models      the deterministic stand-in model server (never for measurements)
+#   decision-models laya
+#   local-models    embedder and spark-chat (D61; routes.local.json)
+#   gpu-rerank      reranker-gpu (G26; route rerank-gpu)
+#   curator         curator web and its tailscale sidecar (D72, docs/25 §3)
+# Restart (#141): postgres, core, ingress, llmdap, embedder and spark-chat have `restart: unless-stopped`, so they
+# come back after a crash or a host reboot (the Docker daemon must start at boot). `docker compose stop` keeps them
+# stopped.
+name: kutuphane
+
+services:
+  postgres:   # the same service as ../compose.yaml, so either file keeps the running container
+    image: pgvector/pgvector:0.8.0-pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kutuphane
+      POSTGRES_USER: kutuphane
+      POSTGRES_PASSWORD: ${KUTUPHANE_DB_PASSWORD:?set KUTUPHANE_DB_PASSWORD}
+    ports:
+      - "127.0.0.1:55432:5432"   # dev, tests and the CLI on the host; drop in production
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [db, dev, curator-db]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kutuphane -d kutuphane"]
+      interval: 2s
+      retries: 30
+
+  core:
+    profiles: [app]
+    build: ..
+    restart: unless-stopped
+    environment:
+      # The app role (deploy/db-roles.sql): it cannot write Standing. The owner credential never enters this container.
+      KUTUPHANE_DSN: postgresql://kutuphane_app:${KUTUPHANE_APP_DB_PASSWORD:-}@postgres:5432/kutuphane
+      KUTUPHANE_PUBLIC_URL: ${KUTUPHANE_PUBLIC_URL:-}
+      KUTUPHANE_OIDC_ISSUER: ${KUTUPHANE_OIDC_ISSUER:-}
+      KUTUPHANE_OIDC_AUDIENCE: ${KUTUPHANE_OIDC_AUDIENCE:-kutuphane}
+      KUTUPHANE_OIDC_JWKS: /run/kutuphane/jwks.json
+      # Routes and models: the local-models defaults (deploy/llmdap/config/routes.local.json). They are not code
+      # defaults: the host CLI reads them only from its own environment (G13, docs/guide/operations.md).
+      KUTUPHANE_ANSWER_MODEL: ${KUTUPHANE_ANSWER_MODEL:-RadixArk/Qwen3.8-27B-NVFP4}
+      KUTUPHANE_LLMDAP_URL: ${KUTUPHANE_LLMDAP_URL:-http://llmdap:8787}
+      KUTUPHANE_LLMDAP_ROUTE: ${KUTUPHANE_LLMDAP_ROUTE:-chat}
+      KUTUPHANE_LLMDAP_KEY: ${KUTUPHANE_LLMDAP_KEY:-}
+      KUTUPHANE_LLMDAP_ROUTE_CLASS: ${KUTUPHANE_LLMDAP_ROUTE_CLASS:-local}
+      KUTUPHANE_LLMDAP_EMBED_ROUTE: ${KUTUPHANE_LLMDAP_EMBED_ROUTE:-emb}
+      KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS: ${KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS:-local}
+      KUTUPHANE_EMBED_MODEL: ${KUTUPHANE_EMBED_MODEL:-BAAI/bge-m3}
+      KUTUPHANE_LLMDAP_RERANK_ROUTE: ${KUTUPHANE_LLMDAP_RERANK_ROUTE:-rerank}   # rerank (CPU) or rerank-gpu
+      KUTUPHANE_LLMDAP_RERANK_ROUTE_CLASS: ${KUTUPHANE_LLMDAP_RERANK_ROUTE_CLASS:-local}
+      KUTUPHANE_RERANK_MODEL: ${KUTUPHANE_RERANK_MODEL:-BAAI/bge-reranker-v2-m3}
+      KUTUPHANE_REPO_ROOTS: /srv/repos
+      # docs/25 §7: the base of the "my words" confirmation URL (curator web), and how long a request is open.
+      KUTUPHANE_CURATOR_URL: ${KUTUPHANE_CURATOR_URL:-}
+      KUTUPHANE_CONFIRM_HOURS: ${KUTUPHANE_CONFIRM_HOURS:-24}
+    volumes:
+      - ${KUTUPHANE_OIDC_JWKS_FILE:-./jwks.json}:/run/kutuphane/jwks.json:ro
+      # Bare mirrors for code citations (docs/24 §10.2), kept current by the operator: core only reads them.
+      - ${KUTUPHANE_REPO_DIR:-./repos}:/srv/repos:ro
+    networks: [db, web, gateway]
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  ingress:
+    profiles: [app]
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "${KUTUPHANE_BIND:-127.0.0.1}:8080:8080"
+    networks: [edge, web]
+    depends_on: [core]
+
+  llmdap:
+    profiles: [app]
+    # LLMDAP's bridge-only image (LLMDAP #237): loaded from its release tarball or built from the LLMDAP repo
+    # (`docker build -f deploy/bridge/Dockerfile .`). Never a moving tag.
+    image: ${LLMDAP_BRIDGE_IMAGE:-llmdap-bridge:0.28.0-llmdap1.18.0}
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    env_file: llmdap/bridge.env
+    environment:
+      # routes.local.json (default), routes.json (the stub models) or routes.hosted.json (the hosted decision model)
+      BRIDGE_ROUTES_FILE: /etc/llmdap/${KUTUPHANE_LLMDAP_ROUTES:-routes.local.json}
+    volumes:
+      - llmdap-audit:/var/lib/llmdap/audit        # the signed chain (AT-09): back it up
+      - ./llmdap/config:/etc/llmdap:ro              # routes*.json, policy.csv, keys.json (hashes only)
+    networks: [gateway, models, outbound]
+    stop_grace_period: 35s
+
+  model-stub:
+    profiles: [dev-models]
+    image: python:3.12-slim
+    command: ["python", "-I", "/srv/model_stub.py"]
+    read_only: true
+    cap_drop: [ALL]
+    volumes:
+      - ./model_stub.py:/srv/model_stub.py:ro
+    networks: [models]
+
+  laya:
+    profiles: [decision-models]
+    # Typed-decision model (Laya 0.4.6, open weights) behind the LLMDAP `systemone` route `laya` (#225).
+    build: laya
+    image: kutuphane-laya:0.4.6
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    environment:
+      # "multilingual" must be the Hub repo convaiinnovations/laya-multilingual (pinned revision e4e9ddf),
+      # not the built-in subfolder of convaiinnovations/laya; Laya serves it as model "multilingual".
+      LAYA_EXTRA_MODELS: '{"laya-multilingual": "convaiinnovations/laya-multilingual"}'
+      LAYA_MODELS: laya-multilingual
+      LAYA_DEFAULT_MODEL: laya-multilingual
+      LAYA_REVISION: reviewed      # load only the reviewed commit SHA (laya.revisions.PINNED_REVISIONS)
+      LAYA_THREADS: "8"
+      LAYA_DEVICE: cpu
+    volumes:
+      - ${HF_CACHE:-~/.cache/huggingface}:/hf:ro   # pinned Hub revision; the container has no network out
+    networks: [models]
+
+  # Real local models (D61). Nothing leaves the machine. routes.local.json:
+  #   chat → spark-chat → the host's vLLM (RadixArk/Qwen3.8-27B-NVFP4, host port 8000; thinking forced off);
+  #   emb and rerank → embedder (bge-m3, bge-reranker-v2-m3, CPU); rerank-gpu → reranker-gpu; laya → laya.
+  # The weights come from the read-only Hugging Face cache at the commits pinned in deploy/models/server.py
+  # (download them once; see deploy/llmdap/README.md).
+  embedder:
+    profiles: [local-models]
+    build: models
+    image: kutuphane-models:1.0
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    environment:
+      MODELS_THREADS: "8"
+      OMP_NUM_THREADS: "8"
+    cpus: 8
+    mem_limit: 8g          # the host's memory is shared with the GPU models
+    volumes:
+      - ${HF_CACHE:-~/.cache/huggingface}:/hf:ro   # pinned Hub revisions; the container has no network out
+    networks: [models]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 10s
+      start_period: 180s
+      retries: 3
+
+  spark-chat:
+    profiles: [local-models]
+    # Forwards only POST /v1/chat/completions, and only to the host's vLLM (deploy/spark-chat/nginx.conf).
+    image: nginx:1.27-alpine
+    entrypoint: ["nginx", "-c", "/etc/nginx/spark-chat/nginx.conf", "-g", "daemon off;"]
+    restart: unless-stopped
+    user: "101:101"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    volumes:
+      - ./spark-chat:/etc/nginx/spark-chat:ro
+    extra_hosts: ["vllm-host:host-gateway"]
+    networks: [models, spark]   # `models` is internal; `spark` is the one way to the host
+
+  reranker-gpu:
+    profiles: [gpu-rerank]
+    # bge-reranker-v2-m3 on the GB10 GPU behind the LLMDAP route `rerank-gpu` (G26). Core uses it only with
+    # KUTUPHANE_LLMDAP_RERANK_ROUTE=rerank-gpu in .env; with `rerank`, Core reranks on the CPU embedder. The image is
+    # the host vLLM's own local build (the image of the `vllm_node` container: arm64, CUDA 13, sm_121a); it is never
+    # pulled. The GPU memory is shared with the chat model, so this server takes a small share: 0.04 of the GPU
+    # memory (about 4.8 GB, measured use in docs/guide/install.md), no KV cache (an encoder), eager mode (no CUDA
+    # graphs). The weights are the pinned commit of deploy/models/server.py, read by path from the read-only cache.
+    # max-model-len 2560 holds the longest pair Core can send (a 1,000-character query and 1,200 passage
+    # characters, even at one token per character), so no rerank call fails on length.
+    image: ${KUTUPHANE_VLLM_IMAGE:-vllm-node:latest}
+    pull_policy: never
+    # A start can fail with a CUDA out-of-memory error while the host's GPU memory is busy; retry a few times,
+    # then stop (a crash loop would compete with the chat model for the shared memory).
+    restart: on-failure:5
+    entrypoint: ["vllm", "serve",
+                 "/hf/hub/models--BAAI--bge-reranker-v2-m3/snapshots/953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
+                 "--served-model-name", "BAAI/bge-reranker-v2-m3", "--host", "0.0.0.0", "--port", "8000",
+                 "--runner", "pooling", "--dtype", "float16", "--gpu-memory-utilization", "0.04",
+                 "--max-model-len", "2560", "--max-num-batched-tokens", "16384", "--max-num-seqs", "32",
+                 "--enforce-eager", "--disable-uvicorn-access-log"]
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:exec,size=1g"]   # Triton builds and loads small kernels at start (the image is read-only)
+    shm_size: 1g
+    environment:
+      HOME: /tmp
+      HF_HUB_OFFLINE: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      VLLM_NO_USAGE_STATS: "1"
+      DO_NOT_TRACK: "1"
+    volumes:
+      - ${HF_CACHE:-~/.cache/huggingface}:/hf:ro   # the same cache as the embedder; the container has no network out
+    deploy:
+      resources:
+        reservations:
+          devices: [{driver: nvidia, count: all, capabilities: [gpu]}]
+    networks: [models]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 10s
+      start_period: 300s
+      retries: 3
+
+  # Curator web on the phone (docs/25 §3.1, §3.2; D72). Core is on neither curator network, so Core cannot reach
+  # curator web, and curator web cannot reach Core. No published port; the tailnet node `kutuphane-curator` serves
+  # HTTPS 443 → curator:8090 (tailscale/serve.json); Funnel is never configured. Before the first start: the tailnet
+  # has MagicDNS and HTTPS certificates on, and its ACL lets only the operator's devices reach
+  # tag:kutuphane-curator:443; deploy/tailscale/authkey (mode 600, a tagged, non-reusable auth key) exists; .env has
+  # KUTUPHANE_CURATOR_WEB_DB_PASSWORD, KUTUPHANE_WEBAUTHN_RP_ID (kutuphane-curator.<tailnet>.ts.net) and
+  # KUTUPHANE_WEBAUTHN_ORIGIN (https://<that>). Without them, curator web stops at start and names the setting.
+  curator:
+    profiles: [curator]
+    build: ..
+    command: ["kutuphane", "curator", "web", "--host", "0.0.0.0", "--port", "8090"]
+    environment:
+      KUTUPHANE_CURATOR_WEB_DSN: postgresql://kutuphane_curator_web:${KUTUPHANE_CURATOR_WEB_DB_PASSWORD:-}@postgres:5432/kutuphane
+      KUTUPHANE_WEBAUTHN_RP_ID: ${KUTUPHANE_WEBAUTHN_RP_ID:-}
+      KUTUPHANE_WEBAUTHN_ORIGIN: ${KUTUPHANE_WEBAUTHN_ORIGIN:-}
+      KUTUPHANE_CONFIRM_HOURS: ${KUTUPHANE_CONFIRM_HOURS:-24}   # docs/25 §7.5: the same value as Core
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    networks: [curator-db, curator]
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  tailscale:
+    profiles: [curator]
+    image: tailscale/tailscale:v1.104.2   # pinned; read the release notes before an upgrade
+    hostname: kutuphane-curator
+    environment:
+      TS_AUTHKEY: file:/run/secrets/ts-authkey
+      TS_HOSTNAME: kutuphane-curator
+      TS_EXTRA_ARGS: --advertise-tags=tag:kutuphane-curator
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/serve.json
+      TS_USERSPACE: "true"
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - ./tailscale/serve.json:/config/serve.json:ro
+      - ./tailscale/authkey:/run/secrets/ts-authkey:ro
+    networks: [curator, tailnet]
+    depends_on: [curator]
+
+volumes:
+  pgdata:
+  llmdap-audit:
+  tailscale-state:
+
+networks:
+  db: {internal: true}
+  web: {internal: true}
+  gateway: {internal: true}
+  models: {internal: true}
+  curator-db: {internal: true}
+  curator: {internal: true}
+  # The hosted decision model (Jev): KUTUPHANE_LLMDAP_OFFLINE=false gives LLMDAP a way out. Every hosted call still
+  # needs an `llm:egress` grant (deny by default; policy.csv grants only hosted/jev/shadow-labelling).
+  # Operator decision 2026-10-15: Jev sees only documents labelled normal + cloud_ok, after the label.
+  outbound: {internal: "${KUTUPHANE_LLMDAP_OFFLINE:-true}"}
+  edge: {}
+  dev: {}
+  spark: {}
+  tailnet: {}
