@@ -1,11 +1,11 @@
 # kstd — knowledge standard (working name)
 
-The specification draft is `docs/11-standard-draft.md` (draft 0.3). This folder holds the parts that make the draft testable:
+The specification draft is `docs/11-standard-draft.md` (draft 0.3.1). This folder holds the parts that make the draft testable:
 
 | Path | Purpose |
 |---|---|
 | `tests/decision/cases.yaml` | Conformance cases for the decision rule (§4): inputs and the expected `result`, `authority`, `reasons`, `notices`. A conforming implementation MUST give the same output for every case. A derived item is checked against its whole recorded lineage (inputs of inputs, transitively, cycle-safe; a missing ancestor gives `input-unknown`): rights, `ai_use` and personal data (with the synthetic trust rule) per input, and it inherits the strictest `export` and `route` handling of the lineage. Rule 4 (restriction admissibility): a tightening counts only from the node, the item's own issuer, or an issuer trusted for that kind × scope; from any other issuer it gives `escalate` (`restriction-untrusted`, notice `restricted-by:<issuer>`), never `deny`. |
-| `tests/erasure/cases.yaml`, `reference/erase.py` | Conformance cases for the reach of an erasure (§3 `erase`, §5 Inputs): erased, kept, unresolved copies at other nodes, derived items with unknown scope. The reach starts from every requested id, also one that is not held locally; only local items are reported as erased, and deliveries of any reached item stay unresolved. `inputs: []` counts as no recorded inputs (scope unknown). |
+| `tests/erasure/cases.yaml`, `reference/erase.py` | Informative cases for the reach of an erasure (`docs/11` Appendix A `erase`, §5 Inputs; not a conformance requirement since D78): erased, kept, unresolved copies at other nodes, derived items with unknown scope. The reach starts from every requested id, also one that is not held locally; only local items are reported as erased, and deliveries of any reached item stay unresolved. `inputs: []` counts as no recorded inputs (scope unknown). |
 | `reference/decide.py` | A small reference evaluator. It proves that the cases are consistent. It is not a product component. |
 | `reference/test_cases.py` | Runs the cases: `cd kstd/reference && python -m pytest`. |
 

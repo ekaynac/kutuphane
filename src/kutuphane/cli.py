@@ -952,12 +952,14 @@ def main(argv=None) -> int:
     try:
         if getattr(args, "no_db", False):
             return args.fn(None, args)
-        if getattr(args, "curator_db", False) and not os.environ.get(db.CURATOR_DSN_ENV):
+        # A curate grant makes a curator, so it needs the curator credential, as the curation it allows (#67).
+        curator_db = getattr(args, "curator_db", False) or (args.fn is cmd_grant and args.mode == "curate")
+        if curator_db and not os.environ.get(db.CURATOR_DSN_ENV):
             print(f"error: {db.CURATOR_DSN_ENV} is not set (the curator credential)", file=sys.stderr)
             return 2
         # The owner credential writes Standing and applies migrations; without it, migrate uses KUTUPHANE_DSN
         # (a single-role development database).
-        owner = getattr(args, "curator_db", False) or args.fn is cmd_migrate
+        owner = curator_db or args.fn is cmd_migrate
         with db.connect(os.environ.get(db.CURATOR_DSN_ENV) if owner else None) as conn:
             return args.fn(conn, args)
     except (ValueError, OSError, RuntimeError) as exc:  # SourceError, PolicyError, AuthzError are ValueErrors

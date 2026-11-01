@@ -85,9 +85,9 @@ migration 029).
 
 - Only the database owner role, and the curator web role for a signed act, can insert Standing events. The app role
   (`kutuphane_app`, used by the server) cannot (`deploy/db-roles.sql`).
-- `kutuphane note standing`, `kutuphane note rollback`, `kutuphane skill clear` and `kutuphane curator …` need
-  `KUTUPHANE_CURATOR_DSN`. The named curator must hold `curate` on the book now. `curate` is for users only,
-  granted directly, never delegated.
+- `kutuphane note standing`, `kutuphane note rollback`, `kutuphane skill clear`, `kutuphane curator …` and
+  `kutuphane grant … curate …` need `KUTUPHANE_CURATOR_DSN`. The named curator must hold `curate` on the book now.
+  `curate` is for users only, granted directly, never delegated.
 - The CLI trusts its operator. So the curator credential is the boundary. An agent that can read it can curate as
   any user. Keep it out of every environment that an agent can read.
 - Memory rows (`note`, `write_record`, `note_link`, `note_citation`, `outcome`) are append-only for the app role.

@@ -90,18 +90,21 @@ text, class key, scope, commit, citations, creation links, decision). So:
 
 A note is at most 8,000 characters. A secret scan reads every note before it is stored.
 
-### Kinds, roles and time
+### Kinds
 
-| Kind | Role | Time |
+The kind of a note sets how it acts and how long it is current. Role and time basis are not separate facets: they
+follow from the kind (D78).
+
+| Kind | Acts as | Current |
 |---|---|---|
-| `decision_proposal` | `rule` | durable |
-| `convention` | `rule` | durable |
-| `finding` | `evidence` | durable |
-| `lesson` | `evidence` | durable |
-| `dead_end` | `evidence` | durable |
-| `test_result` | `evidence` | as of its write time: always history |
+| `decision_proposal` | a rule | durable |
+| `convention` | a rule | durable |
+| `finding` | evidence | durable |
+| `lesson` | evidence | durable |
+| `dead_end` | evidence | durable |
+| `test_result` | evidence | as of its write time: always history |
 
-A `rule` note with a scope needs a matching request context to be current. An `evidence` note is shown with its
+A rule note with a scope needs a matching request context to be current. An evidence note is shown with its
 scope.
 
 ### Links
@@ -155,9 +158,9 @@ note is current when all of these are true:
 
 A pending note is never current. Outcomes never change Standing.
 
-**Facets of file books.** The ontology (`../09-ontology-v2.md`) also defines blocks, Role, Time and Standing for
-the content of file books. That part is approved but not built. Today Standing exists for notes only. For file
-books, kstd gives origin, validity (`valid_from`, `valid_to`) and applicability.
+**File books.** For file books, kstd gives origin, validity (`valid_from`, `valid_to`) and applicability. Standing
+exists for notes only. The block ontology of `../09-ontology-v2.md` (blocks and their facets) is frozen (D78): it is
+not built and gets no new work.
 
 ## Origin
 
@@ -186,7 +189,7 @@ the principal. Rights are decided per call, so a revoke applies to the next call
 | `read` | search, open and read the book; read notes |
 | `activate` | an agent may receive agent instructions (see below) |
 | `propose` | write notes, links and outcomes into a journal; on a content book: submit a signed package for a person to approve (`POST /v1/packages`, `submit_package`) |
-| `curate` | the user can be named as curator by the CLI. Users only, granted directly, never delegated |
+| `curate` | the user can be named as curator by the CLI. Users only, granted directly, never delegated. `kutuphane grant … curate …` needs `KUTUPHANE_CURATOR_DSN` |
 | `discover`, `use` | reserved: you can grant them, but no code path checks them today |
 | `member` | on `role:<name>`: puts a subject in the role |
 

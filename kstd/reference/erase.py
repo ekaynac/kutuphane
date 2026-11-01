@@ -1,4 +1,4 @@
-"""kstd reference erasure reach (draft 0.2, docs/11 §3 `erase`, §5 Inputs). Deterministic, like decide.py.
+"""kstd reference erasure reach (informative: docs/11 Appendix A `erase`, §5 Inputs). Deterministic, like decide.py.
 
 A case has `statements` (items with optional `inputs`, and `use_record` statements of kind `use` that record a
 delivery to another node) and `request: {erase: [item ids]}`. The result is:
