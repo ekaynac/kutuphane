@@ -8,6 +8,12 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Remove the `laya` service; README for vision 1.2
+
+- Removed: the `laya` service, the compose profile `decision-models` and `deploy/laya/`. No Kütüphane code calls Laya after D73. The LLMDAP route `laya` in `deploy/llmdap/config/` stays for other projects that use the shared gateway.
+- **Action, full stack:** remove `--profile decision-models` from your commands. Start the live stack with `docker compose -f deploy/compose.full.yaml --env-file .env --profile app --profile local-models start postgres llmdap embedder spark-chat`. To remove a `laya` container that is left over: `docker compose … --remove-orphans`, or `docker rm kutuphane-laya-1`.
+- Changed (documentation): the README is shorter and follows vision 1.2 ([index.md](index.md)).
+
 ### Astra review #22
 
 - Changed (security): migration 050 refuses any write to the D73 tables, drops `decider_notes()` and `delegation_next()`, and revokes all rights of `kutuphane_decider`. **Action:** `kutuphane migrate`; then you may run `DROP ROLE kutuphane_decider;` ([security.md](security.md#delegated-curate-d73-removed)).
