@@ -539,8 +539,9 @@ confirms nothing. Form mode is never used. Other clients: show `url`.
 
 ### 5.16 `submit_package`
 
-Submit a package signed with `kutuphane export`, with the checks of `kutuphane receive`. Nothing is published until a
-person runs `kutuphane approve-import` ([operations.md](operations.md#packages-from-an-application-http-and-mcp-139)).
+Submit a package signed with `kutuphane pack` or `kutuphane export`, with the checks of `kutuphane receive`. Nothing
+is published until a person runs `kutuphane approve-import`
+([operations.md](operations.md#packages-from-an-application-http-and-mcp-139)).
 **Needs:** `propose` on the manifest's book; without it nothing is stored. Argument: `package_base64` (**req**, the
 package in base64, within the package limit).
 
