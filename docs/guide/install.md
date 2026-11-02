@@ -49,7 +49,6 @@ repository root) uses the full stack (project `kutuphane`; paths relative to `de
 - `ingress` (`app`; `edge`, `web`): nginx, the only way in; publishes `${KUTUPHANE_BIND:-127.0.0.1}:8080`.
 - `llmdap` (`app`; `gateway`, `models`, `outbound`): the LLMDAP bridge, the only way to the model servers.
 - `model-stub` (`dev-models`; `models`): deterministic stand-in models; never for measurements.
-- `laya` (`decision-models`; `models`): the typed-decision model (labelling work).
 - `embedder`, `spark-chat` (`local-models`; `models`, `spark-chat` also `spark`): [local models](#local-models).
 - `reranker-gpu` (`gpu-rerank`; `models`): [GPU reranker](#gpu-reranker).
 - `curator`, `tailscale` (`curator`; `curator-db`, `curator` / `curator`, `tailnet`): [curator web](#curator-web).
@@ -156,7 +155,7 @@ its own environment ([operations.md](operations.md)). Download the pinned weight
 "Local models"), then:
 
 ```sh
-docker compose --profile app --profile decision-models --profile local-models up -d --build
+docker compose --profile app --profile local-models up -d --build
 ```
 
 Vectors are stored per model name: after you change the embedding model, run `kutuphane index <book>` per book.
@@ -167,7 +166,7 @@ Every hosted call needs an `llm:egress` grant in `policy.csv`. Core's routes sta
 is `cloud`; a `local_only` book never goes to a `cloud` route. Then:
 
 ```sh
-docker compose --profile app --profile decision-models up -d llmdap
+docker compose --profile app up -d llmdap
 ```
 
 ### GPU reranker
@@ -344,8 +343,8 @@ verdicts on known samples. What a scan blocks: [security.md](security.md#skill-s
 
 - `postgres`, `core`, `ingress`, `llmdap`, `embedder`, `spark-chat` have `restart: unless-stopped` (light install
   too): Docker restarts them after a crash or reboot if the daemon starts at boot (`systemctl is-enabled docker`);
-  `docker compose … stop` keeps one stopped. `laya`, `model-stub` and the curator services have no policy: run
-  their `docker compose … up -d` again.
+  `docker compose … stop` keeps one stopped. `model-stub` and the curator services have no policy: run their
+  `docker compose … up -d` again.
 - `reranker-gpu` has `restart: on-failure:5`: a failed start (for example `CUDA error: out of memory`) is retried
   at most 5 times, with longer waits. After that, wait for the host's vLLM, check `free -g`, and start it as in
   [GPU reranker](#gpu-reranker). It is `healthy` after about one minute (`docker compose … ps reranker-gpu`).

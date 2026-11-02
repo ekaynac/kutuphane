@@ -1,31 +1,42 @@
 # Kütüphane
 
-**Kütüphane is the place where people and AI agents keep what they know, with a record of who wrote it, who
-accepted it, and who may use it for what.** It is a governed knowledge catalog and an agent memory layer. Agents
-reach it through MCP; RAG platforms and orchestrators use it as their governed source. It runs on-prem and
-air-gapped. It is not a RAG platform, a chat UI, a code graph or a run-state store (`docs/23-vision-v1.md`).
+> Kütüphane is the governed catalog that people, agents and applications read from the same copy. Every item, a
+> document or an agent's note, carries who wrote it (from the write path, never from a claim), who accepted it,
+> where it applies and what a model may do with it. Agent memory products remember; Kütüphane keeps a record that
+> can be checked, rolled back and exported.
 
-Five promises (each one is a behavior that you can check):
+Kütüphane is a governed knowledge catalog and a memory layer for agents. People, agents and applications read the
+same copy of each book, note, rule and skill. Agents use MCP; applications use MCP or HTTP. It runs on-prem and
+air-gapped. The vision is in `docs/23-vision-v1.md` (version 1.2).
 
-| # | Promise |
-|---|---|
-| P1 | **Knowledge with an owner.** Each item shows who issued it, who accepted it, and whether it is current. |
-| P2 | **An agent can never pass as a person.** Origin comes from the write path, not from the writer's claim. |
-| P3 | **A model never sees what it may not see.** Rights and personal data are checked before every embedding, rerank and answer. |
-| P4 | **Memory that does not rot.** Duplicates are found, contradictions kept, stale code citations flagged, poisoned notes rolled back with everything derived from them. |
-| P5 | **Cheap and fast for agent loops.** Deterministic, filtered reads with no model call; a model answer only on request. |
+## Five principles
+
+1. **The write path is the provenance.** No label from a model, a header or a manifest outranks it.
+2. **Rules are accepted; evidence is verified.** Only a person makes a rule current; evidence that nobody uses expires.
+3. **Memory is data, never instruction.** Notes reach a model as tool results; instructions need `activate` and a scan.
+4. **Nothing is rewritten; everything can be withdrawn.** Notes are immutable; rollback is an event with a cause.
+5. **An asset leaves with its rights.** Export and import carry origin, Standing, rights and derivation.
 
 ## Who it is for
 
-- **Coding orchestrators** (ADC, nöbetçi-mcp): shared memory for decisions, findings, lessons and conventions.
-- **Organizations with a RAG platform:** a governed source that gives only the passages that the caller and the
-  model may use, with their rights attached.
-- **Curators:** people who accept or reject what agents propose.
+- **Coding orchestrators** (ADC, nöbetçi-mcp): shared agent memory for decisions, findings, lessons and conventions.
+- **Applications** (for example InfraMedic, RAG platforms): a catalog contract (`list_books`, `list_files`) and
+  signed packages (`submit_package`), with the rights of each item attached.
+- **Curators:** people who accept or reject what agents propose, on the phone with a passkey (curator web) or on
+  the CLI.
+
+## What it is not
+
+- Not a RAG platform or a chat UI: Onyx, Dify, Open WebUI and RAGFlow do that, and they connect to Kütüphane.
+- Not a code graph: it only cites into code.
+- Not a run-state store, and not a place for chat transcripts or scratch notes.
+- Not an identity provider: tokens come from the IdP; grants live here.
+- Not an extraction pipeline: it never writes a note from a conversation. An agent proposes; a person decides.
 
 ## Quick start (development)
 
-You need Docker with Compose v2 and Python 3.11 or later. These commands run Postgres in Docker and the server on
-the host, with development tokens and no model service.
+You need Docker with Compose v2 and Python 3.11 or later. Postgres runs in Docker, the server on the host, with
+development tokens and no model service.
 
 ```sh
 # 1. Install, start Postgres, apply the migrations
@@ -65,78 +76,80 @@ KUTUPHANE_CURATOR_DSN="$KUTUPHANE_DSN" kutuphane note standing 'team-memory@nt_<
 curl -s -H "Authorization: Bearer $TOKEN" 'http://127.0.0.1:8090/v1/notes?book=team-memory'
 ```
 
-Any MCP client that speaks streamable HTTP with a bearer token works; `claude mcp add` is one example. Without a
-model service, search is full text only, and `tools/list` has no `ask_library` and no job tools. To run the same in
-containers with no LLMDAP and only open source parts, use the light install (`compose.yaml`). For the full stack
-(`deploy/compose.full.yaml`: ingress, LLMDAP, local models, two database roles) read `docs/guide/install.md`.
+Any MCP client that speaks streamable HTTP with a bearer token works. Without a model service, search is full text
+only, and `tools/list` has no `ask_library` and no job tools. The light install is `compose.yaml`; the full stack
+(ingress, LLMDAP, local models, two database roles) is `deploy/compose.full.yaml` (`docs/guide/install.md`).
 
 ## MCP tools
 
-The endpoint is `/mcp`. It is stateless and serves MCP 2025-11-25 and 2026-07-28 clients. Reference:
-`docs/guide/mcp.md`.
+The endpoint is `/mcp` (stateless; MCP 2025-11-25 and 2026-07-28). Each tool description names the grant that it
+needs. Reference: `docs/guide/mcp.md`.
 
 | Tool | What it does |
 |---|---|
-| `search_library` | search the books that you may read now (full text, plus vectors and rerank when configured); `max_chars` gives a short snippet per hit for agent loops |
-| `open_citation` | open a passage handle or a note reference at its exact version |
-| `ask_library` | answer with `[n]` citations, or `not_in_library`; can run as a background job (only with LLMDAP) |
-| `reopen_answer` | show a stored answer and its evidence again, with no model call |
-| `read_document` | read one text document of one version (agent instructions need `activate`) |
-| `job_status`, `job_result`, `job_cancel` | follow, read or cancel a background `ask_library` job (only with LLMDAP) |
-| `propose_note` | write a note into a journal; it starts `pending` |
-| `link_notes` | link a note to a note or passage (`same_as`, `contradicts`, `about`, `fixed_by`, …) |
-| `verify_citations` | check code citations against a branch or commit |
-| `query_notes` | fast, deterministic, filtered note reads with no model call |
-| `neighbours` | the notes linked to a note or passage (depth 1 or 2) |
-| `record_outcome` | record `passed`, `failed`, `reverted` or `reopened` for a task on one exact item |
-| `skills/list`, `skills/get`, `resources/read` of `skill://` | MCP Skills (SEP-2640): the skill folders that you may `activate`, with a SHA-256 for each file; the files only on demand |
+| `search_library` | Search the books that you may read now; `max_chars` gives short snippets. |
+| `open_citation` | Open a passage handle or a note reference at its exact version. |
+| `ask_library` | Answer with `[n]` citations, or `not_in_library` (LLMDAP only). |
+| `reopen_answer` | Show a stored answer and its evidence again, with no model call. |
+| `read_document` | Read one text document of one version (instructions need `activate`). |
+| `list_books` | List the books and journals that you may read, with their latest publication. |
+| `list_files` | List the files of a book's current version, with kstd item information. |
+| `job_status`, `job_result`, `job_cancel` | Follow, read or cancel a background `ask_library` job (LLMDAP only). |
+| `propose_note` | Write a note into a journal; it starts `pending`. |
+| `link_notes` | Link a note to a note or a passage (`same_as`, `contradicts`, `about`, …). |
+| `verify_citations` | Check code citations against a branch or a commit. |
+| `query_notes` | Read notes with filters: fast, deterministic, no model call. |
+| `neighbours` | Show the notes linked to a note or a passage (depth 1 or 2). |
+| `record_outcome` | Record `passed`, `failed`, `reverted` or `reopened` for one exact item. |
+| `confirm_origin` | Show the state and the URL of the "my words" confirmation of a note. |
+| `submit_package` | Submit a signed package; a person approves it on the CLI. |
+| `package_status` | Show the status of your package. |
 
-The tool list is the same for every caller. Each tool description names the grant that it needs.
-
-`search_library`, `open_citation`, `read_document` and `query_notes` give the Sensitivity and Egress of their
-content in `_meta["kutuphane/handling"]`.
-
-## HTTP API
-
-Every MCP tool has an HTTP route under `/v1/` (for example `GET /v1/search`, `POST /v1/notes`, `GET /v1/notes`).
-The web UI is at `/ui/`. Reference: `docs/guide/http-api.md`.
+MCP Skills (`skills/list`, `skills/get`, `skill://` resources) give the skills that you may `activate`. Every tool
+also has an HTTP route under `/v1/` (for example `GET /v1/search`, `POST /v1/notes`); the web UI is at `/ui/`.
+Reference: `docs/guide/http-api.md`.
 
 ## Security model
 
-- The IdP issues every token; the issuer is compared exactly; there are no static API keys.
-- One gate decides every read before the work and again at delivery; every decision is audited.
-- `ai_input: n` text never reaches a model; a `local_only` book never reaches a cloud route; all model calls go through LLMDAP.
-- Origin comes from the write path; only a curator changes Standing: with a separate database credential on the CLI, or on the phone with a passkey act that signs the exact notes and reason (curator web, D72).
-- Secrets are refused at ingest and in notes; code citations read confined bare mirrors only.
-- Optional SkillSpector scan of skills at ingest: a `DO_NOT_INSTALL`, partial or failed scan blocks the skill for agents (and in MCP Skills for everyone) until a curator clears it; `SAFE` grants nothing.
-
-Details: `docs/guide/security.md`.
+- Origin comes from the write path, never from the writer's claim. An agent cannot write as a person.
+- Rights, `ai_input` and egress are checked before every embedding, rerank and answer, and again at delivery.
+- Only a person changes Standing: with a separate database credential on the CLI, or with a passkey act on the phone.
+- Skills can get a SkillSpector scan at ingest; a bad or failed scan blocks the skill until a curator clears it.
+- All model calls go through LLMDAP; a `local_only` book never reaches a cloud route.
+- Every read decision and every model call is audited. Details: `docs/guide/security.md`.
 
 ## Documentation
 
 | Read | For |
 |---|---|
-| `docs/guide/index.md` | the map and the reading order |
-| `docs/guide/concepts.md` | books, versions, journals, notes, Standing, origin, rights, grants, delegation |
-| `docs/guide/install.md` | development, full stack, local models, database roles, upgrades |
-| `docs/guide/operations.md` | the CLI: ingest, index, grants, journals, curation, exports, repositories, backups |
-| `docs/guide/mcp.md`, `docs/guide/http-api.md` | the interfaces |
-| `docs/guide/agent-memory.md` | a how-to for orchestrators |
-| `docs/guide/security.md`, `docs/guide/kstd.md` | the security model and the kstd manifest |
-| `docs/guide/troubleshooting.md`, `docs/guide/changelog.md` | errors and changes |
-
-Design and decisions: `docs/01-direction-decisions.md`, `docs/23-vision-v1.md`, `docs/24-r1-agent-memory-design.md`.
+| `docs/guide/index.md` | The map and the reading order. |
+| `docs/guide/concepts.md` | Books, versions, journals, notes, Standing, origin, rights, grants. |
+| `docs/guide/install.md` | Development, light install, full stack, local models, upgrades. |
+| `docs/guide/operations.md` | The CLI and the settings. |
+| `docs/guide/mcp.md`, `docs/guide/http-api.md` | The interfaces. |
+| `docs/guide/agent-memory.md` | A how-to for orchestrators. |
+| `docs/guide/security.md`, `docs/guide/kstd.md` | The security model and the kstd manifest. |
+| `docs/guide/troubleshooting.md`, `docs/guide/changelog.md` | Errors and changes. |
+| `docs/23-vision-v1.md` | The vision (1.2): positioning, principles, users, roadmap. |
+| `docs/11-standard-draft.md` | The kstd specification. |
+| `docs/01-direction-decisions.md` | The decisions (D1 and later). |
 
 ## Status
 
-Version 0.1.0, under active development; interfaces can change. Built: file books with kstd L0, hybrid search,
-answers with citations, signed packages, a catalog read for applications (`list_books`, `list_files`), agent memory
-(notes, fast reads, code citations, scope, rollback, outcomes, evidence expiry, journal export and import, private
-journals), MCP 2026-07-28 with headless auth and several token issuers, MCP Skills with the SkillSpector scan, a light
-install without LLMDAP, and curator web with passkey acts, a risk-ordered queue and the "my words" confirmation.
-Removed: delegated curate (D73; D80). Open: item-level access (#138, G10). See `docs/guide/changelog.md`.
+Version 0.1.0, under active development; interfaces can change.
+
+- **Built:** file books with kstd L0; hybrid search; answers with citations; signed packages over the CLI, HTTP and
+  MCP; the catalog contract (`list_books`, `list_files`); agent memory (notes, fast reads, code citations, scope,
+  rollback, outcomes, evidence expiry, journal export and import); MCP 2026-07-28 with several token issuers; MCP
+  Skills with the SkillSpector scan; a light install without LLMDAP; curator web with passkey acts and the "my
+  words" confirmation.
+- **Open:** item-level access (#138, G10); the live reboot test (#141); the T3 A/B gate for new memory work (#121);
+  the InfraMedic token issuer.
+- **Removed:** delegated curate and the decider (D73, removed by D80); the `laya` decision-model service.
+
+Changes: `docs/guide/changelog.md`.
 
 ## Licence
 
-The code is licensed under Apache-2.0 (`LICENSE`). The kstd specification text in `docs/` and `kstd/` is
-licensed under CC-BY-4.0 (`NOTICE`). Contributions: `CONTRIBUTING.md`.
+The code is licensed under Apache-2.0 (`LICENSE`). The kstd specification text in `docs/` and `kstd/` is licensed
+under CC-BY-4.0 (`NOTICE`). Contributions: `CONTRIBUTING.md`.

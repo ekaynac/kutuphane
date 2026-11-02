@@ -71,7 +71,7 @@ p = ["config.json", "pytorch_model.bin", "model.safetensors", "tokenizer.json", 
 d("BAAI/bge-m3", revision="5617a9f61b028005a4858fdac845db406aefb181", allow_patterns=p)
 d("BAAI/bge-reranker-v2-m3", revision="953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e", allow_patterns=p)'
 chmod -R a+rX ~/.cache/huggingface/hub/models--BAAI--bge-m3 ~/.cache/huggingface/hub/models--BAAI--bge-reranker-v2-m3
-docker compose --profile app --profile decision-models --profile local-models up -d --build
+docker compose --profile app --profile local-models up -d --build
 ```
 
 Vectors are stored per model name, so an index built with `stub-embed` stays apart; run `kutuphane index <book>` to
