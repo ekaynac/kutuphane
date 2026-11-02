@@ -253,6 +253,11 @@ def _scan_options(parser, effect: str) -> None:
                              "finding (listed-name); never shown, never stored")
 
 
+def _legal_basis(parser) -> None:
+    parser.add_argument("--legal-basis", help="DPV codes, e.g. eu-gdpr:A6-1-b (several: space separated); required "
+                        "when kstd.yaml marks files as personal data yes/unknown; recorded in the signed package")
+
+
 def cmd_kstd_init(_conn, args) -> int:
     """Write a starting kstd.yaml that lists every file with its digest; all rights start as unknown. With
     --source-repo, the origin of each file is proposed from the commit trailers of a local repository (G34);
@@ -338,12 +343,26 @@ def cmd_untrust(conn, args) -> int:
 
 
 def cmd_export(conn, args) -> int:
-    data = packages.export(conn, args.book, signing.load_private(), legal_basis=args.legal_basis)
-    fd = os.open(args.out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    _write_package(args.out, packages.export(conn, args.book, signing.load_private(), legal_basis=args.legal_basis))
+    return 0
+
+
+def cmd_pack(_conn, args) -> int:
+    """#161: export's package from a folder, with no database (a release pipeline that only has the folder)."""
+    policy = make_policy(sensitivity=args.sensitivity, egress=args.egress, protection=args.protection)
+    files, key = read_source(Path(args.path)), signing.load_private(Path(args.key))
+    data = packages.pack(files, book=args.book, title=args.title or args.book, key=key, sequence=args.sequence,
+                         policy=policy, legal_basis=args.legal_basis)
+    print(_report_data_findings(catalog.data_findings(files)), file=sys.stderr)
+    _write_package(args.out, data)
+    return 0
+
+
+def _write_package(out: str, data: bytes) -> None:
+    fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
     with os.fdopen(fd, "wb") as f:
         f.write(data)
-    _print({"package": args.out, "bytes": len(data)})
-    return 0
+    _print({"package": out, "bytes": len(data)})
 
 
 def cmd_receive(conn, args) -> int:
@@ -738,10 +757,21 @@ def parser() -> argparse.ArgumentParser:
     ex_ = sub.add_parser("export", help="write a signed package of a book's current version (KUTUPHANE_SIGNING_KEY)")
     ex_.add_argument("book")
     ex_.add_argument("--out", required=True)
-    ex_.add_argument("--legal-basis", help="DPV codes, e.g. eu-gdpr:A6-1-b (several: space separated); required "
-                     "when kstd.yaml marks files as personal data yes/unknown; "
-                     "recorded in the signed package")
+    _legal_basis(ex_)
     ex_.set_defaults(fn=cmd_export)
+    pk = sub.add_parser("pack", help="write a signed package of a folder, as export does (no database)")
+    pk.add_argument("path")
+    pk.add_argument("--book", required=True, help="book slug in the receiving installation")
+    pk.add_argument("--title")
+    pk.add_argument("--key", required=True, help="the private key file of `keygen` (chmod 600)")
+    pk.add_argument("--out", required=True, help="a new file")
+    pk.add_argument("--sequence", required=True, type=int, help="higher than every package of this key and book "
+                                                                "that the receiver accepted (replay protection)")
+    pk.add_argument("--sensitivity", required=True, choices=SENSITIVITY, help="the policy suggestion")
+    pk.add_argument("--egress", required=True, choices=EGRESS)
+    pk.add_argument("--protection", required=True, choices=PROTECTION_M1)
+    _legal_basis(pk)
+    pk.set_defaults(fn=cmd_pack, no_db=True)
     rc = sub.add_parser("receive", help="quarantine and verify a package; nothing is published")
     rc.add_argument("package")
     rc.set_defaults(fn=cmd_receive)

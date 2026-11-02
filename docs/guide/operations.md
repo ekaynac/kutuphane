@@ -665,10 +665,12 @@ yourself, for example `*/15 * * * * git --git-dir=/srv/kutuphane/repos/app.git f
 
 ## 10. Packages
 
-A package is a signed copy of a book's current version ([kstd.md](kstd.md)).
+A package is a signed copy of a book's current version (`export`) or of a folder (`pack`) ([kstd.md](kstd.md)).
 
 ```sh
 KUTUPHANE_SIGNING_KEY=/path/key.pem kutuphane export <book> --out <book>.pkg [--legal-basis 'eu-gdpr:A6-1-b']
+kutuphane pack <folder> --book <book> --key /path/key.pem --out <book>.pkg --sequence <n> \
+  --sensitivity normal --egress local_only --protection standard [--title …] [--legal-basis …]
 kutuphane receive <book>.pkg
 kutuphane imports
 kutuphane approve-import <id> --by user:admin --sensitivity normal --egress local_only --protection standard
@@ -678,6 +680,11 @@ kutuphane reject-import <id> --by user:admin --reason '…'
 - `export` needs `--legal-basis` when files are personal data `yes` or `unknown`. It refuses a journal, a
   `restricted` book, and a book with `license: unknown` files (#143, named; set a license such as
   `LicenseRef-InfraMedic-Internal` and publish again).
+- `pack` (#161) needs no database. It reads the folder as `ingest` does: it refuses a credential, a bad
+  `kstd.yaml` and a control character in a path, and prints the personal-data findings. Then it applies the
+  refusals of `export` and writes the same package. The policy flags become `policy_suggestion`. Nothing counts
+  the sequence for you: give a `--sequence` higher than every package of this key and book that the receiver
+  accepted (for example, your release number). `receive` refuses an older one (`replay`).
 - `receive` verifies and quarantines; exit 5 if not `verified`. It adds `personal_data` and, with
   `KUTUPHANE_SKILLSPECTOR_BIN`, `skill_scan` findings.
 - `imports` lists the last 50 with verdicts and diff (`added`, `removed`, `changed`), and `submitted_by`,
@@ -691,7 +698,8 @@ kutuphane reject-import <id> --by user:admin --reason '…'
 An application sends a package with `POST /v1/packages` ([http-api.md](http-api.md#12-packages)) or `submit_package`
 ([mcp.md](mcp.md#516-submit_package)). Checks are those of `receive`; a person still runs `approve-import`.
 
-1. `trust` the application's signing key once.
+1. Make a key once with `kutuphane keygen <key.pem>`; `trust` its public key on the receiving installation. Sign
+   each release with `kutuphane pack` (no database) or `export`.
 2. Grant `propose` on the target book: `kutuphane grant book:<book> propose agent:<client>`. Without it: `403`,
    nothing stored. A journal target: `400`.
 3. The signing key is the issuer (D74); origins come from the signed `kstd.yaml`; the caller is only recorded
@@ -764,5 +772,5 @@ Then point `KUTUPHANE_DSN` at it, or rename the databases while the app is stopp
 | [7](#7-curation) | `note standing`, `note rollback`, `note expire`, `curator enroll`, `curator passkeys`, `curator revoke-passkey`, `curator end-sessions`, `curator cancel-enrollment`, `curator verify-acts`, `curator queue`, `curator report`, `curator web` ([install](install.md#curator-web)) |
 | [8](#8-outcomes-and-decision-export) | `decisions export` |
 | [9](#9-code-repositories) | `repo add`, `repo remove` |
-| [10](#10-packages) | `export`, `receive`, `imports`, `approve-import`, `reject-import` |
+| [10](#10-packages) | `export`, `pack`, `receive`, `imports`, `approve-import`, `reject-import` |
 | [11](#11-audit-and-logs) | `whoami`, `explain` |

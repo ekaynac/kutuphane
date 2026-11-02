@@ -45,26 +45,57 @@ class PackageError(ValueError):
     pass
 
 
-# --- export -----------------------------------------------------------------------------------------------
+# --- export and pack --------------------------------------------------------------------------------------
 
 def export(conn, book: str, key, legal_basis: str | None = None) -> bytes:
     """Sign the book's current version. The sequence for (this key, book) advances in the same transaction.
-    kstd: a file whose personal_data is not `no` or `synthetic` leaves the node only with a recorded legal basis
-    (DPV codes, docs/11 §5); the basis goes into the signed manifest. Files with origin `model`/`unknown` are listed
-    as `ai_generated`; `assisted` files are listed in `reviewed` with their reviewer (EU AI Act Art. 50(4)); `tool`
-    files are listed in `tool_made` with their software agent and carry no AI mark (docs/17). A file with
-    `license: unknown` is never exported (#143, docs/11 §5.2): the export is refused."""
-    issuer = signing.fingerprint(key.public_key())
+    The refusals and the origin lists are those of _release(). A journal has no content version to export."""
     state = catalog.book_state(conn, book)
     if state is None:
         raise PackageError(f"no such book: {book}")
     if state["content_id"] is None:  # a journal (docs/24 §14): its notes are not exported in R1
         raise PackageError(f"{book} has no content version to export")
-    if state["policy"]["sensitivity"] == "restricted":  # docs/09 §1: Sensitivity owns export
-        raise PackageError(f"{book} is restricted: restricted content never leaves this installation in a package")
     rights = kstd.Rights(conn)
     infos = {e["path"]: info for e in state["files"]
              if (info := rights.info(book, state["content_id"], e["path"])) is not None}
+    fields = _release(book, state["policy"], infos, legal_basis)
+    files = [(e["path"], catalog.read_file(conn, book, state["content_id"], e["path"])) for e in state["files"]]
+    issuer = signing.fingerprint(key.public_key())
+    with conn.transaction():
+        seq = conn.execute(
+            "INSERT INTO export_sequence (issuer, book, last_sequence) VALUES (%s, %s, 1) "
+            "ON CONFLICT (issuer, book) DO UPDATE SET last_sequence = export_sequence.last_sequence + 1 "
+            "RETURNING last_sequence", (issuer, book)).fetchone()[0]
+    return _sign(key, {"book": book, "title": state["title"], "content_id": state["content_id"], "sequence": seq,
+                       **fields}, files)
+
+
+def pack(files: list, *, book: str, title: str, key, sequence: int, policy: dict,
+         legal_basis: str | None = None) -> bytes:
+    """#161: sign a folder (source.read_source) without a database. The folder follows its kstd.yaml as at ingest
+    (an invalid manifest refuses) and gets the refusals of export. `policy` becomes the policy suggestion; the sender
+    keeps no counter, so the caller names `sequence` and the receiver refuses one that is not newer (replay)."""
+    if not re.fullmatch(ids.SLUG, book):
+        raise PackageError(f"{book!r} is not a book slug")
+    if not 1 <= sequence < 2**63:  # receive's range: a bigint column
+        raise PackageError("sequence must be 1 or more")
+    manifest = kstd.validate(files)
+    infos = {f.path: info for f in files if manifest and (info := kstd.effective(manifest, f.path)) is not None}
+    fields = _release(book, check_policy(policy), infos, legal_basis)
+    return _sign(key, {"book": book, "title": title, "sequence": sequence, **fields,
+                       "content_id": ids.content_id({f.path: f.sha256 for f in files})},
+                 [(f.path, f.data) for f in files])
+
+
+def _release(book: str, policy: dict, infos: dict, legal_basis: str | None) -> dict:
+    """What may leave this node, and the manifest fields that say so: the policy suggestion, the legal basis and the
+    origin lists. kstd: a file whose personal_data is not `no` or `synthetic` leaves the node only with a recorded
+    legal basis (DPV codes, docs/11 §5). Files with origin `model`/`unknown` are listed as `ai_generated`;
+    `assisted` files are listed in `reviewed` with their reviewer (EU AI Act Art. 50(4)); `tool` files are listed in
+    `tool_made` with their software agent and carry no AI mark (docs/17). A file with `license: unknown` is never
+    exported (#143, docs/11 §5.2): the package is refused."""
+    if policy["sensitivity"] == "restricted":  # docs/09 §1: Sensitivity owns export
+        raise PackageError(f"{book} is restricted: restricted content never leaves this installation in a package")
     unlicensed = sorted(p for p, i in infos.items() if i["license"] == "unknown")
     if unlicensed:  # docs/11 §5.2, #143: derivation stays in this installation; forwarding needs a license
         raise PackageError(f"{len(unlicensed)} file(s) have license unknown ({', '.join(unlicensed[:3])}"
@@ -80,24 +111,14 @@ def export(conn, book: str, key, legal_basis: str | None = None) -> bytes:
             basis = kstd.legal_basis(legal_basis)
         except kstd.KstdError as exc:
             raise PackageError(str(exc)) from None
-    origin = origin_marks(infos)
-    files = []
-    for entry in state["files"]:
-        data = catalog.read_file(conn, book, state["content_id"], entry["path"])
-        files.append((entry["path"], data))
-    with conn.transaction():
-        seq = conn.execute(
-            "INSERT INTO export_sequence (issuer, book, last_sequence) VALUES (%s, %s, 1) "
-            "ON CONFLICT (issuer, book) DO UPDATE SET last_sequence = export_sequence.last_sequence + 1 "
-            "RETURNING last_sequence", (issuer, book)).fetchone()[0]
-    manifest = {
-        "format": FORMAT, "issuer": issuer, "book": book, "title": state["title"],
-        "content_id": state["content_id"], "sequence": seq, "created_at": int(time.time()),
-        "policy_suggestion": state["policy"],
-        **({"legal_basis": basis} if basis else {}),
-        **origin,
-        "files": [{"path": p, "sha256": ids.sha256_hex(d), "size": len(d)} for p, d in sorted(files)],
-    }
+    return {"policy_suggestion": policy, **({"legal_basis": basis} if basis else {}), **origin_marks(infos)}
+
+
+def _sign(key, fields: dict, files: list[tuple[str, bytes]]) -> bytes:
+    """The package of export and pack: the canonical manifest, its Ed25519 signature and the files."""
+    manifest = {"format": FORMAT, "issuer": signing.fingerprint(key.public_key()), "created_at": int(time.time()),
+                **fields,
+                "files": [{"path": p, "sha256": ids.sha256_hex(d), "size": len(d)} for p, d in sorted(files)]}
     body = ids.canonical(manifest)
     out = io.BytesIO()
     with tarfile.open(fileobj=out, mode="w", format=tarfile.PAX_FORMAT) as tar:

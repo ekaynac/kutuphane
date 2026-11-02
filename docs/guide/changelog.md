@@ -8,6 +8,11 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Package from a folder (#161)
+
+- Added: `kutuphane pack <folder> --book <book> --key <key.pem> --out <file> --sequence <n>` and the policy flags. It signs a folder without a database: the same reader, `kstd.yaml` check and refusals as `ingest` and `export`, and the same package. `receive` and `approve-import` take it as an export ([operations.md](operations.md#10-packages)).
+- Changed (internal): `export` and `pack` share one manifest and signing path. The output of `export` does not change.
+
 ### Remove the `laya` service; README for vision 1.2
 
 - Removed: the `laya` service, the compose profile `decision-models` and `deploy/laya/`. No Kütüphane code calls Laya after D73. The LLMDAP route `laya` in `deploy/llmdap/config/` stays for other projects that use the shared gateway.

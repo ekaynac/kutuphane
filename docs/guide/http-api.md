@@ -393,8 +393,8 @@ resource (`KUTUPHANE_PUBLIC_URL`) and has one `authorization_servers` entry: exa
 
 ## 12. Packages
 
-A consumer application sends a package that it signed with `kutuphane export`. The whole flow is in
-[operations.md](operations.md#packages-from-an-application-http-and-mcp-139).
+A consumer application sends a package that it signed with `kutuphane pack` (no database) or `kutuphane export`. The
+whole flow is in [operations.md](operations.md#packages-from-an-application-http-and-mcp-139).
 
 ### 12.1 `POST /v1/packages`
 
