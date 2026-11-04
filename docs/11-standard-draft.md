@@ -174,7 +174,7 @@ items:
   - path: procedures/pressure-test.md
     digest: sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08   # core envelope: subject
     origin: human                        # human | assisted | model | tool | unknown (= model)
-    entered_by: "agent:kobra-7"          # optional (origin details): who entered the words
+    entered_by: "agent:claude-code"      # optional (origin details): who entered the words
     confirmed_by: "user:ayse"            # optional (origin details): the person who confirmed them as hers
     valid_from: 2026-01-01
     applies_to: "Plant 3, line A"

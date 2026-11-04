@@ -78,7 +78,7 @@ kstd is our internal contract. To the outside, Kütüphane maps it to what other
 
 ## 7. Roadmap: three areas (D79)
 
-R1–R3 (agent memory, curation at volume, adoption) are done. The next work is in three areas (`docs/research/2026-10-31-direction-analysis.md` §8):
+R1–R3 (agent memory, curation at volume, adoption) are done. Areas A, B and C below were delivered on 2026-11-01/02 (#167–#190). From now on, work starts from consumer use cases and requests (D81): each request is an issue, checked against this vision and D53 before it is planned. The three areas, for the record (`docs/research/2026-10-31-direction-analysis.md` §8):
 
 | Area | Goal | Promise |
 |---|---|---|
