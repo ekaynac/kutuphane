@@ -141,6 +141,73 @@ KUTUPHANE_PROBE_TOKEN=<access token> python3 deploy/mcp_probe.py http://127.0.0.
 `egress_probe.py` exits 0 only if Core reaches nothing but Postgres and LLMDAP. `mcp_probe.py` checks both MCP
 protocol versions through the proxy; `--journal <book>` also proposes a note. The web UI (Turkish) is at `/ui/`.
 
+### Core as a host user service
+
+Use this when Core runs on the docker host and not in the `core` container, for example for an orchestrator on
+the same host (#141). `postgres`, `llmdap` and the model servers stay in compose; do not start `core` and
+`ingress`. Limits:
+
+- Core is not in the internal networks. It can reach what the host can reach, and `egress_probe.py` does not apply.
+  The model gates (`ai_use`, egress, route classes) are in Core and do not change.
+- LLMDAP has no host port. Core uses the address of the `llmdap` container on the `gateway` network. The address
+  can change when compose makes the container again; then set it again and restart Core.
+- `KUTUPHANE_PUBLIC_URL` is the address that clients use, exactly (`127.0.0.1` and `localhost` are different): MCP
+  refuses another `Host`.
+
+**Once:**
+
+1. A deploy checkout that does not follow branch changes, with its own environment. The service runs the installed
+   copy, never a development tree (a restart would run the branch that is checked out there):
+   ```sh
+   git worktree add --detach <deploy dir> <tag or merged commit>
+   python3 -m venv <deploy dir>/.venv && <deploy dir>/.venv/bin/pip install <deploy dir>
+   ```
+2. The LLMDAP address:
+   `docker inspect -f '{{(index .NetworkSettings.Networks "kutuphane_gateway").IPAddress}}' kutuphane-llmdap-1`.
+3. `~/.config/kutuphane/core.env` (mode 600). The host has no compose defaults
+   ([operations.md](operations.md#variables)), so set each value, with absolute paths:
+   ```sh
+   KUTUPHANE_DSN=postgresql://kutuphane_app:<password>@127.0.0.1:55432/kutuphane
+   KUTUPHANE_PUBLIC_URL=http://127.0.0.1:<port>
+   KUTUPHANE_OIDC_ISSUER=<issuer>
+   KUTUPHANE_OIDC_JWKS=<JWKS file>
+   KUTUPHANE_LLMDAP_URL=http://<LLMDAP address>:8787
+   KUTUPHANE_LLMDAP_KEY=<Core's subject key>
+   KUTUPHANE_LLMDAP_ROUTE=chat
+   KUTUPHANE_LLMDAP_ROUTE_CLASS=local
+   KUTUPHANE_ANSWER_MODEL=RadixArk/Qwen3.8-27B-NVFP4
+   KUTUPHANE_LLMDAP_EMBED_ROUTE=emb
+   KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS=local
+   KUTUPHANE_EMBED_MODEL=BAAI/bge-m3
+   KUTUPHANE_LLMDAP_RERANK_ROUTE=rerank
+   KUTUPHANE_LLMDAP_RERANK_ROUTE_CLASS=local
+   KUTUPHANE_RERANK_MODEL=BAAI/bge-reranker-v2-m3
+   ```
+   `rerank-gpu` in place of `rerank` for the [GPU reranker](#gpu-reranker). Optional: `KUTUPHANE_OIDC_ISSUERS`,
+   `KUTUPHANE_REPO_ROOTS`, `KUTUPHANE_JOB_WORKERS`. Never put `KUTUPHANE_CURATOR_DSN` in this file.
+4. `~/.config/systemd/user/kutuphane-core.service`:
+   ```ini
+   [Service]
+   EnvironmentFile=%h/.config/kutuphane/core.env
+   ExecStart=<deploy dir>/.venv/bin/uvicorn --factory kutuphane.server:app_from_env --host 127.0.0.1 --port <port>
+   Restart=always
+   RestartSec=10
+   UMask=0077
+
+   [Install]
+   WantedBy=default.target
+   ```
+   Then `systemctl --user daemon-reload && systemctl --user enable --now kutuphane-core`.
+   `loginctl enable-linger <user>` keeps it running without a login and starts it at boot. If Postgres is not
+   ready, Core stops at start, and systemd starts it again after 10 s.
+
+**Check:** `curl -s http://127.0.0.1:<port>/healthz`, then `GET /v1/health` with a token
+([http-api.md](http-api.md#33-get-v1health)).
+
+**Upgrade:** `git -C <deploy dir> fetch && git -C <deploy dir> checkout --detach <new tag or commit>`;
+`<deploy dir>/.venv/bin/pip install <deploy dir>`; with the owner DSN, `<deploy dir>/.venv/bin/kutuphane migrate`
+and `deploy/db-roles.sql` ([step 2](#2-database-roles)); `systemctl --user restart kutuphane-core`.
+
 ## Local models
 
 The profile `local-models` adds real models; nothing leaves the machine:
@@ -350,6 +417,8 @@ verdicts on known samples. What a scan blocks: [security.md](security.md#skill-s
   `CUDA error: out of memory` while the host's GPU memory is busy) and after an engine death (vLLM exits with code
   0). A failed start takes 20 to 60 s, and Docker starts the next one after 0.1 s, until a start works. It is
   `healthy` about one minute after a start that works (`docker compose … ps reranker-gpu`).
+- [Core as a host user service](#core-as-a-host-user-service) has `Restart=always`; with `loginctl enable-linger`,
+  systemd starts it at boot. `systemctl --user stop kutuphane-core` keeps it stopped.
 - `GET /v1/health` (token needed; [http-api.md](http-api.md#33-get-v1health)) shows each dependency `true` when it
   answers now; `/healthz` only that the process answers.
 - The named volumes `pgdata` and `llmdap-audit` (the LLMDAP audit chain) stay.

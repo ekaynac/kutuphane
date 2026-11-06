@@ -8,6 +8,10 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Core as a host user service (#141)
+
+- Added (documentation): a recipe for Core as a systemd user service on the docker host: a detached deploy checkout with its own installed copy (never a development tree), a mode-600 environment file with every host value, `Restart=always`, the check and the upgrade. It names the limits: no compose network limits for Core, and the LLMDAP container address can change ([install.md](install.md#core-as-a-host-user-service), [#194](https://github.com/ekaynac/kutuphane/pull/194)).
+
 ### Reranker restart after an engine death (#141)
 
 - Fixed: `reranker-gpu` has `restart: unless-stopped` (before: `on-failure:5`). After an engine death, vLLM exits with code 0, and `on-failure` never restarts an exit code 0: on 2026-11-04 the reranker stayed down for two days, and every search said `"rerank": "failed"`. Also, Docker counts the 5 `on-failure` restarts from the last start by a person, not per crash; on the Spark host the first start used all 5 ([install.md](install.md#reboot-and-restart), [#193](https://github.com/ekaynac/kutuphane/pull/193)).
