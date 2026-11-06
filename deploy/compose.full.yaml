@@ -174,9 +174,11 @@ services:
     # characters, even at one token per character), so no rerank call fails on length.
     image: ${KUTUPHANE_VLLM_IMAGE:-vllm-node:latest}
     pull_policy: never
-    # A start can fail with a CUDA out-of-memory error while the host's GPU memory is busy; retry a few times,
-    # then stop (a crash loop would compete with the chat model for the shared memory).
-    restart: on-failure:5
+    # A start can fail with a CUDA out-of-memory error while the host's GPU memory is busy, and vLLM exits with code 0
+    # after an engine death (EngineDeadError). Docker restarts it in both cases (#141). `on-failure:5` was not enough:
+    # an exit code 0 is no failure, and Docker counts the 5 restarts from the last start by a person, not per crash.
+    # A failed start takes 20 to 60 s; after a run of 10 s or more Docker waits only 0.1 s, so a loop does not slow down.
+    restart: unless-stopped
     entrypoint: ["vllm", "serve",
                  "/hf/hub/models--BAAI--bge-reranker-v2-m3/snapshots/953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
                  "--served-model-name", "BAAI/bge-reranker-v2-m3", "--host", "0.0.0.0", "--port", "8000",

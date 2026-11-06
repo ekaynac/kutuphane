@@ -343,11 +343,13 @@ verdicts on known samples. What a scan blocks: [security.md](security.md#skill-s
 
 - `postgres`, `core`, `ingress`, `llmdap`, `embedder`, `spark-chat` have `restart: unless-stopped` (light install
   too): Docker restarts them after a crash or reboot if the daemon starts at boot (`systemctl is-enabled docker`);
-  `docker compose … stop` keeps one stopped. `model-stub` and the curator services have no policy: run their
-  `docker compose … up -d` again.
-- `reranker-gpu` has `restart: on-failure:5`: a failed start (for example `CUDA error: out of memory`) is retried
-  at most 5 times, with longer waits. After that, wait for the host's vLLM, check `free -g`, and start it as in
-  [GPU reranker](#gpu-reranker). It is `healthy` after about one minute (`docker compose … ps reranker-gpu`).
+  `docker compose … stop` and `docker kill` keep one stopped (Docker counts both as a stop by a person; start it
+  with `docker start`). `model-stub` and the curator services have no policy: run their `docker compose … up -d`
+  again.
+- `reranker-gpu` has `restart: unless-stopped` too (#141). Docker starts it again after a failed start (for example
+  `CUDA error: out of memory` while the host's GPU memory is busy) and after an engine death (vLLM exits with code
+  0). A failed start takes 20 to 60 s, and Docker starts the next one after 0.1 s, until a start works. It is
+  `healthy` about one minute after a start that works (`docker compose … ps reranker-gpu`).
 - `GET /v1/health` (token needed; [http-api.md](http-api.md#33-get-v1health)) shows each dependency `true` when it
   answers now; `/healthz` only that the process answers.
 - The named volumes `pgdata` and `llmdap-audit` (the LLMDAP audit chain) stay.

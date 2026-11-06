@@ -67,9 +67,10 @@ the body; your reverse proxy must pass both unchanged.
 - log `reranking failed, keeping the hybrid order` with `rerank-gpu`, or `"rerank": "failed"` in `retrieval`:
   `reranker-gpu` is not running or not ready (about one minute after start). Start it
   ([install.md](install.md#reboot-and-restart)), or set `KUTUPHANE_LLMDAP_RERANK_ROUTE=rerank`.
-- `reranker-gpu` exits with `CUDA error: out of memory` or `Free memory on device`: GPU memory is shared; Docker
-  retries 5 times (`restart: on-failure:5`). Then check `free -g` (`available`) and `nvidia-smi`; with 15 GB or more
-  available, start it. Do not stop the host's vLLM.
+- `reranker-gpu` exits with `CUDA error: out of memory` or `Free memory on device`: GPU memory is shared. Docker
+  starts it again (`restart: unless-stopped`) until a start works. To stop the retries:
+  `docker compose … stop reranker-gpu`; start it again when `free -g` (`available`) and `nvidia-smi` show 15 GB or
+  more. Do not stop the host's vLLM.
 - `restricted content cannot be cloud_ok`: use `--egress local_only` with `--sensitivity restricted`.
 - `skill blocked for agents (…): <skill-folder>`: a SkillSpector scan gave `DO_NOT_INSTALL`, was partial, or failed.
   People can still read it. See `kutuphane skill show <book>`. Fix and ingest again, or a curator lifts the block:
