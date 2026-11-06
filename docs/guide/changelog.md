@@ -8,6 +8,11 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Reranker restart after an engine death (#141)
+
+- Fixed: `reranker-gpu` has `restart: unless-stopped` (before: `on-failure:5`). After an engine death, vLLM exits with code 0, and `on-failure` never restarts an exit code 0: on 2026-11-04 the reranker stayed down for two days, and every search said `"rerank": "failed"`. Also, Docker counts the 5 `on-failure` restarts from the last start by a person, not per crash; on the Spark host the first start used all 5 ([install.md](install.md#reboot-and-restart), [#193](https://github.com/ekaynac/kutuphane/pull/193)).
+- **Action, full stack:** make the container again with the new policy: `docker compose … --profile gpu-rerank up -d --no-deps reranker-gpu`.
+
 ### Open issues plan (D81, D82)
 
 - Design and research: the D81 gate as the skill `kutuphane-vision-gate`, the plan for the open issues (`../research/2026-11-06-open-issues-plan.md`), D82 in `docs/01` ([#192](https://github.com/ekaynac/kutuphane/pull/192)).
