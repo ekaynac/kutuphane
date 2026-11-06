@@ -8,6 +8,10 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Single-host orchestrator tokens (#73)
+
+- Added (documentation): an orchestrator on the Kütüphane host with no IdP signs its own short-lived Ed25519 tokens. Kütüphane keeps only its public JWKS in a `KUTUPHANE_OIDC_ISSUERS` entry, with `curate` refused. The recipe gives the token shape, the `whoami` check and the key rotation: Core reads the JWKS only at start ([operations.md](operations.md#a-single-host-orchestrator-without-an-idp), [#195](https://github.com/ekaynac/kutuphane/pull/195)).
+
 ### Core as a host user service (#141)
 
 - Added (documentation): a recipe for Core as a systemd user service on the docker host: a detached deploy checkout with its own installed copy (never a development tree), a mode-600 environment file with every host value, `Restart=always`, the check and the upgrade. It names the limits: no compose network limits for Core, and the LLMDAP container address can change ([install.md](install.md#core-as-a-host-user-service), [#194](https://github.com/ekaynac/kutuphane/pull/194)).
