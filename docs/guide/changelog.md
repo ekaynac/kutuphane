@@ -8,6 +8,10 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Open issues plan (D81, D82)
+
+- Design and research: the D81 gate as the skill `kutuphane-vision-gate`, the plan for the open issues (`../research/2026-11-06-open-issues-plan.md`), D82 in `docs/01` ([#192](https://github.com/ekaynac/kutuphane/pull/192)).
+
 ### Package from a folder (#161)
 
 - Added: `kutuphane pack <folder> --book <book> --key <key.pem> --out <file> --sequence <n>` and the policy flags. It signs a folder without a database: the same reader, `kstd.yaml` check and refusals as `ingest` and `export`, and the same package. `receive` and `approve-import` take it as an export ([operations.md](operations.md#10-packages)).
