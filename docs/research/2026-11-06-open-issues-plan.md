@@ -1,6 +1,6 @@
 # Plan: the open issues on 2026-11-06 (D81 gate)
 
-**Status:** proposal. Nothing here is decided by the operator. Each verdict comes from the
+**Status:** decided. The operator answered the questions of §3 on 2026-11-06 (D82). Each verdict comes from the
 `kutuphane-vision-gate` skill (`.claude/skills/kutuphane-vision-gate/SKILL.md`).
 **Base:** `main` 1e9747c (#191). Open issues: #67, #73, #138, #141, #144, #158, #162, #163. Open PRs: none.
 **Notation:** `[INFERENCE]` = not verified. Live facts were read on the Spark host on 2026-11-06.
@@ -77,11 +77,13 @@ Work order: #141 → #73 → #144 and #67 status → the comments for #162, #158
 
 ### #144 InfraMedic tracking
 
-- **Verdict: update.** Tick the merged items (#156, #157, #159, #160, #161, #164, #165). Pilot 2 step 6 (the
-  shadow comparison) ran on 2026-11-04: top-1 agreement 0.67; recall@8 canon 0.8 against 1.0; losses
-  `edge-runner-why`, `rbac-gate-map`. The reranker was down for that run (see #141), so these numbers do not
-  measure the product. Ask the InfraMedic side to re-run it after the #141 fix. Open a retrieval issue only if the
-  losses stay.
+- **Verdict: update.** Tick the merged items: #136, #137, #139, #140, #142, #143 (issue body) and #156, #157,
+  #159, #160, #161, #164, #165 (W4 comment). Pilot 2 step 6 (the shadow comparison) ran twice on 2026-11-04:
+  `p0shadow1` top-1 agreement 8 of 12 (0.67), recall@8 canon 0.8 against 1.0, losses `edge-runner-why`,
+  `rbac-gate-map`; `p0shadow2` top-1 13 of 15 (0.87), recall@8 canon 0.9 against 1.0, loss
+  `g4-canon-05-continuous-deployment`. Both runs report `rerank: failed` for every question: the reranker was down
+  (see #141), so these numbers do not measure the product. Ask the InfraMedic side to re-run both after the #141
+  fix. Open a retrieval issue only if the losses stay.
 
 ### #67 Orchestrator tracking
 
@@ -136,6 +138,12 @@ Work order: #141 → #73 → #144 and #67 status → the comments for #162, #158
 2. **#73:** run the live probe (TLS, a real token), or close #73 without it?
 3. **#158:** (a) defer, (b) narrow form, or (c) reject?
 4. **#162:** confirm the reject, or change `docs/23` §2 with a new D-record.
+
+**Answers (operator, 2026-11-06, D82):** Q1: first (b), then (a) `restart: unless-stopped` on new evidence: Docker
+counts the `on-failure` restarts from the last start by a person, not per crash (moby `restartmanager.go`), and the
+first start on this host failed 5 times with `CUDA error: out of memory`. Start `reranker-gpu` now and run the
+engine-death and `docker kill` test now, also below the 15 GB floor (no reboot test). Q2: close #73 without the
+live probe. Q3: (a) defer. Q4: the reject is confirmed.
 
 ## 4. Working rules for the development session
 
