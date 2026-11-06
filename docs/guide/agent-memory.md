@@ -25,8 +25,9 @@ Add `--train y` to `journal create` only if decision records may leave as traini
 
 **Token.** The orchestrator gets an OAuth client-credentials token from the IdP. The IdP mapper sets
 `kutuphane/principal_type: agent` and `sub: adc`, so the principal is `agent:adc`. For work on behalf of a person,
-use an RFC 8693 token exchange and a delegation (`kutuphane delegate`). For development, use
-`kutuphane dev-token adc --agent …` (see the `README.md` quick start).
+use an RFC 8693 token exchange and a delegation (`kutuphane delegate`). With no IdP on a single host, the
+orchestrator signs its own tokens ([operations.md](operations.md#a-single-host-orchestrator-without-an-idp)). For
+development, use `kutuphane dev-token adc --agent …` (see the `README.md` quick start).
 
 ## 2. Propose a note
 

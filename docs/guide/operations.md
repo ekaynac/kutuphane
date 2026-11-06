@@ -121,6 +121,61 @@ a JSON file:
 A file that breaks a rule stops the server, naming `KUTUPHANE_OIDC_ISSUERS`. Grant as usual
 (`kutuphane grant book:<slug> read user:<application>.<name>`). With compose, mount the files into `core`.
 
+### A single-host orchestrator without an IdP
+
+Use this when an orchestrator runs unattended on the Kütüphane host and there is no IdP (#73). The orchestrator
+signs its own short-lived tokens. Kütüphane keeps only its public key, in an issuer entry of
+`KUTUPHANE_OIDC_ISSUERS`. Do not use `dev-token` for this: `KUTUPHANE_DEV=1` is for development machines only, and
+its signing key must stay next to the orchestrator.
+
+1. In the orchestrator, make an Ed25519 key once. The private key goes to a mode-600 file that only the
+   orchestrator reads; the public key goes as a JWKS to a path that the Kütüphane operator gives:
+   ```python
+   import json, os, jwt
+   from cryptography.hazmat.primitives import serialization
+   from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+   key = Ed25519PrivateKey.generate()
+   with os.fdopen(os.open("<private key file>", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as f:
+       f.write(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                 serialization.NoEncryption()))
+   jwk = json.loads(jwt.algorithms.OKPAlgorithm.to_jwk(key.public_key()))
+   with open("<JWKS file>", "w") as f:
+       json.dump({"keys": [{**jwk, "kid": "<orchestrator>-1", "use": "sig", "alg": "EdDSA"}]}, f)
+   ```
+2. The issuer entry (the table above), with `curate` absent:
+   ```json
+   [{"issuer": "https://<host>/<orchestrator>-issuer", "audience": "kutuphane",
+     "jwks": "/home/<user>/.config/kutuphane/issuers/<orchestrator>-jwks.json",
+     "principal_prefixes": ["agent:<orchestrator>-"]}]
+   ```
+3. Set `KUTUPHANE_OIDC_ISSUERS` for Core and for the CLI, and restart Core.
+4. Before each call (or before the last token expires), the orchestrator signs a new token:
+   ```python
+   import time, jwt
+   from cryptography.hazmat.primitives import serialization
+   with open("<private key file>", "rb") as f:
+       key = serialization.load_pem_private_key(f.read(), password=None)
+   now = int(time.time())
+   token = jwt.encode({"iss": "https://<host>/<orchestrator>-issuer", "aud": "kutuphane",
+                       "sub": "<orchestrator>-mcp", "kutuphane/principal_type": "agent",
+                       "iat": now, "exp": now + 300}, key, algorithm="EdDSA", headers={"kid": "<orchestrator>-1"})
+   ```
+5. Check one real token: `kutuphane whoami < <token file>` prints `"principal": "agent:<orchestrator>-mcp"`.
+
+Rules:
+
+- `iss` is exactly the `issuer` of the entry. `sub` gives the principal: `agent:<sub>` with the claim
+  `kutuphane/principal_type: agent`, else `user:<sub>`. A principal outside `principal_prefixes` gives
+  `unauthenticated: issuer <issuer> may not name <principal>`.
+- Kütüphane accepts any `exp`. Keep tokens short (5 minutes): a stolen token is valid until it expires, plus 30 s.
+- Each token has a `kid` that is in the JWKS. Else: `no unique signing key for token`.
+- After the restart, only this issuer can name principals under its prefixes. A `dev-token` for
+  `agent:<orchestrator>-mcp` is then refused. The grants stay: they name the principal, not the issuer.
+- `kutuphane grant <book> curate agent:<orchestrator>-…` is refused.
+- Core reads the JWKS files only at start. To rotate a key: add the new public key to the JWKS (keep the old one),
+  restart Core, and sign with the new key. When the last token of the old key has expired, remove the old key and
+  restart Core again.
+
 ### A shared LLMDAP (D76)
 
 One LLMDAP can serve several products, each with its own subject key (D52); Kütüphane's is `svc-kutuphane`.
