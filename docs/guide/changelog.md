@@ -11,7 +11,7 @@ For the terms, read [concepts.md](concepts.md).
 ### Agent skills (#202, D84)
 
 - Added: the skill `kutuphane-memory` for omp and Claude Code sessions with the `kutuphane` MCP. It says when to read the journals, what to propose with which `kind`, which journal to use, when to record an outcome, and what stays out ([agent-memory.md](agent-memory.md#14-coding-harnesses-the-kutuphane-memory-skill)). **Action (operator):** link it for other projects (the two `ln -s` lines there).
-- Changed (developers): `kutuphane-vision-gate` checks consumer compatibility. A PR that changes MCP tools, their results or error texts, grants, journal policy, tokens or the package format has a `Consumer compatibility` section (`.claude/skills/kutuphane-vision-gate/consumers.md`, `CONTRIBUTING.md`).
+- Changed (developers): `kutuphane-vision-gate` checks consumer compatibility. A PR that changes MCP tools, their results or error texts, grants, journal policy, tokens or the package format has a `Consumer compatibility` section (`.claude/skills/kutuphane-vision-gate/consumers.md`, `CONTRIBUTING.md`) ([#203](https://github.com/ekaynac/kutuphane/pull/203)).
 
 ### Package format and file withdrawal (#197, #198, D83)
 
