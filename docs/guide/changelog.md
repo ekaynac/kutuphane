@@ -11,7 +11,7 @@ For the terms, read [concepts.md](concepts.md).
 ### Clearer errors for the owner credential and tool arguments (#200)
 
 - Changed: when `KUTUPHANE_CURATOR_DSN` is not set, a curator command (exit 2) also prints a `hint:` line: it is the database owner role, and its form in a compose install (`postgresql://kutuphane:<KUTUPHANE_DB_PASSWORD in .env>@127.0.0.1:55432/kutuphane`) ([operations.md](operations.md#database-connections)).
-- Changed: an MCP tool argument of the wrong type gives one line, one part for each field (`Error executing tool query_notes: book: Input should be a valid list`), not the validation report with the rejected values and a URL. A value that is not allowed names the allowed ones (`sets: unknown value 'all' (one of: current, history, open)`), also over HTTP ([mcp.md](mcp.md#43-errors)).
+- Changed: an MCP tool argument of the wrong type gives one line, one part for each field (`Error executing tool query_notes: book: Input should be a valid list`), not the validation report with the rejected values and a URL. A value that is not allowed names the allowed ones (`sets: unknown value 'all' (one of: current, history, open)`), also over HTTP ([mcp.md](mcp.md#43-errors), [#204](https://github.com/ekaynac/kutuphane/pull/204)).
 
 ### Agent skills (#202, D84)
 
