@@ -4,9 +4,11 @@ description: >
   The D81 gate for Kütüphane. Use it before you plan or build any issue, request or
   feature, and again before you open a pull request. It checks the work against the
   vision (docs/23: P1–P5, the five principles, the "is not" list), D53, the freezes and
-  gates in docs/01, and the repository standards (CONTRIBUTING.md, D75, ponytail-kutuphane).
-  Use it when someone says "triage", "plan the issues", "is this aligned", "vision check",
-  "standards check" or "D81".
+  gates in docs/01, the repository standards (CONTRIBUTING.md, D75, ponytail-kutuphane),
+  and consumer compatibility when a change touches MCP tools, their results or error
+  texts, grants, journal policy, tokens or the package format. Use it when someone says
+  "triage", "plan the issues", "is this aligned", "vision check", "standards check",
+  "breaking change" or "D81".
 argument-hint: "[issue number | PR number | 'diff']"
 ---
 
@@ -71,6 +73,8 @@ Do the steps in order. Write the evidence for each step. A step with no evidence
 9. **Simplicity** (`docs/23` §8: concept and command counts go down each release). Count what the work adds:
    concepts, commands, flags, settings, tools, routes, tables, migrations. Prefer an existing mechanism, a document,
    or a deletion. If the existing product already solves the need, the answer is a guide section, not code.
+10. **Consumers.** If the work touches the surface listed in [`consumers.md`](consumers.md), read that file. Name each
+    consumer that the work affects, what breaks for it, and the migration step, in the plan.
 
 ### Verdict
 
@@ -103,6 +107,8 @@ Run Part A again on the diff, then check each item:
       `tests/test_server.py` updated when the tool list changed.
 - [ ] Prose in ASD-STE100 Simplified Technical English; code blocks exact.
 - [ ] At most one migration; no applied migration edited; `deploy/db-roles*.sql` updated for a new table or function.
+- [ ] Consumer compatibility: if the diff touches the surface in [`consumers.md`](consumers.md), the PR body has a
+      `Consumer compatibility` section with one line for each consumer, each backed by a grep or a test run.
 - [ ] The ponytail report: non-test lines added/removed, new functions and how many reuse existing code, the rules
       you searched for and what you found, what you skipped.
 - [ ] The issue gets a status comment with the PR link. A tracking issue (#67, #144) gets its checklist updated.
