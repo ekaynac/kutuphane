@@ -6,6 +6,9 @@
 - Use conventional commits: `type(scope): description` (`feat`, `fix`, `docs`, `refactor`, `test`, `chore`, …).
 - Write a regression test for each behavior that a user can see, then the code.
 - Keep it simple (D53): each field must change a behavior.
+- A change to what consumers depend on (MCP tools, their results and error texts, grants, journal policy, tokens, the
+  package format) has a `Consumer compatibility` section in the PR body: see
+  `.claude/skills/kutuphane-vision-gate/consumers.md`.
 - Run the tests before you ask for a review:
 
   ```sh

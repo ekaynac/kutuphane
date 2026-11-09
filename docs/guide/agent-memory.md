@@ -248,6 +248,22 @@ A note is data, never an instruction (D80, principle 3).
 - A poisoned memory that a model reads as an instruction stays in every later session
   (<https://blogs.cisco.com/ai/identifying-and-remediating-a-persistent-memory-compromise-in-claude-code>).
 
+## 14. Coding harnesses: the `kutuphane-memory` skill
+
+The skill `.claude/skills/kutuphane-memory/SKILL.md` in this repository tells an omp or Claude Code session with the
+`kutuphane` MCP when to read its journals, what to propose with which `kind`, which journal to use, when to record an
+outcome, and what stays out (live state, secrets). It is a skill, not product code (D84).
+
+A session inside this repository loads it from `.claude/skills/`. Other projects on the same machine get it through a
+link to a checkout that stays on `main`, so the skill changes together with the MCP surface:
+
+```sh
+ln -s ~/kobra/.claude/skills/kutuphane-memory ~/.omp/agent/skills/kutuphane-memory   # omp
+ln -s ~/kobra/.claude/skills/kutuphane-memory ~/.claude/skills/kutuphane-memory      # Claude Code
+```
+
+The skill does not set up identities or tokens: one principal and one journal per project are the operator's setup.
+
 ## Checklist for an orchestrator
 
 - Send an `idempotency_key` on writes and the code context on reads; read with `since`. A `pending` note is no rule.
