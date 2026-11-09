@@ -769,6 +769,80 @@ The response has the import `id` and `status` (`received`, `findings`, or `refus
 `GET /v1/packages/<id>` repeats it (`approved` later). Run state (saga outcomes, task results) is not a book: use
 `record_outcome` or a journal.
 
+### Package format (#197)
+
+`kutuphane-package/1` is a supported contract. A sender that cannot run `kutuphane pack` (for example an offline
+appliance with no Kütüphane code) can write the package itself. `receive` checks the signature, the files, the
+`content_id`, the `kstd.yaml`, the origin lists and the sequence again, and reads and scans each file as `ingest`
+does. A package that breaks a rule is refused, not published.
+
+The package is an uncompressed tar (`application/x-tar`) of regular files only:
+
+| Member | Content |
+|---|---|
+| `MANIFEST.json` | The manifest in canonical JSON. |
+| `MANIFEST.sig` | The Ed25519 signature of the exact bytes of `MANIFEST.json`, in base64 (standard alphabet, with padding). |
+| `content/<path>` | One member for each file of the manifest, with its bytes. There is no other member. |
+
+Canonical JSON: UTF-8, keys sorted, no spaces, non-ASCII characters not escaped. In Python:
+`json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")`. `receive` refuses a
+manifest that is not in this form.
+
+| Field | Type | Value |
+|---|---|---|
+| `format` | string | `kutuphane-package/1` |
+| `issuer` | string | `ed25519:` and the SHA-256 hex of the raw 32-byte public key. The receiver must `trust` this key. |
+| `book` | string | The target book slug (`a-z`, `0-9`, `-`; at most 63 characters; it starts with a letter or a digit). |
+| `title` | string | The book title. |
+| `sequence` | integer | 1 to 2^63−1. Higher than every package of this key and book that the receiver accepted. |
+| `created_at` | integer | Unix time in seconds. |
+| `content_id` | string | See below. |
+| `files` | list | `{"path", "sha256", "size"}` for each file, sorted by `path`; `sha256` in lowercase hex. |
+| `policy_suggestion` | object | `{"v": 1, "sensitivity", "egress", "protection"}`. Advice only: `approve-import` applies the receiver's policy. |
+| `legal_basis` | list of strings | Only when a file is personal data `yes` or `unknown`: the DPV codes of `--legal-basis`. |
+| `ai_generated`, `reviewed`, `tool_made`, `human_confirmed` | | The origin lists. Only with a `kstd.yaml`; see below. |
+
+A path is relative, POSIX (`/`), in Unicode NFC, and has no empty, `.` or `..` part and no control character.
+`kstd.yaml` is a file of the package like the others.
+
+`content_id` is `ct_` and the SHA-256 hex of the canonical JSON of
+`{"kind": "content", "v": 1, "body": [[path, sha256], …]}`, with the pairs sorted by path.
+
+The origin lists follow from the enclosed `kstd.yaml`. Without a `kstd.yaml`, leave out all four. With one, take
+each file except `kstd.yaml`, its `items` entry (same path), and its origin (`unknown` if it has no entry or no
+`origin`). `assisted` without a non-empty `reviewed_by`, and `tool` without `software_agent: {name, version}` (two
+non-empty strings), count as `unknown`.
+
+| List | Content |
+|---|---|
+| `ai_generated` | The sorted paths with origin `model` or `unknown`. Always present (it can be empty). |
+| `reviewed` | `{path: reviewed_by}` of the `assisted` files. Always present. |
+| `tool_made` | `{path: software_agent}` of the `tool` files. Always present. |
+| `human_confirmed` | `{path: {"entered_by": …, "confirmed_by": …}}` of the `human` files with a non-empty `entered_by` or `confirmed_by` (`null` for the other one). Only when there is at least one. |
+
+The sender also obeys the refusals of `export` and `pack`, which `receive` does not check again: no package of a
+`restricted` book, no file with `license: unknown`, and a `legal_basis` when a file is personal data `yes` or
+`unknown`.
+
+**Check a sender:** pack the same folder with `kutuphane pack` on a host. The `content_id`, the `files` and the
+origin lists must be equal (`created_at` and the signature are not). Then `kutuphane receive` must give
+`verified`.
+
+### Withdraw a file (#198)
+
+To withdraw a file from a book, send a package (or `ingest` a folder) without it and approve it. Then:
+
+- `search_library`, `ask_library` and `list_files` use only the current version: the file is gone from them.
+- A note that cites the file is `stale` ([re-index and note citations](#re-index-and-note-citations)).
+- The old version stays. A caller with `read` on the book can still read the file with its old `content_id`
+  (`read_document`, `GET /v1/files/{book}/{content_id}/{path}`) and open an old citation handle
+  (`open_citation`).
+
+Kütüphane cannot erase content in this version (D83). If a published file holds personal data or a secret,
+withdraw it as above, and stop the old-version reads: publish the remaining files to a new book, grant `read` on
+the new book, and revoke every grant on the old book (`kutuphane revoke`). The bytes stay in the database. Rotate
+a leaked secret at its source.
+
 ## 11. Audit and logs
 
 ```sh
