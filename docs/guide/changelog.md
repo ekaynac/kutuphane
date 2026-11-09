@@ -8,6 +8,12 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Package format and file withdrawal (#197, #198, D83)
+
+- Added (documentation): the package format `kutuphane-package/1` is a supported contract: the tar members, the canonical manifest, the `content_id` rule and the origin lists, so a sender with no Kütüphane code can write a package that `receive` accepts ([operations.md](operations.md#package-format-197)).
+- Added (documentation): what a withdrawn file does: search and answers use only the current version; the old version stays readable with `read`. Kütüphane cannot erase content in this version ([operations.md](operations.md#withdraw-a-file-198)).
+- Design and research: D83 in `docs/01` (#196 deferred, #197, #198, #158).
+
 ### Single-host orchestrator tokens (#73)
 
 - Added (documentation): an orchestrator on the Kütüphane host with no IdP signs its own short-lived Ed25519 tokens. Kütüphane keeps only its public JWKS in a `KUTUPHANE_OIDC_ISSUERS` entry, with `curate` refused. The recipe gives the token shape, the `whoami` check and the key rotation: Core reads the JWKS only at start ([operations.md](operations.md#a-single-host-orchestrator-without-an-idp), [#195](https://github.com/ekaynac/kutuphane/pull/195)).
