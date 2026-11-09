@@ -12,7 +12,7 @@ For the terms, read [concepts.md](concepts.md).
 
 - Added (documentation): the package format `kutuphane-package/1` is a supported contract: the tar members, the canonical manifest, the `content_id` rule and the origin lists, so a sender with no Kütüphane code can write a package that `receive` accepts ([operations.md](operations.md#package-format-197)).
 - Added (documentation): what a withdrawn file does: search and answers use only the current version; the old version stays readable with `read`. Kütüphane cannot erase content in this version ([operations.md](operations.md#withdraw-a-file-198)).
-- Design and research: D83 in `docs/01` (#196 deferred, #197, #198, #158).
+- Design and research: D83 in `docs/01` (#196 deferred, #197, #198, #158) ([#199](https://github.com/ekaynac/kutuphane/pull/199)).
 
 ### Single-host orchestrator tokens (#73)
 
