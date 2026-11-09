@@ -8,6 +8,11 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Clearer errors for the owner credential and tool arguments (#200)
+
+- Changed: when `KUTUPHANE_CURATOR_DSN` is not set, a curator command (exit 2) also prints a `hint:` line: it is the database owner role, and its form in a compose install (`postgresql://kutuphane:<KUTUPHANE_DB_PASSWORD in .env>@127.0.0.1:55432/kutuphane`) ([operations.md](operations.md#database-connections)).
+- Changed: an MCP tool argument of the wrong type gives one line, one part for each field (`Error executing tool query_notes: book: Input should be a valid list`), not the validation report with the rejected values and a URL. A value that is not allowed names the allowed ones (`sets: unknown value 'all' (one of: current, history, open)`), also over HTTP ([mcp.md](mcp.md#43-errors)).
+
 ### Agent skills (#202, D84)
 
 - Added: the skill `kutuphane-memory` for omp and Claude Code sessions with the `kutuphane` MCP. It says when to read the journals, what to propose with which `kind`, which journal to use, when to record an outcome, and what stays out ([agent-memory.md](agent-memory.md#14-coding-harnesses-the-kutuphane-memory-skill)). **Action (operator):** link it for other projects (the two `ln -s` lines there).

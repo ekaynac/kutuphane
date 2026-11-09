@@ -622,7 +622,10 @@ def test_grant_curate_needs_the_curator_credential(env, monkeypatch, capsys):  #
     grant = ["grant", f"book:{J}", "curate", "user:kurator"]
     monkeypatch.setenv("KUTUPHANE_DSN", os.environ["KUTUPHANE_TEST_DSN"])
     monkeypatch.delenv(db.CURATOR_DSN_ENV, raising=False)
-    assert cli.main(grant) == 2 and db.CURATOR_DSN_ENV in capsys.readouterr().err
+    assert cli.main(grant) == 2
+    err = capsys.readouterr().err
+    assert db.CURATOR_DSN_ENV in err  # #200: and where a compose deployment keeps it, never the password itself
+    assert "postgresql://kutuphane:<KUTUPHANE_DB_PASSWORD in .env>@127.0.0.1:55432/kutuphane" in err
     assert row(env, "SELECT count(*) FROM grant_tuple WHERE relation = 'curate'") == (0,)
     assert cli.main(["grant", f"book:{J}", "read", "user:kurator"]) == 0  # other modes keep the app credential
     monkeypatch.setenv(db.CURATOR_DSN_ENV, os.environ["KUTUPHANE_TEST_DSN"])

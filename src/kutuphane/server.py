@@ -23,6 +23,7 @@ from typing import Annotated
 
 import psycopg
 import pydantic_core
+from pydantic import ValidationError
 from mcp.server import CacheHint, MCPServer
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken
@@ -30,7 +31,7 @@ from mcp.server.auth.settings import AuthSettings
 from mcp.server.extension import Extension, MethodBinding
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.mcpserver import require_client_extension
-from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.shared.exceptions import MCPError
 from mcp_types import (INTERNAL_ERROR, INVALID_PARAMS, CallToolResult, PaginatedRequestParams, RequestParams,
@@ -660,6 +661,17 @@ class _Server(MCPServer):
             except UnicodeDecodeError:
                 pass  # sent as a blob: the bytes, and so the digest, stay exact
         return [ReadResourceContents(content=content, mime_type=media_type, meta={handling.KEY: labels})]
+
+    async def call_tool(self, name, arguments, context=None):
+        """#200: arguments that do not match the input schema give one line per field (`book: Input should be a
+        valid list`), not pydantic's report with the model name, the rejected values and a URL."""
+        try:
+            return await super().call_tool(name, arguments, context)
+        except ToolError as exc:
+            if isinstance(exc, UnexpectedToolError) or not isinstance(exc.__cause__, ValidationError):
+                raise
+            fields = "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.__cause__.errors())
+            raise ToolError(f"Error executing tool {name}: {fields}") from exc.__cause__
 
 
 RETRIEVAL_KEY = "kutuphane/retrieval"  # #136: search_library's stage status in `_meta`, beside the handling labels

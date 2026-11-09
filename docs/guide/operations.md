@@ -26,6 +26,7 @@ it out of every environment that an agent can read; the `core` container gets on
 
 ```
 error: KUTUPHANE_CURATOR_DSN is not set (the curator credential)
+hint: it is the database owner role; in a compose install postgresql://kutuphane:<KUTUPHANE_DB_PASSWORD in .env>@127.0.0.1:55432/kutuphane (install.md, step 2). Type it; never store it where an agent can read it.
 ```
 
 Create the app role once as the owner (`CREATE ROLE kutuphane_app LOGIN PASSWORD '…'`) and put its password in
