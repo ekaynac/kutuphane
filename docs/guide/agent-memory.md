@@ -170,7 +170,7 @@ journal notes (step 12) are not in the export ([operations.md](operations.md), s
 Only a person with `curate` changes Standing, on the command line (`kutuphane note standing`,
 `kutuphane note rollback`, with `KUTUPHANE_CURATOR_DSN`), or in curator web. A curator lists the open notes in
 risk order with `kutuphane curator queue --curator user:ayse` ([operations.md](operations.md), section 7). An agent
-finds them with `query_notes` and `sets: ["open"]`. Every approved item has `approved_by`: the curator (`user:…`).
+finds them with `query_notes` and `sets: ["open"]`. Every item has `acceptance` (`{kind, by, at}`): an approved item shows the curator (`by`, `user:…`) and how (`curator_passkey` or `operator_cli`); any other item shows `none`.
 
 ## 10. Rollback of a poisoned note
 

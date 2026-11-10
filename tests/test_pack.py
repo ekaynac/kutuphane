@@ -4,7 +4,7 @@ import psycopg
 import pytest
 import yaml
 
-from kutuphane import catalog, cli, db, kstd, packages, signing
+from kutuphane import authz, catalog, cli, db, kstd, packages, signing
 from test_kstd import POLICY, publish, read_package, write_manifest
 from test_packages import trust
 
@@ -31,6 +31,7 @@ def key(tmp_path):
 
 
 def test_a_packed_package_is_received_and_approved_like_an_export(conn, conn_b, okf_dir, key, tmp_path, monkeypatch):
+    authz.grant(conn_b, "book:kitap", "curate", "user:admin")  # D85: approving a package needs curate on the book
     write_manifest(okf_dir, policy_item={"origin": "assisted", "reviewed_by": "Ayşe Yılmaz"})
     source = publish(conn, okf_dir)
     path, info = key

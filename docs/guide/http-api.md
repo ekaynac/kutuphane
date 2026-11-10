@@ -165,8 +165,8 @@ Open a passage handle or a note reference. MCP: `open_citation` ([mcp.md](mcp.md
   `GET /v1/notes`).
 
 **`200` for a passage:** `{"citation", "page", "line", "text", "item", "publication", "outcomes", "status"}`.
-`publication` says who published or approved the
-version ([mcp.md](mcp.md#518-list_books)); a passage of a note item has no `publication`. `status`
+`publication` says how and by whom the version was accepted (`acceptance`: `kind`, `by`, `at`, `legacy`;
+[mcp.md](mcp.md#518-list_books)); a passage of a note item has no `publication`. `status`
 is `current`, `moved` (with `moved_to` and `match`) or `stale`.
 
 **`200` for a note:** `{"citation", "note", "targets", "watermark"}`; `note` is as in `GET /v1/notes`.
@@ -260,7 +260,8 @@ entries and keys. Each listed book gets one `list_books` event in the audit log.
 
 **`200`:** `{"books": [{"book", "title", "kind", "content_id", "profile_id", "policy_id", "publication"}]}`.
 `kind` is `book` or `journal`; a journal has `"publication": null`. The `publication` keys are in
-[mcp.md](mcp.md#518-list_books). **Errors:** `401`.
+[mcp.md](mcp.md#518-list_books): `content_id`, `published_at`, `channel`, `acceptance`, `issuer_key`, `sequence`.
+**Errors:** `401`.
 
 ### 7.3 `GET /v1/books/{book}/files`
 

@@ -193,7 +193,7 @@ def test_index_stops_trying_when_the_embedder_is_down(conn, fake, okf_dir):  # G
     assert result.report()["vectors_embedded"] == 0
 
 
-def test_ingest_prints_the_publication_when_indexing_fails(conn, fake, okf_dir, monkeypatch, capsys):  # G12
+def test_ingest_prints_the_publication_when_indexing_fails(cli_publisher, conn, fake, okf_dir, monkeypatch, capsys):  # G12
     bridge = fake.bridge()
     for var, value in {db.DSN_ENV: os.environ["KUTUPHANE_TEST_DSN"], llmdap.ENV["url"]: bridge.url,
                        llmdap.ENV["key"]: bridge.key, llmdap.EMBED_ENV["route"]: bridge.route,

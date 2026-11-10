@@ -51,6 +51,11 @@ the body; your reverse proxy must pass both unchanged.
   counts as `unknown`. Add `reviewed_by` (`assisted`) or `software_agent: {name, version}` (`tool`), or remove the
   unknown field.
 - no file is searched after `kstd-init`: it states no `ai_use` term, so every term counts as `n`. Set `ai_use`.
+- ingest, `approve-import` or `reject-import` refused: `user:<name> does not hold curate on book:<slug>`: publishing
+  needs `curate` for `--by`. Nothing is published, and an import stays `verified`. Run
+  `KUTUPHANE_CURATOR_DSN=… kutuphane grant book:<slug> curate user:<name>`, then the command again. For a new book,
+  grant first. If the error is `KUTUPHANE_CURATOR_DSN is not set`, the command needs the owner DSN
+  (see "Notes and curation").
 - ingest or `approve-import` refused: `personal-data findings in a cloud_ok book`: a cloud book file has personal or
   fleet data (`receive` lists them as `personal_data`). Review each, then add
   `--accept-finding <path>@sha256:<digest>:<rule>`, set `ai_use.ai_input: n` for the file, or publish with

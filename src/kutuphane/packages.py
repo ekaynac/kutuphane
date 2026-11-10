@@ -368,6 +368,9 @@ def approve(conn, import_id: int, *, by: str, policy: dict, profile: str = "chun
 
 
 def reject(conn, import_id: int, *, by: str, reason: str) -> bool:
+    book = conn.execute("SELECT book FROM package_import WHERE id = %s", (import_id,)).fetchone()
+    if book is not None and book[0] is not None:  # a refused package (never verified) names no book
+        catalog.require_curate(conn, by, book[0])
     row = conn.execute("UPDATE package_import SET status = 'rejected', reasons = reasons || %s, decided_by = %s, "
                        "decided_at = now() WHERE id = %s AND status = 'verified' RETURNING id",
                        (Jsonb([f"rejected by {by}: {reason}"]), by, import_id)).fetchone()

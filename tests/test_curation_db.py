@@ -239,3 +239,33 @@ def test_the_owner_path_is_unchanged(db):
     run(db, "INSERT INTO standing_event (note_seq, value, set_by, reason, correlation_id) "
             "VALUES (%s, 'approved', %s, 'cli', 'c')", (n2, U))
     assert run(db, "SELECT act FROM standing_event")[0] is None
+
+
+def test_the_app_role_cannot_publish_a_book_version(db):
+    """D85: Core never publishes. The owner publishes (`kutuphane ingest`, `approve-import`); the app role may read
+    publication facts and nothing more, so a bug or a hostile call in Core cannot make a version current."""
+    for sql in ("INSERT INTO publication (book, content_id, profile_id, policy_id, acceptance) "
+                "VALUES ('x', 'ct_x', 'pf_x', 'pl_x', 'none')",
+                "UPDATE publication SET acceptance = 'none'", "DELETE FROM publication"):
+        refused(db, sql, role=APP, error=psycopg.errors.InsufficientPrivilege)
+    assert run(db, "SELECT count(*) FROM publication", role=APP) == (0,)
+
+
+def test_a_note_shows_how_it_was_accepted(db, people):
+    """D85 Q12, display only: an act gives `curator_passkey`, the CLI `operator_cli`, a pending note `none`."""
+    from kutuphane import notesquery
+    su, _ = people["sessions"]
+    n_act, ref_act = note(db, "approved by a passkey act", kind="convention")
+    _n_cli, ref_cli = note(db, "approved on the CLI")
+    _n_open, ref_open = note(db, "still pending")
+    authz.grant(db, f"book:{J}", "curate", U)
+    c1 = challenge(db, su, U, "standing", {"items": [{"ref": ref_act, "to": "approved"}], "reason": "checked"})
+    act = run(db, ACT, (c1, U, "standing", b"u" * 16), role=WEB)[0]
+    run(db, EVENT, (n_act, "approved", U, "checked", act, None), role=WEB)
+    notes.set_standing(db, ref_cli, "approved", curator=U, reason="ok")
+    items = {i["ref"]: i for i in notesquery.query_notes(db, Actor(U), for_model=False, book=[J],
+                                                         sets=["current", "open"])["items"]}
+    for ref, kind, by in ((ref_act, "curator_passkey", U), (ref_cli, "operator_cli", U), (ref_open, "none", None)):
+        shown = items[ref]["acceptance"]
+        assert shown["kind"] == kind and shown["by"] == by and "approved_by" not in items[ref]
+        assert (shown["at"] is None) == (kind == "none")

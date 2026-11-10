@@ -48,8 +48,9 @@ export KUTUPHANE_DSN="postgresql://kutuphane:${KUTUPHANE_DB_PASSWORD}@127.0.0.1:
 export PATH="$PWD/.venv/bin:$PATH"
 kutuphane migrate
 
-# 2. A book, a journal and the rights
-kutuphane ingest tests/fixtures/okf-kitap --book ornek \
+# 2. A book, a journal and the rights (publishing needs the owner credential and `curate` for --by: grant first)
+KUTUPHANE_CURATOR_DSN="$KUTUPHANE_DSN" kutuphane grant book:ornek curate user:ayse
+KUTUPHANE_CURATOR_DSN="$KUTUPHANE_DSN" kutuphane ingest tests/fixtures/okf-kitap --book ornek --by user:ayse \
   --sensitivity normal --egress local_only --protection standard
 kutuphane journal create team-memory --search y --ai-input y \
   --sensitivity normal --egress local_only --protection standard --by user:admin

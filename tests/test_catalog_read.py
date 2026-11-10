@@ -1,8 +1,8 @@
 """#159, #160: the catalog read for consumers. `GET /v1/books` / `list_books` names only the books and journals that the
 caller may read now; `GET /v1/books/{book}/files` / `list_files` lists the files of the current version with the kstd
 item information, behind the same book gate as `read_document`, a page at a time. Each publication records who stood
-behind it (`approved_by`, `channel`; for a package also the issuer key and the sequence), shown on the book list, the
-file list and `open_citation`."""
+behind it (`acceptance` with the person, `channel`; for a package also the issuer key and the sequence), shown on the
+book list, the file list and `open_citation`."""
 import asyncio
 import getpass
 import json
@@ -31,6 +31,8 @@ def publish(conn, root, book, **facts):
 def library(conn, okf_dir):
     """kitap (readable, with a kstd manifest), gizli (not readable), gunluk (a readable journal)."""
     write_manifest(okf_dir)
+    for book in ("kitap", "gizli"):
+        authz.grant(conn, f"book:{book}", "curate", "user:admin")  # D85: a person publishes only with curate
     kitap = publish(conn, okf_dir, "kitap", approved_by="user:admin")
     publish(conn, okf_dir, "gizli", approved_by="user:admin")
     notes.create_journal(conn, book="gunluk", title="Günlük", search=True, ai_input=True, policy=POLICY,
@@ -56,7 +58,8 @@ def test_the_book_list_names_only_readable_books_and_journals(client, keys, libr
     assert books["kitap"]["kind"] == "book" and books["gunluk"]["kind"] == "journal"
     assert books["kitap"]["content_id"] == library.content_id and books["kitap"]["profile_id"] == library.profile_id
     pub = books["kitap"]["publication"]
-    assert pub["approved_by"] == "user:admin" and pub["channel"] == "ingest" and pub["published_at"]
+    assert pub["acceptance"] == {"kind": "operator_cli", "by": "user:admin", "at": pub["published_at"], "legacy": False}
+    assert "approved_by" not in pub and pub["channel"] == "ingest" and pub["published_at"]
     assert pub["issuer_key"] is None and pub["sequence"] is None
     assert books["gunluk"]["content_id"] is None and books["gunluk"]["publication"] is None
     events = conn.execute("SELECT object, allowed FROM access_event WHERE action = 'list_books' ORDER BY object")
@@ -73,7 +76,7 @@ def test_an_unreadable_book_is_refused_as_a_missing_one(client, keys):
 def test_the_file_list_has_the_item_information_and_pages(client, keys, library):
     h = bearer(keys)
     first = client.get("/v1/books/kitap/files", params={"limit": 2}, headers=h).json()
-    assert first["content_id"] == library.content_id and first["publication"]["approved_by"] == "user:admin"
+    assert first["content_id"] == library.content_id and first["publication"]["acceptance"]["by"] == "user:admin"
     rest = client.get("/v1/books/kitap/files", params={"limit": 2, "cursor": first["next_cursor"]}, headers=h).json()
     paths = [f["path"] for f in first["files"] + rest["files"]]
     assert paths == sorted(paths) == ["index.md", "kstd.yaml", "politika/veri-saklama.md",
@@ -108,10 +111,11 @@ def test_open_citation_shows_who_approved_the_version(client, keys):
     h = bearer(keys)
     handle = client.get("/v1/search", params={"q": "kayıtlar saklanır"}, headers=h).json()["results"][0]["citation"]
     cited = client.get("/v1/citation", params={"handle": handle}, headers=h).json()
-    assert cited["publication"]["approved_by"] == "user:admin" and cited["publication"]["channel"] == "ingest"
+    assert cited["publication"]["acceptance"]["by"] == "user:admin" and cited["publication"]["channel"] == "ingest"
 
 
-def test_ingest_records_the_cli_user(conn, okf_dir, monkeypatch, capsys):
+def test_ingest_records_the_cli_user(cli_publisher, conn, okf_dir, monkeypatch, capsys):
+    authz.grant(conn, "book:kitap", "curate", "user:ayse")
     monkeypatch.setenv(db.DSN_ENV, os.environ["KUTUPHANE_TEST_DSN"])
     monkeypatch.delenv(llmdap.EMBED_ENV["route"], raising=False)
     base = ["ingest", str(okf_dir), "--book", "kitap", "--sensitivity", "normal", "--egress", "local_only",
@@ -121,13 +125,15 @@ def test_ingest_records_the_cli_user(conn, okf_dir, monkeypatch, capsys):
     assert cli.main([*base, "--by", "user:ayse"]) == 0
     capsys.readouterr()
     pubs = catalog.book_state(conn, "kitap")["publications"]
-    assert [(p["approved_by"], p["channel"]) for p in pubs] == [(f"user:{getpass.getuser()}", "ingest"),
-                                                                ("user:ayse", "ingest")]
+    assert [(p["acceptance"]["kind"], p["acceptance"]["by"], p["channel"]) for p in pubs] == [
+        ("operator_cli", f"user:{getpass.getuser()}", "ingest"), ("operator_cli", "user:ayse", "ingest")]
     with pytest.raises(ValueError, match="approved_by"):
         publish(conn, okf_dir, "kitap", approved_by="Ayşe")
 
 
 def test_package_approval_records_the_decider_the_key_and_the_sequence(conn, conn_b, okf_dir, tmp_path):
+    authz.grant(conn, "book:kitap", "curate", "user:admin")
+    authz.grant(conn_b, "book:kitap", "curate", "user:x")
     publish(conn, okf_dir, "kitap", approved_by="user:admin")
     info = signing.generate(tmp_path / "a.key")
     packages.trust(conn_b, open(info["public_key"], "rb").read(), expected_fingerprint=info["fingerprint"],
@@ -138,14 +144,16 @@ def test_package_approval_records_the_decider_the_key_and_the_sequence(conn, con
     pub = catalog.publications(conn_b, [("kitap", state["content_id"], state["profile_id"])])[
         ("kitap", state["content_id"], state["profile_id"])]
     assert pub == {"content_id": state["content_id"], "published_at": pub["published_at"], "channel": "import",
-                   "approved_by": "user:x", "issuer_key": info["fingerprint"], "sequence": received["sequence"]}
+                   "acceptance": {"kind": "operator_cli", "by": "user:x", "at": pub["published_at"], "legacy": False},
+                   "issuer_key": info["fingerprint"], "sequence": received["sequence"]}
 
 
 def test_a_publication_without_facts_shows_nulls_and_the_columns_go_together(conn, okf_dir):
-    old = publish(conn, okf_dir, "kitap")  # as every publication before migration 045
+    old = publish(conn, okf_dir, "kitap")  # the internal path: no person, acceptance none
     key = ("kitap", old.content_id, old.profile_id)
     pub = catalog.publications(conn, [key])[key]
-    assert pub["approved_by"] is None and pub["channel"] is None and pub["issuer_key"] is None
+    assert pub["acceptance"] == {"kind": "none", "by": None, "at": pub["published_at"], "legacy": False}
+    assert pub["channel"] is None and pub["issuer_key"] is None
     with pytest.raises(psycopg.errors.CheckViolation):
         with conn.transaction():
             conn.execute("UPDATE publication SET channel = 'ingest' WHERE book = 'kitap'")

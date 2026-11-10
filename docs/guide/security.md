@@ -71,6 +71,10 @@ the confirmer withdraws it (R7).
   `kutuphane grant … curate …` need `KUTUPHANE_CURATOR_DSN`; the named curator must hold `curate` on the book now.
   `curate` is for users only, granted directly, never delegated. Row-level security on `grant_tuple` refuses a live
   `curate` row from the app role (it can still revoke or delete one).
+- Publishing is owner-only (D85). `kutuphane ingest`, `approve-import` and `reject-import` need
+  `KUTUPHANE_CURATOR_DSN`, and `--by` must hold `curate` on the book. The database refuses every write to
+  `publication` from the app role (`deploy/db-roles.sql`), so Core, and any agent that reaches it, cannot publish.
+  A publication records `acceptance.kind` `operator_cli`: the operator states the person; it is not a passkey proof.
 - The CLI trusts its operator, so the curator credential is the boundary: an agent that reads it can curate as any
   user. Keep it out of every environment that an agent can read.
 - `kutuphane note expire` writes curator-less system events (also with `KUTUPHANE_CURATOR_DSN`). The database

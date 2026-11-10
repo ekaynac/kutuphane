@@ -50,6 +50,7 @@ def setup(conn, conn_b, okf_dir, signer, verifier, b_dsn):
                     profile=profiles.spec("chunked"))
     pem = open(info["public_key"], "rb").read()
     packages.trust(conn_b, pem, expected_fingerprint=info["fingerprint"], name="InfraMedic", by="user:admin")
+    authz.grant(conn_b, "book:runbooks", "curate", "user:admin")  # D85: approving a package needs curate
     app = server.create_app(dsn=b_dsn, verifier=verifier, bridge=None, model=None, public_url=PUBLIC)
     return app, packages.export(conn, "runbooks", private), info["fingerprint"]
 

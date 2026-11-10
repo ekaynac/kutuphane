@@ -1,10 +1,11 @@
+import getpass
 import os
 import shutil
 from pathlib import Path
 
 import pytest
 
-from kutuphane import db
+from kutuphane import authz, db
 
 FIXTURES = Path(__file__).parent / "fixtures"
 TEST_DSN_ENV = "KUTUPHANE_TEST_DSN"
@@ -65,6 +66,14 @@ def conn():
         c.execute("CREATE SCHEMA public")
         db.migrate(c)
         yield c
+
+
+@pytest.fixture
+def cli_publisher(conn, monkeypatch):
+    """D85: `kutuphane ingest` needs the owner credential and `curate` on the book for `--by` (default: the CLI user).
+    This gives both for the book `kitap`; the owner and the app DSN are one test role."""
+    monkeypatch.setenv(db.CURATOR_DSN_ENV, os.environ[TEST_DSN_ENV])
+    authz.grant(conn, "book:kitap", "curate", f"user:{getpass.getuser()}")
 
 
 @pytest.fixture

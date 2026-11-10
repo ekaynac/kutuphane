@@ -686,7 +686,7 @@ def parser() -> argparse.ArgumentParser:
     ing.add_argument("--profile", choices=("chunked", "whole"), default="chunked")
     ing.add_argument("--by", help="who publishes, recorded in the publication (default: user:<the CLI user>)")
     _scan_options(ing, "recorded in the publication")
-    ing.set_defaults(fn=cmd_ingest)
+    ing.set_defaults(fn=cmd_ingest, curator_db=True)
     ix = sub.add_parser("index", help="give a book's current chunks a vector: copy unchanged ones, embed the rest "
                                       "(through LLMDAP)")
     ix.add_argument("book")
@@ -820,12 +820,12 @@ def parser() -> argparse.ArgumentParser:
     ap_.add_argument("--accept-finding", action="append", default=[], metavar="PATH@sha256:DIGEST:RULE",
                      help="accept one reviewed personal-data finding that `receive` listed: that rule, in exactly "
                           "that file content; repeatable; needed for a cloud_ok book (--egress cloud_ok)")
-    ap_.set_defaults(fn=cmd_approve)
+    ap_.set_defaults(fn=cmd_approve, curator_db=True)
     rj = sub.add_parser("reject-import", help="refuse a verified package (kept on record)")
     rj.add_argument("id", type=int)
     rj.add_argument("--by", required=True)
     rj.add_argument("--reason", required=True)
-    rj.set_defaults(fn=cmd_reject)
+    rj.set_defaults(fn=cmd_reject, curator_db=True)
     sub.add_parser("imports", help="received packages and their verdicts").set_defaults(fn=cmd_imports)
     ki = sub.add_parser("kstd-init", help="write a starting kstd.yaml for a folder (no database)")
     ki.add_argument("path")

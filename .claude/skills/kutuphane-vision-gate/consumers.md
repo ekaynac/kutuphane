@@ -12,6 +12,8 @@ section with one line for each consumer below, and each "unchanged" line has a g
 - **Identity:** token claims, issuers, principal prefixes, and the `kutuphane dev-token` flags.
 - **Packages:** the format (`kutuphane-package/1`, `docs/guide/operations.md` "Package format") and the behaviour of
   `receive` and `approve-import`.
+- **Reader facts:** the `publication` object (`list_books`, `GET /v1/books`, `list_files`, search hits,
+  `open_citation`) and the note item key `acceptance`.
 - **CLI:** the commands and flags that a consumer runs: `dev-token`, `journal create`, `agent add`, `grant`, `pack`,
   `receive`.
 
@@ -56,7 +58,11 @@ section with one line for each consumer below, and each "unchanged" line has a g
     - `/v1/search` with `platform`, `version` and `max_chars`;
     - `/v1/citation`, `/v1/files/…`, `/v1/notes` (GET and POST);
     - `/v1/packages`, and `X-Correlation-Id`;
-  - the package format.
+  - the package format;
+  - the `publication` facts of a book version: `channel`, `issuer_key`, `sequence` and, since D85 S1, `acceptance`
+    (`{kind, by, at, legacy}`; before: `approved_by`). InfraMedic shows them for "which version, accepted by whom";
+  - the person's step on the Kütüphane side: `approve-import` (since D85 S1 it needs `KUTUPHANE_CURATOR_DSN` and
+    `curate` for `--by`).
 - **How it breaks:** its P1 and P2 code is built against the old contract.
 - **Check:** compare the change with the routes and fields above.
 - **Announce:** a comment on #144 that gives the change, the PR and the migration step.

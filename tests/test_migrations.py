@@ -1,6 +1,8 @@
 """Upgrades from older schemas with real-looking data (Astra review #3: 006 must not fail on legacy rows)."""
 from importlib.resources import files
 
+import pytest
+
 from kutuphane import db
 
 
@@ -65,7 +67,31 @@ def test_upgrade_to_012_gives_older_publications_no_accepted_findings(conn):  # 
     conn.execute("INSERT INTO policy_version (id, doc) VALUES ('pl_old', '{}')")
     conn.execute("INSERT INTO book (slug, title) VALUES ('eski', 'eski')")
     conn.execute("INSERT INTO content_version (book, id, manifest) VALUES ('eski', 'ct_old', '[]')")
-    conn.execute("INSERT INTO publication (book, content_id, profile_id, policy_id) "
-                 "VALUES ('eski', 'ct_old', 'pf_old', 'pl_old')")
+    conn.execute("INSERT INTO publication (book, content_id, profile_id, policy_id, acceptance) "
+                 "VALUES ('eski', 'ct_old', 'pf_old', 'pl_old', 'none')")  # 051 is applied: the row needs its kind
     assert db.migrate(conn) == ["012_accepted_findings.sql"]
     assert conn.execute("SELECT accepted_findings FROM publication").fetchall() == [([],)]
+
+
+def test_upgrade_to_051_marks_past_publications_legacy(conn):  # D85: never upgraded, never read as new
+    conn.execute("DROP SCHEMA public CASCADE")
+    conn.execute("CREATE SCHEMA public")
+    db.migrate(conn)
+    conn.execute("ALTER TABLE publication DROP COLUMN acceptance, DROP COLUMN acceptance_legacy")
+    conn.execute("DELETE FROM schema_migration WHERE name = '051_acceptance.sql'")
+    conn.execute("INSERT INTO profile_version (id, spec) VALUES ('pf_old', '{}')")
+    conn.execute("INSERT INTO policy_version (id, doc) VALUES ('pl_old', '{}')")
+    conn.execute("INSERT INTO book (slug, title) VALUES ('eski', 'eski')")
+    conn.execute("INSERT INTO content_version (book, id, manifest) VALUES ('eski', 'ct_old', '[]')")
+    for by, channel in ((None, None), ("user:ayse", "ingest")):  # before 045, and after it
+        conn.execute("INSERT INTO publication (book, content_id, profile_id, policy_id, approved_by, channel) "
+                     "VALUES ('eski', 'ct_old', 'pf_old', 'pl_old', %s, %s)", (by, channel))
+    assert db.migrate(conn) == ["051_acceptance.sql"]
+    assert conn.execute("SELECT approved_by, acceptance, acceptance_legacy FROM publication ORDER BY id").fetchall() == [
+        (None, "none", True), ("user:ayse", "operator_cli", True)]
+    import psycopg
+    for kind, by in (("operator_cli", None), ("none", "user:ayse"), ("bogus", "user:ayse")):  # the kinds are checked
+        with pytest.raises(psycopg.errors.CheckViolation):
+            with conn.transaction():
+                conn.execute("UPDATE publication SET acceptance = %s, approved_by = %s, channel = %s WHERE id = "
+                             "(SELECT min(id) FROM publication)", (kind, by, "ingest" if by else None))
