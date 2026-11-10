@@ -1,6 +1,6 @@
-# Vision 1.2 — Kütüphane: a governed knowledge catalog and memory layer for agents
+# Vision 1.3 — Kütüphane: a governed knowledge catalog and memory layer for agents
 
-**Status:** 1.2, 2026-11-01 (D80): the positioning, the five principles and the sentence-level changes of `docs/research/2026-11-01-agent-memory-research.md` §7; D73 deleted (W1-1). 1.1, 2026-11-01 (D79): the vision refresh of `docs/research/2026-10-31-direction-analysis.md` §7, accepted by the operator. 1.0: draft, 2026-10-27 (D69, D70). It replaces the positioning in `docs/10` §1. `docs/10` stays as the history of the standard work.
+**Status:** 1.3, 2026-11-10 (D85): acceptance is recorded with how it was proven, and a book decides which kinds make an item usable (principle 2, P1, §2; `docs/research/2026-11-10-acceptance-grill.md`). 1.2, 2026-11-01 (D80): the positioning, the five principles and the sentence-level changes of `docs/research/2026-11-01-agent-memory-research.md` §7; D73 deleted (W1-1). 1.1, 2026-11-01 (D79): the vision refresh of `docs/research/2026-10-31-direction-analysis.md` §7, accepted by the operator. 1.0: draft, 2026-10-27 (D69, D70). It replaces the positioning in `docs/10` §1. `docs/10` stays as the history of the standard work.
 **Basis:**
 - the operator's positioning (2026-10-27);
 - the scope review (`docs/22`);
@@ -21,7 +21,7 @@
 These principles separate Kütüphane from "agent memory" products (D80).
 
 1. **The write path is the provenance.** No label from a model, a header or a manifest outranks the authenticated path.
-2. **Rules are accepted; evidence is verified.** A rule becomes current only by a person. Evidence becomes current by verification and use, and leaves by expiry.
+2. **Acceptance is recorded, never assumed.** Every item shows who accepted it and how that was proven: a curator's passkey, an operator's statement, a consumer's signed statement, a standing policy, or nobody. A book decides which kinds make an item usable; the default needs a person in Kütüphane. A rule becomes current only by a person.
 3. **Memory is data, never instruction.** Notes reach a model as tool results. Instructions need `activate` and a scan.
 4. **Nothing is rewritten; everything can be withdrawn.** Notes are immutable; supersession, retirement and rollback are events with a cause.
 5. **An asset leaves with its rights.** Import and export carry origin, Standing, rights and derivation. A journal is not an exception.
@@ -36,7 +36,7 @@ These principles separate Kütüphane from "agent memory" products (D80).
 | **governed model use**: `ai_input: n` never reaches a model; all model calls are audited (LLMDAP optional, #76) | a place for chat transcripts or scratch notes |
 | **easy to adopt**: one container, folders + `kstd.yaml`, a few MCP tools | a competing standard body: kstd is our contract, mapped to OKF / DataHub / DPV |
 | | an identity provider or a role store: tokens come from the IdP, grants live here |
-| | a package workflow UI: a package is approved once, on the CLI |
+| | a package workflow UI: a package is approved once, by a person with `curate`, on the phone or the CLI |
 | | **an extraction pipeline**: Kütüphane never writes a note from a conversation; an agent proposes, a person or a verifier decides |
 
 ## 3. The value we offer — five promises
@@ -45,7 +45,7 @@ Each promise is a behavior that a user can check. Every new feature must serve o
 
 | # | Promise | What the user sees | Evidence today / gap |
 |---|---|---|---|
-| P1 | **Knowledge with an owner.** Each item shows who issued it, who accepted it, and whether it is current. | An answer cites "accepted rule, v3, accepted by Ayşe on 2026-10-01", not just a passage. | Standing, rule/evidence and validity exist (ontology v2). Pilot 1 showed it works on radar. |
+| P1 | **Knowledge with an owner.** Each item shows who issued it, who accepted it and how that was proven, and whether it is current. | An answer cites "accepted rule, v3, accepted by Ayşe on 2026-10-01 (passkey)", not just a passage. | Standing, rule/evidence and validity exist (ontology v2). Pilot 1 showed it works on radar. Gap (D85): book versions record `approved_by` as a free-text statement; S1–S3 make the proof visible. |
 | P2 | **An agent can never pass as a person.** Origin comes from the write path, not from the writer's claim (D70; `docs/22` §4 R1–R7). | An agent-written note is `model` and `pending` until a person accepts it. | Built (D70; DB check `write_record.origin`). |
 | P3 | **A model never sees what it may not see.** Rights and personal data are checked before every embedding, rerank and answer, also for agents. | `ai_input: n` content is listed but never sent to a model; an export without a legal basis is refused. | Built and tested. Astra review #12 closed the merged-search gap. |
 | P4 | **Memory that does not rot.** Duplicates are merged and contradictions kept; a note with a stale citation is not current; **evidence that nobody uses expires**; a poisoned note is rolled back with everything derived from it. | An agent gets "stale: the cited code moved", or "retired: derived from a rejected note". | Built (#72, #79, passage map); not measured in use. |
