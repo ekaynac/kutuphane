@@ -80,6 +80,11 @@ Any MCP client that speaks streamable HTTP with a bearer token works. Without a 
 only, and `tools/list` has no `ask_library` and no job tools. The light install is `compose.yaml`; the full stack
 (ingress, LLMDAP, local models, two database roles) is `deploy/compose.full.yaml` (`docs/guide/install.md`).
 
+For an agent with a private journal, one call makes the journal and the grants:
+`kutuphane agent add <name> --journal [--shared <journal>] --curator user:<name>` (`docs/guide/operations.md`, §6).
+For a coding harness (omp, Claude Code), link the skill `.claude/skills/kutuphane-memory`
+(`docs/guide/agent-memory.md`, §14).
+
 ## MCP tools
 
 The endpoint is `/mcp` (stateless; MCP 2025-11-25 and 2026-07-28). Each tool description names the grant that it
@@ -133,18 +138,20 @@ Reference: `docs/guide/http-api.md`.
 | `docs/23-vision-v1.md` | The vision (1.2): positioning, principles, users, roadmap. |
 | `docs/11-standard-draft.md` | The kstd specification. |
 | `docs/01-direction-decisions.md` | The decisions (D1 and later). |
+| `docs/27-agent-skills.md` | The agent skills in `.claude/skills/` and why each exists. |
 
 ## Status
 
 Version 0.1.0, under active development; interfaces can change.
 
 - **Built:** file books with kstd L0; hybrid search; answers with citations; signed packages over the CLI, HTTP and
-  MCP; the catalog contract (`list_books`, `list_files`); agent memory (notes, fast reads, code citations, scope,
-  rollback, outcomes, evidence expiry, journal export and import); MCP 2026-07-28 with several token issuers; MCP
-  Skills with the SkillSpector scan; a light install without LLMDAP; curator web with passkey acts and the "my
-  words" confirmation.
-- **Open:** item-level access (#138, G10); the live reboot test (#141); the T3 A/B gate for new memory work (#121);
-  the InfraMedic token issuer.
+  MCP, with the package format as a documented contract; the catalog contract (`list_books`, `list_files`); agent
+  memory (notes, fast reads, code citations, scope, rollback, outcomes, evidence expiry, journal export and import);
+  `kutuphane agent add` for agent journals and grants; MCP 2026-07-28 with several token issuers (InfraMedic signs its
+  own tokens; a recipe for an orchestrator without an IdP); MCP Skills with the SkillSpector scan; a light install
+  without LLMDAP; Core as a host user service; curator web with passkey acts and the "my words" confirmation.
+- **Open:** the supported token path for harness agents without an IdP (#201); item-level access (#138, G10); the T3
+  A/B gate for new memory work (#121, #163); package approval in curator web (#196, deferred by D83).
 - **Removed:** delegated curate and the decider (D73, removed by D80); the `laya` decision-model service.
 
 Changes: `docs/guide/changelog.md`.
