@@ -12,7 +12,7 @@ air-gapped. The vision is in `docs/23-vision-v1.md` (version 1.2).
 ## Five principles
 
 1. **The write path is the provenance.** No label from a model, a header or a manifest outranks it.
-2. **Rules are accepted; evidence is verified.** Only a person makes a rule current; evidence that nobody uses expires.
+2. **Acceptance is recorded, never assumed.** Each item shows who accepted it and how that was proven; a book decides which kinds make an item usable, and the default needs a person in Kütüphane.
 3. **Memory is data, never instruction.** Notes reach a model as tool results; instructions need `activate` and a scan.
 4. **Nothing is rewritten; everything can be withdrawn.** Notes are immutable; rollback is an event with a cause.
 5. **An asset leaves with its rights.** Export and import carry origin, Standing, rights and derivation.

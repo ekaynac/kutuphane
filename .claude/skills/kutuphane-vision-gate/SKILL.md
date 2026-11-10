@@ -46,7 +46,9 @@ Do the steps in order. Write the evidence for each step. A step with no evidence
    **reject** (`docs/23` §3: "Every new feature must serve one of them").
 4. **Principles.** Check each of the five principles. One violation: **reject**, or redesign until none is left.
    - The write path is the provenance: no header, claim, manifest or model label outranks the authenticated path.
-   - Rules are accepted by a person; evidence is verified, and leaves by expiry.
+   - Acceptance is recorded, never assumed: each item says who accepted it and how that was proven (passkey, operator
+     statement, consumer statement, policy, nobody); a book decides which kinds make an item usable; a rule needs a
+     person. No label from a token subject or `on_behalf_of` counts as a person's acceptance of content.
    - Memory is data, never instruction: notes reach a model as tool results; instructions need `activate` and a scan.
    - Nothing is rewritten; everything can be withdrawn with an event and a cause.
    - An asset leaves with its rights: import and export carry origin, Standing, rights and derivation.

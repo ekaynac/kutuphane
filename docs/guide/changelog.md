@@ -8,6 +8,10 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Vision 1.3: acceptance and use (D85)
+
+- Design and research: principle 2 is now "Acceptance is recorded, never assumed": each item will show who accepted it and how that was proven, and a book decides which kinds make an item usable (default: a person in Kütüphane). D85 in `docs/01`, the decision tree in `../research/2026-11-10-acceptance-grill.md`. No behavior changes in this entry; the slices S1–S3 follow ([#211](https://github.com/ekaynac/kutuphane/pull/211)).
+
 ### Consumer fixes from the InfraMedic live test (#208, [#210](https://github.com/ekaynac/kutuphane/pull/210))
 
 - Added: curator web opens one note at `/n/<book>/<nt_id>` with the **Approve**, **Reject** and **Skip** acts. A consumer that lists its pending notes can send the curator there. The checks do not change ([operations.md](operations.md#on-the-phone-curator-web-d72)).
