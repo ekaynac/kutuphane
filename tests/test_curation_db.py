@@ -269,3 +269,29 @@ def test_a_note_shows_how_it_was_accepted(db, people):
         shown = items[ref]["acceptance"]
         assert shown["kind"] == kind and shown["by"] == by and "approved_by" not in items[ref]
         assert (shown["at"] is None) == (kind == "none")
+
+
+def test_the_app_role_cannot_make_a_version_current_or_loosen_a_policy(db, okf_dir):
+    """D85: publication rows are not enough; `book.current_*` is what readers see. Privilege errors, per column."""
+    from kutuphane import catalog, profiles
+    from kutuphane.source import read_source
+    authz.grant(db, "book:kitap", "curate", "user:admin")
+    pub = catalog.publish(db, book="kitap", title="Kitap", files=read_source(okf_dir), policy=LOCAL,
+                          profile=profiles.spec("chunked"), approved_by="user:admin")  # the owner publishes
+    for column in ("current_content", "current_profile", "current_policy"):
+        refused(db, f"UPDATE book SET {column} = {column} WHERE slug = 'kitap'", role=APP,
+                error=psycopg.errors.InsufficientPrivilege)
+    refused(db, "INSERT INTO book (slug, title, current_content) VALUES ('yeni', 'Yeni', %s)", (pub.content_id,),
+            role=APP, error=psycopg.errors.InsufficientPrivilege)
+    refused(db, "DELETE FROM book WHERE slug = 'kitap'", role=APP, error=psycopg.errors.InsufficientPrivilege)
+    assert run(db, "SELECT current_content FROM book WHERE slug = 'kitap'") == (pub.content_id,)
+
+
+def test_the_app_role_still_creates_and_restricts_a_journal(db):
+    """The narrow book grant keeps the journal path (and the row locks of note writes) working."""
+    with db.transaction():
+        db.execute("SET LOCAL ROLE " + APP)
+        notes.create_journal(db, book="yeni-gunluk", title="Yeni", search=True, ai_input=True, policy=LOCAL,
+                             by="user:admin")
+        notes.restrict_journal(db, "yeni-gunluk", ai_input=True)
+    assert run(db, "SELECT current_content FROM book WHERE slug = 'yeni-gunluk'") == (None,)

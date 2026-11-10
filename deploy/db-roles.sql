@@ -14,6 +14,12 @@ REVOKE INSERT, UPDATE, DELETE ON standing_event FROM kutuphane_app;
 -- D85: Core never publishes. A book version is published by the owner role (`kutuphane ingest`, `approve-import`);
 -- the app role reads publication facts only.
 REVOKE INSERT, UPDATE, DELETE ON publication FROM kutuphane_app;
+-- D85: the current version and policy of a book are set only by publication (owner role). The app role creates a
+-- journal (no content version) and takes row locks (`FOR SHARE`/`FOR UPDATE` need an UPDATE right on a column),
+-- and nothing else: it can neither make a version current without a publication row nor loosen a book's policy.
+REVOKE INSERT, UPDATE, DELETE ON book FROM kutuphane_app;
+GRANT INSERT (slug, title, current_policy, current_profile) ON book TO kutuphane_app;
+GRANT UPDATE (updated_at) ON book TO kutuphane_app;
 REVOKE UPDATE, DELETE ON note, write_record, note_link, note_citation, outcome, note_import FROM kutuphane_app;
 -- #140 (040): a passage map row is written once (publication, note write, `kutuphane reindex-map`) and never changed.
 REVOKE UPDATE, DELETE ON passage_map FROM kutuphane_app;
