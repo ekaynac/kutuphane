@@ -91,11 +91,29 @@ def test_revoking_a_passkey_ends_its_sessions(env, client, owner_cli, capsys):
     assert client.get("/api/me").status_code == 200
     assert cli.main(["curator", "passkeys", U]) == 0
     (pk,) = json.loads(capsys.readouterr().out)
-    assert cli.main(["curator", "revoke-passkey", pk["id"]]) == 0
+    assert cli.main(["curator", "revoke-passkey", "--", pk["id"]]) == 0   # an id can start with "-"
     capsys.readouterr()
     assert client.get("/api/me").status_code == 401
     assert env.execute("SELECT count(*) FROM curator_session WHERE login = 'passkey' AND ended_at IS NULL"
                        ).fetchone()[0] == 0
+
+
+def test_a_passkey_id_that_starts_with_a_dash_is_revoked_after_double_dash(env, client, owner_cli, capsys,
+                                                                         monkeypatch):
+    import types
+
+    import softauthn
+    dash = types.SimpleNamespace(token_bytes=lambda n: b"\xf8" + os.urandom(n - 1))  # b64u "-…"; softauthn only
+    monkeypatch.setattr(softauthn, "secrets", dash)
+    ready(env, client)
+    assert cli.main(["curator", "passkeys", U]) == 0
+    (pk,) = json.loads(capsys.readouterr().out)
+    assert pk["id"].startswith("-")
+    with pytest.raises(SystemExit) as refused:   # argparse reads it as an option
+        cli.main(["curator", "revoke-passkey", pk["id"]])
+    assert refused.value.code == 2
+    assert cli.main(["curator", "revoke-passkey", "--", pk["id"]]) == 0
+    assert client.get("/api/me").status_code == 401
 
 
 def test_a_session_of_a_revoked_passkey_is_refused(env, client):
