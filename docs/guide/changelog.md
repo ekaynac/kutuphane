@@ -8,7 +8,7 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
-### Consumer fixes from the InfraMedic live test (#208)
+### Consumer fixes from the InfraMedic live test (#208, [#210](https://github.com/ekaynac/kutuphane/pull/210))
 
 - Added: curator web opens one note at `/n/<book>/<nt_id>` with the **Approve**, **Reject** and **Skip** acts. A consumer that lists its pending notes can send the curator there. The checks do not change ([operations.md](operations.md#on-the-phone-curator-web-d72)).
 - Added: `GET /v1/packages/{id}` and the MCP tool `package_status` return `decided_by`, the person who approved or rejected the import (`null` until decided) ([http-api.md](http-api.md#122-get-v1packagesid)).
