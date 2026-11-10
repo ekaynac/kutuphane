@@ -27,7 +27,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from . import authz, canonical, db, gate, ids, kstd, llmdap, origin as origins, passagemap, profiles, search, secretscan
+from . import authz, canonical, catalog, db, gate, ids, kstd, llmdap, origin as origins, passagemap, profiles, search, secretscan
 from . import vectors
 from .gate import Actor, NotFound
 from .ids import CONTROL
@@ -442,10 +442,8 @@ def create_journal(conn, *, book: str, title: str, search: bool, ai_input: bool,
     with conn.transaction():
         if conn.execute("SELECT 1 FROM book WHERE slug = %s", (book,)).fetchone():
             raise ValueError(f"{book} exists; a journal is a new book")
-        conn.execute("INSERT INTO policy_version (id, doc) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                     (policy_id, Jsonb(policy)))
-        conn.execute("INSERT INTO profile_version (id, spec) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                     (profile_id, Jsonb(profile)))
+        catalog.store_version(conn, "policy_version", policy_id, policy)
+        catalog.store_version(conn, "profile_version", profile_id, profile)
         conn.execute("INSERT INTO book (slug, title, current_policy, current_profile) VALUES (%s, %s, %s, %s)",
                      (book, title, policy_id, profile_id))
         conn.execute("INSERT INTO journal (book, search, ai_input, train, created_by) VALUES (%s, %s, %s, %s, %s)",
@@ -626,8 +624,7 @@ def _write_record(conn, actor: Actor, action: str, note_seq, creates: bool, requ
 def _insert_note(conn, draft: Draft, allow_search: bool, allow_ai: bool, allow_train: bool, books: list[str]) -> int:
     profile = profiles.spec(profiles.JOURNAL)
     profile_id = ids.profile_id(profile)
-    conn.execute("INSERT INTO profile_version (id, spec) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                 (profile_id, Jsonb(profile)))
+    catalog.store_version(conn, "profile_version", profile_id, profile)
     scope = draft.scope or {"repo": None, "branch": None, "paths": []}
     return conn.execute(_NOTE_INSERT, {
         "book": draft.book, "id": draft.id, "profile": profile_id, "kind": draft.kind, "body": draft.text,

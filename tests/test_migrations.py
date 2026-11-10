@@ -78,6 +78,7 @@ def test_upgrade_to_051_marks_past_publications_legacy(conn):  # D85: never upgr
     conn.execute("CREATE SCHEMA public")
     db.migrate(conn)
     conn.execute("ALTER TABLE publication DROP COLUMN acceptance, DROP COLUMN acceptance_legacy")
+    conn.execute("ALTER TABLE blob DROP CONSTRAINT blob_digest")
     conn.execute("DELETE FROM schema_migration WHERE name = '051_acceptance.sql'")
     conn.execute("INSERT INTO profile_version (id, spec) VALUES ('pf_old', '{}')")
     conn.execute("INSERT INTO policy_version (id, doc) VALUES ('pl_old', '{}')")

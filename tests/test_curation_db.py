@@ -295,3 +295,60 @@ def test_the_app_role_still_creates_and_restricts_a_journal(db):
                              by="user:admin")
         notes.restrict_journal(db, "yeni-gunluk", ai_input=True)
     assert run(db, "SELECT current_content FROM book WHERE slug = 'yeni-gunluk'") == (None,)
+
+
+def _publish_as_owner(db, okf_dir, policy=LOCAL):
+    from kutuphane import catalog, profiles
+    from kutuphane.source import read_source
+    authz.grant(db, "book:kitap", "curate", "user:admin")
+    return catalog.publish(db, book="kitap", title="Kitap", files=read_source(okf_dir), policy=policy,
+                           profile=profiles.spec("chunked"), approved_by="user:admin")
+
+
+def test_published_content_is_immutable_for_the_app_role(db, okf_dir):
+    """D85: accepted bytes, manifests, passages, quarantine records, policies and profiles cannot be changed."""
+    _publish_as_owner(db, okf_dir)
+    db.execute("INSERT INTO quarantine (book, content_id, profile_id, path, reason) "
+               "SELECT book, content_id, profile_id, 'x.pdf', 'r' FROM chunk LIMIT 1")
+    denied = psycopg.errors.InsufficientPrivilege
+    for sql in ("UPDATE blob SET data = data", "DELETE FROM blob",
+                "INSERT INTO blob (sha256, data) VALUES (encode(sha256('\\x78'::bytea), 'hex'), '\\x78'::bytea)",
+                "UPDATE content_version SET manifest = '[]'", "DELETE FROM content_version",
+                "INSERT INTO content_version (book, id, manifest) VALUES ('kitap', 'ct_x', '[]')",
+                "UPDATE chunk SET text = 'forged'", "UPDATE chunk SET instruction = NOT instruction",
+                "DELETE FROM chunk",
+                "INSERT INTO chunk (book, content_id, profile_id, path, ordinal, start_char, end_char, text, tsv) "
+                "SELECT book, content_id, profile_id, 'z.md', 99, 0, 1, 'forged', ''::tsvector FROM chunk LIMIT 1",
+                "UPDATE quarantine SET reason = 'x'", "DELETE FROM quarantine",
+                "INSERT INTO quarantine (book, content_id, profile_id, path, reason) "
+                "SELECT book, content_id, profile_id, 'y.pdf', 'r' FROM chunk LIMIT 1",
+                "UPDATE policy_version SET doc = '{}'", "DELETE FROM policy_version",
+                "UPDATE profile_version SET spec = '{}'", "DELETE FROM profile_version"):
+        refused(db, sql, role=APP, error=denied)
+    assert run(db, "SELECT count(*) FROM chunk WHERE text = 'forged'") == (0,)
+
+
+def test_the_app_role_keeps_journals_and_vectors(db, okf_dir):
+    """Controls: policy/profile INSERT stays (journal create), and `kutuphane index` writes chunk_vector."""
+    _publish_as_owner(db, okf_dir)
+    run(db, "INSERT INTO policy_version (id, doc) VALUES ('pl_new', '{}')", role=APP)
+    row = run(db, "SELECT book, content_id, profile_id, path, ordinal FROM chunk LIMIT 1")
+    run(db, "INSERT INTO chunk_vector (book, content_id, profile_id, path, ordinal, model, embedding, truncated, "
+            "input_sha256) VALUES (%s, %s, %s, %s, %s, 'm', %s::vector, false, 'h')",
+        (*row, "[" + ",".join(["0.1"] * 1024) + "]"), role=APP)
+
+
+def test_a_forged_policy_row_is_never_adopted_by_a_publication(db, okf_dir):
+    """Pre-image squatting: the app role inserts a LOOSE document under the id of the strict policy; the owner's
+    publish reads the stored document back and refuses. Nothing is published and the book is unchanged."""
+    from kutuphane import catalog, ids, profiles
+    from kutuphane.source import read_source
+    authz.grant(db, "book:kitap", "curate", "user:admin")
+    strict = make_policy(sensitivity="restricted", egress="local_only", protection="standard")
+    loose = make_policy(sensitivity="normal", egress="cloud_ok", protection="standard")
+    run(db, "INSERT INTO policy_version (id, doc) VALUES (%s, %s)", (ids.policy_id(strict), Jsonb(loose)), role=APP)
+    with pytest.raises(ValueError, match="different doc"):
+        catalog.publish(db, book="kitap", title="Kitap", files=read_source(okf_dir), policy=strict,
+                        profile=profiles.spec("chunked"), approved_by="user:admin")
+    assert run(db, "SELECT count(*) FROM publication") == (0,)
+    assert run(db, "SELECT count(*) FROM book WHERE slug = 'kitap'") == (0,)

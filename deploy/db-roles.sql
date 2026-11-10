@@ -20,6 +20,11 @@ REVOKE INSERT, UPDATE, DELETE ON publication FROM kutuphane_app;
 REVOKE INSERT, UPDATE, DELETE ON book FROM kutuphane_app;
 GRANT INSERT (slug, title, current_policy, current_profile) ON book TO kutuphane_app;
 GRANT UPDATE (updated_at) ON book TO kutuphane_app;
+-- D85: published content is immutable for the app role: files, manifests, passages and quarantine records are
+-- written by the owner (`kutuphane ingest`, `approve-import`) only. The app keeps `chunk_vector` (`kutuphane index`),
+-- and may add a policy or profile version (journal creation, note writes) but never change or remove one.
+REVOKE INSERT, UPDATE, DELETE ON blob, content_version, chunk, quarantine FROM kutuphane_app;
+REVOKE UPDATE, DELETE ON policy_version, profile_version FROM kutuphane_app;
 REVOKE UPDATE, DELETE ON note, write_record, note_link, note_citation, outcome, note_import FROM kutuphane_app;
 -- #140 (040): a passage map row is written once (publication, note write, `kutuphane reindex-map`) and never changed.
 REVOKE UPDATE, DELETE ON passage_map FROM kutuphane_app;

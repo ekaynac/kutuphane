@@ -82,6 +82,21 @@ def _check_personal_data(files: list[SourceFile], policy: dict, manifest) -> Non
                          f"the file in kstd.yaml, or publish with --egress local_only")
 
 
+_VERSION_TABLES = {"policy_version": ("doc", "INSERT INTO policy_version (id, doc) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                                      "SELECT doc = %s::jsonb FROM policy_version WHERE id = %s"),
+                   "profile_version": ("spec", "INSERT INTO profile_version (id, spec) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                                       "SELECT spec = %s::jsonb FROM profile_version WHERE id = %s")}
+
+
+def store_version(conn, table: str, version_id: str, document: dict) -> None:
+    """Write a policy or profile version (content-addressed), and refuse a stored row under this id that holds
+    another document: the app role may insert these rows, and a forged row with a strict id must never be adopted."""
+    column, insert, check = _VERSION_TABLES[table]
+    conn.execute(insert, (version_id, Jsonb(document)))
+    if conn.execute(check, (Jsonb(document), version_id)).fetchone() != (True,):
+        raise ValueError(f"{table} {version_id} holds a different {column} than its id names: refusing to use it")
+
+
 def require_curate(conn, by: str, book: str) -> None:
     """D85 Q5'': a person publishes or refuses a package for a book only with `curate` on it (held by `user:`
     principals only). The one rule for `catalog.publish` and `packages.reject`; the refusal names the fix."""
@@ -135,10 +150,8 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
         from . import quotes, skills  # here: both import gate (via search), which imports this module
         skills.store(conn, book, content_id, files)  # the validated SKILL.md frontmatter (review #18)
         carried = skillscan.store(conn, book, content_id, scans, files)
-        conn.execute("INSERT INTO policy_version (id, doc) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                     (policy_id, Jsonb(policy)))
-        conn.execute("INSERT INTO profile_version (id, spec) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                     (profile_id, Jsonb(profile)))
+        store_version(conn, "policy_version", policy_id, policy)
+        store_version(conn, "profile_version", profile_id, profile)
         indexed = conn.execute("SELECT 1 FROM chunk WHERE book = %s AND content_id = %s AND profile_id = %s LIMIT 1",
                                (book, content_id, profile_id)).fetchone()
         if not indexed:

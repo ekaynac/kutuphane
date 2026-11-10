@@ -74,6 +74,9 @@ the confirmer withdraws it (R7).
 - Publishing is owner-only (D85). `kutuphane ingest`, `approve-import` and `reject-import` need
   `KUTUPHANE_CURATOR_DSN`, and `--by` must hold `curate` on the book. The database refuses every write to
   `publication` from the app role (`deploy/db-roles.sql`), so Core, and any agent that reaches it, cannot publish.
+  Published content, passages, quarantine records and the policies and profiles of a version are immutable for the
+  app role (it may only add a policy or profile row, and a publication refuses a stored row that differs from the
+  document its id names).
   The same holds for `book.current_content`, `current_profile` and `current_policy`: the app role may only insert a
   book row without a content version (a journal), so it cannot make a version current or loosen a policy.
   A publication records `acceptance.kind` `operator_cli`: the operator states the person; it is not a passkey proof.
