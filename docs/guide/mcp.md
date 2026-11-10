@@ -549,7 +549,7 @@ is published until a person runs `kutuphane approve-import`
 package in base64, within the package limit).
 
 **Result:** as `GET /v1/packages/{id}` ([http-api.md](http-api.md#122-get-v1packagesid)): `{"id", "status",
-"issuer", "book", "sequence", "content_id", "findings", "diff", "reasons", "received_at", "decided_at"}`; `status`
+"issuer", "book", "sequence", "content_id", "findings", "diff", "reasons", "received_at", "decided_at", "decided_by"}`; `status`
 `received`, `findings` or `refused`; `diff` is `null` without `read` now. **Errors:** `400` (not base64, not a
 package, a journal), `403`, too large.
 

@@ -94,7 +94,10 @@ the body; your reverse proxy must pass both unchanged.
   compose install ([install.md](install.md#2-database-roles), step 2). Type it at the prompt; do not store it where
   an agent can read it.
 - a curator is refused: the user needs `curate` on the book now:
-  `kutuphane grant book:<journal> curate user:<name>`.
+  `kutuphane grant book:<journal> curate user:<name>`. Curator web says `user:<name> does not hold curate and read on
+  book:<journal>` and names both fixes: `kutuphane grant book:<journal> read user:<name>` and
+  `KUTUPHANE_CURATOR_DSN=… kutuphane grant book:<journal> curate user:<name>`. For an agent journal,
+  `kutuphane agent add … --curator` gives both ([operations.md](operations.md#one-call-for-an-agent-200)).
 - `skill clear`: `no block on skill '<folder>'`: the current version has no uncleared block there. Give the
   `SKILL.md` folder (`.` for the root) as `kutuphane skill show <book>` lists it.
 - `curate is held only by users, directly`: you cannot grant `curate` to an agent or a role.

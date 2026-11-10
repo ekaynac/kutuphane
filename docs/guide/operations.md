@@ -655,6 +655,11 @@ the choices and signs nothing. **Continue** shows the stored statement and the r
 decides all chosen notes (one reason, one Standing event each). One act: 1–50 notes, at most one rule-role note
 approved, never two `contradicts` notes together. Synced passkeys are allowed and recorded.
 
+To send a curator to one note, give the link `<KUTUPHANE_CURATOR_URL>/n/<book>/<nt_id>`. It opens the same card with
+**Approve**, **Reject** and **Skip**, after the passkey sign-in. The rules are the same as for the queue: `curate` and
+`read` on the book, else the page shows the refusal with the two `grant` commands that fix it. (`/c/<book>/<nt_id>` is
+the **My words** page and does not approve.)
+
 <img src="img/curator-sign.png" alt="The sign sheet with the rule that the approval retires" width="300">
 
 ```sh

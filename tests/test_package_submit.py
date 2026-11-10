@@ -186,3 +186,14 @@ def test_submit_package_and_package_status_over_mcp(setup, keys, verifier, conn_
     assert conn_b.execute("SELECT submitted_channel FROM package_import").fetchone()[0] == "mcp"
     with pytest.raises(Exception, match="not base64"):
         call_tool(mcp, claims, "submit_package", {"package_base64": "***"})
+
+
+def test_package_status_names_who_decided_it_and_null_before(setup, keys, conn_b):  # noqa: F811  # #208
+    app, pkg, _ = setup
+    authz.grant(conn_b, "book:runbooks", "propose", AGENT)
+    with TestClient(app) as client:
+        auth = agent_auth(keys)
+        receipt = client.post("/v1/packages", content=pkg, headers=auth).json()
+        assert receipt["decided_by"] is None and receipt["decided_at"] is None
+        packages.approve(conn_b, receipt["id"], by="user:admin", policy=POLICY)
+        assert client.get(f"/v1/packages/{receipt['id']}", headers=auth).json()["decided_by"] == "user:admin"

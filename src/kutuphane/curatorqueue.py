@@ -324,6 +324,13 @@ def _log(conn, principal: str, rights: authz.Allowed, items: list[dict], w: int,
                        items=[{"ref": r, "standing_seq": s} for r, s in by_book[book].items()], memory_seq=w)
 
 
+def _missing(principal: str, book: str) -> str:
+    """The refusal for a book that the person does not curate. It names the fix: the operator runs two grants."""
+    return (f"{principal} does not hold curate and read on book:{book}. Fix: `kutuphane grant book:{book} read "
+            f"{principal}` and `KUTUPHANE_CURATOR_DSN=… kutuphane grant book:{book} curate {principal}` "
+            "(for an agent journal, `kutuphane agent add … --curator` does both)")
+
+
 def queue(conn, principal: str, *, w: int | None = None, cursor: str | None = None, limit: int = PAGE_GROUPS,
           book: str | None = None, channel: str = "cli") -> dict:
     """One page of the queue at `w` (default: now). `cursor` continues a page at its own `w`. `book` narrows it to one
@@ -334,7 +341,7 @@ def queue(conn, principal: str, *, w: int | None = None, cursor: str | None = No
     book_list, read_needed, rights = books(conn, principal)
     if book is not None:
         if book not in book_list:
-            raise gate.Denied(f"{principal} does not hold curate and read on book:{book}")
+            raise gate.Denied(_missing(principal, book))
         book_list = [book]
     groups, rows = _groups(conn, book_list, w)
     total = sum(len(g["pending"]) for g in groups)
@@ -363,7 +370,7 @@ def note(conn, principal: str, ref: str, *, w: int | None = None, channel: str =
     book, note_id = notes.parse_ref(ref)
     book_list, _, rights = books(conn, principal)
     if book not in book_list:
-        raise gate.Denied(f"{principal} does not hold curate and read on book:{book}")
+        raise gate.Denied(_missing(principal, book))
     found = conn.execute("SELECT seq, kind, scope_repo, scope_branch, scope_paths FROM note "
                          "WHERE book = %s AND id = %s AND seq <= %s", (book, note_id, w)).fetchone()
     if found is None:

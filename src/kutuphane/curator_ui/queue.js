@@ -381,8 +381,21 @@ function more() {
   return b;
 }
 
+// `/n/<book>/<id>` opens the queue at one note: the same card, the same acts (#208).
+async function fetchOne(book, id) {
+  const r = await fetch(`/api/note/${encodeURIComponent(book)}/${encodeURIComponent(id)}`, { credentials: "same-origin" });
+  if (r.status === 401) return null;
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+  const n = d.item.pending ? 1 : 0;
+  return { watermark: d.watermark, pending: n, next_cursor: null, read_needed: [],
+           groups: [{ members: [d.item], pending: n, recurrence: d.recurrence,
+                      proposed_again_after_rejection: d.proposed_again_after_rejection, pairs: [] }] };
+}
+
 async function load() {
-  const data = await fetchQueue(null);
+  const [, one, book, id] = location.pathname.split("/");
+  const data = await (one === "n" ? fetchOne(book, id) : fetchQueue(null));
   if (!data) return signIn();
   state.w = data.watermark; state.cursor = data.next_cursor; state.items.clear(); state.selected.clear();
   frame("review", data.pending ? `${plural(data.pending, "note", "notes")} to review` : "");
