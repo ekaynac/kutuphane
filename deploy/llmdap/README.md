@@ -37,7 +37,7 @@ Settings (`.env`):
 |---|---|---|
 | `KUTUPHANE_LLMDAP_ROUTES` (LLMDAP's routes file) | `routes.json` | `routes.local.json` |
 | `KUTUPHANE_LLMDAP_ROUTE` | `chat` | `chat` |
-| `KUTUPHANE_ANSWER_MODEL` | `stub-chat` | `RadixArk/Qwen3.8-27B-NVFP4` |
+| `KUTUPHANE_ANSWER_MODEL` | `stub-chat` | `nvidia/Qwen3.8-Flash-Next-NVFP4` |
 | `KUTUPHANE_LLMDAP_EMBED_ROUTE` | `emb` | `emb` |
 | `KUTUPHANE_EMBED_MODEL` | `stub-embed` | `BAAI/bge-m3` |
 | `KUTUPHANE_LLMDAP_RERANK_ROUTE` | `rerank` | `rerank` |
@@ -47,7 +47,7 @@ Settings (`.env`):
 
 Nothing leaves the machine. LLMDAP reads `config/routes.local.json` (the default of `KUTUPHANE_LLMDAP_ROUTES`):
 
-- `chat` → `spark-chat` (nginx, `deploy/spark-chat/`) → the host's vLLM on port 8000 (`RadixArk/Qwen3.8-27B-NVFP4`).
+- `chat` → `spark-chat` (nginx, `deploy/spark-chat/`) → the host's vLLM on port 8000 (`nvidia/Qwen3.8-Flash-Next-NVFP4`).
   The proxy forwards only `POST /v1/chat/completions` and forces `chat_template_kwargs.enable_thinking=false`
   (Qwen3.8 otherwise spends tokens on a `reasoning` field). It is the only model service with a non-internal network.
 - `emb` (1024 dimensions) and `rerank` → `embedder` (`deploy/models/`): bge-m3 and bge-reranker-v2-m3 on CPU,
@@ -83,6 +83,6 @@ fill in the bge-m3 vectors.
 docker compose --profile app run --rm -T --no-deps core python -I - model-stub:8000 < deploy/egress_probe.py  # AT-10
 python -I deploy/llmdap_contract.py <okf dir> --chat chat stub-chat --embed emb stub-embed --rerank rerank stub-rerank \
   --audit-export "docker compose --profile app exec -T llmdap llmdap-audit-export --path /var/lib/llmdap/audit/audit.log"
-# local models: --chat chat RadixArk/Qwen3.8-27B-NVFP4 --embed emb BAAI/bge-m3 --rerank rerank BAAI/bge-reranker-v2-m3
+# local models: --chat chat nvidia/Qwen3.8-Flash-Next-NVFP4 --embed emb BAAI/bge-m3 --rerank rerank BAAI/bge-reranker-v2-m3
 #   (GPU reranker: --rerank rerank-gpu BAAI/bge-reranker-v2-m3)
 ```

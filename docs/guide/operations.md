@@ -62,7 +62,7 @@ All `KUTUPHANE_*` variables of the code, the compose files (`compose.yaml`, `dep
 | `KUTUPHANE_LLMDAP_KEY` | none | Core's LLMDAP subject key. |
 | `KUTUPHANE_LLMDAP_ROUTE` | full: `chat` | Route for answers and question translation. |
 | `KUTUPHANE_LLMDAP_ROUTE_CLASS` | compose: `local` | `local` or `cloud`. A `local_only` book never goes to a `cloud` route. |
-| `KUTUPHANE_ANSWER_MODEL` | full: `RadixArk/Qwen3.8-27B-NVFP4` | Answer model. Required by the server with `KUTUPHANE_LLMDAP_URL`. `ask --model` sets it for the CLI. |
+| `KUTUPHANE_ANSWER_MODEL` | full: `nvidia/Qwen3.8-Flash-Next-NVFP4` | Answer model. Required by the server with `KUTUPHANE_LLMDAP_URL`. `ask --model` sets it for the CLI. |
 | `KUTUPHANE_LLMDAP_EMBED_ROUTE` | full: `emb` | Embeddings route. Without it, search is full text only. |
 | `KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS` | compose: `local` | Route class of the embeddings route. |
 | `KUTUPHANE_EMBED_MODEL` | full: `BAAI/bge-m3` | Pinned embedding model. |
