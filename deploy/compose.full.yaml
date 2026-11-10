@@ -55,7 +55,7 @@ services:
       KUTUPHANE_OIDC_JWKS: /run/kutuphane/jwks.json
       # Routes and models: the local-models defaults (deploy/llmdap/config/routes.local.json). They are not code
       # defaults: the host CLI reads them only from its own environment (G13, docs/guide/operations.md).
-      KUTUPHANE_ANSWER_MODEL: ${KUTUPHANE_ANSWER_MODEL:-RadixArk/Qwen3.8-27B-NVFP4}
+      KUTUPHANE_ANSWER_MODEL: ${KUTUPHANE_ANSWER_MODEL:-nvidia/Qwen3.8-Flash-Next-NVFP4}
       KUTUPHANE_LLMDAP_URL: ${KUTUPHANE_LLMDAP_URL:-http://llmdap:8787}
       KUTUPHANE_LLMDAP_ROUTE: ${KUTUPHANE_LLMDAP_ROUTE:-chat}
       KUTUPHANE_LLMDAP_KEY: ${KUTUPHANE_LLMDAP_KEY:-}
@@ -119,7 +119,7 @@ services:
     networks: [models]
 
   # Real local models (D61). Nothing leaves the machine. routes.local.json:
-  #   chat → spark-chat → the host's vLLM (RadixArk/Qwen3.8-27B-NVFP4, host port 8000; thinking forced off);
+  #   chat → spark-chat → the host's vLLM (nvidia/Qwen3.8-Flash-Next-NVFP4, host port 8000; thinking forced off);
   #   emb and rerank → embedder (bge-m3, bge-reranker-v2-m3, CPU); rerank-gpu → reranker-gpu.
   # The weights come from the read-only Hugging Face cache at the commits pinned in deploy/models/server.py
   # (download them once; see deploy/llmdap/README.md).

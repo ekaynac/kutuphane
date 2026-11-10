@@ -175,7 +175,7 @@ the same host (#141). `postgres`, `llmdap` and the model servers stay in compose
    KUTUPHANE_LLMDAP_KEY=<Core's subject key>
    KUTUPHANE_LLMDAP_ROUTE=chat
    KUTUPHANE_LLMDAP_ROUTE_CLASS=local
-   KUTUPHANE_ANSWER_MODEL=RadixArk/Qwen3.8-27B-NVFP4
+   KUTUPHANE_ANSWER_MODEL=nvidia/Qwen3.8-Flash-Next-NVFP4
    KUTUPHANE_LLMDAP_EMBED_ROUTE=emb
    KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS=local
    KUTUPHANE_EMBED_MODEL=BAAI/bge-m3
@@ -212,7 +212,7 @@ and `deploy/db-roles.sql` ([step 2](#2-database-roles)); `systemctl --user resta
 
 The profile `local-models` adds real models; nothing leaves the machine:
 
-- `chat`: `spark-chat` → the host's vLLM on port 8000, `RadixArk/Qwen3.8-27B-NVFP4`.
+- `chat`: `spark-chat` → the host's vLLM on port 8000, `nvidia/Qwen3.8-Flash-Next-NVFP4`.
 - `emb`: `embedder` (CPU, 8 threads, 8 GB), `BAAI/bge-m3` (1024 dimensions).
 - `rerank`: `embedder`, `BAAI/bge-reranker-v2-m3`.
 - `rerank-gpu`: `reranker-gpu` (GPU, profile `gpu-rerank`), the same weights.
