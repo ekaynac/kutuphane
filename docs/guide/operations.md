@@ -26,6 +26,7 @@ it out of every environment that an agent can read; the `core` container gets on
 
 ```
 error: KUTUPHANE_CURATOR_DSN is not set (the curator credential)
+hint: it is the database owner role; in a compose install postgresql://kutuphane:<KUTUPHANE_DB_PASSWORD in .env>@127.0.0.1:55432/kutuphane (install.md, step 2). Type it; never store it where an agent can read it.
 ```
 
 Create the app role once as the owner (`CREATE ROLE kutuphane_app LOGIN PASSWORD '…'`) and put its password in
@@ -637,11 +638,13 @@ approved, never two `contradicts` notes together. Synced passkeys are allowed an
 
 ```sh
 KUTUPHANE_CURATOR_DSN=… kutuphane curator passkeys [user:ayse]     # synced or not, last act; check after each enrollment
-KUTUPHANE_CURATOR_DSN=… kutuphane curator revoke-passkey <id>      # a lost phone; also ends its sessions
+KUTUPHANE_CURATOR_DSN=… kutuphane curator revoke-passkey -- <id>   # a lost phone; also ends its sessions
 KUTUPHANE_CURATOR_DSN=… kutuphane curator end-sessions user:ayse    # a stolen cookie
 KUTUPHANE_CURATOR_DSN=… kutuphane curator cancel-enrollment <en_…>  # a leaked unused code; a used one: revoke its passkey
 KUTUPHANE_CURATOR_DSN=… KUTUPHANE_WEBAUTHN_RP_ID=… KUTUPHANE_WEBAUTHN_ORIGIN=… kutuphane curator verify-acts
 ```
+
+A passkey id can start with `-`. Put `--` before it, as above; without `--`, `revoke-passkey` stops with exit 2.
 
 `verify-acts` checks every stored act offline (challenge, signature with user verification, rows and `retires`
 against the statement, and that signed notes still give their id, else `contents`); it exits 1 on a failure. A

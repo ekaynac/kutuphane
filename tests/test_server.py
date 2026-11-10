@@ -294,6 +294,18 @@ def test_agent_over_mcp_and_human_over_http_open_the_same_passages(app_env, keys
         assert by_agent["text"] == by_human["text"] and by_agent["citation"] == by_human["citation"]
 
 
+def test_a_malformed_tool_argument_gives_one_line_per_field(app_env, keys):  # #200
+    app, _, _ = app_env
+    with TestClient(app, base_url=PUBLIC) as client:
+        h = bearer(keys)
+        wrong = mcp_tool_over_http(client, h, "query_notes", {"book": "secret-journal-name", "sets": "all"})
+        unknown = mcp_tool_over_http(client, h, "query_notes", {"sets": ["all"]})
+    assert wrong["isError"] and wrong["content"][0]["text"] == (
+        "Error executing tool query_notes: book: Input should be a valid list; sets: Input should be a valid list")
+    assert unknown["isError"] and unknown["content"][0]["text"] == (
+        "Error executing tool query_notes: sets: unknown value 'all' (one of: current, history, open)")
+
+
 BAD_TOKENS = {
     "none": lambda keys: {},
     "not a jwt": lambda keys: {"Authorization": "Bearer x.y.z"},

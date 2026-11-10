@@ -561,7 +561,8 @@ def _strings(name: str, value, allowed=None, pattern=None) -> list[str] | None:
         raise ValueError(f"{name} must be a non-empty list of strings")
     bad = [v for v in value if (allowed is not None and v not in allowed) or (pattern and not pattern.match(v))]
     if bad:
-        raise ValueError(f"{name}: unknown value {bad[0]!r}")
+        known = f" (one of: {', '.join(sorted(allowed))})" if allowed is not None else ""
+        raise ValueError(f"{name}: unknown value {bad[0]!r}{known}")
     return sorted(set(value))
 
 

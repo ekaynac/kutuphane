@@ -89,8 +89,10 @@ the body; your reverse proxy must pass both unchanged.
 
 ## Notes and curation
 
-- `KUTUPHANE_CURATOR_DSN is not set (the curator credential)`: `note standing`, `note rollback` and `skill clear`
-  need the owner DSN. Type it at the prompt; do not store it where an agent can read it.
+- `KUTUPHANE_CURATOR_DSN is not set (the curator credential)`: `grant … curate`, `note standing`, `note rollback`,
+  `skill clear` and the other curator commands need the owner DSN. The next line of the error gives its form for a
+  compose install ([install.md](install.md#2-database-roles), step 2). Type it at the prompt; do not store it where
+  an agent can read it.
 - a curator is refused: the user needs `curate` on the book now:
   `kutuphane grant book:<journal> curate user:<name>`.
 - `skill clear`: `no block on skill '<folder>'`: the current version has no uncleared block there. Give the

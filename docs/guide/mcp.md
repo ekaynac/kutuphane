@@ -153,8 +153,11 @@ rights changed two times during one read); `idempotency_key reused with another 
 `model service unavailable or refused` (`502`); a validation message such as `query must be 1..1000 characters`
 (`400`); `internal error` (`500`, details in the server log). Without LLMDAP, `POST /v1/ask` gives `503`
 `answers are not available: this install has no model gateway (LLMDAP); search is full text only`, and MCP does not
-list `ask_library` ([light install](install.md#light-install)). The SDK refuses an argument of the wrong type with
-its own message.
+list `ask_library` ([light install](install.md#light-install)).
+
+An argument that does not match the tool's input schema gives one part for each field, separated by `; `, for
+example `Error executing tool query_notes: book: Input should be a valid list` (send `["<book>"]`). A value that is
+not allowed names the allowed ones: `sets: unknown value 'all' (one of: current, history, open)`.
 
 ### 4.4 Handling labels in `_meta`
 

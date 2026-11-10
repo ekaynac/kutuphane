@@ -934,7 +934,10 @@ def main(argv=None) -> int:
         # A curate grant makes a curator, so it needs the curator credential, as the curation it allows (#67).
         curator_db = getattr(args, "curator_db", False) or (args.fn is cmd_grant and args.mode == "curate")
         if curator_db and not os.environ.get(db.CURATOR_DSN_ENV):
-            print(f"error: {db.CURATOR_DSN_ENV} is not set (the curator credential)", file=sys.stderr)
+            print(f"error: {db.CURATOR_DSN_ENV} is not set (the curator credential)\n"
+                  "hint: it is the database owner role; in a compose install "
+                  "postgresql://kutuphane:<KUTUPHANE_DB_PASSWORD in .env>@127.0.0.1:55432/kutuphane "
+                  "(install.md, step 2). Type it; never store it where an agent can read it.", file=sys.stderr)
             return 2
         # The owner credential writes Standing and applies migrations; without it, migrate uses KUTUPHANE_DSN
         # (a single-role development database).
