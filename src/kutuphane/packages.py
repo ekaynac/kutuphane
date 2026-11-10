@@ -449,19 +449,20 @@ def status(conn, actor: Actor, import_id) -> dict:
     if type(import_id) is not int or not 1 <= import_id < 2**63:
         raise gate.NotFound("no such import")
     row = conn.execute(
-        "SELECT id, status, issuer, book, sequence, content_id, findings, diff, reasons, received_at, decided_at "
-        "FROM package_import WHERE id = %s AND submitted_by = %s AND submitted_for IS NOT DISTINCT FROM %s",
+        "SELECT id, status, issuer, book, sequence, content_id, findings, diff, reasons, received_at, decided_at, "
+        "decided_by FROM package_import WHERE id = %s AND submitted_by = %s AND submitted_for IS NOT DISTINCT FROM %s",
         (import_id, actor.principal, actor.on_behalf_of)).fetchone()
     if row is None:
         raise gate.NotFound("no such import")
-    pid, state, issuer, book, sequence, content_id, findings, diff, reasons, received, decided = row
+    pid, state, issuer, book, sequence, content_id, findings, diff, reasons, received, decided, decided_by = row
     if diff is not None and not authz.decide(conn, actor.principal, actor.on_behalf_of, f"book:{book}",
                                              ["read"]).decisions["read"].allowed:
         diff = None
     shown = STATUS.get(state) or ("findings" if findings else "received")
     return {"id": pid, "status": shown, "issuer": issuer, "book": book, "sequence": sequence,
             "content_id": content_id, "findings": findings, "diff": diff, "reasons": reasons,
-            "received_at": received.isoformat(), "decided_at": decided.isoformat() if decided else None}
+            "received_at": received.isoformat(), "decided_at": decided.isoformat() if decided else None,
+            "decided_by": decided_by}
 
 
 def op_submit(dsn, actor: Actor, data: bytes) -> dict:

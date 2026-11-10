@@ -422,5 +422,7 @@ An import that you submitted (same principal, same user acted for); else `404`. 
 - `diff`: `{"added", "removed", "changed"}` against the book's current version. Only with a current `read` on the
   book; else `null` (`propose` alone does not list the catalog's files).
 - `reasons`: why it was refused. `received_at`, `decided_at`: ISO 8601 times.
+- `decided_by`: the person who approved or rejected it (`user:<name>`); `null` until it is decided. It stays when a
+  later version replaces the import.
 
 For problems, read [troubleshooting.md](troubleshooting.md).

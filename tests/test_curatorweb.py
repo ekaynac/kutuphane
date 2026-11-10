@@ -331,7 +331,7 @@ def test_the_curator_web_route_snapshot(client):  # C10
     assert paths == ["/", "/api/act", "/api/act/options", "/api/enroll",
                      "/api/enroll/options", "/api/enroll/session", "/api/me", "/api/note/{book}/{id}", "/api/queue",
                      "/api/requests", "/api/requests/{book}/{id}", "/auth/logout", "/auth/passkey",
-                     "/auth/passkey/options", "/c/{book}/{id}", "/enroll", "/requests", "/static"]
+                     "/auth/passkey/options", "/c/{book}/{id}", "/enroll", "/n/{book}/{id}", "/requests", "/static"]
 
 
 def test_verify_acts_finds_a_bad_signature_and_a_missing_effect(env, client):  # C12
@@ -367,3 +367,21 @@ def test_the_sidecar_serves_443_only_and_never_funnel():  # T-DEP (static part; 
     assert "AllowFunnel" not in serve
     (handlers,) = [v["Handlers"] for v in serve["Web"].values()]
     assert handlers == {"/": {"Proxy": "http://curator:8090"}}
+
+
+def test_the_note_link_serves_the_page_and_the_api_it_uses_refuses_a_stranger(env, client):  # #208
+    ref = note(env, "approve me from a link")
+    book, nid = ref.split("@")
+    page = client.get(f"/n/{book}/{nid}")
+    assert page.status_code == 200 and "/static/queue.js" in page.text
+    assert "script-src 'self'" in page.headers["content-security-policy"]
+    ready(env, client)
+    assert client.get(f"/api/note/{book}/{nid}").status_code == 200
+    authz.revoke(env, f"book:{J}", "curate", U)
+    env.commit()
+    refused = client.get(f"/api/note/{book}/{nid}")
+    assert refused.status_code == 403
+    # the refusal names the two grants that fix it, and only the book that the person asked for (#208)
+    error = refused.json()["error"]
+    assert f"kutuphane grant book:{J} read {U}" in error
+    assert f"KUTUPHANE_CURATOR_DSN=… kutuphane grant book:{J} curate {U}" in error
