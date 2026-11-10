@@ -474,6 +474,27 @@ KUTUPHANE_CURATOR_DSN=… kutuphane grant book:adc-memory curate user:ayse
 `--by` (administrator) are required. `journal restrict <book>` tightens with `--no-search`, `--no-ai-input`,
 `--no-train`; to loosen, create a new journal. `ingest` and `approve-import` refuse a journal slug.
 
+### One call for an agent (#200)
+
+`agent add` gives an agent its journals in one call, as the owner (`KUTUPHANE_CURATOR_DSN`):
+
+```sh
+kutuphane agent add omp-kutuphane --journal --shared omp-shared --curator user:ekaynac
+kutuphane agent add omp-default --shared omp-shared --curator user:ekaynac
+```
+
+- The principal is `agent:<name>`. `--journal` is its own journal, named `<name>`; `--shared <journal>` (repeatable)
+  is a journal that several agents use. Give at least one of them.
+- A journal that does not exist is created as a private journal: `--search y --ai-input y --train n
+  --sensitivity restricted --egress local_only --protection standard`, with `--by` the curator. An existing journal
+  stays as it is. A book that is not a journal refuses the call.
+- On each journal: `propose` and `read` for the agent, `curate` and `read` for the curator (a user).
+- All or nothing: a refusal writes nothing. A second run adds only what is missing, also a grant that was revoked.
+- The output lists the journals (`created`), the grants with their ids, and `token`: the `dev-token` command when
+  `KUTUPHANE_DEV=1`, else a pointer to [your own issuer](#a-single-host-orchestrator-without-an-idp).
+
+For other settings (`normal`, `--train y`), use `journal create` and `grant`.
+
 ### Private journals (customer-confidential project memory)
 
 Create the journal with `--sensitivity restricted --egress local_only`. Then:
@@ -900,7 +921,7 @@ Then point `KUTUPHANE_DSN` at it, or rename the databases while the app is stopp
 | [3](#3-indexing) | `index` |
 | [4](#4-search-and-ask-from-the-cli) | `search`, `ask`, `reopen`, `read` |
 | [5](#5-trust-grants-and-delegations) | `grant`, `revoke`, `delegate`, `undelegate`, `keygen`, `trust`, `untrust`, `dev-keys`, `dev-token` |
-| [6](#6-journals) | `journal create`, `journal restrict`, `journal export`, `note import` |
+| [6](#6-journals) | `journal create`, `journal restrict`, `journal export`, `agent add`, `note import` |
 | [7](#7-curation) | `note standing`, `note rollback`, `note expire`, `curator enroll`, `curator passkeys`, `curator revoke-passkey`, `curator end-sessions`, `curator cancel-enrollment`, `curator verify-acts`, `curator queue`, `curator report`, `curator web` ([install](install.md#curator-web)) |
 | [8](#8-outcomes-and-decision-export) | `decisions export` |
 | [9](#9-code-repositories) | `repo add`, `repo remove` |
