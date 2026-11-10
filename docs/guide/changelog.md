@@ -8,6 +8,10 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### README status
+
+- Changed (documentation): the README status names what is built now (`agent add`, the package format contract, the issuer recipe, Core as a host service, the `kutuphane-memory` skill) and what is open (#201, #138, #121/#163, #196); it links `docs/27-agent-skills.md`.
+
 ### One call for an agent (#200)
 
 - Added: `kutuphane agent add <name> [--journal] [--shared <journal>]… --curator user:<name>`. It creates each missing journal as a private journal (search and AI input on, train off, `restricted`, `local_only`), gives the agent `propose` + `read` and the curator `curate` + `read` on each, and prints the token step. It needs `KUTUPHANE_CURATOR_DSN`, writes nothing on a refusal, and a second run adds only what is missing ([operations.md](operations.md#one-call-for-an-agent-200), [#205](https://github.com/ekaynac/kutuphane/pull/205)).
