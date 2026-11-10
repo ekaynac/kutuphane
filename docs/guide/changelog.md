@@ -10,7 +10,7 @@ For the terms, read [concepts.md](concepts.md).
 
 ### Answer model: nvidia/Qwen3.8-Flash-Next-NVFP4
 
-- Changed: the full-stack answer model is `nvidia/Qwen3.8-Flash-Next-NVFP4` (before: `RadixArk/Qwen3.8-27B-NVFP4`): the compose default of `KUTUPHANE_ANSWER_MODEL` and the `pinnedModel` of the LLMDAP route `chat` in `routes.local.json` ([install.md](install.md#local-models)). Search, vectors and rerank do not change.
+- Changed: the full-stack answer model is `nvidia/Qwen3.8-Flash-Next-NVFP4` (before: `RadixArk/Qwen3.8-27B-NVFP4`): the compose default of `KUTUPHANE_ANSWER_MODEL` and the `pinnedModel` of the LLMDAP route `chat` in `routes.local.json` ([install.md](install.md#local-models), [#209](https://github.com/ekaynac/kutuphane/pull/209)). Search, vectors and rerank do not change.
 - **Action, full stack:** serve the new model on the host's vLLM (port 8000); set `KUTUPHANE_ANSWER_MODEL` where you set it yourself (`.env`, a host `core.env`); then `docker compose … restart llmdap` (it reads the routes file at start) and restart Core.
 
 ### README status
