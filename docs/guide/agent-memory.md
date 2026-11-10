@@ -21,6 +21,10 @@ KUTUPHANE_CURATOR_DSN=… kutuphane grant book:adc-memory curate user:ayse   # a
 kutuphane repo add adc-memory adc /srv/repos/adc.git --ref 'refs/heads/*' --by user:admin
 ```
 
+For an agent with a private journal, one call does the journal and the grants:
+`kutuphane agent add <name> --journal [--shared <journal>] --curator user:<name>`
+([operations.md](operations.md#one-call-for-an-agent-200)).
+
 Add `--train y` to `journal create` only if decision records may leave as training data (step 8).
 
 **Token.** The orchestrator gets an OAuth client-credentials token from the IdP. The IdP mapper sets

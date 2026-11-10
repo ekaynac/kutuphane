@@ -8,6 +8,10 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### One call for an agent (#200)
+
+- Added: `kutuphane agent add <name> [--journal] [--shared <journal>]… --curator user:<name>`. It creates each missing journal as a private journal (search and AI input on, train off, `restricted`, `local_only`), gives the agent `propose` + `read` and the curator `curate` + `read` on each, and prints the token step. It needs `KUTUPHANE_CURATOR_DSN`, writes nothing on a refusal, and a second run adds only what is missing ([operations.md](operations.md#one-call-for-an-agent-200), [#205](https://github.com/ekaynac/kutuphane/pull/205)).
+
 ### Clearer errors for the owner credential and tool arguments (#200)
 
 - Changed: when `KUTUPHANE_CURATOR_DSN` is not set, a curator command (exit 2) also prints a `hint:` line: it is the database owner role, and its form in a compose install (`postgresql://kutuphane:<KUTUPHANE_DB_PASSWORD in .env>@127.0.0.1:55432/kutuphane`) ([operations.md](operations.md#database-connections)).

@@ -409,6 +409,41 @@ def cmd_journal_restrict(conn, args) -> int:
     return 0
 
 
+AGENT_JOURNAL = make_policy(sensitivity="restricted", egress="local_only", protection="standard")
+
+
+def cmd_agent_add(conn, args) -> int:
+    """#200: an agent's journals in one call. Each named journal exists (a new one: search and AI input on, train
+    off, restricted, local_only); the agent gets propose + read on each, the curator curate + read on each. All or
+    nothing; a second run adds only what is missing."""
+    books = list(dict.fromkeys(([args.name] if args.journal else []) + args.shared))
+    if not books:
+        raise ValueError("give --journal or --shared <journal>")
+    identity.refuse_curate(args.curator)
+    agent = f"agent:{args.name}"
+    out = {"principal": agent, "journals": [], "grants": []}
+    with conn.transaction():
+        for book in books:
+            found = conn.execute("SELECT j.book IS NOT NULL FROM book b LEFT JOIN journal j ON j.book = b.slug "
+                                 "WHERE b.slug = %s", (book,)).fetchone()
+            if found is not None and not found[0]:
+                raise ValueError(f"{book} is not a journal")
+            if found is None:
+                notes.create_journal(conn, book=book, title=book, search=True, ai_input=True, policy=AGENT_JOURNAL,
+                                     by=args.curator)
+            out["journals"].append({"book": book, "created": found is None})
+            for mode, subject in (("propose", agent), ("read", agent), ("curate", args.curator),
+                                  ("read", args.curator)):
+                out["grants"].append({"object": f"book:{book}", "mode": mode, "subject": subject,
+                                      "id": authz.grant(conn, f"book:{book}", mode, subject)})
+    issuer = os.environ.get(identity.ENV["issuer"]) or "<issuer>"
+    out["token"] = (f"KUTUPHANE_DEV=1 kutuphane dev-token {args.name} --agent --client-id {args.name} "
+                    f"--private-key <dev-private.pem> --issuer {issuer}" if os.environ.get("KUTUPHANE_DEV") == "1"
+                    else "sign it with your issuer: operations.md, 'A single-host orchestrator without an IdP'")
+    _print(out)
+    return 0
+
+
 def _write_jsonl(path: str, records: list[dict]) -> None:
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)  # it can hold note text
     with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -839,6 +874,16 @@ def parser() -> argparse.ArgumentParser:
     jx.add_argument("--by", required=True, help="the reader, who holds read on the journal and on every book that "
                                                 "its notes cite or link: user:<name> or agent:<name>")
     jx.set_defaults(fn=cmd_journal_export)
+    ag = sub.add_parser("agent", help="agent identities (#200)")
+    agsub = ag.add_subparsers(dest="agent_cmd", required=True)
+    aa = agsub.add_parser("add", help="give agent:<name> its journals: propose + read for it, curate + read for the "
+                                      "curator; a new journal is search y, ai-input y, train n, restricted, local_only "
+                                      "(needs KUTUPHANE_CURATOR_DSN; a second run adds only what is missing)")
+    aa.add_argument("name", help="the agent name; the principal is agent:<name>")
+    aa.add_argument("--journal", action="store_true", help="its own journal, named <name>")
+    aa.add_argument("--shared", action="append", default=[], metavar="JOURNAL", help="a shared journal (repeatable)")
+    aa.add_argument("--curator", required=True, help="user:<name>, who curates these journals")
+    aa.set_defaults(fn=cmd_agent_add, curator_db=True)
     nt = sub.add_parser("note", help="notes (curation needs KUTUPHANE_CURATOR_DSN)")
     nsub = nt.add_subparsers(dest="note_cmd", required=True)
     ns = nsub.add_parser("standing", help="set the Standing of a note as a curator")

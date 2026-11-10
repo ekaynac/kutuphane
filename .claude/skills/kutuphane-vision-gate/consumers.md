@@ -12,7 +12,8 @@ section with one line for each consumer below, and each "unchanged" line has a g
 - **Identity:** token claims, issuers, principal prefixes, and the `kutuphane dev-token` flags.
 - **Packages:** the format (`kutuphane-package/1`, `docs/guide/operations.md` "Package format") and the behaviour of
   `receive` and `approve-import`.
-- **CLI:** the commands and flags that a consumer runs: `dev-token`, `journal create`, `grant`, `pack`, `receive`.
+- **CLI:** the commands and flags that a consumer runs: `dev-token`, `journal create`, `agent add`, `grant`, `pack`,
+  `receive`.
 
 ## The consumers
 
