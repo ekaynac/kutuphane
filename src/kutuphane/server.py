@@ -830,8 +830,8 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
     @_mcp_errors
     async def list_books() -> list[dict]:
         """The books and journals you may read now (needs read; a book you may not read is not named): kind (book
-        or journal), the current content_id and profile_id, and its publication (who approved it, the channel
-        ingest or import, for a package the issuer key and the sequence)."""
+        or journal), the current content_id and profile_id, and its publication (acceptance: kind, by, at,
+        legacy; the channel ingest or import; for a package the issuer key and the sequence)."""
         return await run_in_threadpool(op_books, dsn, _mcp_actor())
 
     @mcp.tool()

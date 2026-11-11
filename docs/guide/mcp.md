@@ -477,8 +477,11 @@ each dimension that its scope bounds; a code citation with a target must be `ver
 (counts), and `citations` (`{ref, status, moved_to, match}`).
 
 - A passage citation keeps its stored handle, with `status` as in `open_citation`; a re-index never drops it.
-- A retired item has `successor` (or `null`). `approved_by`: the approving curator (`user:…`), else `null` (also in
-  `neighbours` and `open_citation`). With a live confirmation: `entered_by` and `confirmed_by`. An item too large
+- A retired item has `successor` (or `null`). `acceptance`: `{kind, by, at}` (D85; also in `neighbours` and
+  `open_citation`). An approved item has `kind` `curator_passkey` (a passkey act in curator web) or `operator_cli`
+  (`kutuphane note standing`), `by` the approving curator (`user:…`) and `at` the time; any other item has `kind`
+  `none`, `by` and `at` `null`. It is for display: it replaces the old `approved_by` and changes nothing about
+  `current`. With a live confirmation: `entered_by` and `confirmed_by`. An item too large
   alone has its text cut and `text_cut: true`.
 - `left`: `{ref, standing, seq, successor}` for notes that a Standing change after `since` moved out. `books`: the
   journals you may read now; drop cached notes of others. `excluded`: notes passed over by the code rule or a
@@ -565,12 +568,18 @@ The books and journals that you may read now (#159), sorted by slug; nothing nam
 one `list_books` audit event per listed book. No arguments.
 
 **Result:** a list of `{"book", "title", "kind", "content_id", "profile_id", "policy_id", "publication":
-{"content_id", "published_at", "channel", "approved_by", "issuer_key", "sequence"}}`.
+{"content_id", "published_at", "channel", "acceptance": {"kind", "by", "at", "legacy"}, "issuer_key",
+"sequence"}}`.
 
 `kind`: `book`, or `journal` (no files, no publication; `content_id` is `null`; use `query_notes`). `publication`
-(#160): the latest publication of the current version. `channel` `ingest`: `approved_by` ran `kutuphane ingest`;
-`import`: `approved_by` ran `kutuphane approve-import`, with the signing key fingerprint (`issuer_key`) and package
-`sequence`. Before migration 045 these four are `null`. **Errors:** `401`.
+(#160, D85): the latest publication of the current version. `acceptance` says how the version was accepted: `kind`
+`operator_cli` (a person with `curate` ran `kutuphane ingest` or `approve-import`; the owner credential was used and
+the person is as stated, not proven by a passkey), `by` that person, `at` the publication time. `curator_passkey`,
+`consumer_attested`, `policy` and `none` are the other kinds; kinds are never merged and have no order. `legacy` is
+`true` for a version published before migration 051: it shows `operator_cli`, or `none` when no person was
+recorded, and is never upgraded. `channel` `ingest` or `import` (`approve-import`, with the signing key fingerprint
+`issuer_key` and package `sequence`). Before migration 045 `channel`, `issuer_key` and `sequence` are `null`.
+`acceptance.by` replaces the old `publication.approved_by`. **Errors:** `401`.
 
 ### 5.19 `list_files`
 

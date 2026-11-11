@@ -10,7 +10,7 @@ Every command prints JSON on stdout. Errors go to stderr.
 |---|---|
 | `0` | The command succeeded. |
 | `1` | `index`: no embeddings route is set. `show`: no such book. `kstd-check`: the check failed or there is no `kstd.yaml`. |
-| `2` | An error (bad input, policy error, database error), or `KUTUPHANE_CURATOR_DSN` is not set for a curator command. |
+| `2` | An error (bad input, policy error, database error), or `KUTUPHANE_CURATOR_DSN` is not set for a curator command (`ingest`, `approve-import` and `reject-import` too), or `--by` does not hold `curate` on the book. |
 | `3` | `read`, `reopen`, `decisions export`, `journal export`, `note standing`, `note rollback`: access denied. `ingest`, `approve-import`, `index`: the version is live, but its index is incomplete. |
 | `4` | `whoami`: the token is not valid. |
 | `5` | `receive`: the package is not verified. |
@@ -195,9 +195,16 @@ The LLMDAP correlation id is `<our id>.<n>`, or `<caller id>.<our id>.<n>`
 ## 2. Ingest a folder into a book
 
 ```sh
-kutuphane ingest <folder> --book <slug> --sensitivity normal --egress local_only --protection standard
+KUTUPHANE_CURATOR_DSN=… kutuphane grant book:<slug> curate user:<name>      # once per book, before the first ingest
+KUTUPHANE_CURATOR_DSN=… kutuphane ingest <folder> --book <slug> --by user:<name> \
+  --sensitivity normal --egress local_only --protection standard
 kutuphane show <slug>
 ```
+
+Publishing is a curator act (D85). `ingest`, `approve-import` and `reject-import` need the owner credential
+(`KUTUPHANE_CURATOR_DSN`), and the `--by` person must hold `curate` on the book now. Without either, the command
+refuses and publishes nothing; the error names the `grant` command that fixes it. For a new book, grant `curate`
+first (a grant on a book that does not exist yet is accepted), then ingest.
 
 | Option | Meaning |
 |---|---|
@@ -210,12 +217,16 @@ kutuphane show <slug>
 | `--profile` | Reading profile: `chunked` or `whole`. |
 | `--accept-finding` | `PATH@sha256:DIGEST:RULE`: accept one reviewed finding. Repeatable. |
 | `--deny-names` | A file of names to find as personal data. |
-| `--by` | Who publishes, default `user:<the CLI user>`. |
+| `--by` | Who publishes, default `user:<the CLI user>`. Must hold `curate` on the book. |
 
-Each `ingest` publishes a new version. `show` lists the current versions and files. Each publication records
-`approved_by` and `channel` (`ingest`, or `import` for `approve-import` with its `--by`) (#160); `show`,
-`GET /v1/books`, `list_books`, the file list and `open_citation` show them (for a package also the signing key and
-sequence). Publications from before migration 045 show `null`.
+Each `ingest` publishes a new version. `show` lists the current versions and files. Each publication records its
+facts (#160, D85): `acceptance` (`kind`, `by`, `at`, `legacy`), and `channel` (`ingest`, or `import` for
+`approve-import` with its `--by`). `show`, `GET /v1/books`, `list_books`, the file list, search hits and
+`open_citation` show them (for a package also the signing key and sequence). `kind` is `operator_cli` for a
+version published by `ingest` or `approve-import`: the owner credential was used and `by` is the person the operator
+named, who holds `curate`. It is not a passkey proof. `legacy: true` marks a version from before migration 051; it
+is never upgraded. `channel`, `issuer_key` and `sequence` are `null` before migration 045. The database refuses a
+publication from the app role: the server and every agent-reachable process cannot publish.
 
 ### What is searched
 
@@ -757,8 +768,8 @@ kutuphane pack <folder> --book <book> --key /path/key.pem --out <book>.pkg --seq
   --sensitivity normal --egress local_only --protection standard [--title …] [--legal-basis …]
 kutuphane receive <book>.pkg
 kutuphane imports
-kutuphane approve-import <id> --by user:admin --sensitivity normal --egress local_only --protection standard
-kutuphane reject-import <id> --by user:admin --reason '…'
+KUTUPHANE_CURATOR_DSN=… kutuphane approve-import <id> --by user:admin --sensitivity normal --egress local_only --protection standard
+KUTUPHANE_CURATOR_DSN=… kutuphane reject-import <id> --by user:admin --reason '…'
 ```
 
 - `export` needs `--legal-basis` when files are personal data `yes` or `unknown`. It refuses a journal, a
@@ -775,7 +786,9 @@ kutuphane reject-import <id> --by user:admin --reason '…'
   `submitted_for`, `submitted_channel` for HTTP and MCP.
 - `approve-import` publishes with this policy and indexes like `ingest` (exit 3 if incomplete). With
   `--egress cloud_ok` it refuses unaccepted findings as `ingest` does (`--accept-finding`; approve again).
-  `reject-import` keeps the record.
+  `reject-import` keeps the record. Both need the owner credential, and `--by` must hold `curate` on the package's
+  book (D85). Without `curate`, `approve-import` refuses before it publishes, records the failure on the import and
+  leaves it `verified`: grant `curate`, then run it again. `reject-import` refuses the same way and changes nothing.
 
 ### Packages from an application (HTTP and MCP, #139)
 

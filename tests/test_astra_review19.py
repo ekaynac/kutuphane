@@ -162,6 +162,7 @@ def personal_package(conn, conn_b, okf_dir, key):
     catalog.publish(conn, book="kitap", title="Kitap", files=read_source(okf_dir), policy=LOCAL,
                     profile=profiles.spec("chunked"))
     private, info = key
+    authz.grant(conn_b, "book:kitap", "curate", "user:admin")  # D85: approving a package needs curate
     trust(conn_b, info)
     received = packages.receive(conn_b, packages.export(conn, "kitap", private))
     assert received["status"] == "verified"

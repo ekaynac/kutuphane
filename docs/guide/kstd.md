@@ -46,8 +46,10 @@ Each item names one file by path and SHA-256 digest, and can override the defaul
 kutuphane kstd-init <folder> --issuer "ACME <kb@acme.example>"   # every file and its digest
 # state ai_use, license and personal_data
 kutuphane kstd-check <folder>                                    # errors (exit 1) and warnings
-kutuphane ingest <folder> --book <slug> --sensitivity normal --egress local_only --protection standard
+kutuphane ingest <folder> --book <slug> --by user:<name> --sensitivity normal --egress local_only --protection standard
 ```
+
+`ingest` needs `KUTUPHANE_CURATOR_DSN` and `curate` on the book for `--by` ([operations.md](operations.md#2-ingest-a-folder-into-a-book)).
 
 `kstd-init` and `kstd-check` need no database. They run the secret and personal-data scans of `ingest`, with the
 same `--accept-finding` and `--deny-names` values and the same findings. A finding does not make `kstd-check` fail.

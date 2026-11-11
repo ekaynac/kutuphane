@@ -1,7 +1,8 @@
 -- The application database role (docs/24 §4.1, §8.2). The server, and every process that an agent can reach,
 -- connects with KUTUPHANE_DSN as kutuphane_app. Only the owner role (KUTUPHANE_CURATOR_DSN: `kutuphane migrate`,
--- `kutuphane note standing`, `kutuphane note rollback`, `kutuphane skill clear`) writes Standing and skill
--- clearances; memory rows and skill scan records are append-only for the app (a scan record may only become stale).
+-- `kutuphane note standing`, `kutuphane note rollback`, `kutuphane skill clear`, `kutuphane ingest`,
+-- `kutuphane approve-import`) writes Standing, skill clearances and publications; memory rows and skill scan
+-- records are append-only for the app (a scan record may only become stale).
 --
 -- Once, as the owner:   CREATE ROLE kutuphane_app LOGIN PASSWORD '<a new secret>';
 -- After every `kutuphane migrate` (new tables need their grants), as the owner:
@@ -10,6 +11,20 @@ GRANT USAGE ON SCHEMA public TO kutuphane_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO kutuphane_app;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO kutuphane_app;
 REVOKE INSERT, UPDATE, DELETE ON standing_event FROM kutuphane_app;
+-- D85: Core never publishes. A book version is published by the owner role (`kutuphane ingest`, `approve-import`);
+-- the app role reads publication facts only.
+REVOKE INSERT, UPDATE, DELETE ON publication FROM kutuphane_app;
+-- D85: the current version and policy of a book are set only by publication (owner role). The app role creates a
+-- journal (no content version) and takes row locks (`FOR SHARE`/`FOR UPDATE` need an UPDATE right on a column),
+-- and nothing else: it can neither make a version current without a publication row nor loosen a book's policy.
+REVOKE INSERT, UPDATE, DELETE ON book FROM kutuphane_app;
+GRANT INSERT (slug, title, current_policy, current_profile) ON book TO kutuphane_app;
+GRANT UPDATE (updated_at) ON book TO kutuphane_app;
+-- D85: published content is immutable for the app role: files, manifests, passages and quarantine records are
+-- written by the owner (`kutuphane ingest`, `approve-import`) only. The app keeps `chunk_vector` (`kutuphane index`),
+-- and may add a policy or profile version (journal creation, note writes) but never change or remove one.
+REVOKE INSERT, UPDATE, DELETE ON blob, content_version, chunk, quarantine FROM kutuphane_app;
+REVOKE UPDATE, DELETE ON policy_version, profile_version FROM kutuphane_app;
 REVOKE UPDATE, DELETE ON note, write_record, note_link, note_citation, outcome, note_import FROM kutuphane_app;
 -- #140 (040): a passage map row is written once (publication, note write, `kutuphane reindex-map`) and never changed.
 REVOKE UPDATE, DELETE ON passage_map FROM kutuphane_app;

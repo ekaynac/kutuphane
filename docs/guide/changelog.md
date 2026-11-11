@@ -8,6 +8,17 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Acceptance record and strict publish gate (D85, slice S1)
+
+- Added: each publication records how it was accepted, `acceptance` (`curator_passkey`, `operator_cli`, `consumer_attested`, `policy` or `none`). A version published now is `operator_cli`; a version from before migration 051 shows `operator_cli` (or `none` when no person was recorded) with `legacy: true` and is never upgraded ([operations.md](operations.md#2-ingest-a-folder-into-a-book)).
+- Changed (breaking for readers): `publication.approved_by` is now `publication.acceptance.by`, with `kind`, `at` and `legacy` beside it, in `list_books`, `GET /v1/books`, `list_files`, search hits, `open_citation` and `kutuphane show`. A note item's `approved_by` is now `acceptance: {kind, by, at}`: `curator_passkey` (a passkey act) or `operator_cli` (`kutuphane note standing`) for an approved note, `none` otherwise. It is for display; what is current does not change ([mcp.md](mcp.md#518-list_books)).
+- Changed: `kutuphane ingest`, `approve-import` and `reject-import` need the owner credential (`KUTUPHANE_CURATOR_DSN`), and `--by` must hold `curate` on the book. Without it the command refuses, publishes nothing and names the `grant` command; an import stays `verified`. For a new book, grant `curate` first, then ingest ([troubleshooting.md](troubleshooting.md)).
+- Changed: `deploy/db-roles.sql` takes INSERT, UPDATE and DELETE on `publication` from the app role: Core never publishes, and it cannot set the current version or policy of a book ([security.md](security.md)).
+- **Action:** run `kutuphane migrate` (migration 051), then re-apply `deploy/db-roles.sql` as the owner (it also closes the app role's writes to `book.current_content`, `current_profile` and `current_policy`, so it can no longer loosen a book's policy; published content, passages and version documents become read-only for the app role, and a forged policy row can no longer be adopted by a publication).
+- **Action:** give `curate` to every person who publishes: `KUTUPHANE_CURATOR_DSN=… kutuphane grant book:<book> curate user:<name>`.
+- **Action:** a script that runs `ingest`, `approve-import` or `reject-import` needs `KUTUPHANE_CURATOR_DSN` and a `--by` person who holds `curate`.
+- **Action, readers:** replace `publication.approved_by` and the note `approved_by` with `acceptance.by` (`kind`, `at` and, for a version, `legacy` are beside it).
+
 ### Vision 1.3: acceptance and use (D85)
 
 - Design and research: principle 2 is now "Acceptance is recorded, never assumed": each item will show who accepted it and how that was proven, and a book decides which kinds make an item usable (default: a person in Kütüphane). D85 in `docs/01`, the decision tree in `../research/2026-11-10-acceptance-grill.md`. No behavior changes in this entry; the slices S1–S3 follow ([#211](https://github.com/ekaynac/kutuphane/pull/211)).

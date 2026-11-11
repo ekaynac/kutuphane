@@ -106,7 +106,8 @@ class Note:
     standing_seq: int | None = None
     citations: list = field(default_factory=list)  # [(kind, ref, Status | None)]; None: not verified yet
     checks: list = field(default_factory=list)     # [(index in citations, (book, CodeCitation, stored hash))]
-    approved_by: str | None = None  # docs/25 §8.5: set_by of the latest event at w (shown only when it approves)
+    # D85: {by, at, act} (set_by, time, has a passkey act) of the latest Standing event at w; shown as `acceptance` only when it approves
+    standing_event: dict | None = None
 
     @property
     def ref(self) -> str:
@@ -248,7 +249,8 @@ SELECT n.seq, n.book, n.id, n.kind, n.body, n.class_key, n.scope_repo, n.scope_b
        CASE WHEN %(text)s::text IS NULL THEN 0
             ELSE ts_rank_cd(n.tsv, websearch_to_tsquery(%(cfg)s::regconfig, %(text)s::text), %(norm)s) END,
        CASE WHEN %(blocks)s THEN note_skill_blocked(n.seq) ELSE false END,
-       (SELECT e.set_by FROM standing_event e WHERE e.note_seq = n.seq AND e.seq <= %(w)s ORDER BY e.seq DESC LIMIT 1),
+       (SELECT jsonb_build_object('by', e.set_by, 'at', e.at, 'act', e.act IS NOT NULL) FROM standing_event e
+         WHERE e.note_seq = n.seq AND e.seq <= %(w)s ORDER BY e.seq DESC LIMIT 1),
        n.applies_to
   FROM note n JOIN note_journal j ON j.seq = n.seq
  WHERE n.book = ANY(%(books)s::text[]) AND n.seq <= %(w)s
@@ -274,7 +276,7 @@ def _load(conn, books, w: int, paths: list, *, seqs=None, refs=None, kinds=None,
         "paths": files, "blocks": blocks}).fetchall()
     shown = origins.shown(conn, [r[0] for r in rows], w)  # docs/25 §7.6: a live R3 confirmation counts
     out = [Note(*r[:12], dict(zip(files, r[12])), origin=shown[r[0]][0], rank=float(r[13]), w=w,
-                skill_blocked=r[14], approved_by=r[15], applies_to=r[16],
+                skill_blocked=r[14], standing_event=r[15], applies_to=r[16],
                 entered_by=shown[r[0]][1], confirmed_by=shown[r[0]][2]) for r in rows]
     standing = notes.effective_standing(conn, [n.seq for n in out], w)
     for n in out:
@@ -372,6 +374,16 @@ def _iso(t: datetime) -> str:
     return t.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _acceptance(note: Note) -> dict:
+    """D85 Q12, display only (the current predicate never reads it): an approved note shows who approved it and
+    how: `curator_passkey` when the approving Standing event has a passkey act (D72), else `operator_cli`."""
+    if note.standing != "approved" or note.standing_event is None:
+        return {"kind": "none", "by": None, "at": None}
+    e = note.standing_event
+    return {"kind": "curator_passkey" if e["act"] else "operator_cli", "by": e["by"],
+            "at": _iso(datetime.fromisoformat(e["at"]))}
+
+
 def _item(note: Note, is_current: bool, recurrence: int, graph: Graph, for_model: bool, outcomes: dict) -> dict:
     """One note, with keys in a fixed order (deterministic bytes). Its code citations must be verified. `outcomes`:
     the non-zero outcome counts at w (§21.2); they never change `current`."""
@@ -387,7 +399,7 @@ def _item(note: Note, is_current: bool, recurrence: int, graph: Graph, for_model
     elif for_model and note.skill_blocked:
         withheld = gate.SKILL_WITHHELD
     item = {"ref": note.ref, "kind": note.kind, "role": note.role, "standing": note.standing,
-            "approved_by": note.approved_by if note.standing == "approved" else None,
+            "acceptance": _acceptance(note),
             "current": is_current, "origin": note.origin,
             **({"entered_by": note.entered_by, "confirmed_by": note.confirmed_by} if note.confirmed_by else {}),
             "text": None if withheld else note.body, "withheld": withheld,

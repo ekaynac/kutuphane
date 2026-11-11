@@ -44,6 +44,7 @@ def rewrite(pkg: bytes, change) -> bytes:
 
 
 def test_package_moves_between_installations_with_the_same_ids(conn, conn_b, key, source_book):  # AT-13
+    authz.grant(conn_b, "book:kitap", "curate", "user:admin")  # D85: approving a package needs curate on the book
     private, info = key
     trust(conn_b, info)
     pkg = packages.export(conn, "kitap", private)
@@ -72,6 +73,7 @@ def test_unknown_and_revoked_keys_are_refused(conn, conn_b, key, source_book, tm
 
 
 def test_key_rotation(conn, conn_b, key, source_book, tmp_path):  # AT-13
+    authz.grant(conn_b, "book:kitap", "curate", "user:admin")  # D85: approving a package needs curate on the book
     old_private, old_info = key
     trust(conn_b, old_info)
     new_info = signing.generate(tmp_path / "b.key")
@@ -99,6 +101,7 @@ def test_tampered_packages_are_refused_and_kept(conn, conn_b, key, source_book, 
 
 
 def test_replay_and_older_sequences_are_refused(conn, conn_b, key, source_book):  # AT-14
+    authz.grant(conn_b, "book:kitap", "curate", "user:admin")  # D85: approving a package needs curate on the book
     private, info = key
     trust(conn_b, info)
     first, second = packages.export(conn, "kitap", private), packages.export(conn, "kitap", private)
@@ -108,6 +111,7 @@ def test_replay_and_older_sequences_are_refused(conn, conn_b, key, source_book):
 
 
 def test_concurrent_verified_copies_cannot_both_publish(conn, conn_b, key, source_book):  # AT-14
+    authz.grant(conn_b, "book:kitap", "curate", "user:admin")  # D85: approving a package needs curate on the book
     private, info = key
     trust(conn_b, info)
     pkg = packages.export(conn, "kitap", private)
@@ -120,6 +124,7 @@ def test_concurrent_verified_copies_cannot_both_publish(conn, conn_b, key, sourc
 
 
 def test_failed_approval_leaves_the_catalog_unchanged(conn, conn_b, key, source_book, monkeypatch):  # AT-14
+    authz.grant(conn_b, "book:kitap", "curate", "user:admin")  # D85: approving a package needs curate on the book
     private, info = key
     trust(conn_b, info)
     received = packages.receive(conn_b, packages.export(conn, "kitap", private))
@@ -160,6 +165,7 @@ def test_hostile_tar_members_are_refused(conn_b):
 
 
 def test_human_rejection_is_recorded(conn, conn_b, key, source_book):
+    authz.grant(conn_b, "book:kitap", "curate", "user:admin")  # D85: approving a package needs curate on the book
     private, info = key
     trust(conn_b, info)
     received = packages.receive(conn_b, packages.export(conn, "kitap", private))
@@ -170,6 +176,7 @@ def test_human_rejection_is_recorded(conn, conn_b, key, source_book):
 
 
 def test_racing_approvals_of_two_sequences_never_move_backwards(conn, conn_b, key, source_book):  # AT-14
+    authz.grant(conn_b, "book:kitap", "curate", "user:admin")  # D85: approving a package needs curate on the book
     import threading
     import os
     from kutuphane import db
@@ -198,6 +205,7 @@ def test_racing_approvals_of_two_sequences_never_move_backwards(conn, conn_b, ke
 
 
 def test_revocation_during_approval_refuses_the_package(conn, conn_b, key, source_book):  # AT-13, Astra #4
+    authz.grant(conn_b, "book:kitap", "curate", "user:admin")  # D85: approving a package needs curate on the book
     """A revocation that is in flight when approval reads the key decides the outcome: approval waits for it."""
     import os
     import threading
@@ -287,6 +295,7 @@ def test_oversized_input_is_refused_without_storing_it(conn_b, monkeypatch):  # 
 
 
 def test_failed_publication_is_on_record_and_can_be_retried(conn, conn_b, key, source_book, monkeypatch):
+    authz.grant(conn_b, "book:kitap", "curate", "user:admin")  # D85: approving a package needs curate on the book
     private, info = key
     trust(conn_b, info)
     received = packages.receive(conn_b, packages.export(conn, "kitap", private))

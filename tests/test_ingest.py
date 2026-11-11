@@ -95,7 +95,7 @@ def test_scanned_pdf_is_quarantined_and_the_rest_publishes(conn, okf_dir):  # G3
     assert "tarama.pdf" in current and "bozuk.pdf" not in {f["path"] for f in catalog.book_state(conn, "kitap")["files"]}
 
 
-def test_cli_reports_quarantined_files(conn, okf_dir, monkeypatch, capsys):  # G3: a person sees it
+def test_cli_reports_quarantined_files(cli_publisher, conn, okf_dir, monkeypatch, capsys):  # G3: a person sees it
     import json
     from kutuphane import cli, llmdap
     monkeypatch.setenv(db.DSN_ENV, os.environ["KUTUPHANE_TEST_DSN"])
@@ -239,7 +239,7 @@ def test_accept_finding_syntax_is_strict(spec):
         AcceptedFinding.parse(spec)
 
 
-def test_cli_accept_finding(conn, okf_dir, monkeypatch, capsys):  # Astra #9: on stdout, stderr and in `show`
+def test_cli_accept_finding(cli_publisher, conn, okf_dir, monkeypatch, capsys):  # Astra #9: on stdout, stderr and in `show`
     import json
     from kutuphane import cli, llmdap
     monkeypatch.setenv(db.DSN_ENV, os.environ["KUTUPHANE_TEST_DSN"])
@@ -284,7 +284,7 @@ def test_a_data_finding_in_the_extracted_text_says_so():
     assert [(finding.rule, where) for where, finding in f.data_findings] == [("email", " of the extracted text")]
 
 
-def test_cli_lists_data_findings_and_a_cloud_book_needs_a_review(conn, okf_dir, monkeypatch, capsys):  # G35
+def test_cli_lists_data_findings_and_a_cloud_book_needs_a_review(cli_publisher, conn, okf_dir, monkeypatch, capsys):  # G35
     import json
     from kutuphane import cli, llmdap
     monkeypatch.setenv(db.DSN_ENV, os.environ["KUTUPHANE_TEST_DSN"])
@@ -310,7 +310,7 @@ def test_cli_lists_data_findings_and_a_cloud_book_needs_a_review(conn, okf_dir, 
         "email", "phone", "private-ipv4"]
 
 
-def test_a_cloud_book_takes_a_file_with_findings_that_never_goes_to_a_model(conn, okf_dir, monkeypatch):  # G35
+def test_a_cloud_book_takes_a_file_with_findings_that_never_goes_to_a_model(cli_publisher, conn, okf_dir, monkeypatch):  # G35
     import yaml
     from kutuphane import cli, kstd, llmdap
     monkeypatch.setenv(db.DSN_ENV, os.environ["KUTUPHANE_TEST_DSN"])
@@ -323,7 +323,7 @@ def test_a_cloud_book_takes_a_file_with_findings_that_never_goes_to_a_model(conn
     assert cli.main(_ingest_args(okf_dir, "cloud_ok")) == 0
 
 
-def test_kstd_init_kstd_check_and_ingest_report_one_deny_names_scan(conn, tmp_path, monkeypatch, capsys):  # pilot 2
+def test_kstd_init_kstd_check_and_ingest_report_one_deny_names_scan(cli_publisher, conn, tmp_path, monkeypatch, capsys):  # pilot 2
     """kstd-check --deny-names listed no finding where kstd-init and ingest found 45: all three report one scan."""
     from kutuphane import cli, llmdap
     monkeypatch.setenv(db.DSN_ENV, os.environ["KUTUPHANE_TEST_DSN"])

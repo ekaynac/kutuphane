@@ -20,7 +20,9 @@ the book lock); the records are written in it, so a block is in force as soon as
 
 Publication facts (#160, migration 045): each publication records who stood behind it, `approved_by` and `channel`
 (`ingest`, or `import` with its package_import row: the issuer key and the sequence). `publications` reads them for
-the book list, the file list and citations; a publication from before migration 045 shows them as null."""
+the book list, the file list and citations; a publication from before migration 045 shows them as null.
+D85 (migration 051): each also records `acceptance`, how it was accepted (`operator_cli` now; `none` for the internal
+path without `approved_by`), shown as `acceptance: {kind, by, at, legacy}`; `legacy` marks rows from before 051."""
 from dataclasses import dataclass, field
 
 from psycopg.types.json import Jsonb
@@ -80,11 +82,39 @@ def _check_personal_data(files: list[SourceFile], policy: dict, manifest) -> Non
                          f"the file in kstd.yaml, or publish with --egress local_only")
 
 
+_VERSION_TABLES = {"policy_version": ("doc", "INSERT INTO policy_version (id, doc) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                                      "SELECT doc = %s::jsonb FROM policy_version WHERE id = %s"),
+                   "profile_version": ("spec", "INSERT INTO profile_version (id, spec) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                                       "SELECT spec = %s::jsonb FROM profile_version WHERE id = %s")}
+
+
+def store_version(conn, table: str, version_id: str, document: dict) -> None:
+    """Write a policy or profile version (content-addressed), and refuse a stored row under this id that holds
+    another document: the app role may insert these rows, and a forged row with a strict id must never be adopted."""
+    column, insert, check = _VERSION_TABLES[table]
+    conn.execute(insert, (version_id, Jsonb(document)))
+    if conn.execute(check, (Jsonb(document), version_id)).fetchone() != (True,):
+        raise ValueError(f"{table} {version_id} holds a different {column} than its id names: refusing to use it")
+
+
+def require_curate(conn, by: str, book: str) -> None:
+    """D85 Q5'': a person publishes or refuses a package for a book only with `curate` on it (held by `user:`
+    principals only). The one rule for `catalog.publish` and `packages.reject`; the refusal names the fix."""
+    if not authz.direct(conn, by, f"book:{book}", "curate").allowed:
+        raise ValueError(f"{by} does not hold curate on book:{book}; the owner grants it first: "
+                         f"KUTUPHANE_CURATOR_DSN=... kutuphane grant book:{book} curate {by}")
+
+
 def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dict, profile: dict,
             approved_by: str | None = None, package_import: int | None = None) -> Published:
-    """`approved_by`: the principal who publishes (`ingest`) or approves the package `package_import` (#160)."""
+    """`approved_by`: the principal who publishes (`ingest`) or approves the package `package_import` (#160). It
+    needs `curate` on the book (D85) and records acceptance `operator_cli`. `approved_by=None` is for internal and
+    test callers: it checks nothing and records acceptance `none`; no CLI, HTTP or MCP path calls it so."""
     if approved_by is not None and not authz.PRINCIPAL.match(approved_by):
         raise ValueError(f"approved_by must be a principal such as user:<name>, not {approved_by!r}")
+    if approved_by is not None:
+        require_curate(conn, approved_by, book)
+    acceptance = "none" if approved_by is None else "operator_cli"
     channel = None if approved_by is None else "import" if package_import is not None else "ingest"
     if len({f.path for f in files}) != len(files):
         raise ValueError("duplicate file paths: the content id would not cover every stored file")
@@ -120,10 +150,8 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
         from . import quotes, skills  # here: both import gate (via search), which imports this module
         skills.store(conn, book, content_id, files)  # the validated SKILL.md frontmatter (review #18)
         carried = skillscan.store(conn, book, content_id, scans, files)
-        conn.execute("INSERT INTO policy_version (id, doc) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                     (policy_id, Jsonb(policy)))
-        conn.execute("INSERT INTO profile_version (id, spec) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                     (profile_id, Jsonb(profile)))
+        store_version(conn, "policy_version", policy_id, policy)
+        store_version(conn, "profile_version", profile_id, profile)
         indexed = conn.execute("SELECT 1 FROM chunk WHERE book = %s AND content_id = %s AND profile_id = %s LIMIT 1",
                                (book, content_id, profile_id)).fetchone()
         if not indexed:
@@ -145,9 +173,10 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
                      "updated_at = now() WHERE slug = %s", (title, content_id, profile_id, policy_id, book))
         mapped = passagemap.map_book(conn, book)  # #140: cited and linked passages of earlier versions follow to it
         conn.execute("INSERT INTO publication (book, content_id, profile_id, policy_id, accepted_findings, "
-                     "data_findings, approved_by, channel, package_import) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                     "data_findings, approved_by, channel, package_import, acceptance) "
+                     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                      (book, content_id, profile_id, policy_id, Jsonb(accepted), Jsonb(found), approved_by, channel,
-                      package_import))
+                      package_import, acceptance))
     return Published(book, content_id, profile_id, policy_id, new_content=current[0] != content_id,
                      new_policy=current[1] != policy_id, quarantined=quarantined, accepted_findings=accepted,
                      data_findings=found, skill_scans=skillscan.summary(scans) + carried, passage_map=mapped)
@@ -163,10 +192,11 @@ def book_state(conn, book: str) -> dict | None:
     versions = [r[0] for r in conn.execute("SELECT id FROM content_version WHERE book = %s ORDER BY created_at",
                                            (book,))]
     pubs = [{"content_id": c, "profile_id": pf, "policy_id": pl, "published_at": t.isoformat(), "accepted_findings": a,
-             "data_findings": d, "approved_by": by, "channel": ch}
-            for c, pf, pl, t, a, d, by, ch in conn.execute("SELECT content_id, profile_id, policy_id, published_at, "
-                                                           "accepted_findings, data_findings, approved_by, channel "
-                                                           "FROM publication WHERE book = %s ORDER BY id", (book,))]
+             "data_findings": d, "channel": ch, "acceptance": _acceptance(kind, by, t, legacy)}
+            for c, pf, pl, t, a, d, by, ch, kind, legacy in conn.execute(
+                "SELECT content_id, profile_id, policy_id, published_at, accepted_findings, data_findings, "
+                "approved_by, channel, acceptance, acceptance_legacy FROM publication WHERE book = %s ORDER BY id",
+                (book,))]
     quarantined = [{"path": p, "reason": r} for p, r in conn.execute(
         "SELECT path, reason FROM quarantine WHERE book = %s AND content_id = %s AND profile_id = %s ORDER BY path",
         (book, row[2], row[6]))]
@@ -175,20 +205,25 @@ def book_state(conn, book: str) -> dict | None:
             "publications": pubs}
 
 
+def _acceptance(kind: str, by: str | None, at, legacy: bool) -> dict:
+    """The reader field (D85 Q12): how a version was accepted, by whom, when; `legacy` for a row before migration 051."""
+    return {"kind": kind, "by": by, "at": at.isoformat(), "legacy": legacy}
+
+
 def publications(conn, keys) -> dict:
     """{(book, content_id, profile_id): publication facts} of the latest publication of each version (#160)."""
     keys = sorted(set(keys))
     rows = conn.execute(
         "SELECT DISTINCT ON (p.book, p.content_id, p.profile_id) p.book, p.content_id, p.profile_id, p.published_at, "
-        "p.channel, p.approved_by, i.issuer, i.sequence FROM publication p "
+        "p.channel, p.approved_by, p.acceptance, p.acceptance_legacy, i.issuer, i.sequence FROM publication p "
         "JOIN unnest(%s::text[], %s::text[], %s::text[]) AS k(book, content_id, profile_id) "
         "ON (p.book, p.content_id, p.profile_id) = (k.book, k.content_id, k.profile_id) "
         "LEFT JOIN package_import i ON i.id = p.package_import "
         "ORDER BY p.book, p.content_id, p.profile_id, p.id DESC",
         ([k[0] for k in keys], [k[1] for k in keys], [k[2] for k in keys]))
-    return {(b, c, pf): {"content_id": c, "published_at": t.isoformat(), "channel": ch, "approved_by": by,
-                         "issuer_key": key, "sequence": seq}
-            for b, c, pf, t, ch, by, key, seq in rows}
+    return {(b, c, pf): {"content_id": c, "published_at": t.isoformat(), "channel": ch,
+                         "acceptance": _acceptance(kind, by, t, legacy), "issuer_key": key, "sequence": seq}
+            for b, c, pf, t, ch, by, kind, legacy, key, seq in rows}
 
 
 def books(conn, slugs) -> list[dict]:
