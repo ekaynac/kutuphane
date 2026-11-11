@@ -80,6 +80,16 @@ the confirmer withdraws it (R7).
   The same holds for `book.current_content`, `current_profile` and `current_policy`: the app role may only insert a
   book row without a content version (a journal), so it cannot make a version current or loosen a policy.
   A publication records `acceptance.kind` `operator_cli`: the operator states the person; it is not a passkey proof.
+- A person can also approve or reject a package on the phone (D85 S3). Curator web still cannot publish: its role
+  keeps its narrow grants (it writes the challenge and the act only, and has no write right on `publication`,
+  `package_import`, blobs, versions or chunks). The act is a signed statement of 1 to 50 items (import id, book,
+  SHA-256 of the exact `MANIFEST.json`, content id, the decision, and the policy or the reason); the database accepts
+  the act only as a well-formed statement. The owner-run publisher applies it and re-checks everything at that time:
+  the package verification, the signed digest and content id, and `curate` of the signer now. A `curator_passkey`
+  publication names its act (`publication.act`), and the database accepts it only as an approve item of that act, signed
+  by `approved_by`. A passkey cannot approve `cloud_ok` egress (the page and the publisher refuse it); only
+  `approve-import --accept-finding` can. The publisher does not check again that the signing passkey is still
+  not revoked: `curator revoke-passkey` stops later acts, not one that is already stored and waits for the timer.
 - A package is published without a per-package act only under a **use policy** (D85 S2): a curator (holding `curate`
   on the book, with the owner credential) set it for one book and one trusted key, with the attesters and the book
   policy. The package must carry `accepted_by` in its signed manifest from a principal that starts with one of the

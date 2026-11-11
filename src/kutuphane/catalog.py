@@ -108,20 +108,24 @@ def require_curate(conn, by: str, book: str) -> None:
 
 def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dict, profile: dict,
             approved_by: str | None = None, package_import: int | None = None,
-            use_policy: int | None = None) -> Published:
+            use_policy: int | None = None, act: int | None = None) -> Published:
     """`approved_by`: the principal who publishes (`ingest`) or approves the package `package_import` (#160). It
     needs `curate` on the book (D85) and records acceptance `operator_cli`. `approved_by=None` is for internal and
     test callers: it checks nothing and records acceptance `none`; no CLI, HTTP or MCP path calls it so.
     `use_policy` (D85 S2; only `usepolicy.admit` gives it): the use policy of that id admits the package; then
     `approved_by` is the attester of the package, who needs no `curate` (the curator who set the policy had it), and
-    the acceptance is `consumer_attested`."""
+    the acceptance is `consumer_attested`. `act` (D85 S3; only `packages.approve` with a signed item gives it): the
+    `package` act of the signer `approved_by`, who needs `curate` now; the acceptance is `curator_passkey`."""
     if approved_by is not None and not authz.PRINCIPAL.match(approved_by):
         raise ValueError(f"approved_by must be a principal such as user:<name>, not {approved_by!r}")
     if use_policy is not None and (approved_by is None or package_import is None):
         raise ValueError("a use policy admits an imported package with an attester")
+    if act is not None and (use_policy is not None or approved_by is None or package_import is None):
+        raise ValueError("a passkey act approves an imported package for its signer")
     if approved_by is not None and use_policy is None:
         require_curate(conn, approved_by, book)
-    acceptance = "none" if approved_by is None else "operator_cli" if use_policy is None else "consumer_attested"
+    acceptance = ("none" if approved_by is None else "curator_passkey" if act is not None
+                  else "operator_cli" if use_policy is None else "consumer_attested")
     channel = None if approved_by is None else "import" if package_import is not None else "ingest"
     if len({f.path for f in files}) != len(files):
         raise ValueError("duplicate file paths: the content id would not cover every stored file")
@@ -180,10 +184,10 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
                      "updated_at = now() WHERE slug = %s", (title, content_id, profile_id, policy_id, book))
         mapped = passagemap.map_book(conn, book)  # #140: cited and linked passages of earlier versions follow to it
         conn.execute("INSERT INTO publication (book, content_id, profile_id, policy_id, accepted_findings, "
-                     "data_findings, approved_by, channel, package_import, acceptance, use_policy) "
-                     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                     "data_findings, approved_by, channel, package_import, acceptance, use_policy, act) "
+                     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                      (book, content_id, profile_id, policy_id, Jsonb(accepted), Jsonb(found), approved_by, channel,
-                      package_import, acceptance, use_policy))
+                      package_import, acceptance, use_policy, act))
     return Published(book, content_id, profile_id, policy_id, new_content=current[0] != content_id,
                      new_policy=current[1] != policy_id, quarantined=quarantined, accepted_findings=accepted,
                      data_findings=found, skill_scans=skillscan.summary(scans) + carried, passage_map=mapped)

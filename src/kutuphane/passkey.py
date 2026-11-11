@@ -26,14 +26,14 @@ from webauthn.helpers.exceptions import InvalidAuthenticationResponse, InvalidRe
 from webauthn.helpers.structs import (AuthenticatorSelectionCriteria, PublicKeyCredentialDescriptor,
                                       ResidentKeyRequirement, UserVerificationRequirement)
 
-from . import authz, canonical, ids
+from . import authz, canonical, ids, packages
 
 DOMAIN = b"kutuphane/curator-act/v1\n"
 CHALLENGE_TTL = "5 minutes"
 SESSION_TTL = "8 hours"
 ENROLL_TTL = "15 minutes"
 TIMEOUT_MS = 120_000
-ACTIONS = ("standing", "confirm", "withdraw")
+ACTIONS = ("standing", "confirm", "withdraw", "package")
 ENV = {"rp_id": "KUTUPHANE_WEBAUTHN_RP_ID", "origin": "KUTUPHANE_WEBAUTHN_ORIGIN"}
 
 
@@ -401,6 +401,25 @@ def _end_delegation_effects(conn, act: int, payload: dict) -> bool:
 
 # Astra review #22: the stored acts of the removed D73 still verify; ACTIONS no longer offers them.
 EFFECTS.update(delegate=_delegate_effects, end_delegation=_end_delegation_effects)
+
+
+def _package_effects(conn, act: int, payload: dict) -> bool:
+    """D85 S3: a publication that names this act is an approve item of its statement (the signed policy, signer,
+    manifest digest and content). A signed item that is not applied has no row: the publisher may still apply it."""
+    items = {i["import_id"]: i for i in payload.get("items", [])}
+    for pid, book, content_id, by, doc, package in conn.execute(
+            "SELECT p.package_import, p.book, p.content_id, p.approved_by, v.doc, i.package FROM publication p "
+            "JOIN policy_version v ON v.id = p.policy_id JOIN package_import i ON i.id = p.package_import "
+            "WHERE p.act = %s", (act,)).fetchall():
+        item = items.get(pid)
+        if (item is None or item["decision"] != "approve" or by != payload.get("principal") or doc != item["policy"]
+                or (book, content_id) != (item["book"], item["content_id"])
+                or packages.manifest_sha256(bytes(package)) != item["manifest_sha256"]):
+            return False
+    return True
+
+
+EFFECTS["package"] = _package_effects
 
 
 def _signed_notes(payload: dict, action: str) -> list[str]:

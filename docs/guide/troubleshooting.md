@@ -101,6 +101,15 @@ the body; your reverse proxy must pass both unchanged.
   `192.168.4.7`) gives a `personal_data` finding with the rule `private-ipv4` (`private-ipv6` for fc00::/7), whatever
   `personal_data` says in `kstd.yaml`; the finding rules are not loosened, so a person reviews that package. Names
   on a deny list (`listed-name`) are not checked when a package is received.
+- A package that you approved or rejected on the phone is still `verified`: the timer did not apply it, or the item no
+  longer holds. The line of `kutuphane imports publish-admitted` (`skipped`, with the `reason`) says why:
+  `the stored manifest, book or content id is not the one that was signed` (the import changed: sign it again);
+  `… does not hold curate on book:<slug>` (the owner grants `curate` again); `signed by a revoked key`;
+  `replay: sequence … is not newer than accepted …` (a newer package of the key and book was accepted first);
+  `a passkey cannot approve egress cloud_ok` (the operator runs `approve-import --egress cloud_ok --accept-finding …`);
+  another `reason` such as a profile limit. Nothing at all: the timer is not running (`systemctl --user status
+  kutuphane-publish-admitted.timer`). The page refuses to sign a package that is not `verified`, that you cannot read or
+  curate, or that changed since you saw it (`reload`).
 - `use-policy add` refused: `restricted`/`cloud_ok` (a person approves such a package), `is not a trusted signing key`,
   `does not hold curate`, `an attester is user:<start of a name>`, or `already has an active use policy` (revoke it).
 - `receive` refused with `manifest accepted_by …`: the field must be exactly `{principal, at, record}`, `principal`

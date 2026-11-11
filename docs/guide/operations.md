@@ -648,7 +648,7 @@ KUTUPHANE_CURATOR_DSN=… kutuphane curator enroll user:ayse
 ```
 
 It prints a one-time URL (15 minutes, one passkey); send it privately. Ayşe opens it with Tailscale on, taps
-**Create passkey**, then **Sign in with passkey**. Tabs: **To review** (the queue) and **My words**.
+**Create passkey**, then **Sign in with passkey**. Tabs: **To review** (the queue), **My words** and **Packages**.
 
 <img src="img/curator-queue.png" alt="The To review tab on a phone: a finding with its evidence and a warning" width="300">
 
@@ -769,8 +769,8 @@ kutuphane pack <folder> --book <book> --key /path/key.pem --out <book>.pkg --seq
   --sensitivity normal --egress local_only --protection standard [--title …] [--legal-basis …]
 kutuphane receive <book>.pkg
 kutuphane imports
-KUTUPHANE_CURATOR_DSN=… kutuphane approve-import <id> --by user:admin --sensitivity normal --egress local_only --protection standard
-KUTUPHANE_CURATOR_DSN=… kutuphane reject-import <id> --by user:admin --reason '…'
+KUTUPHANE_CURATOR_DSN=… kutuphane approve-import <id> [<id> …] --by user:admin --sensitivity normal --egress local_only --protection standard
+KUTUPHANE_CURATOR_DSN=… kutuphane reject-import <id> [<id> …] --by user:admin --reason '…'
 ```
 
 - `export` needs `--legal-basis` when files are personal data `yes` or `unknown`. It refuses a journal, a
@@ -791,6 +791,33 @@ KUTUPHANE_CURATOR_DSN=… kutuphane reject-import <id> --by user:admin --reason 
   book (D85). Without `curate`, `approve-import` refuses before it publishes, records the failure on the import and
   leaves it `verified`: grant `curate`, then run it again. `reject-import` refuses the same way and changes nothing.
 
+### Packages on the phone: approve or reject received packages (D85, S3)
+
+The **Packages** tab (`/packages`) lists the `verified` imports of the books where you hold `curate` and `read`. A
+card shows the findings, the changes (added, changed, removed files), who sent the package, the sender's `accepted_by`
+if there is one, and the policy to apply (the manifest's `policy_suggestion` is preselected). Choose **Approve** or
+**Reject** on one to 50 cards, write one reason for the rejections, check the sheet and sign with your passkey. The
+page then says "Signed. It is published within a minute." It publishes nothing itself.
+
+- You may approve a package that has findings, as on the command line: you read them on the card. A passkey cannot
+  approve `cloud_ok` egress: the page offers `local_only` and the owner's `approve-import --egress cloud_ok
+  --accept-finding …` stays the only way. `restricted` sensitivity is allowed. An agent instruction file (K3) is allowed.
+- `kutuphane imports publish-admitted` (the same timer as for use policies, owner credential) applies each signed item
+  that still holds. For an approval, in one transaction for the import: it re-verifies the package as `approve-import`
+  does (lock, signature, revoked key, newer sequence), checks that the stored manifest (SHA-256 of `MANIFEST.json`),
+  book and content id are the signed ones, and that you hold `curate` on the book **now**. Then it publishes with the
+  signed policy: `acceptance.kind` `curator_passkey`, `acceptance.by` = you, `package_import.decided_by` = you, and
+  `publication.act` names the act. A rejection marks the import `rejected` with your reason and `decided_by` = you.
+- An item that no longer holds is not applied: the import stays `verified` and the JSON line says why (`skipped`,
+  with the `reason`; [troubleshooting.md](troubleshooting.md)). If you sign two acts for one import, the newest wins.
+  An applied item is never applied twice. `kutuphane curator verify-acts` checks `package` acts too: the signature,
+  and that each publication that names the act is an approve item of its statement.
+- Without the timer nothing is published: the act waits. See the timer below.
+
+Several imports on the command line: `approve-import <id> <id> …` and `reject-import <id> <id> …` run in one
+transaction, all or nothing; each approval is `operator_cli` by `--by`. With several ids, `--accept-finding` is refused
+(approve that package alone). A failure rolls back all of them, including the failure record that a single id leaves on the import.
+
 ### Use policies: publish an attested package without a per-package act (D85, S2)
 
 A curator can decide once that a book may be published from one trusted key when the sender vouches for each package.
@@ -807,7 +834,7 @@ kutuphane use-policy revoke <id> --by user:<curator>
 kutuphane imports publish-admitted [--dry-run]
 ```
 
-- All four need the owner credential. `--by` must hold `curate` on the book. `add` prints the policy `id`. It refuses
+- (`publish-admitted` also applies the passkey approvals of the Packages tab, first: [Packages on the phone](#packages-on-the-phone-approve-or-reject-received-packages-d85-s3).) All four need the owner credential. `--by` must hold `curate` on the book. `add` prints the policy `id`. It refuses
   `restricted` sensitivity and `cloud_ok` egress, a key that is not trusted (or is revoked), and an attester that is
   not `user:<start of a name>` (`user:` alone and `agent:` are refused). A book and key have one active policy;
   `revoke` it before you add another. A revocation affects later publications only: a version that the policy

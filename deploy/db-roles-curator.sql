@@ -27,6 +27,10 @@ CREATE POLICY standing_event_web ON standing_event FOR INSERT TO kutuphane_curat
 GRANT INSERT ON origin_confirmation, origin_withdrawal TO kutuphane_curator_web;
 -- D73 (delegated curate) is removed; its tables stay as history (migration 025) and curator web no longer writes them.
 REVOKE INSERT ON curate_delegation, delegation_end FROM kutuphane_curator_web;
+-- D85 S3: a passkey act for a package is only the challenge and act rows above. Curator web never publishes: it has no
+-- write right on the catalog or on the imports (the owner-run publisher applies the act, `kutuphane imports publish-admitted`).
+REVOKE INSERT, UPDATE, DELETE ON publication, package_import, package_sequence, trusted_key, use_policy, book,
+    content_version, blob, chunk FROM kutuphane_curator_web;
 -- Security review #17 (029): the key of the sample draw is the owner's only.
 REVOKE ALL ON delegation_sample_key FROM kutuphane_curator_web;
 -- Astra review #19 (038): no temporary tables or sequences (deploy/db-roles.sql revokes TEMP from PUBLIC too).

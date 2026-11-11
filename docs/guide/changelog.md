@@ -8,6 +8,31 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Passkey approval of packages, single and bulk (D85, slice S3)
+
+- Added: the **Packages** tab of curator web. A curator who holds `curate` and `read` on a book sees its `verified`
+  imports with the findings, the changes, `submitted_by`, `accepted_by` and the policy suggestion (preselected), chooses
+  one to 50, approves or rejects (a reason for a rejection) and signs once with the passkey. The page says "Signed. It
+  is published within a minute." Curator web publishes nothing and has no new right: it stores a signed `package` act
+  ([operations.md](operations.md#packages-on-the-phone-approve-or-reject-received-packages-d85-s3)).
+- Added: `kutuphane imports publish-admitted` (the S2 timer, owner credential) first applies the stored passkey acts. For
+  each approval it re-verifies the package as `approve-import` does, checks the signed manifest digest and content id and
+  `curate` of the signer now, and publishes with the signed policy as `acceptance.kind` `curator_passkey`
+  (`publication.act` names the act; `decided_by` = the signer). A rejection marks the import `rejected`. An item that no
+  longer holds is not applied: the import stays `verified` and the JSON line says why
+  ([troubleshooting.md](troubleshooting.md)). A passkey cannot approve `cloud_ok` egress; `approve-import
+  --accept-finding` stays the only way ([security.md](security.md)).
+- Added: `kutuphane approve-import <id> <id> …` and `reject-import <id> <id> …`: several ids in one transaction, all or
+  nothing ([#208](https://github.com/ekaynac/kutuphane/issues/208) item 4, closes #196 with the phone approval).
+  `--accept-finding` is for one id.
+- Added: `kutuphane curator verify-acts` checks `package` acts, and `package_status` `decided_by` is the signer for a
+  phone approval ([http-api.md](http-api.md), [mcp.md](mcp.md)).
+- **Action:** run `kutuphane migrate` (migration 053: the `package` act, `publication.act`).
+- **Action:** re-apply `deploy/db-roles.sql`, then `deploy/db-roles-curator.sql` as the owner (the curator web role now has
+  an explicit revoke of every write right on the catalog and on `package_import`).
+- **Action:** the `kutuphane-publish-admitted` timer must run (every minute), or a signed approval waits. It needs the
+  owner credential, as before.
+
 ### Use policies and consumer attestation (D85, slice S2)
 
 - Added: a **use policy** per book and trusted signing key. A curator sets who may attest and the book policy

@@ -206,7 +206,7 @@ def test_the_page_shows_plain_text_marks_and_loads_nothing_external(client):  # 
     assert r.status_code == 200
     csp = r.headers["content-security-policy"]
     assert "default-src 'none'" in csp and "script-src 'self'" in csp and "frame-ancestors 'none'" in csp
-    scripts = ("core.js", "confirm.js", "queue.js")
+    scripts = ("core.js", "confirm.js", "queue.js", "packages.js")
     shell = r.text + "".join((UI / f).read_text(encoding="utf-8") for f in (*scripts, "app.css"))
     assert "http://" not in shell and "https://" not in shell and "//cdn" not in shell and "@import" not in shell
     assert "url(" not in (UI / "app.css").read_text(encoding="utf-8")  # no font or image to load
@@ -220,8 +220,8 @@ def test_the_page_shows_plain_text_marks_and_loads_nothing_external(client):  # 
     core = (UI / "core.js").read_text(encoding="utf-8")
     assert "\\u200b" in core and "\\u202a-\\u202e" in core  # U+200B and U+202E are shown as marks
     assert client.get("/static/queue.js").status_code == 200
-    # two plain tabs, each a page of its own; the D73 auto-approval page is gone
-    for label, path in (("To review", "/"), ("My words", "/requests")):
+    # three plain tabs, each a page of its own; the D73 auto-approval page is gone
+    for label, path in (("To review", "/"), ("My words", "/requests"), ("Packages", "/packages")):
         assert f'href="{path}">{label}' in r.text
         assert client.get(path).text == r.text
     assert "Auto-approval" not in r.text and client.get("/api/delegations").status_code == 404
