@@ -34,15 +34,15 @@ def world(conn_b, tmp_path, monkeypatch):
     return conn_b, signing.load_private(tmp_path / "a.key"), info["fingerprint"], tmp_path
 
 
-def build(world, files, *, seq=1, accepted_by=ATT, rights=None, extra=None, book="kitap"):
+def build(world, files, *, seq=1, accepted_by=ATT, rights=SITE, extra=None, book="kitap"):
     """A signed package of `files` with an optional kstd.yaml (`rights`: its default rights, every file origin
-    unknown, as InfraMedic writes it)."""
+    unknown, as InfraMedic writes it; `rights=False`: no kstd.yaml)."""
     _, private, _, tmp = world
     root = tmp / f"src{seq}-{len(os.listdir(tmp))}"
     for path, text in files.items():
         (root / path).parent.mkdir(parents=True, exist_ok=True)
         (root / path).write_text(text, encoding="utf-8")
-    if rights is not None:
+    if rights:
         items = [{"path": p, "digest": "sha256:" + hashlib.sha256(t.encode()).hexdigest(), "origin": "unknown"}
                  for p, t in files.items()]
         (root / kstd.MANIFEST).write_text(yaml.safe_dump({"standard": "kstd/0.2", "issuer": "InfraMedic",
@@ -165,7 +165,7 @@ def test_a_withdrawal_package_with_fewer_files_goes_through_the_same_rule(world)
     assert second["diff"]["removed"] == ["b.md"] and second["status"] == "verified"
     assert [r["status"] for r in run(conn)] == ["published"]
     state = catalog.book_state(conn, "kitap")
-    assert [f["path"] for f in state["files"]] == ["index.md"] and len(state["publications"]) == 2
+    assert [f["path"] for f in state["files"]] == ["index.md", "kstd.yaml"] and len(state["publications"]) == 2
     assert status(conn, first)[0] == "published"
 
 
@@ -401,3 +401,32 @@ def test_a_refused_admission_of_a_new_book_leaves_no_book_row(world):
     packages.receive(conn, build(world, CLEAN, seq=2))
     assert run(conn, dry_run=True)[-1]["status"] == "would_publish"
     assert conn.execute("SELECT count(*) FROM book WHERE slug = 'kitap'").fetchone() == (0,)
+
+
+def test_a_package_without_kstd_yaml_is_never_admitted(world):
+    conn = world[0]
+    policy(world)
+    got = packages.receive(conn, build(world, CLEAN, rights=False))
+    assert got["status"] == "verified"
+    [result] = run(conn)
+    assert result["status"] == "skipped" and "no kstd.yaml" in result["reason"]
+    assert status(conn, got["id"]) == ("verified", None) and catalog.book_state(conn, "kitap") is None
+
+
+def test_an_unlisted_file_without_a_folder_license_is_unknown_and_not_admitted(world):
+    conn = world[0]
+    policy(world)
+    files = {"index.md": "A\n", "extra.md": "B\n"}
+    pkg = build(world, files, rights={"personal_data": "no", "ai_use": {"search": "y"}})  # no folder license
+    _manifest, source = packages._verify(conn, packages._members(pkg))
+    assert kstd.effective(kstd.validate(source), "extra.md")["license"] == "unknown"
+    assert packages.receive(conn, pkg)["status"] == "verified"
+    [result] = run(conn)
+    assert result["status"] == "skipped" and "license unknown" in result["reason"]
+
+
+def test_every_file_licensed_is_admitted(world):
+    conn = world[0]
+    policy(world)
+    packages.receive(conn, build(world, {"index.md": "A\n", "extra.md": "B\n"}, rights=SITE))
+    assert [r["status"] for r in run(conn)] == ["published"]
