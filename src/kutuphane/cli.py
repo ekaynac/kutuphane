@@ -9,12 +9,14 @@ import getpass
 import json
 import os
 import sys
+from contextlib import nullcontext
+import itertools
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import (answers, audit, authz, catalog, coderepo, curatorqueue, datascan, db, decisions, devauth, gate,
-               gitorigin, identity, journalexport, kstd, llmdap, noteimport, notes, packages, passagemap, passkey,
-               profiles, quotes, search, retrieval, signing, skillscan, usepolicy, vectors)
+               gitorigin, identity, journalexport, kstd, llmdap, noteimport, notes, packageacts, packages, passagemap,
+               passkey, profiles, quotes, search, retrieval, signing, skillscan, usepolicy, vectors)
 from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, make_policy
 from .source import AcceptedFinding, read_source
 
@@ -375,16 +377,34 @@ def cmd_receive(conn, args) -> int:
     return 0 if result["status"] == "verified" else 5
 
 
+def _distinct(ids: list[int]) -> list[int]:
+    if len(set(ids)) != len(ids):
+        raise ValueError("the same import id is given twice")
+    return ids
+
+
 def cmd_approve(conn, args) -> int:
+    """#208 item 4: several ids are one transaction, all or nothing, each approved by `--by` as `operator_cli`."""
+    many = len(_distinct(args.ids)) > 1
+    if many and args.accept_finding:
+        raise ValueError("--accept-finding names one package's file: approve that package alone")
     policy = make_policy(sensitivity=args.sensitivity, egress=args.egress, protection=args.protection)
     embedder, settings = _indexing()
-    published = packages.approve(conn, args.id, by=args.by, policy=policy, profile=args.profile,
-                                 accept=_accepted(args))
-    return _published_then_index(conn, published, embedder, settings)
+    with conn.transaction() if many else nullcontext():
+        done = [packages.approve(conn, i, by=args.by, policy=policy, profile=args.profile, accept=_accepted(args))
+                for i in args.ids]
+    return max(_published_then_index(conn, p, embedder, settings) for p in done)
 
 
 def cmd_reject(conn, args) -> int:
-    _print({"rejected": packages.reject(conn, args.id, by=args.by, reason=args.reason)})
+    if len(_distinct(args.ids)) == 1:
+        _print({"rejected": packages.reject(conn, args.ids[0], by=args.by, reason=args.reason)})
+        return 0
+    with conn.transaction():
+        for i in args.ids:
+            if not packages.reject(conn, i, by=args.by, reason=args.reason):
+                raise ValueError(f"import {i} is not verified: nothing was rejected")
+    _print({"rejected": args.ids})
     return 0
 
 
@@ -415,11 +435,12 @@ def cmd_use_policy_revoke(conn, args) -> int:
 
 
 def cmd_publish_admitted(conn, args) -> int:
-    """D85 S2: one JSON line per verified import. A published version is live; indexing follows it (as approve-import)
-    and an incomplete index gives exit 3 after all imports were handled."""
+    """D85 S2, S3: one JSON line per import that a passkey act names or a use policy may admit. A published version
+    is live; indexing follows it (as approve-import) and an incomplete index gives exit 3 after all were handled."""
     embedder, settings = _indexing()
     code = 0
-    for result, published in usepolicy.publish_admitted(conn, dry_run=args.dry_run):
+    for result, published in itertools.chain(packageacts.apply(conn, dry_run=args.dry_run),
+                                             usepolicy.publish_admitted(conn, dry_run=args.dry_run)):
         if published is not None:
             _warn_quarantined(published)
             _warn_skills(published.skill_scans)
@@ -851,8 +872,9 @@ def parser() -> argparse.ArgumentParser:
     rc = sub.add_parser("receive", help="quarantine and verify a package; nothing is published")
     rc.add_argument("package")
     rc.set_defaults(fn=cmd_receive)
-    ap_ = sub.add_parser("approve-import", help="publish a verified package with THIS installation's policy")
-    ap_.add_argument("id", type=int)
+    ap_ = sub.add_parser("approve-import", help="publish verified packages with THIS installation's policy; several "
+                                                "ids are published together or not at all")
+    ap_.add_argument("ids", type=int, nargs="+", metavar="id")
     ap_.add_argument("--by", required=True)
     ap_.add_argument("--sensitivity", required=True, choices=SENSITIVITY)
     ap_.add_argument("--egress", required=True, choices=EGRESS)
@@ -862,16 +884,17 @@ def parser() -> argparse.ArgumentParser:
                      help="accept one reviewed personal-data finding that `receive` listed: that rule, in exactly "
                           "that file content; repeatable; needed for a cloud_ok book (--egress cloud_ok)")
     ap_.set_defaults(fn=cmd_approve, curator_db=True)
-    rj = sub.add_parser("reject-import", help="refuse a verified package (kept on record)")
-    rj.add_argument("id", type=int)
+    rj = sub.add_parser("reject-import", help="refuse verified packages (kept on record); several ids are refused "
+                                              "together or not at all")
+    rj.add_argument("ids", type=int, nargs="+", metavar="id")
     rj.add_argument("--by", required=True)
     rj.add_argument("--reason", required=True)
     rj.set_defaults(fn=cmd_reject, curator_db=True)
     im = sub.add_parser("imports", help="received packages and their verdicts")
     im.set_defaults(fn=cmd_imports)
     imsub = im.add_subparsers(dest="imports_cmd")
-    pa = imsub.add_parser("publish-admitted", help="publish the verified packages that a use policy admits "
-                          "(D85 S2); safe to run from a timer")
+    pa = imsub.add_parser("publish-admitted", help="apply the passkey approvals of curator web (D85 S3), then publish "
+                          "the verified packages that a use policy admits (D85 S2); safe to run from a timer")
     pa.add_argument("--dry-run", action="store_true", help="do all of it and roll it back; write nothing")
     pa.set_defaults(fn=cmd_publish_admitted, curator_db=True)
     up = sub.add_parser("use-policy", help="use policies: publish a trusted key's attested packages without a "

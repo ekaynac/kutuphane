@@ -554,7 +554,7 @@ package in base64, within the package limit).
 
 **Result:** as `GET /v1/packages/{id}` ([http-api.md](http-api.md#122-get-v1packagesid)): `{"id", "status",
 "issuer", "book", "sequence", "content_id", "findings", "diff", "reasons", "received_at", "decided_at", "decided_by"}`; `status`
-`received`, `findings` or `refused`; `decided_by` is `user:<name>`, or `policy:<id>` when a use policy published it (D85); `diff` is `null` without `read` now. **Errors:** `400` (not base64, not a
+`received`, `findings` or `refused`; `decided_by` is `user:<name>` (also when the person signed on the phone: D85 S3), or `policy:<id>` when a use policy published it (D85); `diff` is `null` without `read` now. **Errors:** `400` (not base64, not a
 package, a journal), `403`, too large.
 
 ### 5.17 `package_status`

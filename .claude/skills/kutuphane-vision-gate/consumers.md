@@ -67,6 +67,10 @@ section with one line for each consumer below, and each "unchanged" line has a g
     "inframedic:<installation id>:audit:<seq_key>"}`: with a use policy for its key, a clean attested package is
     published by `kutuphane imports publish-admitted` (a timer) as `acceptance.kind` `consumer_attested`; `package_status`
     `decided_by` is then `policy:<id>`. A package without it is unchanged.
+  - since D85 S3, a curator can approve or reject a package on the phone (curator web, passkey act), single or bulk;
+    `kutuphane imports publish-admitted` applies it. `package_status` `decided_by` is then the signer, a `user:` (as for
+    `approve-import`); `acceptance.kind` is `curator_passkey`; the status words (`approved`, `refused`, `findings`) are
+    unchanged. A signed package may stay `findings` for longer: until the timer applies the act (within a minute).
 - **How it breaks:** its P1 and P2 code is built against the old contract.
 - **Check:** compare the change with the routes and fields above.
 - **Announce:** a comment on #144 that gives the change, the PR and the migration step.

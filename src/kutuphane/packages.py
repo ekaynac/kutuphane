@@ -348,14 +348,30 @@ def receive(conn, data: bytes, submitter: Actor | None = None) -> dict:
 
 # --- decide -----------------------------------------------------------------------------------------------
 
+def manifest_sha256(package: bytes) -> str:
+    """The digest that a passkey act signs for a package: SHA-256 of the exact stored MANIFEST.json bytes."""
+    return ids.sha256_hex(_members(package)[MANIFEST])
+
+
+def check_signed(manifest_body: bytes, item: dict) -> None:
+    """D85 S3: the import is still the one that the person saw (manifest digest, book, content id)."""
+    manifest = json.loads(manifest_body)
+    if (ids.sha256_hex(manifest_body), manifest.get("book"), manifest.get("content_id")) != (
+            item["manifest_sha256"], item["book"], item["content_id"]):
+        raise PackageError("the stored manifest, book or content id is not the one that was signed")
+
+
 def approve(conn, import_id: int, *, by: str, policy: dict | None = None, profile: str = "chunked",
-            accept=(), admit=None) -> catalog.Published:
+            accept=(), admit=None, signed: tuple[int, dict] | None = None) -> catalog.Published:
     """A person approves; this installation's own policy applies. Atomic: all of it or none of it. `accept`: the
     AcceptedFinding values of the personal-data findings that this person reviewed (a `cloud_ok` book refuses an
     open one at publication, catalog.py); each must match a finding of the package.
     `admit` (D85 S2, `usepolicy.admit`): no person; after the same re-verification, `admit(conn, manifest, files,
     findings)` returns the use policy that admits the package (book policy, attester, id) or raises
-    usepolicy.NotAdmitted, which leaves the import `verified`. `by` then only names the decider of a failure."""
+    usepolicy.NotAdmitted, which leaves the import `verified`. `by` then only names the decider of a failure.
+    `signed` (D85 S3, `(act seq, item)` of a `package` act): `by` is the signer and `policy` the signed one; the
+    stored manifest and content id must be the signed ones, the act is recorded in the publication, and a failure
+    is only raised: the import stays `verified` and nothing is written."""
     policy = None if admit else check_policy(policy)
     accept = frozenset(accept)
     try:
@@ -368,6 +384,8 @@ def approve(conn, import_id: int, *, by: str, policy: dict | None = None, profil
                 raise PackageError(f"import {import_id} is {row[0]}, not verified")
             members = _members(bytes(row[1]))
             manifest = json.loads(members[MANIFEST])
+            if signed:
+                check_signed(members[MANIFEST], signed[1])
             # Serialize concurrent approvals for this (key, book): make sure the row exists, then lock it.
             conn.execute("INSERT INTO package_sequence (issuer, book, last_sequence) VALUES (%s, %s, 0) "
                          "ON CONFLICT (issuer, book) DO NOTHING", (manifest["issuer"], manifest["book"]))
@@ -380,20 +398,22 @@ def approve(conn, import_id: int, *, by: str, policy: dict | None = None, profil
             published = catalog.publish(conn, book=manifest["book"], title=manifest["title"], files=files,
                                         policy=grant.policy if grant else policy, profile=profiles.spec(profile),
                                         approved_by=grant.principal if grant else by, package_import=import_id,
-                                        use_policy=grant.id if grant else None)
+                                        use_policy=grant.id if grant else None, act=signed[0] if signed else None)
             conn.execute("UPDATE package_sequence SET last_sequence = GREATEST(last_sequence, %s) "
                          "WHERE issuer = %s AND book = %s", (manifest["sequence"], manifest["issuer"], manifest["book"]))
             conn.execute("UPDATE package_import SET status = 'published', decided_by = %s, decided_at = now() "
                          "WHERE id = %s", (f"policy:{grant.id}" if grant else by, import_id))
             return published
     except PackageError as exc:  # the package itself is not acceptable (any more): final
-        conn.execute("UPDATE package_import SET status = 'rejected', reasons = reasons || %s, decided_by = %s, "
-                     "decided_at = now() WHERE id = %s AND status = 'verified'",
-                     (Jsonb([f"at approval: {exc}"]), by, import_id))
+        if not signed:
+            conn.execute("UPDATE package_import SET status = 'rejected', reasons = reasons || %s, decided_by = %s, "
+                         "decided_at = now() WHERE id = %s AND status = 'verified'",
+                         (Jsonb([f"at approval: {exc}"]), by, import_id))
         raise
     except ValueError as exc:  # the chosen publication failed (e.g. profile limits): on record, can be retried
-        conn.execute("UPDATE package_import SET reasons = reasons || %s WHERE id = %s AND status = 'verified'",
-                     (Jsonb([f"approval by {by} failed: {exc}"]), import_id))
+        if not signed:
+            conn.execute("UPDATE package_import SET reasons = reasons || %s WHERE id = %s AND status = 'verified'",
+                         (Jsonb([f"approval by {by} failed: {exc}"]), import_id))
         raise
 
 

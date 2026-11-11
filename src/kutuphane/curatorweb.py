@@ -21,7 +21,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import confirm, curation, curatorqueue, db, gate, notes, passkey
+from . import confirm, curation, curatorqueue, db, gate, notes, packageacts, passkey
 from .server import SecurityHeaders
 
 COOKIE = "__Host-kc"
@@ -88,6 +88,8 @@ def _standing_fields(conn, principal: str, body: dict) -> dict:
 FIELDS = {"standing": _standing_fields}
 HANDLERS.update(confirm=confirm.confirm_act, withdraw=confirm.withdraw_act)       # slice R (docs/25 §7)
 FIELDS.update(confirm=confirm.confirm_fields, withdraw=confirm.withdraw_fields)
+HANDLERS.update(package=packageacts.handler)  # D85 S3: records the act only; the owner-run publisher applies it
+FIELDS.update(package=packageacts.fields)
 
 
 def create_app(*, dsn: str, cfg: passkey.Config, ui_dir: Path = UI_DIR) -> Starlette:
@@ -228,6 +230,15 @@ def create_app(*, dsn: str, cfg: passkey.Config, ui_dir: Path = UI_DIR) -> Starl
             out = curatorqueue.note(conn, principal, ref, w=_int_param(request, "w"), channel="http")
         return JSONResponse(out)
 
+    # --- D85 S3: the received packages of the books that the person curates and reads ---------------------------
+    def package_list(conn, request, _raw):
+        _, principal, _ = session_of(conn, request)
+        with conn.transaction():
+            out = packageacts.listing(conn, principal)
+            _log(conn, principal, "package_view", True, "package list",
+                 [{"import": i["import_id"], "book": i["book"]} for i in out["items"]])
+        return JSONResponse(out)
+
     # --- acts ----------------------------------------------------------------------------------------------------
     def act_options(conn, request, raw):
         body = body_of(request, raw)
@@ -252,7 +263,7 @@ def create_app(*, dsn: str, cfg: passkey.Config, ui_dir: Path = UI_DIR) -> Starl
                 act_ = passkey.verify_act(conn, cfg, sid, principal, body.get("challenge_id"), body.get("credential"),
                                           body.get("shown_ms"))
                 out = HANDLERS[act_.action](conn, act_)
-                _log(conn, principal, "curate", True, act_.action, [
+                _log(conn, principal, "curate", True, act_.action, out["signed"] if "signed" in out else [
                     {"ref": i["ref"], "standing_seq": i["event_seq"]} for i in out.get("items", [])], correlation)
             return JSONResponse(out)
         except Exception as exc:
@@ -268,6 +279,7 @@ def create_app(*, dsn: str, cfg: passkey.Config, ui_dir: Path = UI_DIR) -> Starl
     routes = [
         Route("/", page), Route("/enroll", page),
         Route("/c/{book}/{id}", page), Route("/n/{book}/{id}", page), Route("/requests", page),
+        Route("/packages", page),
         Route("/api/requests", answer(requests)), Route("/api/requests/{book}/{id}", answer(request_page)),
         Route("/api/enroll/session", answer(enroll_session), methods=["POST"]),
         Route("/api/enroll/options", answer(enroll_options), methods=["POST"]),
@@ -276,7 +288,7 @@ def create_app(*, dsn: str, cfg: passkey.Config, ui_dir: Path = UI_DIR) -> Starl
         Route("/auth/passkey", answer(login), methods=["POST"]),
         Route("/auth/logout", answer(logout), methods=["POST"]),
         Route("/api/me", answer(me)),
-        Route("/api/queue", answer(queue)),
+        Route("/api/queue", answer(queue)), Route("/api/packages", answer(package_list)),
         Route("/api/note/{book}/{id}", answer(note_view)),
         Route("/api/act/options", answer(act_options), methods=["POST"]),
         Route("/api/act", answer(act), methods=["POST"]),

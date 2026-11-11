@@ -26,14 +26,14 @@ from webauthn.helpers.exceptions import InvalidAuthenticationResponse, InvalidRe
 from webauthn.helpers.structs import (AuthenticatorSelectionCriteria, PublicKeyCredentialDescriptor,
                                       ResidentKeyRequirement, UserVerificationRequirement)
 
-from . import authz, canonical, ids
+from . import authz, canonical, ids, packages
 
 DOMAIN = b"kutuphane/curator-act/v1\n"
 CHALLENGE_TTL = "5 minutes"
 SESSION_TTL = "8 hours"
 ENROLL_TTL = "15 minutes"
 TIMEOUT_MS = 120_000
-ACTIONS = ("standing", "confirm", "withdraw")
+ACTIONS = ("standing", "confirm", "withdraw", "package")
 ENV = {"rp_id": "KUTUPHANE_WEBAUTHN_RP_ID", "origin": "KUTUPHANE_WEBAUTHN_ORIGIN"}
 
 
@@ -403,6 +403,25 @@ def _end_delegation_effects(conn, act: int, payload: dict) -> bool:
 EFFECTS.update(delegate=_delegate_effects, end_delegation=_end_delegation_effects)
 
 
+def _package_effects(conn, act: int, payload: dict) -> bool:
+    """D85 S3: a publication that names this act is an approve item of its statement (the signed policy, signer,
+    manifest digest and content). A signed item that is not applied has no row: the publisher may still apply it."""
+    items = {i["import_id"]: i for i in payload.get("items", [])}
+    for pid, book, content_id, by, doc, package in conn.execute(
+            "SELECT p.package_import, p.book, p.content_id, p.approved_by, v.doc, i.package FROM publication p "
+            "JOIN policy_version v ON v.id = p.policy_id JOIN package_import i ON i.id = p.package_import "
+            "WHERE p.act = %s", (act,)).fetchall():
+        item = items.get(pid)
+        if (item is None or item["decision"] != "approve" or by != payload.get("principal") or doc != item["policy"]
+                or (book, content_id) != (item["book"], item["content_id"])
+                or packages.manifest_sha256(bytes(package)) != item["manifest_sha256"]):
+            return False
+    return True
+
+
+EFFECTS["package"] = _package_effects
+
+
 def _signed_notes(payload: dict, action: str) -> list[str]:
     """The note refs (`book@nt_…`) whose exact parts an act signs: the items of a `standing` act, the item of a
     `confirm` act."""
@@ -423,31 +442,51 @@ def _contents_intact(conn, refs: list[str]) -> bool:
     return True
 
 
+_STORED = ("SELECT a.seq, a.action, a.principal, a.credential_id, a.authenticator_data, a.client_data_json, "
+           "a.signature, c.payload, c.challenge, p.public_key FROM curator_act a "
+           "JOIN curator_challenge c ON c.id = a.challenge JOIN passkey p ON p.credential_id = a.credential_id")
+
+
+def _stored_problem(cfg: Config, principal, cred_id, auth_data, client_data, signature, payload, challenge,
+                    public_key) -> str | None:
+    """The cryptographic part of the check, once: the statement gives the challenge and names the signer, and the
+    assertion verifies with UV against the stored passkey. Returns the problem (`statement`, `signature`) or None."""
+    if challenge_of(payload) != bytes(challenge) or payload.get("principal") != principal:
+        return "statement"
+    credential = {"id": b64u(bytes(cred_id)), "rawId": b64u(bytes(cred_id)), "type": "public-key",
+                  "response": {"clientDataJSON": b64u(bytes(client_data)),
+                               "authenticatorData": b64u(bytes(auth_data)), "signature": b64u(bytes(signature))}}
+    try:
+        _client_data(credential, "webauthn.get")
+        webauthn.verify_authentication_response(
+            credential=credential, expected_challenge=bytes(challenge), expected_rp_id=cfg.rp_id,
+            expected_origin=cfg.origin, credential_public_key=bytes(public_key), credential_current_sign_count=0,
+            require_user_verification=True)
+    except (CeremonyRefused, InvalidAuthenticationResponse, ValueError):
+        return "signature"
+    return None
+
+
+def stored_act_problem(conn, cfg: Config, seq: int) -> str | None:
+    """D85 S3: the owner re-verifies one stored act before it applies it (curator web can write act rows, so a row
+    alone proves nothing). None when the act verifies; else the problem."""
+    row = conn.execute(_STORED + " WHERE a.seq = %s", (seq,)).fetchone()
+    if row is None:
+        return "no such act"
+    return _stored_problem(cfg, *row[2:])
+
+
 def verify_acts(conn, cfg: Config, since: int = 0) -> dict:
     """Check every stored act again: the statement gives the challenge, the assertion verifies with UV against the
     stored passkey, the rows that name the act are exactly the ones its statement asks for, and each note that a
     `standing` or `confirm` act signs still has the parts that give its signed id (problem `contents`)."""
-    rows = conn.execute(
-        "SELECT a.seq, a.action, a.credential_id, a.authenticator_data, a.client_data_json, a.signature, c.payload, "
-        "c.challenge, p.public_key FROM curator_act a JOIN curator_challenge c ON c.id = a.challenge "
-        "JOIN passkey p ON p.credential_id = a.credential_id WHERE a.seq > %s ORDER BY a.seq", (since,)).fetchall()
+    rows = conn.execute(_STORED + " WHERE a.seq > %s ORDER BY a.seq", (since,)).fetchall()
     problems = []
-    for seq, action, cred_id, auth_data, client_data, signature, payload, challenge, public_key in rows:
-        if challenge_of(payload) != bytes(challenge):
-            problems.append({"act": seq, "problem": "statement"})
+    for seq, action, *rest in rows:
+        if problem := _stored_problem(cfg, *rest):
+            problems.append({"act": seq, "problem": problem})
             continue
-        credential = {"id": b64u(bytes(cred_id)), "rawId": b64u(bytes(cred_id)), "type": "public-key",
-                      "response": {"clientDataJSON": b64u(bytes(client_data)),
-                                   "authenticatorData": b64u(bytes(auth_data)), "signature": b64u(bytes(signature))}}
-        try:
-            _client_data(credential, "webauthn.get")
-            webauthn.verify_authentication_response(
-                credential=credential, expected_challenge=bytes(challenge), expected_rp_id=cfg.rp_id,
-                expected_origin=cfg.origin, credential_public_key=bytes(public_key), credential_current_sign_count=0,
-                require_user_verification=True)
-        except (CeremonyRefused, InvalidAuthenticationResponse, ValueError):
-            problems.append({"act": seq, "problem": "signature"})
-            continue
+        payload = rest[5]
         check = EFFECTS.get(action)
         if check is None:
             problems.append({"act": seq, "problem": f"no effect check for {action}"})

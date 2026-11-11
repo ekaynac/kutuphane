@@ -18,6 +18,7 @@ const KINDS = {
 const TABS = {
   review: "Agents proposed these notes. Approve what is true and useful; reject the rest. Your fingerprint signs each decision.",
   words: "An agent typed text for you. Confirm only if these are your words (or you checked them).",
+  packages: "Packages that another installation sent. Read the findings and the changes, then approve or reject. Your fingerprint signs each decision; the server publishes within a minute.",
 };
 
 function kindName(kind) { return (KINDS[kind] || [kind])[0]; }
@@ -106,7 +107,7 @@ function start(text, label, fn) {
 // --- the page frame: the active tab and its one-line explanation ------------------------------------------------
 function frame(tab, progress) {
   $("tabs").hidden = false;
-  for (const [name, id] of [["review", "tab-review"], ["words", "tab-words"]]) {
+  for (const [name, id] of [["review", "tab-review"], ["words", "tab-words"], ["packages", "tab-packages"]]) {
     $(id).classList.toggle("on", name === tab);
     if (name === tab) $(id).setAttribute("aria-current", "page"); else $(id).removeAttribute("aria-current");
   }
@@ -190,6 +191,7 @@ async function main() {
   if (!me.ok) return signIn();
   $("who").textContent = person((await me.json()).principal);
   if (location.pathname.startsWith("/c/") || location.pathname === "/requests") return confirmPage();
+  if (location.pathname === "/packages") return packagesPage();
   return load();
 }
 

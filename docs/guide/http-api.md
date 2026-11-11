@@ -425,7 +425,7 @@ An import that you submitted (same principal, same user acted for); else `404`. 
 - `diff`: `{"added", "removed", "changed"}` against the book's current version. Only with a current `read` on the
   book; else `null` (`propose` alone does not list the catalog's files).
 - `reasons`: why it was refused. `received_at`, `decided_at`: ISO 8601 times.
-- `decided_by`: the person who approved or rejected it (`user:<name>`), or `policy:<id>` when a use policy published it (D85, [operations.md](operations.md#use-policies-publish-an-attested-package-without-a-per-package-act-d85-s2)); `null` until it is decided. It stays when a
+- `decided_by`: the person who approved or rejected it (`user:<name>`, also when the person signed on the phone: D85 S3), or `policy:<id>` when a use policy published it (D85, [operations.md](operations.md#use-policies-publish-an-attested-package-without-a-per-package-act-d85-s2)); `null` until it is decided. It stays when a
   later version replaces the import.
 
 For problems, read [troubleshooting.md](troubleshooting.md).

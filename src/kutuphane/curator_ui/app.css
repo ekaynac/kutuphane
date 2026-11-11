@@ -51,8 +51,10 @@ main { max-width:720px; margin:0 auto; padding:12px 12px 160px; display:grid; ga
 .group .note { border-top:1px solid var(--line); margin-top:14px; padding-top:14px; }
 .note { min-width:0; border-left:4px solid transparent; margin-left:-16px; padding-left:12px; }
 .card > .note { margin-top:0; }
-.note.chose-approved { border-left-color:var(--approve); }
-.note.chose-rejected { border-left-color:var(--reject); }
+.note.chose-approved, .pkg.chose-approved { border-left-color:var(--approve); }
+.note.chose-rejected, .pkg.chose-rejected { border-left-color:var(--reject); }
+.pkg { border-left:4px solid transparent; }
+.policy { margin-top:10px; }
 .note.decided { opacity:.8; }
 .text { font-size:19px; line-height:1.45; font-weight:500; white-space:pre-wrap; overflow-wrap:anywhere; }
 .mark { color:var(--mark); font-weight:700; font-size:.85em; }
