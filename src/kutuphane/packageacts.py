@@ -131,6 +131,9 @@ def apply(conn, *, dry_run: bool = False):
         published, result = None, {}
         try:
             with conn.transaction(force_rollback=True) if dry_run else nullcontext():
+                if conn.execute("SELECT 1 FROM curator_act a JOIN passkey p ON p.credential_id = a.credential_id "
+                                "WHERE a.seq = %s AND p.revoked_at IS NULL", (act,)).fetchone() is None:
+                    raise ValueError("the signing passkey is revoked; sign again")  # a lost phone (docs/25 §3.4)
                 if item["decision"] == "approve":
                     if check_policy(item["policy"])["egress"] == "cloud_ok":
                         raise ValueError(CLOUD_OK)

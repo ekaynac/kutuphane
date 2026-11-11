@@ -418,3 +418,22 @@ def test_a_person_approves_one_package_and_rejects_another_on_the_packages_page(
     assert conn.execute("SELECT count(*) FROM curator_act WHERE action = 'package'").fetchone() == (1,)
     assert conn.execute("SELECT count(*) FROM publication").fetchone() == (0,)  # the page published nothing
     assert sorted((r["import"], r["status"]) for r in run(conn)) == [(a, "published"), (b, "rejected")]
+
+
+def test_an_act_whose_passkey_was_revoked_is_not_applied(owner_cli, client, capsys):
+    conn = owner_cli[0]
+    a = receive(owner_cli)
+    act, _ = sign(client, ready(conn, client), [approve(a)])
+    cred = passkey.b64u(bytes(conn.execute("SELECT credential_id FROM passkey WHERE principal = %s", (U,)).fetchone()[0]))
+    assert cli.main(["curator", "revoke-passkey", "--", cred]) == 0  # a lost phone
+    capsys.readouterr()
+    assert cli.main(["imports", "publish-admitted"]) == 0
+    [line] = [r for r in map(json.loads, capsys.readouterr().out.splitlines()) if "act" in r]  # the use-policy pass
+    assert line["status"] == "skipped" and line["reason"] == "the signing passkey is revoked; sign again"
+    assert state(conn, a) == ("verified", None)
+    packages.approve(conn, a, by=U, policy=LOCAL)  # a row to copy; the owner's own path is `operator_cli`
+    base = conn.execute("SELECT book, content_id, profile_id, policy_id FROM publication").fetchone()
+    with pytest.raises(psycopg.Error, match="not an approve item"):  # no other code path may apply the act
+        conn.execute("INSERT INTO publication (book, content_id, profile_id, policy_id, approved_by, channel, "
+                     "package_import, acceptance, act) VALUES (%s, %s, %s, %s, %s, 'import', %s, 'curator_passkey', %s)",
+                     (*base, U, a, act))

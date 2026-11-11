@@ -105,6 +105,7 @@ the body; your reverse proxy must pass both unchanged.
   longer holds. The line of `kutuphane imports publish-admitted` (`skipped`, with the `reason`) says why:
   `the stored manifest, book or content id is not the one that was signed` (the import changed: sign it again);
   `… does not hold curate on book:<slug>` (the owner grants `curate` again); `signed by a revoked key`;
+  `the signing passkey is revoked; sign again` (the phone was revoked: enroll a new passkey and sign again);
   `replay: sequence … is not newer than accepted …` (a newer package of the key and book was accepted first);
   `a passkey cannot approve egress cloud_ok` (the operator runs `approve-import --egress cloud_ok --accept-finding …`);
   another `reason` such as a profile limit. Nothing at all: the timer is not running (`systemctl --user status

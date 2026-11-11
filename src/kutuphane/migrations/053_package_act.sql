@@ -57,13 +57,14 @@ ALTER TABLE publication ADD COLUMN act bigint REFERENCES curator_act(seq),
 CREATE UNIQUE INDEX publication_act_import ON publication (act, package_import) WHERE act IS NOT NULL;
 
 -- ... and the row is exactly an approve item of that act's statement: this import, book and content, the signed
--- policy, the signer as `approved_by`, the channel `import`.
+-- policy, the signer as `approved_by`, the channel `import`, and its passkey is not revoked (a lost phone).
 CREATE FUNCTION publication_in_statement() RETURNS trigger LANGUAGE plpgsql
 SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM public.curator_act a
           JOIN public.curator_challenge c ON c.id = a.challenge
+          JOIN public.passkey k ON k.credential_id = a.credential_id AND k.revoked_at IS NULL
          CROSS JOIN jsonb_array_elements(c.payload -> 'items') i
           JOIN public.policy_version p ON p.id = NEW.policy_id
          WHERE a.seq = NEW.act AND a.action = 'package' AND a.principal = NEW.approved_by
