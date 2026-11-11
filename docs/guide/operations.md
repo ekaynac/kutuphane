@@ -598,6 +598,8 @@ Run it daily from a systemd user timer; keep the env file away from agents:
 # ~/.config/kutuphane/expire.env (mode 600)
 KUTUPHANE_CURATOR_DSN=postgresql://kutuphane:<password>@127.0.0.1:55432/kutuphane
 PYTHONPATH=<deploy dir>/src
+KUTUPHANE_WEBAUTHN_RP_ID=<curator web host name>
+KUTUPHANE_WEBAUTHN_ORIGIN=https://<curator web host name>
 
 # ~/.config/systemd/user/kutuphane-expire.service
 [Service]
@@ -812,6 +814,9 @@ page then says "Signed. It is published within a minute." It publishes nothing i
   with the `reason`; [troubleshooting.md](troubleshooting.md)). If you sign two acts for one import, the newest wins.
   An applied item is never applied twice. `kutuphane curator verify-acts` checks `package` acts too: the signature,
   and that each publication that names the act is an approve item of its statement.
+- The publisher first verifies each act itself (assertion, statement, signer: the check of `curator verify-acts`), so it
+  needs `KUTUPHANE_WEBAUTHN_RP_ID` and `KUTUPHANE_WEBAUTHN_ORIGIN`, the same values as curator web. Without them, or
+  for an act that does not verify, no item is applied (`act <seq> does not verify: …`).
 - Without the timer nothing is published: the act waits. See the timer below.
 
 Several imports on the command line: `approve-import <id> <id> …` and `reject-import <id> <id> …` run in one

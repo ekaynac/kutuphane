@@ -88,8 +88,10 @@ the confirmer withdraws it (R7).
   the package verification, the signed digest and content id, and `curate` of the signer now. A `curator_passkey`
   publication names its act (`publication.act`), and the database accepts it only as an approve item of that act, signed
   by `approved_by`. A passkey cannot approve `cloud_ok` egress (the page and the publisher refuse it); only
-  `approve-import --accept-finding` can. The publisher and the database also require that the signing passkey is not
-  revoked now: after `curator revoke-passkey` (a lost phone), an act that waits for the timer is not applied.
+  `approve-import --accept-finding` can. The owner re-verifies every package act before it applies it (the same check as `curator verify-acts`: the
+  assertion with user verification against the stored passkey, the exact stored statement, the signer): curator web can
+  write act rows, so a row alone never publishes, and an act that does not verify applies no item. The publisher and the
+  database also require that the signing passkey is not revoked now: after `curator revoke-passkey` (a lost phone), an act that waits for the timer is not applied.
 - A package is published without a per-package act only under a **use policy** (D85 S2): a curator (holding `curate`
   on the book, with the owner credential) set it for one book and one trusted key, with the attesters and the book
   policy. The package must carry `accepted_by` in its signed manifest from a principal that starts with one of the

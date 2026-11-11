@@ -11,7 +11,7 @@ from contextlib import nullcontext
 
 import psycopg
 
-from . import authz, curation, gate, ids, packages
+from . import authz, curation, gate, ids, packages, passkey
 from .policy import check_policy
 
 MAX_ITEMS = curation.MAX_ITEMS
@@ -121,13 +121,31 @@ def _pending(conn):
         "WHERE i.status = 'verified' ORDER BY i.id").fetchall()
 
 
-def apply(conn, *, dry_run: bool = False):
+def _verdict(conn, act: int, cfg) -> str | None:
+    """None when the stored act verifies (signature with UV, statement, signer: `passkey.stored_act_problem`, the check
+    of `curator verify-acts`), else why not. Curator web may write act rows, so only this makes an act count."""
+    if cfg is None:
+        try:
+            cfg = passkey.Config.from_env()
+        except (RuntimeError, ValueError) as exc:  # fail closed: no WebAuthn settings, nothing is applied
+            return str(exc)
+    return passkey.stored_act_problem(conn, cfg, act)
+
+
+def apply(conn, *, dry_run: bool = False, cfg: passkey.Config | None = None):
     """Yields (result, catalog.Published or None) for each `verified` import that a `package` act names. result:
     {import, book, act, signer, decision, status, ...}; status `published`, `rejected` (the signed rejection),
     `would_publish` / `would_reject` (dry run: done and rolled back) or `skipped` with the reason. Idempotent: an
-    applied import is no longer `verified`."""
+    applied import is no longer `verified`. An act that does not verify (`cfg`: the WebAuthn settings of curator web,
+    from the environment as for `curator verify-acts`) applies no item and stays unapplied."""
+    verdicts = {}
     for act, signer, import_id, item, package in _pending(conn):
         out = {"import": import_id, "book": item["book"], "act": act, "signer": signer, "decision": item["decision"]}
+        if act not in verdicts:
+            verdicts[act] = _verdict(conn, act, cfg)
+        if verdicts[act]:
+            yield {**out, "status": "skipped", "reason": f"act {act} does not verify: {verdicts[act]}"}, None
+            continue
         published, result = None, {}
         try:
             with conn.transaction(force_rollback=True) if dry_run else nullcontext():

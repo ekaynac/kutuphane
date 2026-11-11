@@ -31,7 +31,8 @@ For the terms, read [concepts.md](concepts.md).
 - **Action:** re-apply `deploy/db-roles.sql`, then `deploy/db-roles-curator.sql` as the owner (the curator web role now has
   an explicit revoke of every write right on the catalog and on `package_import`).
 - **Action:** the `kutuphane-publish-admitted` timer must run (every minute), or a signed approval waits. It needs the
-  owner credential, as before.
+  owner credential, as before, and now also `KUTUPHANE_WEBAUTHN_RP_ID` and `KUTUPHANE_WEBAUTHN_ORIGIN` (the values of
+  curator web): it verifies each act's passkey signature before it applies it. Without them no passkey act is applied.
 
 ### Use policies and consumer attestation (D85, slice S2)
 

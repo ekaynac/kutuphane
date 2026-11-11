@@ -105,6 +105,8 @@ the body; your reverse proxy must pass both unchanged.
   longer holds. The line of `kutuphane imports publish-admitted` (`skipped`, with the `reason`) says why:
   `the stored manifest, book or content id is not the one that was signed` (the import changed: sign it again);
   `… does not hold curate on book:<slug>` (the owner grants `curate` again); `signed by a revoked key`;
+  `act <seq> does not verify: signature|statement` (the stored act is not a valid passkey signature of its statement: it
+  is never applied; sign again) or `… KUTUPHANE_WEBAUTHN_RP_ID …` (the timer's env file needs the two WebAuthn settings);
   `the signing passkey is revoked; sign again` (the phone was revoked: enroll a new passkey and sign again);
   `replay: sequence … is not newer than accepted …` (a newer package of the key and book was accepted first);
   `a passkey cannot approve egress cloud_ok` (the operator runs `approve-import --egress cloud_ok --accept-finding …`);

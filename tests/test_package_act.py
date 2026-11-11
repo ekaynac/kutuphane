@@ -62,7 +62,7 @@ def reject(pid, reason="not ours"):
 
 
 def run(conn, **kw):
-    return [r for r, _ in packageacts.apply(conn, **kw)]
+    return [r for r, _ in packageacts.apply(conn, cfg=CFG, **kw)]
 
 
 def state(conn, pid):
@@ -192,23 +192,25 @@ def test_a_newer_accepted_sequence_is_not_applied(world, client):
     not_applied(conn, a, "replay", published=1)
 
 
-def test_a_cloud_ok_policy_is_refused_by_the_page_and_by_the_publisher(world, client):
+def test_a_cloud_ok_policy_is_refused_by_the_page_and_by_the_publisher(world, client, monkeypatch):
     conn = world[0]
     a = receive(world)
     auth = ready(conn, client)
     r = statement(client, [approve(a, CLOUD)])
     assert r.status_code == 403 and "cloud_ok" in r.json()["error"]
     forge(conn, [item_of(conn, a, policy=CLOUD)])  # a statement made another way
+    monkeypatch.setattr(passkey, "stored_act_problem", lambda *_: None)  # the item rules, apart from the signature
     not_applied(conn, a, "cloud_ok")
     assert auth is not None
 
 
-def test_a_forged_signed_item_for_another_book_is_not_applied(world, client):
+def test_a_forged_signed_item_for_another_book_is_not_applied(world, client, monkeypatch):
     conn = world[0]
     a = receive(world)
     sign(client, ready(conn, client), [approve(a)])
     conn.execute("DELETE FROM curator_act")  # the signed statement is gone; a forged one names another book
     forge(conn, [item_of(conn, a, book="rehber")])
+    monkeypatch.setattr(passkey, "stored_act_problem", lambda *_: None)  # the item rules, apart from the signature
     not_applied(conn, a, "not the one that was signed")
 
 
@@ -334,6 +336,8 @@ def test_verify_acts_accepts_a_good_package_act_and_flags_a_tampered_one(world, 
 def owner_cli(world, monkeypatch):
     monkeypatch.setenv(db.DSN_ENV, os.environ["KUTUPHANE_TEST_DSN"])
     monkeypatch.setenv(db.CURATOR_DSN_ENV, os.environ["KUTUPHANE_TEST_DSN"])
+    monkeypatch.setenv(passkey.ENV["rp_id"], CFG.rp_id)  # `publish-admitted` verifies every act (as `verify-acts`)
+    monkeypatch.setenv(passkey.ENV["origin"], CFG.origin)
     return world
 
 
@@ -417,7 +421,8 @@ def test_a_person_approves_one_package_and_rejects_another_on_the_packages_page(
     assert "published within a minute" in browser.eval("document.querySelector('#receipt h2').textContent")
     assert conn.execute("SELECT count(*) FROM curator_act WHERE action = 'package'").fetchone() == (1,)
     assert conn.execute("SELECT count(*) FROM publication").fetchone() == (0,)  # the page published nothing
-    assert sorted((r["import"], r["status"]) for r in run(conn)) == [(a, "published"), (b, "rejected")]
+    lines = packageacts.apply(conn, cfg=passkey.Config(rp_id="localhost", origin=server))  # the page's own RP
+    assert sorted((r["import"], r["status"]) for r, _ in lines) == [(a, "published"), (b, "rejected")]
 
 
 def test_an_act_whose_passkey_was_revoked_is_not_applied(owner_cli, client, capsys):
@@ -437,3 +442,51 @@ def test_an_act_whose_passkey_was_revoked_is_not_applied(owner_cli, client, caps
         conn.execute("INSERT INTO publication (book, content_id, profile_id, policy_id, approved_by, channel, "
                      "package_import, acceptance, act) VALUES (%s, %s, %s, %s, %s, 'import', %s, 'curator_passkey', %s)",
                      (*base, U, a, act))
+
+
+# --- the owner verifies every act before it applies it: curator web can write act rows, a row proves nothing --------
+
+def forge_as_web(conn, items):
+    conn.execute(f"SET ROLE {WEB_ROLE}")  # the real curator web role: it may insert a challenge and an act
+    try:
+        return forge(conn, items)
+    finally:
+        conn.execute("RESET ROLE")
+
+
+def test_a_forged_act_written_with_the_curator_web_credential_is_not_applied(world, client):
+    conn = world[0]
+    a = receive(world)
+    ready(conn, client)  # a passkey of the person exists (the attacker names it; it has no private key)
+    act = forge_as_web(conn, [item_of(conn, a)])  # a consistent statement, random signature bytes
+    [line] = run(conn)
+    assert line["act"] == act and line["status"] == "skipped" and line["reason"] == f"act {act} does not verify: signature"
+    assert state(conn, a) == ("verified", None)
+    assert conn.execute("SELECT count(*) FROM publication").fetchone() == (0,)
+    assert [r["status"] for r in run(conn)] == ["skipped"]  # never retried as a success
+
+
+@pytest.mark.parametrize("fix_digest, problem", [(False, "statement"), (True, "signature")])
+def test_a_changed_signed_statement_is_not_applied(world, client, fix_digest, problem):
+    conn = world[0]
+    a = receive(world)
+    act, _ = sign(client, ready(conn, client), [approve(a)])
+    cid = conn.execute("SELECT challenge FROM curator_act WHERE seq = %s", (act,)).fetchone()[0]
+    payload = conn.execute("SELECT payload FROM curator_challenge WHERE id = %s", (cid,)).fetchone()[0]
+    payload["items"][0]["policy"]["sensitivity"] = "restricted"  # not what the person signed
+    conn.execute("UPDATE curator_challenge SET payload = %s, challenge = COALESCE(%s, challenge) WHERE id = %s",
+                 (json.dumps(payload), passkey.challenge_of(payload) if fix_digest else None, cid))
+    [line] = run(conn)
+    assert line["status"] == "skipped" and line["reason"] == f"act {act} does not verify: {problem}"
+    assert state(conn, a) == ("verified", None) and conn.execute("SELECT count(*) FROM publication").fetchone() == (0,)
+
+
+def test_the_publisher_needs_the_webauthn_settings_and_fails_closed(world, client, monkeypatch):
+    conn = world[0]
+    a = receive(world)
+    sign(client, ready(conn, client), [approve(a)])
+    for name in passkey.ENV.values():
+        monkeypatch.delenv(name, raising=False)
+    [line] = [r for r, _ in packageacts.apply(conn)]
+    assert line["status"] == "skipped" and "does not verify" in line["reason"] and "KUTUPHANE_WEBAUTHN" in line["reason"]
+    assert state(conn, a) == ("verified", None)
