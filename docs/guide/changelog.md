@@ -8,6 +8,11 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Export and pack refuse content without a license (#218)
+
+- Fixed: `kutuphane export` and `kutuphane pack` refused only files that say `license: unknown`; content with no `kstd.yaml` passed, although no license is stated (kstd counts that as `unknown`). They now refuse it and name the fix: add a `kstd.yaml` with `rights.license` ([kstd.md](kstd.md)). Core stores and reads nothing differently.
+- **Action:** a sender that packs or exports a folder or book without `kstd.yaml` must add one (`kutuphane kstd-init <folder>` writes a start; set `rights.license`). A package with a `kstd.yaml` is unchanged.
+
 ### An empty acceptance filter is refused (D85)
 
 - Fixed: `acceptance: []` in `search_library`, `ask_library` or a `POST /v1/ask` body was read as "no filter" and showed every book, so a consumer that computed an empty set of allowed kinds got everything. It is now refused (`acceptance needs at least one kind; leave it out for no filter`; `400` over HTTP; no job is queued) and the MCP schema has `minItems: 1`. Leaving `acceptance` out still means no filter ([mcp.md](mcp.md), [http-api.md](http-api.md)).

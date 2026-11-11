@@ -7,6 +7,7 @@ import pytest
 
 from kutuphane import authz, catalog, cli, db, llmdap, packages, profiles, signing
 from kutuphane.policy import make_policy
+from conftest import licensed
 from kutuphane.source import read_source
 
 POLICY = make_policy(sensitivity="normal", egress="local_only", protection="standard")
@@ -63,7 +64,7 @@ def test_ingest_by_a_curator_records_operator_cli_not_legacy(env, okf_dir, monke
 def received(env, okf_dir, tmp_path, conn_b, monkeypatch):
     """A verified package in installation B (the CLI works on its schema), from a book published at A."""
     authz.grant(env, "book:kitap", "curate", "user:admin")
-    catalog.publish(env, book="kitap", title="Kitap", files=read_source(okf_dir), policy=POLICY,
+    catalog.publish(env, book="kitap", title="Kitap", files=read_source(licensed(okf_dir)), policy=POLICY,
                     profile=profiles.spec("chunked"), approved_by="user:admin")
     info = signing.generate(tmp_path / "a.key")
     packages.trust(conn_b, open(info["public_key"], "rb").read(), expected_fingerprint=info["fingerprint"],

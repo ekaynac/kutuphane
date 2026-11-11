@@ -9,6 +9,7 @@ import pytest
 
 from kutuphane import authz, catalog, cli, db, ids, packageacts, packages, passkey, signing
 from kutuphane.policy import make_policy
+from conftest import licensed
 from kutuphane.source import read_source
 from test_curator_e2e import browser, server  # noqa: F401
 from test_curatorweb import APP_ROLE, CFG, H, LOCAL, ORIGIN, U, WEB_ROLE, client, env, ready, submit, web_dsn  # noqa: F401
@@ -33,7 +34,7 @@ def receive(world, book="kitap", seq=1, text="Kayıtlar bir yıl saklanır.\n"):
     root = tmp / f"src-{book}-{seq}-{abs(hash(text))}"
     root.mkdir()
     (root / "index.md").write_text(f"# {book}\n\n{text}", encoding="utf-8")
-    data = packages.pack(read_source(root), book=book, title=book.title(), key=private, sequence=seq, policy=LOCAL)
+    data = packages.pack(read_source(licensed(root)), book=book, title=book.title(), key=private, sequence=seq, policy=LOCAL)
     got = packages.receive(conn, data)
     assert got["status"] == "verified", got
     return got["id"]
@@ -257,7 +258,7 @@ def test_the_list_shows_only_books_the_person_curates_and_reads(world, client):
     shown = client.get("/api/packages").json()["items"]
     assert [(i["import_id"], i["book"]) for i in shown] == [(a, "kitap")]
     item = shown[0]
-    assert item["policy_suggestion"] == LOCAL and item["findings"] == [] and item["diff"]["added"] == ["index.md"]
+    assert item["policy_suggestion"] == LOCAL and item["findings"] == [] and item["diff"]["added"] == ["index.md", "kstd.yaml"]
     assert set(item) >= {"submitted_by", "accepted_by", "manifest_sha256", "content_id"}
     assert client.get("/api/packages", headers={"cookie": ""}).status_code in (200, 401)
     assert client.get("/packages").status_code == 200

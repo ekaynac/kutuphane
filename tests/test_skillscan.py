@@ -15,6 +15,7 @@ from kutuphane import (answers, authz, catalog, cli, db, decisions, gate, notes,
                        signing, skillscan)
 from kutuphane.gate import Actor, Denied
 from kutuphane.policy import make_policy
+from conftest import licensed
 from kutuphane.source import read_source
 from test_egress_audit import FakeBridge
 
@@ -364,7 +365,7 @@ def test_the_app_role_cannot_remove_a_scan_or_a_block(conn, folder, fake):
 # --- other paths --------------------------------------------------------------------------------------------
 
 def test_package_receive_shows_the_scan_as_a_proposal(conn, conn_b, folder, fake, tmp_path):
-    publish(conn, folder("FAKE:DO_NOT_INSTALL\n"))
+    publish(conn, licensed(folder("FAKE:DO_NOT_INSTALL\n")))
     info = signing.generate(tmp_path / "a.key")
     packages.trust(conn_b, open(info["public_key"], "rb").read(), expected_fingerprint=info["fingerprint"],
                    name="A", by="user:admin")
