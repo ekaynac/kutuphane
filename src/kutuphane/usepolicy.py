@@ -88,6 +88,7 @@ def listing(conn, book: str | None = None) -> list[dict]:
 
 def admission(conn, manifest: dict, files: list, findings: list) -> Admission:
     """The rule of Q8, once. `manifest`, `files`: as re-verified (packages._verify); `findings`: those of `receive`.
+    The book's current policy must still be the use policy's (Q8), else a person decides.
     Returns the admitting use policy, or raises NotAdmitted with the first reason. The policy row is read FOR SHARE,
     so a revocation either lands first or waits for the publication."""
     row = conn.execute("SELECT u.id, u.attesters, u.policy FROM use_policy u JOIN trusted_key k "
@@ -101,6 +102,15 @@ def admission(conn, manifest: dict, files: list, findings: list) -> Admission:
         policy = _book_policy(doc)
     except ValueError as exc:
         raise NotAdmitted(f"the use policy {policy_id} is not allowed: {exc}") from None
+    current = conn.execute("SELECT b.current_policy, v.doc FROM book b LEFT JOIN policy_version v "
+                           "ON v.id = b.current_policy WHERE b.slug = %s FOR UPDATE OF b", (manifest["book"],)).fetchone()
+    if current is not None and current[0] is not None:  # a first publication has none: the use policy applies
+        if current[0] != ids.policy_id(policy):
+            raise NotAdmitted(f"the book policy changed after use policy {policy_id}; a person decides")
+        try:
+            _book_policy(current[1])
+        except ValueError:
+            raise NotAdmitted("the book policy is restricted or cloud_ok; a person decides") from None
     attested = manifest.get("accepted_by")
     if attested is None:
         raise NotAdmitted("the manifest has no accepted_by")
