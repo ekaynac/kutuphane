@@ -12,7 +12,7 @@ For the terms, read [concepts.md](concepts.md).
 
 - Fixed: `publish-admitted` admits a package only while the book's current policy is still the policy of the use
   policy (D85 Q8). Before, it applied the use policy's policy again after a person had published the book as
-  `restricted`, `cloud_ok` or with any other policy. A new book still gets the policy of the use policy.
+  `restricted`, `cloud_ok` or with any other policy. A new book still gets the policy of the use policy; the admission creates and locks the book row first, so a person who creates the same new book at the same time cannot be overwritten.
 - Added: a **use policy** per book and trusted signing key. A curator sets who may attest and the book policy
   (`kutuphane use-policy add|list|revoke`, owner credential, `--by` holds `curate`; `restricted` and `cloud_ok` are
   refused). `kutuphane imports publish-admitted [--dry-run]` publishes each `verified` import that has an active policy,
