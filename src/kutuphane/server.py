@@ -23,7 +23,7 @@ from typing import Annotated
 
 import psycopg
 import pydantic_core
-from pydantic import ValidationError
+from pydantic import Field, ValidationError
 from mcp.server import CacheHint, MCPServer
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken
@@ -437,7 +437,7 @@ def create_app(*, dsn: str, verifier: identity.Verifier, bridge: llmdap.Bridge |
             raise BadRequest("max_chars must be an integer") from None
         context = {k: p[k] for k in ("platform", "version") if k in p} or None
         scope = search.Scope.of(p.getlist("book"), p.get("path"), p.getlist("origin"), _flag(p.get("current_only")),
-                                context, p.getlist("acceptance"))
+                                context, p.getlist("acceptance") or None)  # absent: no filter (an empty list is refused)
         stage: dict = {}
         results = await run_in_threadpool(op_search, dsn, stages, actor, p.get("q", ""), k, False, scope, None,
                                           max_chars, stage)
@@ -763,7 +763,8 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
     async def search_library(query: str, k: int = search.DEFAULT_K, book: list[str] | None = None,
                              path: str | None = None, origin: list[str] | None = None,
                              current_only: bool = False, max_chars: int | None = None, context: dict | None = None,
-                             acceptance: list[str] | None = None) -> Annotated[CallToolResult, list[dict]]:
+                             acceptance: Annotated[list[str], Field(min_length=1)] | None = None
+                             ) -> Annotated[CallToolResult, list[dict]]:
         """Search the books you may read now (needs read; agents also need activate for instruction passages).
         Results carry citation handles for open_citation. Optional filters narrow the evidence before ranking:
         `book` (slugs), `path` (prefix, e.g. "data/"), `origin` (kstd origins: human, assisted, model, tool, unknown),
@@ -799,7 +800,7 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
         async def ask_library(question: str, book: list[str] | None = None, path: str | None = None,
                               origin: list[str] | None = None, current_only: bool = False, background: bool = False,
                               idempotency_key: str | None = None, context: dict | None = None,
-                              acceptance: list[str] | None = None) -> dict:
+                              acceptance: Annotated[list[str], Field(min_length=1)] | None = None) -> dict:
             """Answer from the library with [n] citations, or status not_in_library (needs read on the books it
             uses). The optional filters are those of search_library. With `background: true` it returns {job_id,
             status: queued} at once: poll job_status, then job_result. An `idempotency_key` (8-128 characters) makes

@@ -126,7 +126,8 @@ Query parameters:
 - `path`: a relative path prefix. End it with `/` for a folder.
 - `origin`: repeat for more. `human`, `assisted`, `model`, `tool`, `unknown`.
 - `acceptance`: repeat for more. `curator_passkey`, `operator_cli`, `consumer_attested`, `policy`, `none`: only books
-  whose current version was accepted this way (D85). Notes are not filtered.
+  whose current version was accepted this way (D85). Leave it out for no filter; an empty list in a `POST /v1/ask`
+  body is refused with `400` (needs at least one kind). Notes are not filtered.
 - `current_only`: `true`, `1`, `false` or `0`. Default `false`.
 - `platform`, `version` (numbers with dots, `7.0.3`): the request context (#137). A file whose kstd `applies_to`
   names other platforms, or a version range that does not hold the version, is left out.
