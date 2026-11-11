@@ -13,6 +13,7 @@ import pytest
 from kutuphane import answers, authz, catalog, decisions, notes, packages, passkey, profiles, retrieval, server
 from kutuphane.gate import Actor
 from kutuphane.policy import make_policy
+from conftest import licensed
 from kutuphane.source import AcceptedFinding, read_source
 from test_confirm import _curator_url, act, person, propose, seq_of, shown  # noqa: F401
 from test_curatorweb import APP_ROLE, CFG, WEB_ROLE, A, J, U
@@ -159,7 +160,7 @@ def test_named_records_are_in_the_delivery_audit(conn, books):
 def personal_package(conn, conn_b, okf_dir, key):
     """A package (published locally at the sender) with a file that holds an ordinary e-mail address and more."""
     (okf_dir / "nobet.md").write_text(PERSONAL_DOC, encoding="utf-8")
-    catalog.publish(conn, book="kitap", title="Kitap", files=read_source(okf_dir), policy=LOCAL,
+    catalog.publish(conn, book="kitap", title="Kitap", files=read_source(licensed(okf_dir)), policy=LOCAL,
                     profile=profiles.spec("chunked"))
     private, info = key
     authz.grant(conn_b, "book:kitap", "curate", "user:admin")  # D85: approving a package needs curate

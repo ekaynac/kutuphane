@@ -59,7 +59,7 @@ def export(conn, book: str, key, legal_basis: str | None = None) -> bytes:
     rights = kstd.Rights(conn)
     infos = {e["path"]: info for e in state["files"]
              if (info := rights.info(book, state["content_id"], e["path"])) is not None}
-    fields = _release(book, state["policy"], infos, legal_basis)
+    fields = _release(book, state["policy"], infos, legal_basis, [e["path"] for e in state["files"]])
     files = [(e["path"], catalog.read_file(conn, book, state["content_id"], e["path"])) for e in state["files"]]
     issuer = signing.fingerprint(key.public_key())
     with conn.transaction():
@@ -82,26 +82,27 @@ def pack(files: list, *, book: str, title: str, key, sequence: int, policy: dict
         raise PackageError("sequence must be 1 or more")
     manifest = kstd.validate(files)
     infos = {f.path: info for f in files if manifest and (info := kstd.effective(manifest, f.path)) is not None}
-    fields = _release(book, check_policy(policy), infos, legal_basis)
+    fields = _release(book, check_policy(policy), infos, legal_basis, [f.path for f in files])
     return _sign(key, {"book": book, "title": title, "sequence": sequence, **fields,
                        "content_id": ids.content_id({f.path: f.sha256 for f in files})},
                  [(f.path, f.data) for f in files])
 
 
-def _release(book: str, policy: dict, infos: dict, legal_basis: str | None) -> dict:
+def _release(book: str, policy: dict, infos: dict, legal_basis: str | None, paths) -> dict:
     """What may leave this node, and the manifest fields that say so: the policy suggestion, the legal basis and the
     origin lists. kstd: a file whose personal_data is not `no` or `synthetic` leaves the node only with a recorded
     legal basis (DPV codes, docs/11 §5). Files with origin `model`/`unknown` are listed as `ai_generated`;
     `assisted` files are listed in `reviewed` with their reviewer (EU AI Act Art. 50(4)); `tool` files are listed in
     `tool_made` with their software agent and carry no AI mark (docs/17). A file with `license: unknown` is never
-    exported (#143, docs/11 §5.2): the package is refused."""
+    exported (#143, docs/11 §5.2): the package is refused. A file with no kstd item information (the content has no
+    `kstd.yaml`) states no license, which is `unknown` (#218). `paths`: every file of the content."""
     if policy["sensitivity"] == "restricted":  # docs/09 §1: Sensitivity owns export
         raise PackageError(f"{book} is restricted: restricted content never leaves this installation in a package")
-    unlicensed = sorted(p for p, i in infos.items() if i["license"] == "unknown")
+    unlicensed = sorted(p for p in paths if p != kstd.MANIFEST and (p not in infos or infos[p]["license"] == "unknown"))
     if unlicensed:  # docs/11 §5.2, #143: derivation stays in this installation; forwarding needs a license
         raise PackageError(f"{len(unlicensed)} file(s) have license unknown ({', '.join(unlicensed[:3])}"
                            f"{', …' if len(unlicensed) > 3 else ''}); export and forwarding need a license: "
-                           f"set rights.license in {kstd.MANIFEST}")
+                           f"add a {kstd.MANIFEST} with rights.license (docs/guide/kstd.md), or set rights.license in it")
     personal = [p for p, i in infos.items() if i["personal_data"] not in kstd.NO_LEGAL_BASIS_NEEDED]
     basis = None
     if personal:

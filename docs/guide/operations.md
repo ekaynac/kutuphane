@@ -775,6 +775,8 @@ KUTUPHANE_CURATOR_DSN=… kutuphane approve-import <id> [<id> …] --by user:adm
 KUTUPHANE_CURATOR_DSN=… kutuphane reject-import <id> [<id> …] --by user:admin --reason '…'
 ```
 
+- `export` and `pack` refuse content without a `kstd.yaml`: a file with no stated license is `license: unknown`
+  (#218). Add a `kstd.yaml` with `rights.license` ([kstd.md](kstd.md)); `kutuphane kstd-init` writes a start.
 - `export` needs `--legal-basis` when files are personal data `yes` or `unknown`. It refuses a journal, a
   `restricted` book, and a book with `license: unknown` files (#143, named; set a license such as
   `LicenseRef-InfraMedic-Internal` and publish again).

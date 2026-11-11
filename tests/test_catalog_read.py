@@ -14,6 +14,7 @@ from starlette.testclient import TestClient
 
 from kutuphane import authz, catalog, cli, db, llmdap, notes, packages, profiles, server, signing
 from kutuphane.policy import make_policy
+from conftest import licensed
 from kutuphane.source import read_source
 from test_identity import token
 from test_kstd import write_manifest
@@ -134,7 +135,7 @@ def test_ingest_records_the_cli_user(cli_publisher, conn, okf_dir, monkeypatch, 
 def test_package_approval_records_the_decider_the_key_and_the_sequence(conn, conn_b, okf_dir, tmp_path):
     authz.grant(conn, "book:kitap", "curate", "user:admin")
     authz.grant(conn_b, "book:kitap", "curate", "user:x")
-    publish(conn, okf_dir, "kitap", approved_by="user:admin")
+    publish(conn, licensed(okf_dir), "kitap", approved_by="user:admin")
     info = signing.generate(tmp_path / "a.key")
     packages.trust(conn_b, open(info["public_key"], "rb").read(), expected_fingerprint=info["fingerprint"],
                    name="A", by="user:admin")
