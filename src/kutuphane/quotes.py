@@ -137,6 +137,7 @@ def quoted(conn, actor: Actor, hits: list[search.Hit], scope: search.Scope = sea
                                                            ["read"]).objects("read")}
     if scope.books:
         read &= set(scope.books)
+    read = search.accepted_books(conn, scope, read)
     if not read:
         return hits, {}
     found = conn.execute(_SOURCES, {"shas": shas, "books": sorted(read), "prefix": scope.path}).fetchall()

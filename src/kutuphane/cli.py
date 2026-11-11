@@ -14,7 +14,7 @@ from pathlib import Path
 
 from . import (answers, audit, authz, catalog, coderepo, curatorqueue, datascan, db, decisions, devauth, gate,
                gitorigin, identity, journalexport, kstd, llmdap, noteimport, notes, packages, passagemap, passkey,
-               profiles, quotes, search, retrieval, signing, skillscan, vectors)
+               profiles, quotes, search, retrieval, signing, skillscan, usepolicy, vectors)
 from .policy import EGRESS, PROTECTION_M1, SENSITIVITY, make_policy
 from .source import AcceptedFinding, read_source
 
@@ -196,6 +196,8 @@ def _scope_options(parser) -> None:
     parser.add_argument("--path", help="only files whose path starts with this prefix (e.g. data/)")
     parser.add_argument("--origin", action="append", choices=kstd.ORIGINS, help="only files with this kstd origin "
                         "(repeatable; a book without kstd.yaml counts as unknown)")
+    parser.add_argument("--acceptance", action="append", choices=search.ACCEPTANCE_KINDS, help="only books whose "
+                        "current version was accepted this way (repeatable)")
     parser.add_argument("--current-only", action="store_true", help="only files whose kstd validity includes now")
     parser.add_argument("--platform", help="request context: leave out files whose kstd applies_to names other "
                         "platforms")
@@ -205,7 +207,7 @@ def _scope_options(parser) -> None:
 
 def _scope(args) -> search.Scope:
     context = {k: v for k, v in (("platform", args.platform), ("version", args.version)) if v is not None}
-    return search.Scope.of(args.book, args.path, args.origin, args.current_only, context or None)
+    return search.Scope.of(args.book, args.path, args.origin, args.current_only, context or None, args.acceptance)
 
 
 def cmd_search(conn, args) -> int:
@@ -394,6 +396,45 @@ def cmd_imports(conn, _args) -> int:
             "submitted_by", "submitted_for", "submitted_channel")
     _print([{**dict(zip(keys, r)), "received_at": r[1].isoformat()} for r in rows])
     return 0
+
+
+def cmd_use_policy_add(conn, args) -> int:
+    _print({"use_policy": usepolicy.add(conn, args.book, args.key, args.attester, sensitivity=args.sensitivity,
+                                        egress=args.egress, protection=args.protection, by=args.by)})
+    return 0
+
+
+def cmd_use_policy_list(conn, args) -> int:
+    _print(usepolicy.listing(conn, args.book))
+    return 0
+
+
+def cmd_use_policy_revoke(conn, args) -> int:
+    _print({"revoked": usepolicy.revoke(conn, args.id, by=args.by)})
+    return 0
+
+
+def cmd_publish_admitted(conn, args) -> int:
+    """D85 S2: one JSON line per verified import. A published version is live; indexing follows it (as approve-import)
+    and an incomplete index gives exit 3 after all imports were handled."""
+    embedder, settings = _indexing()
+    code = 0
+    for result, published in usepolicy.publish_admitted(conn, dry_run=args.dry_run):
+        if published is not None:
+            _warn_quarantined(published)
+            _warn_skills(published.skill_scans)
+            _warn_stale(published.passage_map)
+            report = {}
+            if embedder:
+                try:
+                    report = vectors.index(conn, embedder, published.book, settings).report()
+                except (ValueError, OSError, RuntimeError) as exc:
+                    report = {"index_error": str(exc)}
+            if problem := _index_problem(report):
+                result = {**result, "index_incomplete": problem}
+                code = INDEX_INCOMPLETE
+        print(json.dumps(result, ensure_ascii=False))  # one line each, for a timer's log
+    return code
 
 
 def cmd_journal_create(conn, args) -> int:
@@ -826,7 +867,34 @@ def parser() -> argparse.ArgumentParser:
     rj.add_argument("--by", required=True)
     rj.add_argument("--reason", required=True)
     rj.set_defaults(fn=cmd_reject, curator_db=True)
-    sub.add_parser("imports", help="received packages and their verdicts").set_defaults(fn=cmd_imports)
+    im = sub.add_parser("imports", help="received packages and their verdicts")
+    im.set_defaults(fn=cmd_imports)
+    imsub = im.add_subparsers(dest="imports_cmd")
+    pa = imsub.add_parser("publish-admitted", help="publish the verified packages that a use policy admits "
+                          "(D85 S2); safe to run from a timer")
+    pa.add_argument("--dry-run", action="store_true", help="do all of it and roll it back; write nothing")
+    pa.set_defaults(fn=cmd_publish_admitted, curator_db=True)
+    up = sub.add_parser("use-policy", help="use policies: publish a trusted key's attested packages without a "
+                        "per-package act (D85 S2)")
+    upsub = up.add_subparsers(dest="use_policy_cmd", required=True)
+    ua = upsub.add_parser("add", help="add the use policy of a book and a signing key")
+    ua.add_argument("book")
+    ua.add_argument("--key", required=True, help="the fingerprint of a trusted signing key")
+    ua.add_argument("--attester", action="append", required=True, metavar="PREFIX",
+                    help="user:<start of a name> that may attest (repeatable); the manifest accepted_by.principal "
+                         "must start with one of them")
+    ua.add_argument("--sensitivity", required=True, choices=SENSITIVITY)
+    ua.add_argument("--egress", required=True, choices=EGRESS)
+    ua.add_argument("--protection", required=True, choices=PROTECTION_M1)
+    ua.add_argument("--by", required=True, help="user:<name>, who holds curate on the book")
+    ua.set_defaults(fn=cmd_use_policy_add, curator_db=True)
+    ul = upsub.add_parser("list", help="the use policies, active and revoked")
+    ul.add_argument("book", nargs="?")
+    ul.set_defaults(fn=cmd_use_policy_list, curator_db=True)
+    ur = upsub.add_parser("revoke", help="revoke a use policy (later publications only)")
+    ur.add_argument("id", type=int)
+    ur.add_argument("--by", required=True, help="user:<name>, who holds curate on the book")
+    ur.set_defaults(fn=cmd_use_policy_revoke, curator_db=True)
     ki = sub.add_parser("kstd-init", help="write a starting kstd.yaml for a folder (no database)")
     ki.add_argument("path")
     ki.add_argument("--issuer", required=True, help="who answers for this folder, e.g. 'ACME <kb@acme.example>'")

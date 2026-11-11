@@ -63,11 +63,14 @@ def _scope_doc(scope: search.Scope) -> dict:
     doc = {k: list(v) if isinstance(v, tuple) else v for k, v in dataclasses.asdict(scope).items()}
     platform, version = doc.pop("platform"), doc.pop("version")
     context = {k: v for k, v in (("platform", platform), ("version", version)) if v is not None}
+    if not doc["acceptances"]:  # absent when unset, so a retry of an older job keeps its request digest
+        del doc["acceptances"]
     return {**doc, "context": context} if context else doc
 
 
 def _scope(doc: dict) -> search.Scope:
-    return search.Scope.of(doc["books"], doc["path"], doc["origins"], doc["current_only"], doc.get("context"))
+    return search.Scope.of(doc["books"], doc["path"], doc["origins"], doc["current_only"], doc.get("context"),
+                           doc.get("acceptances"))
 
 
 def submit(conn, actor: Actor, question: str, scope: search.Scope,

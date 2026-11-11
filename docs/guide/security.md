@@ -80,6 +80,17 @@ the confirmer withdraws it (R7).
   The same holds for `book.current_content`, `current_profile` and `current_policy`: the app role may only insert a
   book row without a content version (a journal), so it cannot make a version current or loosen a policy.
   A publication records `acceptance.kind` `operator_cli`: the operator states the person; it is not a passkey proof.
+- A package is published without a per-package act only under a **use policy** (D85 S2): a curator (holding `curate`
+  on the book, with the owner credential) set it for one book and one trusted key, with the attesters and the book
+  policy. The package must carry `accepted_by` in its signed manifest from a principal that starts with one of the
+  attesters (`user:` prefixes only, never `user:` alone or `agent:`), and the signing key is what vouches for the
+  claim: the receiver does not check the attester's identity, so trust the key, and scope the attesters, as far as you
+  trust its owner. The version is `consumer_attested`, `approved_by` is the attester, and `decided_by` is
+  `policy:<id>`. The rule excludes (the package waits for a person): any `receive` finding (personal data, a
+  credential, SkillSpector, instruction-like text), `license: unknown`, an agent instruction file (K3), `restricted`
+  sensitivity and `cloud_ok` egress (a policy cannot set them). Internal addresses are a personal-data finding
+  (`private-ipv4`, `private-ipv6`), so a package that has them waits for a person. A revocation of the policy or the
+  key stops later publications only. The app role can read `use_policy` and cannot write it.
 - The CLI trusts its operator, so the curator credential is the boundary: an agent that reads it can curate as any
   user. Keep it out of every environment that an agent can read.
 - `kutuphane note expire` writes curator-less system events (also with `KUTUPHANE_CURATOR_DSN`). The database

@@ -17,6 +17,7 @@ import json
 import re
 import tarfile
 import time
+from datetime import datetime
 
 from psycopg.types.json import Jsonb
 
@@ -183,6 +184,28 @@ def _has_nul(value) -> bool:
     return isinstance(value, list) and any(_has_nul(v) for v in value)
 
 
+RECORD_MAX = 200
+RFC3339_UTC = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d{1,9})?Z")
+
+
+def _check_accepted_by(value) -> None:
+    """D85 S2: the optional consumer attestation {principal, at, record}, inside the signed manifest. The shape only;
+    whether this installation honours it is the use policy's rule (usepolicy.admission)."""
+    if not isinstance(value, dict) or set(value) != {"principal", "at", "record"}:
+        raise PackageError("manifest accepted_by must be exactly {principal, at, record}")
+    principal, at, record = value["principal"], value["at"], value["record"]
+    if not (isinstance(principal, str) and principal.startswith("user:") and authz.PRINCIPAL.match(principal)):
+        raise PackageError("manifest accepted_by.principal must be a user: principal such as user:<name>")
+    if not (isinstance(at, str) and RFC3339_UTC.fullmatch(at)):
+        raise PackageError("manifest accepted_by.at must be a UTC time such as 2026-11-11T09:30:00Z")
+    try:
+        datetime.fromisoformat(at.replace("Z", "+00:00"))
+    except ValueError:
+        raise PackageError("manifest accepted_by.at is not a valid time") from None
+    if not (isinstance(record, str) and 1 <= len(record) <= RECORD_MAX and record.isprintable()):
+        raise PackageError(f"manifest accepted_by.record must be 1..{RECORD_MAX} printable characters")
+
+
 def _manifest(body: bytes) -> dict:
     """Parse and type-check before anything else reads a field: a malformed manifest is a recorded rejection."""
     try:
@@ -202,6 +225,8 @@ def _manifest(body: bytes) -> dict:
     for f in manifest["files"]:
         if not isinstance(f, dict) or any(type(f.get(n)) is not k for n, k in FILE_FIELDS.items()):
             raise PackageError("every manifest file entry needs path, sha256 and size")
+    if "accepted_by" in manifest:
+        _check_accepted_by(manifest["accepted_by"])
     return manifest
 
 
@@ -323,16 +348,19 @@ def receive(conn, data: bytes, submitter: Actor | None = None) -> dict:
 
 # --- decide -----------------------------------------------------------------------------------------------
 
-def approve(conn, import_id: int, *, by: str, policy: dict, profile: str = "chunked",
-            accept=()) -> catalog.Published:
+def approve(conn, import_id: int, *, by: str, policy: dict | None = None, profile: str = "chunked",
+            accept=(), admit=None) -> catalog.Published:
     """A person approves; this installation's own policy applies. Atomic: all of it or none of it. `accept`: the
     AcceptedFinding values of the personal-data findings that this person reviewed (a `cloud_ok` book refuses an
-    open one at publication, catalog.py); each must match a finding of the package."""
-    policy = check_policy(policy)
+    open one at publication, catalog.py); each must match a finding of the package.
+    `admit` (D85 S2, `usepolicy.admit`): no person; after the same re-verification, `admit(conn, manifest, files,
+    findings)` returns the use policy that admits the package (book policy, attester, id) or raises
+    usepolicy.NotAdmitted, which leaves the import `verified`. `by` then only names the decider of a failure."""
+    policy = None if admit else check_policy(policy)
     accept = frozenset(accept)
     try:
         with conn.transaction():
-            row = conn.execute("SELECT status, package FROM package_import WHERE id = %s FOR UPDATE",
+            row = conn.execute("SELECT status, package, findings FROM package_import WHERE id = %s FOR UPDATE",
                                (import_id,)).fetchone()
             if row is None:
                 raise PackageError(f"no such import: {import_id}")
@@ -348,13 +376,15 @@ def approve(conn, import_id: int, *, by: str, policy: dict, profile: str = "chun
             used = {AcceptedFinding(f.path, f.sha256, rule) for f in files for rule in f.accepted}
             if unused := sorted(accept - used):
                 raise ValueError(f"--accept-finding {unused[0]} matches no finding of the package")
+            grant = admit(conn, manifest, files, row[2]) if admit else None
             published = catalog.publish(conn, book=manifest["book"], title=manifest["title"], files=files,
-                                        policy=policy, profile=profiles.spec(profile), approved_by=by,
-                                        package_import=import_id)
+                                        policy=grant.policy if grant else policy, profile=profiles.spec(profile),
+                                        approved_by=grant.principal if grant else by, package_import=import_id,
+                                        use_policy=grant.id if grant else None)
             conn.execute("UPDATE package_sequence SET last_sequence = GREATEST(last_sequence, %s) "
                          "WHERE issuer = %s AND book = %s", (manifest["sequence"], manifest["issuer"], manifest["book"]))
             conn.execute("UPDATE package_import SET status = 'published', decided_by = %s, decided_at = now() "
-                         "WHERE id = %s", (by, import_id))
+                         "WHERE id = %s", (f"policy:{grant.id}" if grant else by, import_id))
             return published
     except PackageError as exc:  # the package itself is not acceptable (any more): final
         conn.execute("UPDATE package_import SET status = 'rejected', reasons = reasons || %s, decided_by = %s, "

@@ -21,7 +21,8 @@ the book lock); the records are written in it, so a block is in force as soon as
 Publication facts (#160, migration 045): each publication records who stood behind it, `approved_by` and `channel`
 (`ingest`, or `import` with its package_import row: the issuer key and the sequence). `publications` reads them for
 the book list, the file list and citations; a publication from before migration 045 shows them as null.
-D85 (migration 051): each also records `acceptance`, how it was accepted (`operator_cli` now; `none` for the internal
+D85 (migration 051): each also records `acceptance`, how it was accepted (`operator_cli`, or `consumer_attested` under
+a use policy, migration 052; `none` for the internal
 path without `approved_by`), shown as `acceptance: {kind, by, at, legacy}`; `legacy` marks rows from before 051."""
 from dataclasses import dataclass, field
 
@@ -106,15 +107,21 @@ def require_curate(conn, by: str, book: str) -> None:
 
 
 def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dict, profile: dict,
-            approved_by: str | None = None, package_import: int | None = None) -> Published:
+            approved_by: str | None = None, package_import: int | None = None,
+            use_policy: int | None = None) -> Published:
     """`approved_by`: the principal who publishes (`ingest`) or approves the package `package_import` (#160). It
     needs `curate` on the book (D85) and records acceptance `operator_cli`. `approved_by=None` is for internal and
-    test callers: it checks nothing and records acceptance `none`; no CLI, HTTP or MCP path calls it so."""
+    test callers: it checks nothing and records acceptance `none`; no CLI, HTTP or MCP path calls it so.
+    `use_policy` (D85 S2; only `usepolicy.admit` gives it): the use policy of that id admits the package; then
+    `approved_by` is the attester of the package, who needs no `curate` (the curator who set the policy had it), and
+    the acceptance is `consumer_attested`."""
     if approved_by is not None and not authz.PRINCIPAL.match(approved_by):
         raise ValueError(f"approved_by must be a principal such as user:<name>, not {approved_by!r}")
-    if approved_by is not None:
+    if use_policy is not None and (approved_by is None or package_import is None):
+        raise ValueError("a use policy admits an imported package with an attester")
+    if approved_by is not None and use_policy is None:
         require_curate(conn, approved_by, book)
-    acceptance = "none" if approved_by is None else "operator_cli"
+    acceptance = "none" if approved_by is None else "operator_cli" if use_policy is None else "consumer_attested"
     channel = None if approved_by is None else "import" if package_import is not None else "ingest"
     if len({f.path for f in files}) != len(files):
         raise ValueError("duplicate file paths: the content id would not cover every stored file")
@@ -173,10 +180,10 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
                      "updated_at = now() WHERE slug = %s", (title, content_id, profile_id, policy_id, book))
         mapped = passagemap.map_book(conn, book)  # #140: cited and linked passages of earlier versions follow to it
         conn.execute("INSERT INTO publication (book, content_id, profile_id, policy_id, accepted_findings, "
-                     "data_findings, approved_by, channel, package_import, acceptance) "
-                     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                     "data_findings, approved_by, channel, package_import, acceptance, use_policy) "
+                     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                      (book, content_id, profile_id, policy_id, Jsonb(accepted), Jsonb(found), approved_by, channel,
-                      package_import, acceptance))
+                      package_import, acceptance, use_policy))
     return Published(book, content_id, profile_id, policy_id, new_content=current[0] != content_id,
                      new_policy=current[1] != policy_id, quarantined=quarantined, accepted_findings=accepted,
                      data_findings=found, skill_scans=skillscan.summary(scans) + carried, passage_map=mapped)

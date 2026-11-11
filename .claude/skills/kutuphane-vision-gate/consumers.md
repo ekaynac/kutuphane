@@ -62,7 +62,11 @@ section with one line for each consumer below, and each "unchanged" line has a g
   - the `publication` facts of a book version: `channel`, `issuer_key`, `sequence` and, since D85 S1, `acceptance`
     (`{kind, by, at, legacy}`; before: `approved_by`). InfraMedic shows them for "which version, accepted by whom";
   - the person's step on the Kütüphane side: `approve-import` (since D85 S1 it needs `KUTUPHANE_CURATOR_DSN` and
-    `curate` for `--by`).
+    `curate` for `--by`);
+  - since D85 S2, an optional signed manifest field `accepted_by` `{principal: "user:im.<key>", at, record:
+    "inframedic:<installation id>:audit:<seq_key>"}`: with a use policy for its key, a clean attested package is
+    published by `kutuphane imports publish-admitted` (a timer) as `acceptance.kind` `consumer_attested`; `package_status`
+    `decided_by` is then `policy:<id>`. A package without it is unchanged.
 - **How it breaks:** its P1 and P2 code is built against the old contract.
 - **Check:** compare the change with the routes and fields above.
 - **Announce:** a comment on #144 that gives the change, the PR and the migration step.

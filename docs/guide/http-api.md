@@ -125,6 +125,8 @@ Query parameters:
 - `book`: repeat for more; up to 50 book slugs.
 - `path`: a relative path prefix. End it with `/` for a folder.
 - `origin`: repeat for more. `human`, `assisted`, `model`, `tool`, `unknown`.
+- `acceptance`: repeat for more. `curator_passkey`, `operator_cli`, `consumer_attested`, `policy`, `none`: only books
+  whose current version was accepted this way (D85). Notes are not filtered.
 - `current_only`: `true`, `1`, `false` or `0`. Default `false`.
 - `platform`, `version` (numbers with dots, `7.0.3`): the request context (#137). A file whose kstd `applies_to`
   names other platforms, or a version range that does not hold the version, is left out.
@@ -182,7 +184,7 @@ Answer from the library, with `[n]` citations. MCP: `ask_library` ([mcp.md](mcp.
 JSON body:
 
 - `question` (required): 1–1000 characters, not blank.
-- `book` (string or list), `path`, `origin` (string or list), `current_only` (boolean, default `false`): as
+- `book` (string or list), `path`, `origin` (string or list), `acceptance` (string or list), `current_only` (boolean, default `false`): as
   `GET /v1/search`.
 - `context`: `{"platform": "vcenter", "version": "7.0.3"}`, both optional, no other keys; as `GET /v1/search`.
 - `background`: boolean, default `false`. `true` starts a background job.
@@ -423,7 +425,7 @@ An import that you submitted (same principal, same user acted for); else `404`. 
 - `diff`: `{"added", "removed", "changed"}` against the book's current version. Only with a current `read` on the
   book; else `null` (`propose` alone does not list the catalog's files).
 - `reasons`: why it was refused. `received_at`, `decided_at`: ISO 8601 times.
-- `decided_by`: the person who approved or rejected it (`user:<name>`); `null` until it is decided. It stays when a
+- `decided_by`: the person who approved or rejected it (`user:<name>`), or `policy:<id>` when a use policy published it (D85, [operations.md](operations.md#use-policies-publish-an-attested-package-without-a-per-package-act-d85-s2)); `null` until it is decided. It stays when a
   later version replaces the import.
 
 For problems, read [troubleshooting.md](troubleshooting.md).
