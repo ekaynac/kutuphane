@@ -1,7 +1,8 @@
 -- The application database role (docs/24 §4.1, §8.2). The server, and every process that an agent can reach,
 -- connects with KUTUPHANE_DSN as kutuphane_app. Only the owner role (KUTUPHANE_CURATOR_DSN: `kutuphane migrate`,
 -- `kutuphane note standing`, `kutuphane note rollback`, `kutuphane skill clear`, `kutuphane ingest`,
--- `kutuphane approve-import`) writes Standing, skill clearances and publications; memory rows and skill scan
+-- `kutuphane approve-import`, `kutuphane use-policy`, `kutuphane imports publish-admitted`) writes Standing, skill
+-- clearances and publications; memory rows and skill scan
 -- records are append-only for the app (a scan record may only become stale).
 --
 -- Once, as the owner:   CREATE ROLE kutuphane_app LOGIN PASSWORD '<a new secret>';
@@ -14,6 +15,8 @@ REVOKE INSERT, UPDATE, DELETE ON standing_event FROM kutuphane_app;
 -- D85: Core never publishes. A book version is published by the owner role (`kutuphane ingest`, `approve-import`);
 -- the app role reads publication facts only.
 REVOKE INSERT, UPDATE, DELETE ON publication FROM kutuphane_app;
+-- D85 (S2): a use policy is the curator's standing decision (`kutuphane use-policy`, owner role); the app reads it.
+REVOKE INSERT, UPDATE, DELETE ON use_policy FROM kutuphane_app;
 -- D85: the current version and policy of a book are set only by publication (owner role). The app role creates a
 -- journal (no content version) and takes row locks (`FOR SHARE`/`FOR UPDATE` need an UPDATE right on a column),
 -- and nothing else: it can neither make a version current without a publication row nor loosen a book's policy.

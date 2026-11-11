@@ -401,6 +401,7 @@ gives the same empty result as a missing one.
 | `--book <slug>` | Only this book. Repeatable. |
 | `--path <prefix>` | Only paths with this prefix, for example `data/`. |
 | `--origin <origin>` | Only this kstd origin: `human`, `assisted`, `model`, `tool`, `unknown` (also a book without `kstd.yaml`). Repeatable. |
+| `--acceptance <kind>` | Only books whose current version was accepted this way (D85): `curator_passkey`, `operator_cli`, `consumer_attested`, `policy`, `none`. Repeatable. Notes are not filtered. |
 | `--current-only` | Only files whose kstd validity includes now. |
 | `--platform <name>` | Request context (#137): leave out files whose `applies_to` names other platforms. |
 | `--version <version>` | Request context: leave out files whose `applies_to` range does not hold it (for example `7.0.3`). |
@@ -790,6 +791,67 @@ KUTUPHANE_CURATOR_DSN=… kutuphane reject-import <id> --by user:admin --reason 
   book (D85). Without `curate`, `approve-import` refuses before it publishes, records the failure on the import and
   leaves it `verified`: grant `curate`, then run it again. `reject-import` refuses the same way and changes nothing.
 
+### Use policies: publish an attested package without a per-package act (D85, S2)
+
+A curator can decide once that a book may be published from one trusted key when the sender vouches for each package.
+The sender (for example InfraMedic) records that a person of its own accepted the content, and signs it in the
+manifest field `accepted_by` ([Package format](#package-format-197)). A **use policy** is the book's rule for this
+key: who may attest, and the book policy to apply.
+
+```sh
+export KUTUPHANE_CURATOR_DSN=…
+kutuphane use-policy add <book> --key <fingerprint> --attester user:im. [--attester user:ops-] \
+  --sensitivity normal --egress local_only --protection standard --by user:<curator>
+kutuphane use-policy list [<book>]
+kutuphane use-policy revoke <id> --by user:<curator>
+kutuphane imports publish-admitted [--dry-run]
+```
+
+- All four need the owner credential. `--by` must hold `curate` on the book. `add` prints the policy `id`. It refuses
+  `restricted` sensitivity and `cloud_ok` egress, a key that is not trusted (or is revoked), and an attester that is
+  not `user:<start of a name>` (`user:` alone and `agent:` are refused). A book and key have one active policy;
+  `revoke` it before you add another. A revocation affects later publications only: a version that the policy
+  admitted stays published.
+- `publish-admitted` looks at each `verified` import. It publishes the ones that pass **all** of these, and leaves
+  the rest `verified` for a person (`approve-import` always works):
+  1. an active use policy for the book and the signing key (the key is not revoked);
+  2. `accepted_by.principal` starts with one of the policy's attesters;
+  3. `receive` found nothing: no personal data, no credential, no SkillSpector finding, no instruction-like text;
+  4. no file has `license: unknown`;
+  5. no file is an agent instruction (K3, [Agent instructions](#agent-instructions-k3)).
+- It re-verifies the package in the same transaction as `approve-import` (lock, signature, revoked key, newer
+  sequence), then publishes with the policy's book policy. The version shows `acceptance.kind`
+  `consumer_attested` and `acceptance.by` = the attester. `package_import.decided_by` is `policy:<id>`. It indexes as
+  `approve-import` does (exit 3 if the index is incomplete).
+- It prints one JSON line for each import: `published`, `skipped` (with the `reason`) or `rejected` (the package no
+  longer verifies). `--dry-run` does all of it and rolls it back (`would_publish`, `would_reject`). It is idempotent.
+
+Run it every minute from a systemd user timer; keep the env file away from agents:
+
+```ini
+# ~/.config/kutuphane/publish-admitted.env (mode 600)
+KUTUPHANE_CURATOR_DSN=postgresql://kutuphane:<password>@127.0.0.1:55432/kutuphane
+PYTHONPATH=<deploy dir>/src
+
+# ~/.config/systemd/user/kutuphane-publish-admitted.service
+[Service]
+Type=oneshot
+WorkingDirectory=<deploy dir>
+EnvironmentFile=%h/.config/kutuphane/publish-admitted.env
+ExecStart=<venv>/bin/python -m kutuphane.cli imports publish-admitted
+UMask=0077
+
+# ~/.config/systemd/user/kutuphane-publish-admitted.timer
+[Timer]
+OnCalendar=minutely
+[Install]
+WantedBy=timers.target
+```
+
+Then `systemctl --user daemon-reload && systemctl --user enable --now kutuphane-publish-admitted.timer`; logs:
+`journalctl --user -u kutuphane-publish-admitted`. Readers can keep only these versions with the `acceptance`
+filter ([Scope filters](#scope-filters-g14)). Why a package was skipped: [troubleshooting.md](troubleshooting.md).
+
 ### Packages from an application (HTTP and MCP, #139)
 
 An application sends a package with `POST /v1/packages` ([http-api.md](http-api.md#12-packages)) or `submit_package`
@@ -843,6 +905,7 @@ manifest that is not in this form.
 | `policy_suggestion` | object | `{"v": 1, "sensitivity", "egress", "protection"}`. Advice only: `approve-import` applies the receiver's policy. |
 | `legal_basis` | list of strings | Only when a file is personal data `yes` or `unknown`: the DPV codes of `--legal-basis`. |
 | `ai_generated`, `reviewed`, `tool_made`, `human_confirmed` | | The origin lists. Only with a `kstd.yaml`; see below. |
+| `accepted_by` | object | Optional (D85). `{"principal": "user:<name>", "at": "<UTC time, RFC 3339, ends in Z>", "record": "<1 to 200 printable characters>"}`, exactly these three keys. `principal` is the person at the sender who accepted the content; `record` names the sender's own record of that act (for InfraMedic `inframedic:<installation id>:audit:<seq_key>`). It is a manifest field, not part of `content_id`; the signature of the manifest binds it to the `content_id`. `receive` refuses a malformed one. See [use policies](#use-policies-publish-an-attested-package-without-a-per-package-act-d85-s2). |
 
 A path is relative, POSIX (`/`), in Unicode NFC, and has no empty, `.` or `..` part and no control character.
 `kstd.yaml` is a file of the package like the others.

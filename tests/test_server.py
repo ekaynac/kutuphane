@@ -154,6 +154,9 @@ def test_scope_filters_over_http_and_mcp(app_env, keys, verifier, conn, okf_dir,
         assert runbook and all(r["citation"].startswith("kitap@") and "/runbook/" in r["citation"] for r in runbook)
         assert client.get("/v1/search", params={"q": q, "book": "gizli"}, headers=h).json()["results"] == []
         assert client.get("/v1/search", params={"q": q, "origin": "llm"}, headers=h).status_code == 400
+        assert client.get("/v1/search", params={"q": q, "acceptance": "trusted"}, headers=h).status_code == 400
+        assert client.get("/v1/search", params={"q": q, "acceptance": "consumer_attested"},
+                          headers=h).json()["results"] == []  # D85: the book was not accepted that way
         assert client.get("/v1/search", params={"q": q, "current_only": "maybe"}, headers=h).status_code == 400
         assert client.get("/v1/search", params={"q": q, "current_only": "true"}, headers=h).json()["results"]
         fake.reply = "Kayıtlar saklanır [1]."

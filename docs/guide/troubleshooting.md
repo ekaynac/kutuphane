@@ -92,6 +92,20 @@ the body; your reverse proxy must pass both unchanged.
 - `install.sh`: `refused: sha256 mismatch`: the tarball is not the pinned one. Do not install it. Use a verified copy
   with `SKILLSPECTOR_TARBALL=<file>`.
 
+- `publish-admitted` skipped an import (it stays `verified`; `approve-import` still works). The `reason`:
+  `no active use policy for this book and signing key` (add one, or the policy or key was revoked: `use-policy list`);
+  `the signing key is revoked`; `the manifest has no accepted_by` (the sender did not attest);
+  `<principal> is outside the attesters of use policy <id>`; `N finding(s) for a person (<kinds>)` (read them with
+  `kutuphane imports`); `license unknown: <path>` (the sender sets `rights.license` in `kstd.yaml`);
+  `agent instruction file (K3): <path>`. A file with an internal IP address (for example `10.0.0.12` or
+  `192.168.4.7`) gives a `personal_data` finding with the rule `private-ipv4` (`private-ipv6` for fc00::/7), whatever
+  `personal_data` says in `kstd.yaml`; the finding rules are not loosened, so a person reviews that package. Names
+  on a deny list (`listed-name`) are not checked when a package is received.
+- `use-policy add` refused: `restricted`/`cloud_ok` (a person approves such a package), `is not a trusted signing key`,
+  `does not hold curate`, `an attester is user:<start of a name>`, or `already has an active use policy` (revoke it).
+- `receive` refused with `manifest accepted_by …`: the field must be exactly `{principal, at, record}`, `principal`
+  `user:<name>`, `at` a UTC time ending in `Z`, `record` 1 to 200 printable characters.
+
 ## Notes and curation
 
 - `KUTUPHANE_CURATOR_DSN is not set (the curator credential)`: `grant … curate`, `note standing`, `note rollback`,

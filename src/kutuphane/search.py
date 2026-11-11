@@ -96,6 +96,7 @@ SELECT c.book, c.content_id, c.profile_id, c.path, c.ordinal, c.page, c.start_ch
 
 
 MAX_SCOPE_BOOKS = 50
+ACCEPTANCE_KINDS = ("curator_passkey", "operator_cli", "consumer_attested", "policy", "none")  # publication.acceptance
 _SLUG = re.compile(rf"^{ids.SLUG}\Z")
 
 
@@ -117,9 +118,11 @@ class Scope:
     current_only: bool = False       # only files whose kstd validity includes now
     platform: str | None = None      # the request context: the caller's platform
     version: str | None = None       # the request context: the caller's version (e.g. "7.0.3")
+    acceptances: tuple[str, ...] = ()  # only books whose current publication has one of these acceptance kinds (D85)
 
     @classmethod
-    def of(cls, books=None, path=None, origins=None, current_only=False, context=None) -> "Scope":
+    def of(cls, books=None, path=None, origins=None, current_only=False, context=None,
+           acceptances=None) -> "Scope":
         """A checked scope from request values; raises ValueError for a malformed value."""
         books, origins = _strings("book", books), _strings("origin", origins)
         if len(books) > MAX_SCOPE_BOOKS or not all(_SLUG.match(b) for b in books):
@@ -133,7 +136,11 @@ class Scope:
         if not isinstance(current_only, bool):
             raise ValueError("current_only must be true or false")
         platform, version = _context(context)
-        return cls(tuple(sorted(set(books))), path, tuple(sorted(set(origins))), current_only, platform, version)
+        acceptances = _strings("acceptance", acceptances)
+        if any(a not in ACCEPTANCE_KINDS for a in acceptances):
+            raise ValueError(f"acceptance must be one of {', '.join(ACCEPTANCE_KINDS)}")
+        return cls(tuple(sorted(set(books))), path, tuple(sorted(set(origins))), current_only, platform, version,
+                   tuple(sorted(set(acceptances))))
 
     @property
     def context(self) -> tuple[str | None, str | None]:
@@ -188,6 +195,18 @@ def _scope_files(conn, scope: Scope, books: list[str]) -> list[str] | None:
         out += [f"{book}/{content_id}/{f['path']}" for f in manifest
                 if scope.admits(rights.info(book, content_id, f["path"]))]
     return out
+
+
+def accepted_books(conn, scope: Scope, books) -> set[str]:
+    """The `books` (slugs) whose current version was accepted as one of the scope's kinds (D85 Q12); all of them
+    without that filter. The latest publication of the current version and profile counts, as in the reader field.
+    Notes are not filtered (R5)."""
+    if not scope.acceptances:
+        return set(books)
+    return {r[0] for r in conn.execute(
+        "SELECT b.slug FROM book b WHERE b.slug = ANY(%s) AND (SELECT p.acceptance FROM publication p "
+        "WHERE p.book = b.slug AND p.content_id = b.current_content AND p.profile_id = b.current_profile "
+        "ORDER BY p.id DESC LIMIT 1) = ANY(%s)", (sorted(books), list(scope.acceptances)))}
 
 
 def _refuse_journals(conn, read: set[str], scope: Scope) -> None:
@@ -287,6 +306,7 @@ def search(conn, actor: Actor, query: str, k: int = DEFAULT_K, attempts: int = 2
         _refuse_journals(conn, read, scope)
         if scope.books:  # an intersection: the filter can only remove readable books
             read = read & {f"book:{b}" for b in scope.books}
+        read = {f"book:{b}" for b in accepted_books(conn, scope, (o.removeprefix("book:") for o in read))}
         if not read:
             return []
         activate = pre.objects("activate") if agent else read

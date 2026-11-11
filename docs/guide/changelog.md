@@ -8,6 +8,24 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Use policies and consumer attestation (D85, slice S2)
+
+- Added: a **use policy** per book and trusted signing key. A curator sets who may attest and the book policy
+  (`kutuphane use-policy add|list|revoke`, owner credential, `--by` holds `curate`; `restricted` and `cloud_ok` are
+  refused). `kutuphane imports publish-admitted [--dry-run]` publishes each `verified` import that has an active policy,
+  an `accepted_by` from one of the attesters, no `receive` finding, no `license: unknown` file and no agent instruction
+  file; the rest stays `verified` for a person. The version shows `acceptance.kind` `consumer_attested` and
+  `acceptance.by` = the attester; `package_status` `decided_by` is `policy:<id>` ([operations.md](operations.md#use-policies-publish-an-attested-package-without-a-per-package-act-d85-s2), [security.md](security.md)).
+- Added: the optional manifest field `accepted_by` `{principal, at, record}` of `kutuphane-package/1`. Old packages are
+  unchanged; a malformed field refuses the package at `receive` ([operations.md](operations.md#package-format-197)).
+- Added: the `acceptance` filter (a list of kinds) of `search_library`, `ask_library`, `GET /v1/search`, `POST /v1/ask`
+  and `kutuphane search|ask --acceptance`: only books whose current version was accepted that way. Notes are not filtered
+  ([mcp.md](mcp.md#51-search_library), [http-api.md](http-api.md)).
+- **Action:** run `kutuphane migrate` (migration 052: `use_policy`, and `publication.use_policy`).
+- **Action:** re-apply `deploy/db-roles.sql` as the owner (the app role reads `use_policy` and cannot write it).
+- **Action, to use it:** `trust` the sender's key, `use-policy add`, and run `kutuphane imports publish-admitted` from a
+  systemd user timer every minute (example in operations.md). Without a policy nothing changes.
+
 ### Acceptance record and strict publish gate (D85, slice S1)
 
 - Added: each publication records how it was accepted, `acceptance` (`curator_passkey`, `operator_cli`, `consumer_attested`, `policy` or `none`). A version published now is `operator_cli`; a version from before migration 051 shows `operator_cli` (or `none` when no person was recorded) with `legacy: true` and is never upgraded ([operations.md](operations.md#2-ingest-a-folder-into-a-book)).

@@ -124,7 +124,9 @@ The sets are `current` (the notes above), `open` (`pending` notes) and `history`
 Outcomes never change Standing. An `evidence` note that nobody used for 90 days expires; `rule` notes never expire
 ([operations.md](operations.md#expiry-of-unused-evidence-r1)).
 
-**File books** have no Standing: kstd gives origin, validity and applicability.
+**File books** have no Standing: kstd gives origin, validity and applicability. A published version has an
+`acceptance` instead: how it was accepted (`operator_cli`, `consumer_attested` under a use policy, and the other kinds
+of D85) and by whom ([operations.md](operations.md#use-policies-publish-an-attested-package-without-a-per-package-act-d85-s2)).
 
 ## Origin
 
