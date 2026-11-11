@@ -817,7 +817,8 @@ kutuphane imports publish-admitted [--dry-run]
   1. an active use policy for the book and the signing key (the key is not revoked);
   2. `accepted_by.principal` starts with one of the policy's attesters;
   3. `receive` found nothing: no personal data, no credential, no SkillSpector finding, no instruction-like text;
-  4. no file has `license: unknown`;
+  4. the package has a `kstd.yaml` and no file has `license: unknown` (a license that is not stated counts as
+     `unknown`, so a package without `kstd.yaml` always waits for a person);
   5. no file is an agent instruction (K3, [Agent instructions](#agent-instructions-k3));
   6. the book policy is still the policy of the use policy. If a person published the book with another policy,
      the admission stops until a person approves a package, or the book has the policy of the use policy again. A

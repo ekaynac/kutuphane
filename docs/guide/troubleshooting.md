@@ -96,7 +96,8 @@ the body; your reverse proxy must pass both unchanged.
   `no active use policy for this book and signing key` (add one, or the policy or key was revoked: `use-policy list`);
   `the signing key is revoked`; `the manifest has no accepted_by` (the sender did not attest);
   `<principal> is outside the attesters of use policy <id>`; `N finding(s) for a person (<kinds>)` (read them with
-  `kutuphane imports`); `license unknown: <path>` (the sender sets `rights.license` in `kstd.yaml`);
+  `kutuphane imports`); `license unknown: <path>` (the sender sets `rights.license` in `kstd.yaml`); `no kstd.yaml: every file has license
+  unknown` (the sender adds a `kstd.yaml` with a license);
   `agent instruction file (K3): <path>`; `the book policy changed after use policy <id>; a person decides` (a person
   published the book with another policy: approve a package by hand, or revoke the use policy and add one with the
   book's policy); `the book policy is restricted or cloud_ok; a person decides`. A file with an internal IP address (for example `10.0.0.12` or

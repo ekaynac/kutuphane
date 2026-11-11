@@ -124,7 +124,9 @@ def admission(conn, manifest: dict, files: list, findings: list) -> Admission:
         kinds = sorted({f.get("kind", "?") for f in findings})
         raise NotAdmitted(f"{len(findings)} finding(s) for a person ({', '.join(kinds)})")
     enclosed = kstd.validate(files)
-    unlicensed = sorted(f.path for f in files if enclosed and (info := kstd.effective(enclosed, f.path)) is not None
+    if enclosed is None:  # kstd: a license that is not stated is `unknown`, and nothing here states one
+        raise NotAdmitted("no kstd.yaml: every file has license unknown; a person decides")
+    unlicensed = sorted(f.path for f in files if (info := kstd.effective(enclosed, f.path)) is not None
                         and info["license"] == "unknown")
     if unlicensed:
         raise NotAdmitted(f"license unknown: {', '.join(unlicensed[:3])}")
