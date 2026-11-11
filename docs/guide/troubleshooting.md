@@ -97,7 +97,9 @@ the body; your reverse proxy must pass both unchanged.
   `the signing key is revoked`; `the manifest has no accepted_by` (the sender did not attest);
   `<principal> is outside the attesters of use policy <id>`; `N finding(s) for a person (<kinds>)` (read them with
   `kutuphane imports`); `license unknown: <path>` (the sender sets `rights.license` in `kstd.yaml`);
-  `agent instruction file (K3): <path>`. A file with an internal IP address (for example `10.0.0.12` or
+  `agent instruction file (K3): <path>`; `the book policy changed after use policy <id>; a person decides` (a person
+  published the book with another policy: approve a package by hand, or revoke the use policy and add one with the
+  book's policy); `the book policy is restricted or cloud_ok; a person decides`. A file with an internal IP address (for example `10.0.0.12` or
   `192.168.4.7`) gives a `personal_data` finding with the rule `private-ipv4` (`private-ipv6` for fc00::/7), whatever
   `personal_data` says in `kstd.yaml`; the finding rules are not loosened, so a person reviews that package. Names
   on a deny list (`listed-name`) are not checked when a package is received.

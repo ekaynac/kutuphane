@@ -305,3 +305,38 @@ def test_the_acceptance_filter_narrows_search_and_quotes(conn, okf_dir):
     assert books(books=["ic"], acceptances=["operator_cli"]) == set()
     with pytest.raises(ValueError, match="acceptance must be one of"):
         search.Scope.of(acceptances=["trusted"])
+
+
+def second_package(world, hand):
+    """Use policy normal/local_only; a person publishes package 1 with `hand`; package 2 is clean and attested."""
+    conn = world[0]
+    policy(world)
+    first = packages.receive(conn, build(world, CLEAN))["id"]
+    packages.approve(conn, first, by="user:ayse", policy=make_policy(**hand))
+    return conn, packages.receive(conn, build(world, {"index.md": "Yeni kayıt.\n"}, seq=2))["id"]
+
+
+@pytest.mark.parametrize("hand", [
+    {"sensitivity": "restricted", "egress": "local_only", "protection": "standard"},
+    {"sensitivity": "normal", "egress": "cloud_ok", "protection": "standard"},
+])
+def test_a_book_policy_changed_by_a_person_stops_the_admission(world, hand):
+    """D85 Q8: the use policy (normal/local_only) is not applied again over another book policy."""
+    conn, nxt = second_package(world, hand)
+    [result] = run(conn)
+    assert result["status"] == "skipped" and "the book policy changed after use policy" in result["reason"]
+    assert status(conn, nxt) == ("verified", None)
+    assert conn.execute("SELECT count(*) FROM publication").fetchone() == (1,)
+
+
+def test_the_same_book_policy_still_admits(world):
+    conn, nxt = second_package(world, {"sensitivity": "normal", "egress": "local_only", "protection": "standard"})
+    assert [r["status"] for r in run(conn)] == ["published"] and status(conn, nxt)[0] == "published"
+
+
+def test_a_first_publication_gets_the_policy_of_the_use_policy(world):
+    conn = world[0]
+    policy(world)
+    packages.receive(conn, build(world, CLEAN))
+    assert [r["status"] for r in run(conn)] == ["published"]
+    assert catalog.book_state(conn, "kitap")["policy"] == POLICY

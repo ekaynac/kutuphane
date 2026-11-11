@@ -818,7 +818,10 @@ kutuphane imports publish-admitted [--dry-run]
   2. `accepted_by.principal` starts with one of the policy's attesters;
   3. `receive` found nothing: no personal data, no credential, no SkillSpector finding, no instruction-like text;
   4. no file has `license: unknown`;
-  5. no file is an agent instruction (K3, [Agent instructions](#agent-instructions-k3)).
+  5. no file is an agent instruction (K3, [Agent instructions](#agent-instructions-k3));
+  6. the book policy is still the policy of the use policy. If a person published the book with another policy,
+     the admission stops until a person approves a package, or the book has the policy of the use policy again. A
+     book that does not exist yet gets the policy of the use policy.
 - It re-verifies the package in the same transaction as `approve-import` (lock, signature, revoked key, newer
   sequence), then publishes with the policy's book policy. The version shows `acceptance.kind`
   `consumer_attested` and `acceptance.by` = the attester. `package_import.decided_by` is `policy:<id>`. It indexes as
