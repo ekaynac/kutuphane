@@ -340,3 +340,64 @@ def test_a_first_publication_gets_the_policy_of_the_use_policy(world):
     packages.receive(conn, build(world, CLEAN))
     assert [r["status"] for r in run(conn)] == ["published"]
     assert catalog.book_state(conn, "kitap")["policy"] == POLICY
+
+
+def lock_world(world):
+    conn = world[0]
+    policy(world)
+    packages.receive(conn, build(world, CLEAN))
+    return conn
+
+
+def files_of(world):
+    root = world[3] / "lock"
+    root.mkdir(exist_ok=True)
+    for path, text in CLEAN.items():
+        (root / path).write_text(text, encoding="utf-8")
+    return read_source(root)
+
+
+def package_parts(conn):
+    row = conn.execute("SELECT package, findings FROM package_import ORDER BY id DESC LIMIT 1").fetchone()
+    members = packages._members(bytes(row[0]))
+    manifest, files = packages._verify(conn, members)
+    return manifest, files, row[1]
+
+
+def test_admission_locks_a_new_book_so_a_concurrent_restricted_publish_waits(world):
+    """The race: the check passes for a new book, a person creates it as restricted, the admission publishes over it."""
+    conn = lock_world(world)
+    manifest, files, findings = package_parts(conn)
+    dsn = os.environ[db.CURATOR_DSN_ENV]
+    with db.connect(dsn) as other:
+        other.execute("SET lock_timeout = '300ms'")
+        restricted = make_policy(sensitivity="restricted", egress="local_only", protection="standard")
+        with conn.transaction(force_rollback=True):  # A's transaction stays open while B tries
+            usepolicy.admission(conn, manifest, files, findings)
+            with pytest.raises(psycopg.errors.LockNotAvailable):
+                catalog.publish(other, book="kitap", title="Kitap", files=files_of(world), policy=restricted,
+                                profile=profiles.spec("chunked"), approved_by="user:ayse")
+        catalog.publish(other, book="kitap", title="Kitap", files=files_of(world), policy=restricted,
+                        profile=profiles.spec("chunked"), approved_by="user:ayse")
+    assert catalog.book_state(conn, "kitap")["policy"]["sensitivity"] == "restricted"
+
+
+def test_a_new_book_created_first_by_a_person_is_no_longer_new_to_the_admission(world):
+    conn = lock_world(world)
+    catalog.publish(conn, book="kitap", title="Kitap", files=files_of(world),
+                    policy=make_policy(sensitivity="restricted", egress="local_only", protection="standard"),
+                    profile=profiles.spec("chunked"), approved_by="user:ayse")
+    [result] = run(conn)
+    assert result["status"] == "skipped" and "the book policy changed" in result["reason"]
+
+
+def test_a_refused_admission_of_a_new_book_leaves_no_book_row(world):
+    conn = world[0]
+    policy(world)
+    packages.receive(conn, build(world, CLEAN, accepted_by=None))
+    [result] = run(conn)
+    assert result["status"] == "skipped" and "accepted_by" in result["reason"]
+    assert conn.execute("SELECT count(*) FROM book WHERE slug = 'kitap'").fetchone() == (0,)
+    packages.receive(conn, build(world, CLEAN, seq=2))
+    assert run(conn, dry_run=True)[-1]["status"] == "would_publish"
+    assert conn.execute("SELECT count(*) FROM book WHERE slug = 'kitap'").fetchone() == (0,)
