@@ -243,7 +243,7 @@ book: an unreadable book gives the same empty result as a missing one. Notes are
 | `book` (list of strings) | none | Up to 50 book slugs. |
 | `path` | none | A relative path prefix; a folder ends with `/` (`data/`). |
 | `origin` (list of strings) | none | `human`, `assisted`, `model`, `tool`, `unknown` (a book without `kstd.yaml`). |
-| `acceptance` (list of strings) | none | Only books whose current version was accepted as one of these kinds (D85): `curator_passkey`, `operator_cli`, `consumer_attested`, `policy`, `none`. Notes are not filtered. |
+| `acceptance` (list of strings) | none | Only books whose current version was accepted as one of these kinds (D85): `curator_passkey`, `operator_cli`, `consumer_attested`, `policy`, `none`. At least one kind: an empty list is refused (leave it out for no filter). Notes are not filtered. |
 | `current_only` (boolean) | `false` | Only files whose kstd validity includes now. |
 | `context` (object) | none | `{"platform": "vcenter", "version": "7.0.3"}`, both optional (#137). A file whose kstd `applies_to` the context contradicts is left out. `item.scope` is `unbounded`, `match` or `needs_context` (a bound with no context value; the file stays). |
 | `max_chars` (integer) | none (full text) | 80–4800. A snippet of each passage. |

@@ -136,6 +136,9 @@ class Scope:
         if not isinstance(current_only, bool):
             raise ValueError("current_only must be true or false")
         platform, version = _context(context)
+        if acceptances is not None and not _strings("acceptance", acceptances):
+            # fail closed: an empty set reads as "none of these kinds"; ignoring it would show every book
+            raise ValueError("acceptance needs at least one kind; leave it out for no filter")
         acceptances = _strings("acceptance", acceptances)
         if any(a not in ACCEPTANCE_KINDS for a in acceptances):
             raise ValueError(f"acceptance must be one of {', '.join(ACCEPTANCE_KINDS)}")

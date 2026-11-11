@@ -171,6 +171,32 @@ def test_scope_filters_over_http_and_mcp(app_env, keys, verifier, conn, okf_dir,
     assert structured["result"] == []
 
 
+def test_an_empty_acceptance_filter_is_refused_not_ignored(app_env, keys, verifier, conn, fake):  # D85, fail closed
+    app, _, dsn = app_env
+    q = "kayıtlar saklanır"
+    mcp = server.build_mcp(dsn=dsn, verifier=verifier, bridge=None, model=None, public_url=PUBLIC)
+    tokens = asyncio.run(server._Verifier(verifier).verify_token(token(keys)))
+    with pytest.raises(Exception, match="acceptance"):
+        call_tool(mcp, tokens.claims, "search_library", {"query": q, "acceptance": []})
+    schema = next(t for t in asyncio.run(mcp.list_tools()) if t.name == "search_library").input_schema
+    assert "minItems" in str(schema["properties"]["acceptance"])
+    _content, structured = call_tool(mcp, tokens.claims, "search_library", {"query": q})
+    assert structured["result"]                                               # absent: no filter
+    with TestClient(app) as client:
+        h = bearer(keys)
+        assert client.get("/v1/search", params={"q": q}, headers=h).json()["results"]  # GET cannot say "empty"
+        assert client.get("/v1/search", params={"q": q, "acceptance": "none"}, headers=h).json()["results"]
+        assert not client.get("/v1/search", params={"q": q, "acceptance": "operator_cli"}, headers=h).json()["results"]
+        fake.reply = "Kayıtlar saklanır [1]."
+        for background in (False, True):
+            r = client.post("/v1/ask", json={"question": q, "acceptance": [], "background": background}, headers=h)
+            assert r.status_code == 400 and "at least one kind" in r.json()["error"]
+        assert conn.execute("SELECT count(*) FROM ask_job").fetchone() == (0,)     # refused before a job is queued
+        job = client.post("/v1/ask", json={"question": q, "acceptance": ["none"], "background": True}, headers=h)
+        assert job.status_code == 202
+        assert conn.execute("SELECT scope->'acceptances' FROM ask_job").fetchone() == (["none"],)
+
+
 def test_mcp_endpoint_requires_a_token(app_env, keys):
     app, _, _ = app_env
     init = {"jsonrpc": "2.0", "id": 1, "method": "initialize",

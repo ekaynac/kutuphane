@@ -8,6 +8,10 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### An empty acceptance filter is refused (D85)
+
+- Fixed: `acceptance: []` in `search_library`, `ask_library` or a `POST /v1/ask` body was read as "no filter" and showed every book, so a consumer that computed an empty set of allowed kinds got everything. It is now refused (`acceptance needs at least one kind; leave it out for no filter`; `400` over HTTP; no job is queued) and the MCP schema has `minItems: 1`. Leaving `acceptance` out still means no filter ([mcp.md](mcp.md), [http-api.md](http-api.md)).
+
 ### Passkey approval of packages, single and bulk (D85, slice S3)
 
 - Added: the **Packages** tab of curator web. A curator who holds `curate` and `read` on a book sees its `verified`

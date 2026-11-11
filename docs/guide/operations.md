@@ -401,7 +401,7 @@ gives the same empty result as a missing one.
 | `--book <slug>` | Only this book. Repeatable. |
 | `--path <prefix>` | Only paths with this prefix, for example `data/`. |
 | `--origin <origin>` | Only this kstd origin: `human`, `assisted`, `model`, `tool`, `unknown` (also a book without `kstd.yaml`). Repeatable. |
-| `--acceptance <kind>` | Only books whose current version was accepted this way (D85): `curator_passkey`, `operator_cli`, `consumer_attested`, `policy`, `none`. Repeatable. Notes are not filtered. |
+| `--acceptance <kind>` | Only books whose current version was accepted this way (D85): `curator_passkey`, `operator_cli`, `consumer_attested`, `policy`, `none`. Repeatable; at least one kind (leave it out for no filter). Notes are not filtered. |
 | `--current-only` | Only files whose kstd validity includes now. |
 | `--platform <name>` | Request context (#137): leave out files whose `applies_to` names other platforms. |
 | `--version <version>` | Request context: leave out files whose `applies_to` range does not hold it (for example `7.0.3`). |
