@@ -439,7 +439,7 @@ reads only readable books, so scope A never gets a scope-B passage, note or link
 ### Grants
 
 ```sh
-kutuphane grant book:<slug> <mode> <subject>          # prints the grant id
+kutuphane grant book:<slug> <mode> <subject>          # prints the grant id; a book that does not exist yet: a note on stderr
 kutuphane revoke book:<slug> <mode> <subject>         # prints revoked
 kutuphane grant role:<name> member user:<name>
 kutuphane delegate user:<name> agent:<name> book:<slug> read --hours 8 --purpose '<why>'
@@ -502,6 +502,9 @@ kutuphane agent add omp-default --shared omp-shared --curator user:ekaynac
   stays as it is. A book that is not a journal refuses the call.
 - On each journal: `propose` and `read` for the agent, `curate` and `read` for the curator (a user).
 - All or nothing: a refusal writes nothing. A second run adds only what is missing, also a grant that was revoked.
+- stderr says `note: created a new journal <slug>` for each journal that this call created (none on a second run).
+  `kutuphane grant book:<slug> …` on a book that does not exist yet still writes the grant, and says
+  `note: book <slug> does not exist yet; the grant applies when it is created` on stderr (a typo shows here).
 - The output lists the journals (`created`), the grants with their ids, and `token`: the `dev-token` command when
   `KUTUPHANE_DEV=1`, else a pointer to [your own issuer](#a-single-host-orchestrator-without-an-idp).
 
