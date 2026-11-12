@@ -8,6 +8,10 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Notes on stderr for grant and agent add (#221)
+
+- Changed: `kutuphane grant book:<slug> …` prints `note: book <slug> does not exist yet; the grant applies when it is created` on stderr when no book has that slug, and `kutuphane agent add` prints `note: created a new journal <slug>` for each journal it creates. The grant is written as before; stdout and exit codes do not change ([operations.md](operations.md#grants)).
+
 ### Export and pack refuse content without a license (#218)
 
 - Fixed: `kutuphane export` and `kutuphane pack` refused only files that say `license: unknown`; content with no `kstd.yaml` passed, although no license is stated (kstd counts that as `unknown`). They now refuse it and name the fix: add a `kstd.yaml` with `rights.license` ([kstd.md](kstd.md)). Core stores and reads nothing differently.

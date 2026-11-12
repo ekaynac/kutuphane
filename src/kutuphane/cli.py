@@ -150,6 +150,9 @@ def cmd_grant(conn, args) -> int:
     else:
         if args.mode == "curate":
             identity.refuse_curate(args.subject)
+        slug = args.object.removeprefix("book:") if args.object.startswith("book:") else None
+        if slug and not conn.execute("SELECT 1 FROM book WHERE slug = %s", (slug,)).fetchone():  # #221
+            print(f"note: book {slug} does not exist yet; the grant applies when it is created", file=sys.stderr)
         _print({"id": authz.grant(conn, args.object, args.mode, args.subject)})
     return 0
 
@@ -498,6 +501,9 @@ def cmd_agent_add(conn, args) -> int:
                                   ("read", args.curator)):
                 out["grants"].append({"object": f"book:{book}", "mode": mode, "subject": subject,
                                       "id": authz.grant(conn, f"book:{book}", mode, subject)})
+    for j in out["journals"]:  # after the commit: a refused call creates nothing and says nothing (#221)
+        if j["created"]:
+            print(f"note: created a new journal {j['book']}", file=sys.stderr)
     issuer = os.environ.get(identity.ENV["issuer"]) or "<issuer>"
     out["token"] = (f"KUTUPHANE_DEV=1 kutuphane dev-token {args.name} --agent --client-id {args.name} "
                     f"--private-key <dev-private.pem> --issuer {issuer}" if os.environ.get("KUTUPHANE_DEV") == "1"

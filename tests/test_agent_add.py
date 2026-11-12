@@ -90,3 +90,27 @@ def test_the_token_line_follows_the_machine(owner, monkeypatch, capsys):
     _, out = add(capsys, "omp-x", "--journal", "--curator", CURATOR)
     assert out["token"] == ("KUTUPHANE_DEV=1 kutuphane dev-token omp-x --agent --client-id omp-x "
                             "--private-key <dev-private.pem> --issuer http://127.0.0.1:8091/dev")
+
+
+def test_a_new_journal_is_noted_on_stderr_and_an_existing_one_is_not(owner, capsys):  # #221
+    cli.main(["agent", "add", "omp-x", "--shared", "omp-shared", "--curator", CURATOR])
+    first = capsys.readouterr()
+    assert "note: created a new journal omp-shared" in first.err and json.loads(first.out)["journals"][0]["created"]
+    cli.main(["agent", "add", "omp-y", "--shared", "omp-shared", "--curator", CURATOR])
+    again = capsys.readouterr()
+    assert "note:" not in again.err and json.loads(again.out)["journals"] == [{"book": "omp-shared", "created": False}]
+
+
+def test_grant_notes_a_book_that_does_not_exist_yet_and_still_writes_the_grant(owner, okf_dir, monkeypatch, capsys):  # #221
+    assert cli.main(["grant", "book:yok", "read", "agent:adc"]) == 0
+    out = capsys.readouterr()
+    assert "note: book yok does not exist yet; the grant applies when it is created" in out.err
+    assert list(json.loads(out.out)) == ["id"]
+    assert owner.execute("SELECT count(*) FROM grant_tuple WHERE object = 'book:yok'").fetchone() == (1,)
+    catalog.publish(owner, book="kitap", title="kitap", files=read_source(okf_dir),
+                    policy=make_policy(sensitivity="normal", egress="local_only", protection="standard"),
+                    profile=profiles.spec("chunked"))
+    assert cli.main(["grant", "book:kitap", "read", "agent:adc"]) == 0
+    assert "note:" not in capsys.readouterr().err
+    assert cli.main(["grant", "role:ekip", "member", "user:ayse"]) == 0
+    assert "note:" not in capsys.readouterr().err
