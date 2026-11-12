@@ -551,7 +551,7 @@ kutuphane journal export adc-memory --out adc-memory.jsonl --by user:ayse
   (mode 600).
 - `--by` needs `read` on the journal and each cited book; the export is an `access_event` (`export_journal`) in the
   rollback report.
-- A `restricted` journal is refused (exit 2). Notes derived from a private journal or a `license: unknown` file are
+- A `restricted` journal is refused (exit 2). Notes derived from a private journal or a `license: unknown` file (also a file of a book with no `kstd.yaml`, #223) are
   left out (`restricted`, `licence_unknown`). A note on a blocked skill has `text` and `decision` `null` with
   `withheld` (counted), and `note import` refuses it.
 - The file holds all text, also with `--train n` or `--ai-input n` (these limit models, not backups): keep it safe.
@@ -747,7 +747,8 @@ kutuphane decisions export <principal> --out decisions.jsonl [--book <journal>] 
 - `context.passages` gives each handle `{"status": "current"}`, `{"status": "stale"}` or
   `{"status": "moved", "moved_to": …, "match": "exact"|"overlap"}` (#140).
 - Left out: notes with a `restricted` source (`restricted`), and notes derived from a `license: unknown` file
-  (#143; `licence_unknown`). Set `rights.license` in its `kstd.yaml` and publish again to export them.
+  (#143; `licence_unknown`), which includes a file of a book with no `kstd.yaml` (#223). Set `rights.license` in its
+  `kstd.yaml` (add one if the book has none) and publish again to export them.
 
 ## 9. Code repositories
 

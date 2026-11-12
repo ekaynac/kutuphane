@@ -7,6 +7,7 @@ from psycopg.types.json import Jsonb
 
 from kutuphane import catalog, curatorqueue, decisions, ids, journalexport, passkey, profiles, source
 from kutuphane.gate import Actor
+from conftest import licensed
 from kutuphane.source import read_source
 from test_journal_export import M, make, note
 from test_note_import import PRIVATE
@@ -60,7 +61,7 @@ def test_report_keeps_delegated_approvals_apart(env):
 
 # Finding 2: a source book or the journal that becomes restricted during the export refuses it.
 def _restrict(conn, okf_dir):
-    catalog.publish(conn, book="kitap", title="kitap", files=read_source(okf_dir), policy=PRIVATE,
+    catalog.publish(conn, book="kitap", title="kitap", files=read_source(licensed(okf_dir)), policy=PRIVATE,
                     profile=profiles.spec("chunked"))
 
 

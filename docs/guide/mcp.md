@@ -387,7 +387,7 @@ gives the full receipt.
 | `status`, `standing` | `created` or `existing`; the real Standing now (a re-proposal can be `rejected`). |
 | `origin_notice` | `origin-claim-refused`, or `null`. |
 | `confirmation` | After a `human` or `assisted` claim: `{"url", "expires_at"}` (24 hours). Show the URL to the person. `url` is `null` without `KUTUPHANE_CURATOR_URL`. |
-| `licence_notice` | For a note derived (cited, `derived_from`, or through a `derived_from` note) from a `license: unknown` file: `{"paths": ["<book>/<path>", …], "note"}`; unreadable paths only count in `unreadable`. The write is permitted; the note is never exported (#143). |
+| `licence_notice` | For a note derived (cited, `derived_from`, or through a `derived_from` note) from a `license: unknown` file (also a file of a book with no `kstd.yaml`, #223): `{"paths": ["<book>/<path>", …], "note"}`; unreadable paths only count in `unreadable`. The write is permitted; the note is never exported (#143). |
 | `candidates` | Possible duplicates `{ref, match, similarity, kind, standing, text, withheld}` (text: the first 300 characters), at most 5 per match, from readable books: `normalized` (same text after case and white space folding), `vector` (similarity ≥ `KUTUPHANE_NOTE_DUP_SIMILARITY`, default 0.90), `class` (same `class_key`). The server never merges; decide with `link_notes`. |
 | `recurrence` | Propose writes over the note's `same_as` cluster. |
 | `class_count` | Distinct clusters of evidence notes (`finding`, `lesson`, `dead_end`, `test_result`) with this `class_key` in the book. |

@@ -19,6 +19,7 @@ from kutuphane import origin as origins
 from kutuphane.gate import Actor
 from kutuphane.identity import Verifier
 from kutuphane.policy import make_policy
+from conftest import licensed
 from kutuphane.source import read_source
 from test_egress_audit import FakeBridge
 from test_identity import AUD, ISS, token
@@ -65,7 +66,7 @@ def handle(conn, book) -> str:
 
 @pytest.fixture
 def env(conn, okf_dir):
-    catalog.publish(conn, book="kitap", title="kitap", files=read_source(okf_dir), policy=LOCAL,
+    catalog.publish(conn, book="kitap", title="kitap", files=read_source(licensed(okf_dir)), policy=LOCAL,
                     profile=profiles.spec("chunked"))
     journal(conn)
     allow(conn, J, "read", "propose")

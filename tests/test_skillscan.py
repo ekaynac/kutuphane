@@ -133,7 +133,7 @@ def folder(okf_dir):
 
 
 def publish(conn, path):
-    return catalog.publish(conn, book=BOOK, title=BOOK, files=read_source(path), policy=POLICY,
+    return catalog.publish(conn, book=BOOK, title=BOOK, files=read_source(licensed(path, train="y")), policy=POLICY,
                            profile=profiles.spec("chunked"))
 
 

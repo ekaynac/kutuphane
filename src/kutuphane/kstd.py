@@ -482,9 +482,12 @@ class Rights:
         return allows(self.info(book, content_id, path), use)
 
     def license_unknown(self, book: str, content_id: str, path: str) -> bool:
-        """The file has `license: unknown` in its manifest (a file without a manifest follows its book policy only)."""
+        """The file has `license: unknown`, stated or not: content without a `kstd.yaml` states no license (#223),
+        as `export` and `pack` count it (#218). The `kstd.yaml` file itself has no license to state."""
+        if path == MANIFEST:
+            return False
         info = self.info(book, content_id, path)
-        return info is not None and info["license"] == "unknown"
+        return info is None or info["license"] == "unknown"
 
 
 def _quoted(value: str) -> str:

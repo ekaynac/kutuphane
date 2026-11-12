@@ -91,3 +91,44 @@ def test_the_decision_export_leaves_out_notes_derived_from_license_unknown(conn,
     records, summary = decisions.export(conn, mcp(), [J])
     assert [r["ref"] for r in records] == [ok["ref"]] and out["ref"] != ok["ref"]
     assert summary["licence_unknown"] == 1
+
+
+# --- #223: content without a kstd.yaml states no license, so it is `unknown` (as for export and pack, #218) -------------
+
+def publish_plain(conn, root):
+    out = catalog.publish(conn, book="kitap", title="kitap", files=read_source(root), policy=POLICY,
+                          profile=profiles.spec("chunked"))
+    allow(conn, "kitap", "read")
+    return out
+
+
+def test_a_note_citing_content_without_kstd_yaml_has_a_notice_and_is_left_out_of_both_exports(conn, okf_dir):
+    from kutuphane import journalexport
+    from kutuphane.gate import Actor
+    from test_journal_export import M, make, note
+    from test_notes import U
+    publish_plain(conn, okf_dir)
+    journal(conn)
+    allow(conn, J, "read", "propose")
+    cited = propose(conn, mcp(), text="Retention is in the policy", citations=[passage(conn, PATH)])
+    assert cited["licence_notice"]["paths"] == [f"kitap/{PATH}"]
+    records, summary = journalexport.export(conn, Actor(U), J)
+    assert records == [] and summary["licence_unknown"] == 1
+    decide(conn, mcp(), "Keep logs 90 days", ["a", "b"], "a", citations=[passage(conn, PATH)])
+    records, summary = decisions.export(conn, mcp(), [J])
+    assert records == [] and summary["licence_unknown"] == 1
+
+
+def test_a_note_citing_licensed_content_is_exported(conn, okf_dir):
+    from conftest import licensed
+    from kutuphane import journalexport
+    from kutuphane.gate import Actor
+    publish_plain(conn, licensed(okf_dir))
+    journal(conn)
+    allow(conn, J, "read", "propose")
+    cited = propose(conn, mcp(), text="Retention is in the policy", citations=[passage(conn, PATH)])
+    assert "licence_notice" not in cited
+    records, summary = journalexport.export(conn, Actor(U), J)
+    assert len(records) == 1 and summary["licence_unknown"] == 0
+    state = catalog.book_state(conn, "kitap")
+    assert not kstd.Rights(conn).license_unknown("kitap", state["content_id"], kstd.MANIFEST)  # no license to state
