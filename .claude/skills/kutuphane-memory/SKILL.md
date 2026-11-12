@@ -28,8 +28,10 @@ Read at session start, and again before a decision that feels familiar.
   1500). Add `text` for a topic.
 - Later in the session, call it with `since: <watermark>` from your last read. You then get only the changes, and
   `left` lists the notes that are no longer current.
-- `search_library`, `open_citation` and `ask_library` read **books** (documents), not journals: on a journal they
-  refuse ("journal: use query_notes").
+- `search_library` and `ask_library` read **books** (documents), not journals: on a journal they refuse
+  ("journal: use query_notes").
+- `open_citation` opens a note reference (`<journal>@<id>`): full text, Standing and `current`. It also opens a
+  passage handle of a book.
 
 How to weigh what you read:
 
