@@ -10,12 +10,12 @@ from kutuphane import authz, db
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
-def licensed(root: Path) -> Path:
+def licensed(root: Path, train: str = "n") -> Path:
     """#218: export and pack refuse content without a license. A `kstd.yaml` with a folder license, as a package sender
     has; searchable, no personal data. Returns `root`."""
     (root / "kstd.yaml").write_text(
         "standard: kstd/0.2\nissuer: Test <t@example.org>\nrights:\n  license: CC-BY-4.0\n  personal_data: 'no'\n"
-        "  ai_use: {search: 'y', ai_input: 'y', train: 'n'}\n", encoding="utf-8")
+        "  ai_use: {search: 'y', ai_input: 'y', train: '" + train + "'}\n", encoding="utf-8")
     return root
 TEST_DSN_ENV = "KUTUPHANE_TEST_DSN"
 # Migrations that add a column which today's write path fills, and that do not depend on the migrations after the
