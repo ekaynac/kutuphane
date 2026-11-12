@@ -16,8 +16,9 @@
 - `401` for a token of an extra issuer: its `sub` (or `act.sub`) is not under its `principal_prefixes`, or it names
   a principal under another issuer's prefixes. `kutuphane whoami` with the token prints the reason
   (`issuer … may not name …`).
-- `401`, and `kutuphane whoami` prints `no unique signing key for token`: the token's `kid` is not in the JWKS. Core
-  reads the JWKS only at start: after you add a key, restart Core
+- `401`, and `kutuphane whoami` prints `no unique signing key for token`: the token's `kid` is not in the JWKS, or
+  the token's `iss` is not a configured issuer (a typo in `iss` gives the same message: check the `iss` string first).
+  Core reads the JWKS only at start: after you add a key, restart Core
   ([operations.md](operations.md#a-single-host-orchestrator-without-an-idp)).
 - `curate is refused to the principals of issuer …`: set `"curate": true` on that issuer only if its people must
   curate.
