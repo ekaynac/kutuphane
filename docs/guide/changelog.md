@@ -8,6 +8,10 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Troubleshooting: a wrong token issuer (#195 guide check)
+
+- Docs: `no unique signing key for token` also means that the token's `iss` is not a configured issuer; check the `iss` string before the JWKS ([troubleshooting.md](troubleshooting.md)).
+
 ### A note derived from content without kstd.yaml is license unknown (#223)
 
 - Fixed: a book without `kstd.yaml` states no license, which kstd counts as `unknown`, and `export` and `pack` already refuse it (#218). A note that cites a file of such a book now also gets `licence_notice` at write, and is left out of the journal export and the decision export (`licence_unknown` in the summary). Before, only a file with an explicit `license: unknown` did. One rule, `kstd.Rights.license_unknown`; the `kstd.yaml` file itself is not counted. The note is still written.
