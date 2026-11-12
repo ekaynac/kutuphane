@@ -8,6 +8,11 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### A note derived from content without kstd.yaml is license unknown (#223)
+
+- Fixed: a book without `kstd.yaml` states no license, which kstd counts as `unknown`, and `export` and `pack` already refuse it (#218). A note that cites a file of such a book now also gets `licence_notice` at write, and is left out of the journal export and the decision export (`licence_unknown` in the summary). Before, only a file with an explicit `license: unknown` did. One rule, `kstd.Rights.license_unknown`; the `kstd.yaml` file itself is not counted. The note is still written.
+- **Action:** before you take a journal backup (`journal export`) or a decision export, add a `kstd.yaml` with `rights.license` to each book that your notes cite and that has none, and publish it again; else those notes are left out. Notes written before this change are judged at export time, so they are left out too.
+
 ### Notes on stderr for grant and agent add (#221)
 
 - Changed: `kutuphane grant book:<slug> …` prints `note: book <slug> does not exist yet; the grant applies when it is created` on stderr when no book has that slug, and `kutuphane agent add` prints `note: created a new journal <slug>` for each journal it creates. The grant is written as before; stdout and exit codes do not change ([operations.md](operations.md#grants)).

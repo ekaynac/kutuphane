@@ -7,6 +7,7 @@ import pytest
 
 from kutuphane import authz, catalog, cli, db, gate, journalexport, noteimport, notes, profiles
 from kutuphane.gate import Actor
+from conftest import licensed
 from kutuphane.source import read_source
 from test_note_import import PRIVATE
 from test_notes import A, LOCAL, U, allow, env, handle, mcp  # noqa: F401
@@ -27,7 +28,7 @@ def fresh(conn, okf_dir) -> None:
     conn.execute("DROP SCHEMA public CASCADE")
     conn.execute("CREATE SCHEMA public")
     db.migrate(conn)
-    catalog.publish(conn, book="kitap", title="kitap", files=read_source(okf_dir), policy=LOCAL,
+    catalog.publish(conn, book="kitap", title="kitap", files=read_source(licensed(okf_dir)), policy=LOCAL,
                     profile=profiles.spec("chunked"))
     make(conn)
     allow(conn, M, "read", "propose", agent=None)  # read: the later links name notes of the journal

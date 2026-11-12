@@ -7,6 +7,7 @@ import pytest
 from kutuphane import catalog, cli, curatorqueue, decisions, gate, notes, notesquery, passagemap, profiles, server
 from kutuphane.gate import Actor
 from kutuphane.passagemap import choose
+from conftest import licensed
 from kutuphane.source import read_source
 from test_notes import LOCAL, allow, journal, mcp
 from test_skillscan import REF, agent_with, fake, folder  # noqa: F401  (fake, folder: fixtures)
@@ -17,7 +18,7 @@ PERSON = Actor("user:ayse", channel="http")
 
 
 def publish(conn, path, profile="chunked", policy=LOCAL):
-    return catalog.publish(conn, book=BOOK, title=BOOK, files=read_source(path), policy=policy,
+    return catalog.publish(conn, book=BOOK, title=BOOK, files=read_source(licensed(path)), policy=policy,
                            profile=profiles.spec(profile))
 
 
