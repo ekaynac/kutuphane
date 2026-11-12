@@ -8,6 +8,10 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### The kutuphane-memory skill: open_citation opens a note (#226)
+
+- Docs: the `kutuphane-memory` skill said that `open_citation` refuses a journal. It opens a note reference (`<journal>@<id>`) with its full text, Standing and `current`, as [mcp.md](mcp.md) says; only `search_library` and `ask_library` refuse a journal.
+
 ### Troubleshooting: a wrong token issuer (#195 guide check)
 
 - Docs: `no unique signing key for token` also means that the token's `iss` is not a configured issuer; check the `iss` string before the JWKS ([troubleshooting.md](troubleshooting.md)).
