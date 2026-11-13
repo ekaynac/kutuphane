@@ -1,6 +1,6 @@
 # Vision 1.3 — Kütüphane: a governed knowledge catalog and memory layer for agents
 
-**Status:** 1.3, 2026-11-10 (D85): acceptance is recorded with how it was proven, and a book decides which kinds make an item usable (principle 2, P1, §2; `docs/research/2026-11-10-acceptance-grill.md`). 1.2, 2026-11-01 (D80): the positioning, the five principles and the sentence-level changes of `docs/research/2026-11-01-agent-memory-research.md` §7; D73 deleted (W1-1). 1.1, 2026-11-01 (D79): the vision refresh of `docs/research/2026-10-31-direction-analysis.md` §7, accepted by the operator. 1.0: draft, 2026-10-27 (D69, D70). It replaces the positioning in `docs/10` §1. `docs/10` stays as the history of the standard work.
+**Status:** 1.3, 2026-11-10 (D85): acceptance is recorded with how it was proven, and a book decides which kinds make an item usable (principle 2, P1, §2; `docs/research/2026-11-10-acceptance-grill.md`); the R5 measure changed on 2026-11-13 (D86, §4). 1.2, 2026-11-01 (D80): the positioning, the five principles and the sentence-level changes of `docs/research/2026-11-01-agent-memory-research.md` §7; D73 deleted (W1-1). 1.1, 2026-11-01 (D79): the vision refresh of `docs/research/2026-10-31-direction-analysis.md` §7, accepted by the operator. 1.0: draft, 2026-10-27 (D69, D70). It replaces the positioning in `docs/10` §1. `docs/10` stays as the history of the standard work.
 **Basis:**
 - the operator's positioning (2026-10-27);
 - the scope review (`docs/22`);
@@ -53,7 +53,7 @@ Each promise is a behavior that a user can check. Every new feature must serve o
 
 ## 4. Who uses it
 
-1. **Coding orchestrators** (ADC, nöbetçi-mcp): shared memory for decisions, findings, lessons, conventions and skills (#67). **This is the first real customer**, and it sets the first roadmap. Copilot Memory's A/B shows cited, verified memories lift PR merge rate; our A/B (#121) does not yet. **The next A/B gates further memory work** (R5, D80): no new memory feature after R1, R2 and R3 (approved in D80, so not blocked) merges before the T3 rerun shows acceptance not lower and input tokens not higher than without memory.
+1. **Coding orchestrators** (ADC, nöbetçi-mcp): shared memory for decisions, findings, lessons, conventions and skills (#67). **This is the first real customer**, and it sets the first roadmap. Copilot Memory's A/B shows cited, verified memories lift PR merge rate; our A/B (#121) does not yet. **The next A/B gates further memory work** (R5, D80): no new memory feature after R1, R2 and R3 (approved in D80, so not blocked) merges before a pre-registered T3 rerun shows, with memory, input tokens per passed acceptance row not higher, cells that follow the decision not fewer, and no worse control rows (measure: D86).
 2. **Organizations with a RAG platform:** Kütüphane is the governed source. The platform asks through MCP or HTTP, and gets only the passages the caller and the model may use, with the rights attached.
 3. **Curators (people):** they accept or reject what agents propose, on the phone (D72) or the CLI.
 4. **Consumer applications** (InfraMedic): they submit signed packages, read the catalog with a scope context, and show Standing and citations in their own screens.
