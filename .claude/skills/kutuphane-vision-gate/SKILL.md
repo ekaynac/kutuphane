@@ -62,8 +62,9 @@ Do the steps in order. Write the evidence for each step. A step with no evidence
    - D74 / D78: no new kstd statement kind or category; the block ontology (`docs/09` §1–§3) is frozen; "my words"
      gets no new work; labels and access tags (D65, #154) are frozen until G10 has a consumer; no migration per
      security review (batch the fixes).
-   - D80 R5: no **new agent-memory feature** after R1–R3 merges before the T3 A/B rerun shows acceptance not lower
-     and input tokens not higher than without memory. A bug fix is not a new feature.
+   - D80 R5 (measure: D86): no **new agent-memory feature** after R1–R3 merges before a pre-registered T3 A/B rerun
+     shows, with memory: input tokens per passed acceptance row not higher, cells that follow the decision not fewer,
+     and no worse control rows. A bug fix is not a new feature.
    - D70: origin comes from the write path; an agent path is always `model`.
    - D77: no agent has a standing `propose` right on InfraMedic journals.
    - D76: one shared LLMDAP; each consumer has its own subject key and policy lines.

@@ -8,6 +8,10 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### The R5 gate measures the cost per completed task (D86)
+
+- Design and research: the R5 gate (D80) now compares input tokens per passed acceptance row, with and without memory, not total input tokens. Beside it, the cells that follow the decision must not be fewer with memory, and the control rows must not be worse. The current 18 T3 pairs do not open the gate, because the measure was chosen after reading them; the freeze on new agent-memory features ends after a pre-registered T3 rerun passes. D86 in `docs/01`; `docs/23` §4 and the `kutuphane-vision-gate` skill follow. No behavior changes.
+
 ### MCP guide: server/discover versions and the light install tool list
 
 - Docs: `server/discover` lists only `2026-07-28` in `supportedVersions`; a 2025-11-25 client negotiates with `initialize`. Without LLMDAP, MCP also leaves out `job_status`, `job_result` and `job_cancel`, not only `ask_library` ([mcp.md](mcp.md)).
