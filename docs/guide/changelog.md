@@ -8,6 +8,10 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### MCP guide: server/discover versions and the light install tool list
+
+- Docs: `server/discover` lists only `2026-07-28` in `supportedVersions`; a 2025-11-25 client negotiates with `initialize`. Without LLMDAP, MCP also leaves out `job_status`, `job_result` and `job_cancel`, not only `ask_library` ([mcp.md](mcp.md)).
+
 ### The kutuphane-memory skill: open_citation opens a note (#226)
 
 - Docs: the `kutuphane-memory` skill said that `open_citation` refuses a journal. It opens a note reference (`<journal>@<id>`) with its full text, Standing and `current`, as [mcp.md](mcp.md) says; only `search_library` and `ask_library` refuse a journal.

@@ -69,8 +69,9 @@ and `Mcp-Name` (the proxy must pass both).
 `clientInfo` is not authenticated and never decides rights or origin. **`server/discover`** lists
 `io.modelcontextprotocol/oauth-client-credentials` (headless clients get tokens with OAuth client credentials at the
 identity provider, IdP) and `io.modelcontextprotocol/skills` in `capabilities.extensions`; a 2025-11-25 `initialize`
-result has no `extensions`. `tools/list` and `server/discover` results carry `ttlMs: 300000` and
-`cacheScope: "public"`.
+result has no `extensions`. `supportedVersions` in `server/discover` lists only `2026-07-28`, the version without
+`initialize`; a 2025-11-25 client negotiates its version with `initialize` (section 2.1). `tools/list` and
+`server/discover` results carry `ttlMs: 300000` and `cacheScope: "public"`.
 
 ## 3. Authentication
 
@@ -153,7 +154,7 @@ rights changed two times during one read); `idempotency_key reused with another 
 `model service unavailable or refused` (`502`); a validation message such as `query must be 1..1000 characters`
 (`400`); `internal error` (`500`, details in the server log). Without LLMDAP, `POST /v1/ask` gives `503`
 `answers are not available: this install has no model gateway (LLMDAP); search is full text only`, and MCP does not
-list `ask_library` ([light install](install.md#light-install)).
+list `ask_library`, `job_status`, `job_result` and `job_cancel` ([light install](install.md#light-install)).
 
 An argument that does not match the tool's input schema gives one part for each field, separated by `; `, for
 example `Error executing tool query_notes: book: Input should be a valid list` (send `["<book>"]`). A value that is
