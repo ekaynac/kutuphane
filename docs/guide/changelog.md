@@ -8,6 +8,10 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### The R5 gate passed (D87)
+
+- Design and research: the pre-registered T3-R5 A/B (12 pairs, one decision-dependent item, one model) passed the D86 gate: with the library the agent implemented the decision in 12 of 12 cells (0 of 12 without it), with no regression, all control rows, and 59 % fewer input tokens per passed acceptance row. The freeze on new agent-memory features (D80) ends; new memory work starts from an issue under D81, like any other work. D87 in `docs/01`; `docs/23` and the `kutuphane-vision-gate` skill follow. No behavior changes.
+
 ### MCP guide: skills that are not served, and frontmatter hints
 
 - Docs: a `SKILL.md` that does not conform to the name and description rules is not served, and `ingest` does not report it. Frontmatter fields go to the client as written; a client may use hints such as `allowed-tools` to skip its permission prompts, so read them before you grant `activate` ([mcp.md](mcp.md)).

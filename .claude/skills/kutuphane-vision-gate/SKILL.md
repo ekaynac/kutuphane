@@ -16,7 +16,7 @@ argument-hint: "[issue number | PR number | 'diff']"
 
 D81 (2026-11-04): each new work item starts from an issue and is first evaluated **critically** against
 `docs/23` (P1–P5, the five principles, the "is not" list) and D53. Only work that passes is planned and built.
-No speculative feature is opened. The R5 gate (D80) stays in force.
+No speculative feature is opened.
 
 This skill is that evaluation. The vision does not bend to an issue. If an issue and the vision disagree, the
 issue changes, or the operator changes the vision with a new D-record. You never change the vision yourself.
@@ -62,9 +62,6 @@ Do the steps in order. Write the evidence for each step. A step with no evidence
    - D74 / D78: no new kstd statement kind or category; the block ontology (`docs/09` §1–§3) is frozen; "my words"
      gets no new work; labels and access tags (D65, #154) are frozen until G10 has a consumer; no migration per
      security review (batch the fixes).
-   - D80 R5 (measure: D86): no **new agent-memory feature** after R1–R3 merges before a pre-registered T3 A/B rerun
-     shows, with memory: input tokens per passed acceptance row not higher, cells that follow the decision not fewer,
-     and no worse control rows. A bug fix is not a new feature.
    - D70: origin comes from the write path; an agent path is always `model`.
    - D77: no agent has a standing `propose` right on InfraMedic journals.
    - D76: one shared LLMDAP; each consumer has its own subject key and policy lines.
