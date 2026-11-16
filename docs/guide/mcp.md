@@ -659,7 +659,9 @@ the same gate.
 A folder of the book's current version with a file named exactly `SKILL.md` whose frontmatter has `name` (1–64
 characters of `a-z`, `0-9` and single hyphens: the folder name, or the book slug at the root) and `description`
 (1–1024 characters); at most 512 files and 16 MiB. A skill holds every file below it, subfolder skills included.
-`AGENTS.md`, rules and prompts are not skills; `read_document` reads them.
+`AGENTS.md`, rules and prompts are not skills; `read_document` reads them. A `SKILL.md` that does not conform (for
+example a name that starts or ends with a hyphen, or has two hyphens together) is not served, and `ingest` does not
+report it: check the name and description against these rules before you publish.
 
 ### 10.2 URIs
 
@@ -701,7 +703,9 @@ gives `-32602`). On 2026-07-28: `ttlMs: 0`, `cacheScope: "private"`.
             "kutuphane/handling": {…}}}]}
 ```
 
-- `frontmatter`: every field as JSON; a YAML date is ISO 8601 text.
+- `frontmatter`: every field as JSON; a YAML date is ISO 8601 text. Kütüphane does not interpret the fields: client
+  hints such as `allowed-tools` go to the client as written, and some clients use them to skip their permission
+  prompts. Read them before you grant `activate`.
 - `resources`: every file in path order; `digest` is `sha256:` and the SHA-256 in the content manifest; `size` in
   bytes.
 - `_meta.kutuphane/source`: book, `content_id` and path of `SKILL.md`. `_meta.kutuphane/handling`: the labels.
