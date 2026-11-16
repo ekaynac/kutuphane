@@ -8,6 +8,10 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### MCP guide: skills that are not served, and frontmatter hints
+
+- Docs: a `SKILL.md` that does not conform to the name and description rules is not served, and `ingest` does not report it. Frontmatter fields go to the client as written; a client may use hints such as `allowed-tools` to skip its permission prompts, so read them before you grant `activate` ([mcp.md](mcp.md)).
+
 ### The R5 gate measures the cost per completed task (D86)
 
 - Design and research: the R5 gate (D80) now compares input tokens per passed acceptance row, with and without memory, not total input tokens. Beside it, the cells that follow the decision must not be fewer with memory, and the control rows must not be worse. The current 18 T3 pairs do not open the gate, because the measure was chosen after reading them; the freeze on new agent-memory features ends after a pre-registered T3 rerun passes. D86 in `docs/01`; `docs/23` §4 and the `kutuphane-vision-gate` skill follow. No behavior changes.
