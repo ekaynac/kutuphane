@@ -10,7 +10,7 @@ For the terms, read [concepts.md](concepts.md).
 
 ### open_citation errors name the handle form (#232)
 
-- Changed: `open_citation` and `GET /v1/citation` give `malformed passage handle: expected <book>@ct_…/pf_…/<path>#<n>; copy it from a search_library hit` (before: `malformed passage handle`), and every `404` for a passage handle gives `not found: copy the complete citation handle from a search_library hit, including #<n>` (before: `not found`). The text is the same for a missing number, file, version or profile, so it says nothing about what exists; a book that you may not read still gives `403`. Status codes and the `not found` text of other tools do not change ([mcp.md](mcp.md#52-open_citation), [http-api.md](http-api.md)).
+- Changed: every tool that takes a passage handle (`open_citation` and `GET /v1/citation`, citations of `propose_note`, `query_notes` passage references, the curator queue and the decision export) gives `malformed passage handle: expected <book>@ct_…/pf_…/<path>#<n>; copy it from a search_library hit` (before: `malformed passage handle`). In `open_citation` and `GET /v1/citation`, every `404` for a passage handle gives `not found: copy the complete citation handle from a search_library hit, including #<n>` (before: `not found`). The text is the same for a missing number, file, version or profile, so it says nothing about what exists; a book that you may not read still gives `403`. Status codes and the `not found` text of other tools do not change ([mcp.md](mcp.md#52-open_citation), [http-api.md](http-api.md)).
 
 ### The R5 gate passed (D87)
 
