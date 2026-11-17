@@ -69,6 +69,13 @@ class BadRequest(ValueError):
     pass
 
 
+class PassageNotFound(gate.NotFound):
+    """`open_citation` found no such passage (missing, or another version or profile): one fixed text for all."""
+
+
+PASSAGE_NOT_FOUND = "not found: copy the complete citation handle from a search_library hit, including #<n>"
+
+
 def parse_citation(handle: str) -> search.Citation:
     """`book@ct_…/pf_…/path#ordinal`, parsed by the one passage-handle rule (`notes.parse_passage`)."""
     try:
@@ -153,7 +160,11 @@ def op_citation(dsn, actor: Actor, handle: str, model_reader: bool = False, cont
         return _run(dsn, note)
 
     def go(conn):
-        hit = search.open_citation(conn, actor, parse_citation(handle))
+        cite = parse_citation(handle)
+        try:
+            hit = search.open_citation(conn, actor, cite)
+        except gate.NotFound:  # one text for every missing passage: it says nothing about why (#232)
+            raise PassageNotFound from None
         c = hit.citation
         item = kstd.Rights(conn).info(c.book, c.content_id, c.path)
         if labels_out is not None:
@@ -297,6 +308,7 @@ ERRORS = [  # order matters: subclasses first
     (identity.AuthenticationError, 401, "unauthenticated"),
     (search.SearchChanged, 409, "authorization changed during the request; retry"),
     (gate.Denied, 403, "forbidden"),
+    (PassageNotFound, 404, PASSAGE_NOT_FOUND),
     (gate.NotFound, 404, "not found"),
     (AnswersUnavailable, 503, NO_ANSWERS),
     (llmdap.EgressError, 502, "model service unavailable or refused"),

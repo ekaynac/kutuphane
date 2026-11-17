@@ -76,20 +76,23 @@ def parse_ref(ref) -> tuple[str, str]:
     return m.group(1), m.group(2)
 
 
+MALFORMED_PASSAGE = "malformed passage handle: expected <book>@ct_…/pf_…/<path>#<n>; copy it from a search_library hit"
+
+
 def parse_passage(handle) -> search.Citation:
     """A passage handle `book@ct_…/pf_…/path#ordinal`, as `open_citation` takes it."""
     if not isinstance(handle, str) or CONTROL.search(handle):
-        raise ValueError("malformed passage handle")
+        raise ValueError(MALFORMED_PASSAGE)
     try:
         head, ordinal = handle.rsplit("#", 1)
         book, rest = head.split("@", 1)
         content_id, profile_id, path = rest.split("/", 2)
         cite = search.Citation(book, content_id, profile_id, ids.normalize_path(path), int(ordinal))
     except ValueError:
-        raise ValueError("malformed passage handle") from None
+        raise ValueError(MALFORMED_PASSAGE) from None
     if not BOOK.match(book) or not content_id.startswith("ct_") or not profile_id.startswith("pf_") \
             or cite.ordinal < 0:
-        raise ValueError("malformed passage handle")
+        raise ValueError(MALFORMED_PASSAGE)
     return cite
 
 

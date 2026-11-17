@@ -115,6 +115,55 @@ def test_open_citation_shows_who_approved_the_version(client, keys):
     assert cited["publication"]["acceptance"]["by"] == "user:admin" and cited["publication"]["channel"] == "ingest"
 
 
+def _hit(client, keys) -> str:
+    return client.get("/v1/search", params={"q": "kayıtlar saklanır"}, headers=bearer(keys)).json()["results"][0][
+        "citation"]
+
+
+def _with_ordinal(handle, ordinal):
+    return handle.rsplit("#", 1)[0] + f"#{ordinal}"
+
+
+def test_open_citation_errors_name_the_handle_form(client, keys, library, verifier):  # #232
+    h = bearer(keys)
+    handle = _hit(client, keys)
+    form = "malformed passage handle: expected <book>@ct_…/pf_…/<path>#<n>; copy it from a search_library hit"
+    mcp = server.build_mcp(dsn=os.environ["KUTUPHANE_TEST_DSN"], verifier=verifier, bridge=None, model=None,
+                           public_url=PUBLIC)
+    claims = asyncio.run(server._Verifier(verifier).verify_token(token(keys))).claims
+    no_number = handle.rsplit("#", 1)[0]
+    bad = client.get("/v1/citation", params={"handle": no_number}, headers=h)
+    assert bad.status_code == 400 and bad.json() == {"error": form}
+    with pytest.raises(Exception, match="expected <book>@ct_"):
+        call_tool(mcp, claims, "open_citation", {"handle": no_number})
+    assert client.get("/v1/citation", params={"handle": handle}, headers=h).status_code == 200  # a real one opens
+
+
+def test_a_passage_that_does_not_exist_gets_one_constant_not_found(client, keys, library, verifier):  # #232
+    h = bearer(keys)
+    handle = _hit(client, keys)
+    path = handle.split("/", 2)[2].rsplit("#", 1)[0]
+    text = "not found: copy the complete citation handle from a search_library hit, including #<n>"
+    mcp = server.build_mcp(dsn=os.environ["KUTUPHANE_TEST_DSN"], verifier=verifier, bridge=None, model=None,
+                           public_url=PUBLIC)
+    claims = asyncio.run(server._Verifier(verifier).verify_token(token(keys))).claims
+    missing = _with_ordinal(handle, 999)
+    for odd in (missing, missing.replace(path, "yok.md"), missing.replace("ct_", "ct_0", 1),
+                missing.replace("/pf_", "/pf_0")):  # a number, a file, a version, a profile that do not exist
+        r = client.get("/v1/citation", params={"handle": odd}, headers=h)
+        assert (r.status_code, r.json()) == (404, {"error": text})
+        with pytest.raises(Exception, match=text):
+            call_tool(mcp, claims, "open_citation", {"handle": odd})
+    # no read on the book, and an unknown book: refused as before (`403 forbidden`), still the same for both
+    other = bearer(keys, sub="mehmet")
+    nobody = client.get("/v1/citation", params={"handle": missing}, headers=other)
+    unknown = client.get("/v1/citation", params={"handle": missing.replace("kitap@", "yok@", 1)}, headers=other)
+    assert (nobody.status_code, nobody.json()) == (unknown.status_code, unknown.json()) == (403, {"error": "forbidden"})
+    # another tool's not found keeps its text
+    other_tool = client.get("/v1/files/kitap/ct_0/yok.md", headers=h)
+    assert other_tool.json() == {"error": "not found"}
+
+
 def test_ingest_records_the_cli_user(cli_publisher, conn, okf_dir, monkeypatch, capsys):
     authz.grant(conn, "book:kitap", "curate", "user:ayse")
     monkeypatch.setenv(db.DSN_ENV, os.environ["KUTUPHANE_TEST_DSN"])
