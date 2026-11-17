@@ -286,7 +286,10 @@ at least half of the word pairs, or the whole old text with its operators and ca
 **Result for a note:** `{"citation", "note", "targets", "watermark"}`; `note` is a `query_notes` item. The labels
 cover its journal and source books.
 
-**Errors:** `400` (`malformed citation handle`, a context value), `403`, `404`, `409`.
+**Errors:** `400` (`malformed passage handle: expected <book>@ct_…/pf_…/<path>#<n>; copy it from a search_library
+hit`; a context value), `403`, `404` (`not found: copy the complete citation handle from a search_library hit,
+including #<n>`: one text when the passage number, the file, the version or the profile does not exist; a book that
+you may not read gives `403` as before), `409`.
 
 ### 5.3 `ask_library`
 

@@ -8,6 +8,10 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### open_citation errors name the handle form (#232)
+
+- Changed: every tool that takes a passage handle (`open_citation` and `GET /v1/citation`, citations of `propose_note`, `query_notes` passage references, the curator queue and the decision export) gives `malformed passage handle: expected <book>@ct_…/pf_…/<path>#<n>; copy it from a search_library hit` (before: `malformed passage handle`). In `open_citation` and `GET /v1/citation`, every `404` for a passage handle gives `not found: copy the complete citation handle from a search_library hit, including #<n>` (before: `not found`). The text is the same for a missing number, file, version or profile, so it says nothing about what exists; a book that you may not read still gives `403`. Status codes and the `not found` text of other tools do not change ([mcp.md](mcp.md#52-open_citation), [http-api.md](http-api.md)).
+
 ### The R5 gate passed (D87)
 
 - Design and research: the pre-registered T3-R5 A/B (12 pairs, one decision-dependent item, one model) passed the D86 gate: with the library the agent implemented the decision in 12 of 12 cells (0 of 12 without it), with no regression, all control rows, and 59 % fewer input tokens per passed acceptance row. The freeze on new agent-memory features (D80) ends; new memory work starts from an issue under D81, like any other work. D87 in `docs/01`; `docs/23` and the `kutuphane-vision-gate` skill follow. No behavior changes.

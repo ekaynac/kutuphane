@@ -174,7 +174,9 @@ is `current`, `moved` (with `moved_to` and `match`) or `stale`.
 
 **`200` for a note:** `{"citation", "note", "targets", "watermark"}`; `note` is as in `GET /v1/notes`.
 
-**Errors:** `400` (`malformed passage handle`), `401`, `403`, `404`, `409`.
+**Errors:** `400` (`malformed passage handle: expected <book>@ct_…/pf_…/<path>#<n>; copy it from a search_library
+hit`), `401`, `403`, `404` (a passage that does not exist: `not found: copy the complete citation handle from a
+search_library hit, including #<n>`, the same text for a missing number, file, version or profile), `409`.
 
 ## 6. Ask, answers and jobs
 
