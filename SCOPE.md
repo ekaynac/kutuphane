@@ -26,7 +26,7 @@
 ## Kapsam dışı
 - **D1** A RAG platform, a chat UI, conversation state, connectors to outside sources, a code graph → yapılmaz; those tools connect to Kütüphane (`docs/23` §2).
 - **D2** The per-call policy, encryption and audit chain of an LLM call; model pinning, digests and attestation → LLMDAP. Model choice → each consumer; model serving → spark-inference.
-- **D3** Issuing tokens: production → the deployment's IdP or the consumer's own issuer (#195). On the development host, agent tokens come from the host tools: the Kütüphane project's own development and test sessions use the development issuer, and every other portfolio project uses its own issuer, so both paths are tested all the time (Enes, 2026-11-18).
+- **D3** Issuing tokens: production → the deployment's IdP or the consumer's own issuer (#195). Development tokens (`dev-token`) are for development only; Kütüphane checks every issuer that its deployment configures.
 - **D4** Consumer-specific logic (the InfraMedic appliance, runbooks, the InfraMedic site documents UI, and InfraMedic's own on-prem knowledge center for installs without Kütüphane, designed to work with Kütüphane) → InfraMedic; the coding loop and its profiles → nöbetçi-mcp; the Pulse pipeline → Radar.
 - **D5** Run state, job logs, costs, chat transcripts → the orchestrator that runs the work.
 - **D6** Notes extracted from a conversation by the server → yapılmaz; an agent proposes, a person decides.
