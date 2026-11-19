@@ -13,6 +13,7 @@ from kutuphane import authz, catalog, cli, db, gate, packages, profiles, search,
 from kutuphane.policy import make_policy
 from kutuphane.source import read_source
 from test_server import PUBLIC, bearer, keys, verifier  # noqa: F401 (fixtures)
+from test_egress_audit import FakeBridge
 from test_use_policy import ATT, CLEAN, SITE, build, run, status, world  # noqa: F401 (fixtures)
 
 POLICY = make_policy(sensitivity="normal", egress="local_only", protection="standard")
@@ -216,3 +217,73 @@ def test_http_search_filter_and_the_other_paths_show_the_kind(client, keys, publ
     content = files["content_id"]
     doc = client.get(f"/v1/files/kitap/{content}/index.md", headers=h)
     assert doc.status_code == 200 and "acceptance" not in doc.text  # read_document shows nothing of the kind
+
+
+@pytest.fixture
+def fake():
+    f = FakeBridge()
+    yield f
+    f.server.shutdown()
+
+
+def test_ask_selects_by_kind_before_the_model_sees_a_passage(conn, published, fake):
+    from kutuphane import answers
+    actor = gate.Actor("user:ayse")
+    fake.reply = "Kayıtlar bir yıl saklanır [1]."
+
+    def ask(kinds):
+        result = answers.ask(conn, fake.bridge(), actor, "Kayıtlar ne kadar saklanır?", model="qwen",
+                             scope=search.Scope.of(acceptances=kinds))
+        return result, fake.last_body["messages"][1]["content"]
+    result, prompt = ask(["curator_passkey", "operator_cli", "consumer_attested"])
+    assert "(duz/" in prompt and "kitap/" not in prompt  # the `policy` book is not in the model input
+    assert {c["book"] for c in result["citations"]} == {"duz"}
+    result, prompt = ask(["policy"])
+    assert "(kitap/" in prompt and "duz/" not in prompt
+    assert {c["book"] for c in result["citations"]} == {"kitap"}
+
+
+def test_a_direct_handle_of_an_old_policy_version_still_says_policy(client, keys, conn, published, tmp_path):
+    h = bearer(keys, sub="ayse")
+    old = client.get("/v1/search", params={"q": "Kayıtlar saklanır", "acceptance": "policy"},
+                     headers=h).json()["results"][0]["citation"]
+    root = tmp_path / "v2"
+    root.mkdir()
+    (root / "index.md").write_text("# Kitap\n\nKayıtlar iki yıl saklanır.\n", encoding="utf-8")
+    catalog.publish(conn, book="kitap", title="Kitap", files=read_source(licensed(root)), policy=POLICY,
+                    profile=profiles.spec("chunked"), approved_by="user:ayse")  # a person: the current version
+    books = {b["book"]: b for b in client.get("/v1/books", headers=h).json()["books"]}
+    assert books["kitap"]["publication"]["acceptance"]["kind"] == "operator_cli"
+    cited = client.get("/v1/citation", params={"handle": old}, headers=h).json()
+    assert cited["publication"]["acceptance"]["kind"] == "policy"
+    assert cited["publication"]["acceptance"]["by"] == f"policy:{published}"  # records are not rewritten
+    assert conn.execute("SELECT count(*) FROM publication WHERE acceptance = 'policy'").fetchone() == (1,)
+
+
+@pytest.mark.parametrize("suggestion", [
+    {"v": 1, "sensitivity": "normal", "egress": "cloud_ok", "protection": "standard"},
+    {"v": 1, "sensitivity": "restricted", "egress": "local_only", "protection": "standard"},
+    "restricted",
+])
+def test_a_package_that_suggests_a_restricted_or_cloud_ok_book_waits_for_a_person(world, suggestion):
+    """The receiver would apply the use policy's normal/local_only; the sender holds the content to be more
+    sensitive, so a person decides (earliest point: admission, before any write)."""
+    conn = world[0]
+    unattended(world)
+    got = packages.receive(conn, build(world, CLEAN, extra={"policy_suggestion": suggestion}))
+    assert got["status"] == "verified"
+    [result] = run(conn)
+    assert result["status"] == "skipped" and "suggests a restricted or cloud_ok" in result["reason"]
+    assert status(conn, got["id"]) == ("verified", None) and catalog.book_state(conn, "kitap") is None
+
+
+def test_a_cloud_ok_book_stops_an_unattended_policy(world):
+    conn = world[0]
+    unattended(world)
+    first = packages.receive(conn, build(world, CLEAN))["id"]
+    packages.approve(conn, first, by="user:ayse",
+                     policy=make_policy(sensitivity="normal", egress="cloud_ok", protection="standard"))
+    nxt = packages.receive(conn, build(world, {"index.md": "Yeni.\n"}, seq=2))["id"]
+    [result] = run(conn)
+    assert result["status"] == "skipped" and "the book policy changed" in result["reason"]
+    assert status(conn, nxt) == ("verified", None)

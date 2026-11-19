@@ -859,7 +859,9 @@ kutuphane imports publish-admitted [--dry-run]
   4. the package has a `kstd.yaml` and no file has `license: unknown` (a license that is not stated counts as
      `unknown`, so a package without `kstd.yaml` always waits for a person);
   5. no file is an agent instruction (K3, [Agent instructions](#agent-instructions-k3));
-  6. the book policy is still the policy of the use policy. If a person published the book with another policy,
+  6. the sender's `policy_suggestion` is `normal` and `local_only` (a `restricted` or `cloud_ok` suggestion waits for
+     a person; the receiver's policy is still the use policy's);
+  7. the book policy is still the policy of the use policy. If a person published the book with another policy,
      the admission stops until a person approves a package, or the book has the policy of the use policy again. A
      book that does not exist yet gets the policy of the use policy.
 - It re-verifies the package in the same transaction as `approve-import` (lock, signature, revoked key, newer
@@ -873,8 +875,9 @@ kutuphane imports publish-admitted [--dry-run]
   attestation; `accepted_by` in the manifest, if any, is ignored for the kind. The version shows `acceptance.kind`
   `policy` and `acceptance.by` `policy:<id>`; `approved_by` is `policy:<id>` and `decided_by` is `policy:<id>`. `use-policy
   list` shows `unattended`. It records a standing decision of the curator who set it, never a person's act on that
-  package. The same limits hold: nothing with a finding, without a `kstd.yaml`, with `license: unknown`, with an agent
-  instruction file, `restricted` or `cloud_ok`, or after a person changed the book policy waits for a person. An
+  package. The same limits hold: a package with a finding, without a `kstd.yaml`, with `license: unknown`, with an agent
+  instruction file, or that suggests a `restricted` or `cloud_ok` book, and any package after a person changed the book
+  policy, always waits for a person; the policy never publishes it. An
   attested policy still gives `consumer_attested`. To keep such content out, readers select by kind: see
   [Which read paths show or select the kind](mcp.md#which-read-paths-show-or-select-the-acceptance-kind).
 - It prints one JSON line for each import: `published`, `skipped` (with the `reason`) or `rejected` (the package no
