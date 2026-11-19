@@ -17,8 +17,8 @@ LLMDAP's bridge-only image (`llmdap-bridge`, LLMDAP #237) is the only way to the
 ## Set up
 
 ```sh
-# 1. The image: docker load the LLMDAP release tarball, or build it from the LLMDAP repo
-#    (docker build -f deploy/bridge/Dockerfile -t llmdap-bridge:<gw>-llmdap<root> .)
+# 1. The image: docker load the signed LLMDAP release tarball, delivered under an LLMDAP agreement
+#    (LLMDAP is proprietary; without an agreement use the light install, docs/guide/install.md)
 # 2. Core's subject key (the token is printed once; the hash entry goes to keys.json)
 umask 077
 docker run --rm llmdap-bridge:0.28.0-llmdap1.18.0 \

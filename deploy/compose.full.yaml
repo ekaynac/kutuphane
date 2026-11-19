@@ -91,8 +91,8 @@ services:
 
   llmdap:
     profiles: [app]
-    # LLMDAP's bridge-only image (LLMDAP #237): loaded from its release tarball or built from the LLMDAP repo
-    # (`docker build -f deploy/bridge/Dockerfile .`). Never a moving tag.
+    # LLMDAP's bridge-only image (LLMDAP #237): loaded from its signed release tarball, delivered under an LLMDAP
+    # agreement (proprietary; without one, use the light install). Never a moving tag.
     image: ${LLMDAP_BRIDGE_IMAGE:-llmdap-bridge:0.28.0-llmdap1.18.0}
     restart: unless-stopped
     read_only: true

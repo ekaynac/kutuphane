@@ -4,8 +4,9 @@ Four ways:
 
 - [Development](#development-install): a laptop, tests, the quick start; no models or the stub models.
 - [Light install](#light-install): `compose.yaml` (Postgres, Core, ingress proxy; no LLMDAP, only open source parts,
-  #76); full-text search, no answers.
-- [Full stack](#full-stack): `deploy/compose.full.yaml`, one server (D15), plus LLMDAP for model calls.
+  #76); full-text search, no answers. This is the public install.
+- [Full stack](#full-stack): `deploy/compose.full.yaml`, one server (D15), plus LLMDAP for model calls. The LLMDAP
+  bridge is a proprietary component, available only under an LLMDAP agreement.
 - [Local models](#local-models): the full stack with real models on the same machine (D61); nothing leaves it.
 
 Both compose files use project `kutuphane` and the same `postgres` service and volume (`kutuphane_pgdata`).
@@ -39,6 +40,9 @@ export KUTUPHANE_TEST_DSN="${KUTUPHANE_DSN}_test"
 Development tokens (`README.md` quick start) need `KUTUPHANE_DEV=1`. Never set it on a production machine.
 
 ## Full stack
+
+The full stack needs the LLMDAP bridge image, a proprietary component that comes as a signed release tarball under an
+LLMDAP agreement. Without such an agreement, use the [light install](#light-install).
 
 With `COMPOSE_FILE=deploy/compose.full.yaml` in `.env`, every `docker compose` command here (run from the
 repository root) uses the full stack (project `kutuphane`; paths relative to `deploy/`); without it, the light

@@ -78,8 +78,10 @@ curl -s -H "Authorization: Bearer $TOKEN" 'http://127.0.0.1:8090/v1/notes?book=t
 ```
 
 Any MCP client that speaks streamable HTTP with a bearer token works. Without a model service, search is full text
-only, and `tools/list` has no `ask_library` and no job tools. The light install is `compose.yaml`; the full stack
-(ingress, LLMDAP, local models, two database roles) is `deploy/compose.full.yaml` (`docs/guide/install.md`).
+only, and `tools/list` has no `ask_library` and no job tools. The light install is `compose.yaml`: it is the public
+install, and it makes no model call. The full stack (ingress, LLMDAP, local models, two database roles) is
+`deploy/compose.full.yaml` (`docs/guide/install.md`); its LLMDAP bridge is a proprietary component, available only
+under an LLMDAP agreement.
 
 For an agent with a private journal, one call makes the journal and the grants:
 `kutuphane agent add <name> --journal [--shared <journal>] --curator user:<name>` (`docs/guide/operations.md`, §6).
@@ -121,7 +123,8 @@ Reference: `docs/guide/http-api.md`.
 - Rights, `ai_input` and egress are checked before every embedding, rerank and answer, and again at delivery.
 - Only a person changes Standing: with a separate database credential on the CLI, or with a passkey act on the phone.
 - Skills can get a SkillSpector scan at ingest; a bad or failed scan blocks the skill until a curator clears it.
-- All model calls go through LLMDAP; a `local_only` book never reaches a cloud route.
+- In the full install, all model calls go through LLMDAP; a `local_only` book never reaches a cloud route. The light
+  install makes no model call.
 - Every read decision and every model call is audited. Details: `docs/guide/security.md`.
 
 ## Documentation
