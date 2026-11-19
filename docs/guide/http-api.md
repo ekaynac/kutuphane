@@ -169,7 +169,7 @@ Open a passage handle or a note reference. MCP: `open_citation` ([mcp.md](mcp.md
 
 **`200` for a passage:** `{"citation", "page", "line", "text", "item", "publication", "outcomes", "status"}`.
 `publication` says how and by whom the version was accepted (`acceptance`: `kind`, `by`, `at`, `legacy`;
-[mcp.md](mcp.md#518-list_books)); a passage of a note item has no `publication`. `status`
+[mcp.md](mcp.md#518-list_books); which paths show or select the kind: [the table](mcp.md#which-read-paths-show-or-select-the-acceptance-kind)); a passage of a note item has no `publication`. `status`
 is `current`, `moved` (with `moved_to` and `match`) or `stale`.
 
 **`200` for a note:** `{"citation", "note", "targets", "watermark"}`; `note` is as in `GET /v1/notes`.

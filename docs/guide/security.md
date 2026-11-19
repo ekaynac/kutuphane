@@ -103,6 +103,13 @@ the confirmer withdraws it (R7).
   sensitivity and `cloud_ok` egress (a policy cannot set them). Internal addresses are a personal-data finding
   (`private-ipv4`, `private-ipv6`), so a package that has them waits for a person. A revocation of the policy or the
   key stops later publications only. The app role can read `use_policy` and cannot write it.
+- The acceptance kind `policy` (#235) means that a curator's **unattended use policy** published the version: no person
+  accepted this package, and no sender attested it. A curator sets it (owner credential, `curate` on the book) for one
+  book and one trusted key; it has no attesters; the Q8 exclusions above hold unchanged. It is recorded as `policy`
+  with `by` `policy:<id>`, never as a person. The trust you place in it is the trust in the signing key. Excluding
+  `policy` content is the consumer's selection: `search_library` and `ask_library` take an `acceptance` filter, and the
+  other read paths show `publication.acceptance`; there is no server gate that hides a kind on every path
+  ([mcp.md](mcp.md#which-read-paths-show-or-select-the-acceptance-kind)).
 - The CLI trusts its operator, so the curator credential is the boundary: an agent that reads it can curate as any
   user. Keep it out of every environment that an agent can read.
 - `kutuphane note expire` writes curator-less system events (also with `KUTUPHANE_CURATOR_DSN`). The database

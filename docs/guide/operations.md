@@ -853,7 +853,8 @@ kutuphane imports publish-admitted [--dry-run]
 - `publish-admitted` looks at each `verified` import. It publishes the ones that pass **all** of these, and leaves
   the rest `verified` for a person (`approve-import` always works):
   1. an active use policy for the book and the signing key (the key is not revoked);
-  2. `accepted_by.principal` starts with one of the policy's attesters;
+  2. `accepted_by.principal` starts with one of the policy's attesters (an **unattended** policy has no attesters and
+     skips this step; see below);
   3. `receive` found nothing: no personal data, no credential, no SkillSpector finding, no instruction-like text;
   4. the package has a `kstd.yaml` and no file has `license: unknown` (a license that is not stated counts as
      `unknown`, so a package without `kstd.yaml` always waits for a person);
@@ -865,6 +866,17 @@ kutuphane imports publish-admitted [--dry-run]
   sequence), then publishes with the policy's book policy. The version shows `acceptance.kind`
   `consumer_attested` and `acceptance.by` = the attester. `package_import.decided_by` is `policy:<id>`. It indexes as
   `approve-import` does (exit 3 if the index is incomplete).
+- **Unattended policy (#235).** For a producer that has no person to attest (for example a feed such as Radar),
+  `use-policy add <book> --key <fingerprint> --unattended --sensitivity normal --egress local_only --protection standard
+  --by user:<curator>` sets a policy with no attester (`--unattended` and `--attester` exclude each other; one is
+  required). The rule is the same except step 2: a clean package of that key is published with no person and no
+  attestation; `accepted_by` in the manifest, if any, is ignored for the kind. The version shows `acceptance.kind`
+  `policy` and `acceptance.by` `policy:<id>`; `approved_by` is `policy:<id>` and `decided_by` is `policy:<id>`. `use-policy
+  list` shows `unattended`. It records a standing decision of the curator who set it, never a person's act on that
+  package. The same limits hold: nothing with a finding, without a `kstd.yaml`, with `license: unknown`, with an agent
+  instruction file, `restricted` or `cloud_ok`, or after a person changed the book policy waits for a person. An
+  attested policy still gives `consumer_attested`. To keep such content out, readers select by kind: see
+  [Which read paths show or select the kind](mcp.md#which-read-paths-show-or-select-the-acceptance-kind).
 - It prints one JSON line for each import: `published`, `skipped` (with the `reason`) or `rejected` (the package no
   longer verifies). `--dry-run` does all of it and rolls it back (`would_publish`, `would_reject`). It is idempotent.
 
