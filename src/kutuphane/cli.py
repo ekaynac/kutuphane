@@ -422,8 +422,11 @@ def cmd_imports(conn, _args) -> int:
 
 
 def cmd_use_policy_add(conn, args) -> int:
+    if bool(args.attester) == args.unattended:
+        raise ValueError("give --attester (one or more) or --unattended, not both and not neither")
     _print({"use_policy": usepolicy.add(conn, args.book, args.key, args.attester, sensitivity=args.sensitivity,
-                                        egress=args.egress, protection=args.protection, by=args.by)})
+                                        egress=args.egress, protection=args.protection, by=args.by,
+                                        unattended=args.unattended)})
     return 0
 
 
@@ -909,9 +912,12 @@ def parser() -> argparse.ArgumentParser:
     ua = upsub.add_parser("add", help="add the use policy of a book and a signing key")
     ua.add_argument("book")
     ua.add_argument("--key", required=True, help="the fingerprint of a trusted signing key")
-    ua.add_argument("--attester", action="append", required=True, metavar="PREFIX",
+    ua.add_argument("--attester", action="append", default=[], metavar="PREFIX",
                     help="user:<start of a name> that may attest (repeatable); the manifest accepted_by.principal "
                          "must start with one of them")
+    ua.add_argument("--unattended", action="store_true",
+                    help="no attester: publish a clean package of the key with no person (acceptance `policy`, #235); "
+                         "instead of --attester")
     ua.add_argument("--sensitivity", required=True, choices=SENSITIVITY)
     ua.add_argument("--egress", required=True, choices=EGRESS)
     ua.add_argument("--protection", required=True, choices=PROTECTION_M1)
