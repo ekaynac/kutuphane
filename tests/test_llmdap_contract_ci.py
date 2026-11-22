@@ -24,6 +24,15 @@ echo "$*" >>"$FAKE_LOG"
 args=" $* "
 st="$FAKE_STATE"
 cannot() { echo "fake: cannot connect" >&2; exit 1; }
+live() {   # a live process: not gone and not a zombie (kill -0 counts zombies); kill -0 only without /proc
+  local line rest
+  if [ -r /proc/self/stat ]; then
+    line=$(cat "/proc/$1/stat" 2>/dev/null) || return 1
+    rest=${line##*) }
+    if [ "${rest%% *}" = Z ]; then return 1; else return 0; fi
+  fi
+  if kill -0 "$1" 2>/dev/null; then return 0; else return 1; fi
+}
 case "$1" in
   create)   # the lock container
     [ "$FAKE_FAIL" = lock ] && { echo "fake: Conflict. The container name is already in use" >&2; exit 1; }
@@ -35,7 +44,7 @@ case "$1" in
       *" --phase calls"*) echo "PASS calls one"; exit 0 ;;
       *" --phase verify"*)
         cp "$CONTRACT_EXPORT_DIR/export.jsonl" "$st/verify_saw"
-        if [ -f "$st/child.pid" ] && kill -0 "$(cat "$st/child.pid")" 2>/dev/null; then echo alive >"$st/child_alive_at_verify"; fi
+        if [ -f "$st/child.pid" ] && live "$(cat "$st/child.pid")"; then echo alive >"$st/child_alive_at_verify"; fi
         case "$args" in *" --audit-export-status 0 "*) echo "PASS verify one"; exit 0 ;; esac
         echo "FAIL verify one (export failed)"; exit 1 ;;   # like the real contract: a failed export fails the check
     esac
@@ -103,11 +112,38 @@ def run(tmp_path):
 
 
 def alive(pid: int) -> bool:
+    """A live process: not gone and not a zombie (os.kill(pid, 0) counts zombies). Without /proc: kill -0."""
+    try:
+        line = Path(f"/proc/{pid}/stat").read_text()
+    except FileNotFoundError:
+        return not Path("/proc/self/stat").exists() and _kill0(pid)
+    return line.rsplit(") ", 1)[1].split()[0] != "Z"
+
+
+def _kill0(pid: int) -> bool:
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
     return True
+
+
+@pytest.fixture(autouse=True)
+def _adopt_and_reap_orphans():
+    """The test process is a child subreaper (Linux) for the duration of a test: the orphans of an export are adopted
+    here, never by a PID 1 that may not reap, and are collected afterwards."""
+    import ctypes
+    libc = ctypes.CDLL(None, use_errno=True) if Path("/proc/self/stat").exists() else None
+    if libc is not None:
+        libc.prctl(36, 1, 0, 0, 0)   # PR_SET_CHILD_SUBREAPER
+    yield
+    if libc is not None:
+        libc.prctl(36, 0, 0, 0, 0)
+        try:
+            while os.waitpid(-1, os.WNOHANG)[0]:
+                pass
+        except ChildProcessError:
+            pass
 
 
 def removals(calls):
@@ -236,24 +272,12 @@ def test_a_leader_that_cannot_be_ended_does_not_block_the_run(run, tmp_path):
 
 @pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="needs Linux /proc")
 def test_a_zombie_in_the_group_does_not_count_as_alive(run):
-    import ctypes
-    libc = ctypes.CDLL(None, use_errno=True)
-    PR_SET_CHILD_SUBREAPER = 36
-    # This process becomes the subreaper: an orphan of the export is adopted here and, never waited for, stays a zombie
-    # of the export's process group (kill -0 on the group would still say "alive").
-    assert libc.prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) == 0
-    try:
-        proc, calls, _ = run("sh -c 'sh -c \"exit 0\" & echo x'")
-        assert proc.returncode == 0, proc.stderr
-        assert any("--phase verify" in c for c in calls), calls
-        assert "could not be ended" not in proc.stderr
-    finally:
-        libc.prctl(PR_SET_CHILD_SUBREAPER, 0, 0, 0, 0)
-        try:
-            while os.waitpid(-1, os.WNOHANG)[0]:   # collect the zombies
-                pass
-        except ChildProcessError:
-            pass
+    # The autouse fixture made this process the subreaper: an orphan of the export is adopted here and, never waited
+    # for during the run, stays a zombie of the export's process group (kill -0 on the group would say "alive").
+    proc, calls, _ = run("sh -c 'sh -c \"exit 0\" & echo x'")
+    assert proc.returncode == 0, proc.stderr
+    assert any("--phase verify" in c for c in calls), calls
+    assert "could not be ended" not in proc.stderr
 
 
 def _docker_ready():
