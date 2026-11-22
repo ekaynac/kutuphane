@@ -10,9 +10,12 @@ Writing the files does not authorise a contract change (see test_contract.py).
 - http.json: every HTTP route: path and all its methods (HEAD included).
 - errors.json: the HTTP status and text of every expected error class, the named error constants, and every message
   literal in a `raise` of the modules the API and the tools run (the text a caller can read).
+- matrix.json: which kinds of case (ok, not found, bad request, unauthorized, HEAD) the results cover for each tool
+  and route, with the reason for each kind that does not apply (matrix.py).
 - results_mcp.json, results_http.json: the shape (keys and types, no values) of what every tool and route returns
-  for a found, a not-found or refused, and a bad request case, from the controlled fixture of scenario.py. HTTP also
-  keeps status and content type.
+  for the cases of the matrix, from the controlled fixture of scenario.py. MCP keeps the whole result envelope
+  (content blocks, structuredContent, isError, _meta); HTTP keeps status and content type (and, for HEAD, that the
+  body is empty).
 """
 import argparse
 import ast
@@ -29,6 +32,8 @@ from starlette.routing import Mount, Route
 
 from kutuphane import server
 from kutuphane.identity import Verifier
+
+from . import matrix
 
 HERE = Path(__file__).parent
 SRC = Path(server.__file__).parent
@@ -105,7 +110,7 @@ def build_static() -> dict[str, object]:
         verifier = _verifier(Path(tmp))
         return {"tools.json": {"with_model_gateway": tools(verifier, answering=True),
                                "without_model_gateway": tools(verifier, answering=False)},
-                "http.json": routes(verifier), "errors.json": errors()}
+                "http.json": routes(verifier), "errors.json": errors(), "matrix.json": matrix.snapshot()}
 
 
 def build_results(dsn: str) -> dict[str, object]:

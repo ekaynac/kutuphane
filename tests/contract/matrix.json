@@ -1,0 +1,271 @@
+{
+  "empty_collections": {
+    "candidates": "a candidate is a searchable, approved note with the same text; every note of the fixture is pending, and approving one is a curator act",
+    "left": "tombstones of notes that left the requested sets by a Standing change; the fixture has no curator decision on a note",
+    "quoted_records": "needs a data-scanned record file (quotes.py) in the book; the fixture book has none"
+  },
+  "http": {
+    "GET /healthz": {
+      "bad_request": "public: needs no token and has nothing to refuse",
+      "head_error": "public: needs no token and has nothing to refuse",
+      "head_ok": "run",
+      "not_found": "public: needs no token and has nothing to refuse",
+      "ok": "run",
+      "unauthorized": "public: needs no token and has nothing to refuse"
+    },
+    "GET /v1/answers/{answer_id}": {
+      "bad_request": "the id is an opaque path part: any unknown value is a not found",
+      "head_error": "run",
+      "head_ok": "run",
+      "not_found": "run",
+      "ok": "run",
+      "unauthorized": "run"
+    },
+    "GET /v1/books": {
+      "bad_request": "takes no body and no parameter that can be wrong",
+      "head_error": "run",
+      "head_ok": "run",
+      "not_found": "no such failure: a book the caller may not read is left out of the list",
+      "ok": "run",
+      "unauthorized": "run"
+    },
+    "GET /v1/books/{book}/files": {
+      "bad_request": "run",
+      "head_error": "run",
+      "head_ok": "run",
+      "not_found": "run",
+      "ok": "run",
+      "unauthorized": "run"
+    },
+    "GET /v1/citation": {
+      "bad_request": "run",
+      "head_error": "run",
+      "head_ok": "run",
+      "not_found": "run",
+      "ok": "run",
+      "unauthorized": "run"
+    },
+    "GET /v1/files/{book}/{content_id}/{path:path}": {
+      "bad_request": "every part is an opaque path part: any unknown value is a not found",
+      "head_error": "run",
+      "head_ok": "run",
+      "not_found": "run",
+      "ok": "run",
+      "unauthorized": "run"
+    },
+    "GET /v1/health": {
+      "bad_request": "takes no body and no parameter that can be wrong",
+      "head_error": "run",
+      "head_ok": "run",
+      "not_found": "takes no body and no parameter that can be wrong",
+      "ok": "run",
+      "unauthorized": "run"
+    },
+    "GET /v1/jobs/{job_id}": {
+      "bad_request": "the id is an opaque path part: any unknown value is a not found",
+      "head_error": "run",
+      "head_ok": "run",
+      "not_found": "run",
+      "ok": "run",
+      "unauthorized": "run"
+    },
+    "GET /v1/jobs/{job_id}/result": {
+      "bad_request": "the id is an opaque path part: any unknown value is a not found",
+      "head_error": "run",
+      "head_ok": "run",
+      "not_found": "run",
+      "ok": "run",
+      "unauthorized": "run"
+    },
+    "GET /v1/notes": {
+      "bad_request": "run",
+      "head_error": "run",
+      "head_ok": "run",
+      "not_found": "no such failure: a search that finds nothing is an ok result with an empty list",
+      "ok": "run",
+      "unauthorized": "run"
+    },
+    "GET /v1/notes/{book}/{id}/confirmation": {
+      "bad_request": "run",
+      "head_error": "run",
+      "head_ok": "run",
+      "not_found": "run",
+      "ok": "run",
+      "unauthorized": "run"
+    },
+    "GET /v1/notes/{book}/{id}/neighbours": {
+      "bad_request": "run",
+      "head_error": "run",
+      "head_ok": "run",
+      "not_found": "run",
+      "ok": "run",
+      "unauthorized": "run"
+    },
+    "GET /v1/packages/{import_id}": {
+      "bad_request": "run",
+      "head_error": "run",
+      "head_ok": "run",
+      "not_found": "run",
+      "ok": "run",
+      "unauthorized": "run"
+    },
+    "GET /v1/search": {
+      "bad_request": "run",
+      "head_error": "run",
+      "head_ok": "run",
+      "not_found": "no such failure: a search that finds nothing is an ok result with an empty list",
+      "ok": "run",
+      "unauthorized": "run"
+    },
+    "GET /v1/whoami": {
+      "bad_request": "takes no body and no parameter that can be wrong",
+      "head_error": "run",
+      "head_ok": "run",
+      "not_found": "takes no body and no parameter that can be wrong",
+      "ok": "run",
+      "unauthorized": "run"
+    },
+    "POST /v1/ask": {
+      "bad_request": "run",
+      "not_found": "no such failure: an answer the library cannot support is an ok result (status not_in_library)",
+      "ok": "run",
+      "unauthorized": "run"
+    },
+    "POST /v1/citations/verify": {
+      "bad_request": "run",
+      "not_found": "run",
+      "ok": "run",
+      "unauthorized": "run"
+    },
+    "POST /v1/jobs/{job_id}/cancel": {
+      "bad_request": "the id is an opaque path part: any unknown value is a not found",
+      "not_found": "run",
+      "ok": "run",
+      "unauthorized": "run"
+    },
+    "POST /v1/notes": {
+      "bad_request": "run",
+      "not_found": "run",
+      "ok": "run",
+      "unauthorized": "run"
+    },
+    "POST /v1/notes/links": {
+      "bad_request": "run",
+      "not_found": "run",
+      "ok": "run",
+      "unauthorized": "run"
+    },
+    "POST /v1/outcomes": {
+      "bad_request": "run",
+      "not_found": "run",
+      "ok": "run",
+      "unauthorized": "run"
+    },
+    "POST /v1/packages": {
+      "bad_request": "run",
+      "not_found": "run",
+      "ok": "run",
+      "unauthorized": "run"
+    }
+  },
+  "mcp": {
+    "ask_library": {
+      "bad_request": "run",
+      "not_found": "no such failure: an answer the library cannot support is an ok result (status not_in_library)",
+      "ok": "run"
+    },
+    "confirm_origin": {
+      "bad_request": "run",
+      "not_found": "run",
+      "ok": "run"
+    },
+    "job_cancel": {
+      "bad_request": "run",
+      "not_found": "run",
+      "ok": "run"
+    },
+    "job_result": {
+      "bad_request": "run",
+      "not_found": "run",
+      "ok": "run"
+    },
+    "job_status": {
+      "bad_request": "run",
+      "not_found": "run",
+      "ok": "run"
+    },
+    "link_notes": {
+      "bad_request": "run",
+      "not_found": "run",
+      "ok": "run"
+    },
+    "list_books": {
+      "bad_request": "no argument can be refused: the tool takes none",
+      "not_found": "no such failure: a book the caller may not read is left out of the list",
+      "ok": "run"
+    },
+    "list_files": {
+      "bad_request": "run",
+      "not_found": "run",
+      "ok": "run"
+    },
+    "neighbours": {
+      "bad_request": "run",
+      "not_found": "run",
+      "ok": "run"
+    },
+    "open_citation": {
+      "bad_request": "run",
+      "not_found": "run",
+      "ok": "run"
+    },
+    "package_status": {
+      "bad_request": "run",
+      "not_found": "run",
+      "ok": "run"
+    },
+    "propose_note": {
+      "bad_request": "run",
+      "not_found": "run",
+      "ok": "run"
+    },
+    "query_notes": {
+      "bad_request": "run",
+      "not_found": "no such failure: a search that finds nothing is an ok result with an empty list",
+      "ok": "run"
+    },
+    "read_document": {
+      "bad_request": "run",
+      "not_found": "run",
+      "ok": "run"
+    },
+    "record_outcome": {
+      "bad_request": "run",
+      "not_found": "run",
+      "ok": "run"
+    },
+    "reopen_answer": {
+      "bad_request": "run",
+      "not_found": "run",
+      "ok": "run"
+    },
+    "search_library": {
+      "bad_request": "run",
+      "not_found": "no such failure: a search that finds nothing is an ok result with an empty list",
+      "ok": "run"
+    },
+    "submit_package": {
+      "bad_request": "run",
+      "not_found": "run",
+      "ok": "run"
+    },
+    "verify_citations": {
+      "bad_request": "run",
+      "not_found": "run",
+      "ok": "run"
+    }
+  },
+  "not_in_matrix": {
+    "MOUNT /": "the MCP transport (/mcp) and the protected-resource metadata: the tools above are called through the same server object; the endpoint itself is the SDK's"
+  }
+}

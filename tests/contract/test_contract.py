@@ -8,7 +8,7 @@ import os
 
 import pytest
 
-from contract import snapshot
+from contract import matrix, snapshot
 
 MESSAGE = ("a contract changed: update tests/contract/*.json only with the approval a contract change needs "
            "(SCOPE.md: Enes). Regenerate with `python -m tests.contract.snapshot --write`.")
@@ -32,7 +32,7 @@ def check(name, built):
     assert json.loads(snapshot.dump(built[name])) == stored, f"{name}: {MESSAGE}"
 
 
-@pytest.mark.parametrize("name", ["tools.json", "http.json", "errors.json"])
+@pytest.mark.parametrize("name", ["tools.json", "http.json", "errors.json", "matrix.json"])
 def test_the_listed_contract_is_unchanged(static, name):
     check(name, static)
 
@@ -40,3 +40,9 @@ def test_the_listed_contract_is_unchanged(static, name):
 @pytest.mark.parametrize("name", snapshot.RESULTS)
 def test_the_shape_of_the_results_is_unchanged(results, name):
     check(name, results)
+
+
+def test_every_tool_and_route_is_covered_and_coverage_does_not_shrink(static, results):
+    tools = [t["name"] for t in static["tools.json"]["with_model_gateway"]]
+    found = matrix.problems(tools, static["http.json"], results["results_mcp.json"], results["results_http.json"])
+    assert not found, "the case matrix and the recorded cases disagree:\n" + "\n".join(found)

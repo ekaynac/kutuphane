@@ -1,175 +1,426 @@
 {
-  "ask_library:answered": {
-    "ok": {
-      "text_json": {
-        "body": "str",
-        "citations": [
-          {
-            "book": "str",
-            "content_id": "str",
-            "item": {
-              "ai_use": {
-                "ai_input": "str",
-                "search": "str",
-                "train": "str"
-              },
-              "applies_to": "null",
-              "confirmed_by": "null",
-              "current": "bool",
-              "entered_by": "null",
-              "holder": "str",
-              "issuer": "str",
-              "license": "str",
-              "listed": "bool",
-              "notices": [],
-              "origin": "str",
-              "personal_data": "str",
-              "reviewed_by": "null",
-              "scope": "str",
-              "software_agent": "null",
-              "valid_from": "null",
-              "valid_to": "null"
-            },
-            "line": "int",
-            "n": "int",
-            "ordinal": "int",
-            "path": "str",
-            "profile_id": "str",
-            "quoted_records": [],
-            "record": "null"
-          }
-        ],
-        "id": "str",
-        "retrieval": {
-          "embedding": "str",
-          "rerank": "str",
-          "translation": "str"
-        },
-        "status": "str",
-        "withheld": "int"
-      }
-    }
-  },
   "ask_library:bad_request": {
-    "refused": "Error executing tool ask_library: idempotency_key needs background: true"
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool ask_library: idempotency_key needs background: true"
   },
-  "ask_library:queued": {
-    "ok": {
-      "text_json": {
-        "job_id": "str",
-        "status": "str"
-      }
+  "ask_library:ok": {
+    "block_types": [
+      "text"
+    ],
+    "decoded_text": {
+      "body": "str",
+      "citations": [
+        {
+          "book": "str",
+          "content_id": "str",
+          "item": {
+            "ai_use": {
+              "ai_input": "str",
+              "search": "str",
+              "train": "str"
+            },
+            "applies_to": "null",
+            "confirmed_by": "null",
+            "current": "bool",
+            "entered_by": "null",
+            "holder": "str",
+            "issuer": "str",
+            "license": "str",
+            "listed": "bool",
+            "notices": [
+              "str"
+            ],
+            "origin": "str",
+            "personal_data": "str",
+            "reviewed_by": "null",
+            "scope": "str",
+            "software_agent": "null",
+            "valid_from": "null",
+            "valid_to": "null"
+          },
+          "line": "int",
+          "n": "int",
+          "ordinal": "int",
+          "path": "str",
+          "profile_id": "str",
+          "quoted_records": [],
+          "record": "null"
+        }
+      ],
+      "id": "str",
+      "retrieval": {
+        "embedding": "str",
+        "rerank": "str",
+        "translation": "str"
+      },
+      "status": "str",
+      "withheld": "int"
+    },
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
     }
   },
-  "confirm_origin:found": {
-    "ok": {
-      "text_json": {
-        "confirmation": {
-          "state": "str"
-        },
-        "origin": "str",
-        "ref": "str"
-      }
+  "ask_library:ok (queued)": {
+    "block_types": [
+      "text"
+    ],
+    "decoded_text": {
+      "job_id": "str",
+      "status": "str"
+    },
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
     }
+  },
+  "confirm_origin:bad_request (malformed ref)": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool confirm_origin: malformed note reference (book@nt_<64 hex>)"
   },
   "confirm_origin:not_found": {
-    "refused": "Error executing tool confirm_origin: not found"
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool confirm_origin: not found"
   },
-  "job_cancel:found": {
-    "ok": {
-      "text_json": {
-        "created_at": "str",
-        "error": "null",
-        "finished_at": "str",
-        "started_at": "str",
-        "status": "str"
-      }
+  "confirm_origin:ok": {
+    "block_types": [
+      "text"
+    ],
+    "decoded_text": {
+      "confirmation": {
+        "state": "str"
+      },
+      "origin": "str",
+      "ref": "str"
+    },
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
     }
+  },
+  "job_cancel:bad_request (schema)": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool job_cancel: job_id: Field required"
   },
   "job_cancel:not_found": {
-    "refused": "Error executing tool job_cancel: not found"
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool job_cancel: not found"
   },
-  "job_result:found": {
-    "ok": {
-      "text_json": {
-        "body": "str",
-        "evidence": [
-          {
-            "citation": "str",
-            "item": {
-              "ai_use": {
-                "ai_input": "str",
-                "search": "str",
-                "train": "str"
-              },
-              "applies_to": "null",
-              "confirmed_by": "null",
-              "current": "bool",
-              "entered_by": "null",
-              "holder": "str",
-              "issuer": "str",
-              "license": "str",
-              "listed": "bool",
-              "notices": [],
-              "origin": "str",
-              "personal_data": "str",
-              "reviewed_by": "null",
-              "scope": "str",
-              "software_agent": "null",
-              "valid_from": "null",
-              "valid_to": "null"
-            },
-            "line": "int",
-            "n": "int",
-            "quoted_records": [],
-            "record": "null",
-            "text": "str"
-          }
-        ],
-        "id": "str",
-        "question": "str",
-        "retrieval": {
-          "embedding": "str",
-          "rerank": "str",
-          "translation": "str"
-        },
-        "status": "str"
-      }
+  "job_cancel:ok": {
+    "block_types": [
+      "text"
+    ],
+    "decoded_text": {
+      "created_at": "str",
+      "error": "null",
+      "finished_at": "str",
+      "started_at": "str",
+      "status": "str"
+    },
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
     }
+  },
+  "job_result:bad_request (schema)": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool job_result: job_id: Field required"
   },
   "job_result:not_found": {
-    "refused": "Error executing tool job_result: not found"
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool job_result: not found"
   },
-  "job_status:found": {
-    "ok": {
-      "text_json": {
-        "created_at": "str",
-        "error": "null",
-        "finished_at": "str",
-        "started_at": "str",
-        "status": "str"
-      }
+  "job_result:ok": {
+    "block_types": [
+      "text"
+    ],
+    "decoded_text": {
+      "body": "str",
+      "evidence": [
+        {
+          "citation": "str",
+          "item": {
+            "ai_use": {
+              "ai_input": "str",
+              "search": "str",
+              "train": "str"
+            },
+            "applies_to": "null",
+            "confirmed_by": "null",
+            "current": "bool",
+            "entered_by": "null",
+            "holder": "str",
+            "issuer": "str",
+            "license": "str",
+            "listed": "bool",
+            "notices": [
+              "str"
+            ],
+            "origin": "str",
+            "personal_data": "str",
+            "reviewed_by": "null",
+            "scope": "str",
+            "software_agent": "null",
+            "valid_from": "null",
+            "valid_to": "null"
+          },
+          "line": "int",
+          "n": "int",
+          "quoted_records": [],
+          "record": "null",
+          "text": "str"
+        }
+      ],
+      "id": "str",
+      "question": "str",
+      "retrieval": {
+        "embedding": "str",
+        "rerank": "str",
+        "translation": "str"
+      },
+      "status": "str"
+    },
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
     }
+  },
+  "job_status:bad_request (schema)": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool job_status: job_id: Field required"
   },
   "job_status:not_found": {
-    "refused": "Error executing tool job_status: not found"
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool job_status: not found"
   },
-  "link_notes:bad_request": {
-    "refused": "Error executing tool link_notes: type must be one of same_as, about, fixed_by, violates, decided_by, contradicts"
-  },
-  "link_notes:created": {
-    "ok": {
-      "text_json": {
-        "dst": "str",
-        "src": "str",
-        "status": "str",
-        "type": "str"
-      }
+  "job_status:ok": {
+    "block_types": [
+      "text"
+    ],
+    "decoded_text": {
+      "created_at": "str",
+      "error": "null",
+      "finished_at": "str",
+      "started_at": "str",
+      "status": "str"
+    },
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
     }
   },
-  "list_books:found": {
-    "ok": {
-      "structured": {
+  "link_notes:bad_request": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool link_notes: type must be one of same_as, about, fixed_by, violates, decided_by, contradicts"
+  },
+  "link_notes:not_found": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool link_notes: not found"
+  },
+  "link_notes:ok": {
+    "block_types": [
+      "text"
+    ],
+    "decoded_text": {
+      "dst": "str",
+      "src": "str",
+      "status": "str",
+      "type": "str"
+    },
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    }
+  },
+  "list_books:ok": {
+    "block_types": [
+      "text"
+    ],
+    "decoded_text": "not json",
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str",
+      "structuredContent": {
         "result": [
           {
             "book": "str",
@@ -206,81 +457,255 @@
       }
     }
   },
-  "list_files:forbidden": {
-    "refused": "Error executing tool list_files: forbidden"
-  },
-  "list_files:found": {
-    "ok": {
-      "text_json": {
-        "book": "str",
-        "content_id": "str",
-        "files": [
-          {
-            "item": {
-              "any_of": [
-                "null",
-                {
-                  "ai_use": {
-                    "ai_input": "str",
-                    "search": "str",
-                    "train": "str"
-                  },
-                  "applies_to": "null",
-                  "confirmed_by": "null",
-                  "current": "bool",
-                  "entered_by": "null",
-                  "holder": "str",
-                  "issuer": "str",
-                  "license": "str",
-                  "listed": "bool",
-                  "notices": [],
-                  "origin": "str",
-                  "personal_data": "str",
-                  "reviewed_by": "null",
-                  "scope": "str",
-                  "software_agent": "null",
-                  "valid_from": "null",
-                  "valid_to": "null"
-                }
-              ]
-            },
-            "media_type": "str",
-            "passages": "int",
-            "path": "str",
-            "sha256": "str",
-            "size": "int"
-          }
-        ],
-        "next_cursor": "str",
-        "profile_id": "str",
-        "publication": {
-          "acceptance": {
-            "at": "str",
-            "by": "str",
-            "kind": "str",
-            "legacy": "bool"
-          },
-          "channel": "str",
-          "content_id": "str",
-          "issuer_key": "null",
-          "published_at": "str",
-          "sequence": "null"
+  "list_files:bad_request": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
         }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool list_files: limit must be an integer from 1 to 500"
+  },
+  "list_files:not_found (forbidden)": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool list_files: forbidden"
+  },
+  "list_files:ok": {
+    "block_types": [
+      "text"
+    ],
+    "decoded_text": {
+      "book": "str",
+      "content_id": "str",
+      "files": [
+        {
+          "item": {
+            "any_of": [
+              "null",
+              {
+                "ai_use": {
+                  "ai_input": "str",
+                  "search": "str",
+                  "train": "str"
+                },
+                "applies_to": {
+                  "any_of": [
+                    "null",
+                    {
+                      "platform": [
+                        "str"
+                      ]
+                    }
+                  ]
+                },
+                "confirmed_by": "null",
+                "current": "bool",
+                "entered_by": "null",
+                "holder": "str",
+                "issuer": "str",
+                "license": "str",
+                "listed": "bool",
+                "notices": [
+                  "str"
+                ],
+                "origin": "str",
+                "personal_data": "str",
+                "reviewed_by": "null",
+                "scope": "str",
+                "software_agent": "null",
+                "valid_from": {
+                  "any_of": [
+                    "null",
+                    "str"
+                  ]
+                },
+                "valid_to": "null"
+              }
+            ]
+          },
+          "media_type": "str",
+          "passages": "int",
+          "path": "str",
+          "sha256": "str",
+          "size": "int"
+        }
+      ],
+      "next_cursor": "null",
+      "profile_id": "str",
+      "publication": {
+        "acceptance": {
+          "at": "str",
+          "by": "str",
+          "kind": "str",
+          "legacy": "bool"
+        },
+        "channel": "str",
+        "content_id": "str",
+        "issuer_key": "null",
+        "published_at": "str",
+        "sequence": "null"
       }
+    },
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
     }
   },
-  "neighbours:found": {
-    "ok": {
-      "text_json": {
-        "edges": [],
-        "nodes": [],
-        "root": {
+  "list_files:ok (page)": {
+    "block_types": [
+      "text"
+    ],
+    "decoded_text": {
+      "book": "str",
+      "content_id": "str",
+      "files": [
+        {
+          "item": {
+            "any_of": [
+              "null",
+              {
+                "ai_use": {
+                  "ai_input": "str",
+                  "search": "str",
+                  "train": "str"
+                },
+                "applies_to": "null",
+                "confirmed_by": "null",
+                "current": "bool",
+                "entered_by": "null",
+                "holder": "str",
+                "issuer": "str",
+                "license": "str",
+                "listed": "bool",
+                "notices": [
+                  "str"
+                ],
+                "origin": "str",
+                "personal_data": "str",
+                "reviewed_by": "null",
+                "scope": "str",
+                "software_agent": "null",
+                "valid_from": "null",
+                "valid_to": "null"
+              }
+            ]
+          },
+          "media_type": "str",
+          "passages": "int",
+          "path": "str",
+          "sha256": "str",
+          "size": "int"
+        }
+      ],
+      "next_cursor": "str",
+      "profile_id": "str",
+      "publication": {
+        "acceptance": {
+          "at": "str",
+          "by": "str",
+          "kind": "str",
+          "legacy": "bool"
+        },
+        "channel": "str",
+        "content_id": "str",
+        "issuer_key": "null",
+        "published_at": "str",
+        "sequence": "null"
+      }
+    },
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    }
+  },
+  "neighbours:bad_request (malformed ref)": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool neighbours: malformed passage handle: expected <book>@ct_…/pf_…/<path>#<n>; copy it from a search_library hit"
+  },
+  "neighbours:not_found": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool neighbours: not found"
+  },
+  "neighbours:ok": {
+    "block_types": [
+      "text"
+    ],
+    "decoded_text": {
+      "edges": [
+        {
+          "dst": "str",
+          "src": "str",
+          "type": "str"
+        }
+      ],
+      "nodes": [
+        {
           "acceptance": {
             "at": "null",
             "by": "null",
             "kind": "str"
           },
-          "citations": [],
+          "citations": [
+            {
+              "ref": "str",
+              "status": "str"
+            }
+          ],
           "class_key": "null",
           "current": "bool",
           "kind": "str",
@@ -298,28 +723,133 @@
           "text": "str",
           "withheld": "null",
           "written_at": "str"
+        }
+      ],
+      "root": {
+        "acceptance": {
+          "at": "null",
+          "by": "null",
+          "kind": "str"
         },
-        "targets": {},
-        "truncated": "bool",
-        "watermark": "int"
-      }
+        "citations": [
+          {
+            "ref": "str",
+            "status": "str"
+          }
+        ],
+        "class_key": "null",
+        "current": "bool",
+        "kind": "str",
+        "links": {
+          "about": "int"
+        },
+        "observed_commit": "null",
+        "origin": "str",
+        "outcomes": {},
+        "recurrence": "int",
+        "ref": "str",
+        "role": "str",
+        "scope": "null",
+        "standing": "str",
+        "text": "str",
+        "withheld": "null",
+        "written_at": "str"
+      },
+      "targets": {},
+      "truncated": "bool",
+      "watermark": "int"
+    },
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
     }
   },
-  "neighbours:not_found": {
-    "refused": "Error executing tool neighbours: not found"
-  },
-  "open_citation:malformed": {
-    "refused": "Error executing tool open_citation: malformed passage handle: expected <book>@ct_…/pf_…/<path>#<n>; copy it from a search_library hit"
+  "open_citation:bad_request": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool open_citation: malformed passage handle: expected <book>@ct_…/pf_…/<path>#<n>; copy it from a search_library hit"
   },
   "open_citation:not_found": {
-    "refused": "Error executing tool open_citation: not found: copy the complete citation handle from a search_library hit, including #<n>"
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool open_citation: not found: copy the complete citation handle from a search_library hit, including #<n>"
   },
-  "open_citation:note": {
-    "ok": {
-      "meta": {
+  "open_citation:ok (note)": {
+    "block_types": [
+      "text"
+    ],
+    "decoded_text": {
+      "citation": "str",
+      "note": {
+        "acceptance": {
+          "at": "null",
+          "by": "null",
+          "kind": "str"
+        },
+        "citations": [
+          {
+            "ref": "str",
+            "status": "str"
+          }
+        ],
+        "class_key": "null",
+        "current": "bool",
+        "kind": "str",
+        "links": {
+          "about": "int"
+        },
+        "observed_commit": "null",
+        "origin": "str",
+        "outcomes": {},
+        "recurrence": "int",
+        "ref": "str",
+        "role": "str",
+        "scope": "null",
+        "standing": "str",
+        "text": "str",
+        "withheld": "null",
+        "written_at": "str"
+      },
+      "targets": {},
+      "watermark": "int"
+    },
+    "envelope": {
+      "_meta": {
         "kutuphane/handling": {
           "books": {
             "hafiza": {
+              "egress": "str",
+              "sensitivity": "str"
+            },
+            "kitap": {
               "egress": "str",
               "sensitivity": "str"
             }
@@ -328,41 +858,68 @@
           "sensitivity": "str"
         }
       },
-      "text_json": {
-        "citation": "str",
-        "note": {
-          "acceptance": {
-            "at": "null",
-            "by": "null",
-            "kind": "str"
-          },
-          "citations": [],
-          "class_key": "null",
-          "current": "bool",
-          "kind": "str",
-          "links": {
-            "about": "int"
-          },
-          "observed_commit": "null",
-          "origin": "str",
-          "outcomes": {},
-          "recurrence": "int",
-          "ref": "str",
-          "role": "str",
-          "scope": "null",
-          "standing": "str",
+      "content": [
+        {
           "text": "str",
-          "withheld": "null",
-          "written_at": "str"
-        },
-        "targets": {},
-        "watermark": "int"
-      }
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
     }
   },
-  "open_citation:passage": {
-    "ok": {
-      "meta": {
+  "open_citation:ok (passage)": {
+    "block_types": [
+      "text"
+    ],
+    "decoded_text": {
+      "citation": "str",
+      "item": {
+        "ai_use": {
+          "ai_input": "str",
+          "search": "str",
+          "train": "str"
+        },
+        "applies_to": "null",
+        "confirmed_by": "null",
+        "current": "bool",
+        "entered_by": "null",
+        "holder": "str",
+        "issuer": "str",
+        "license": "str",
+        "listed": "bool",
+        "notices": [
+          "str"
+        ],
+        "origin": "str",
+        "personal_data": "str",
+        "reviewed_by": "null",
+        "scope": "str",
+        "software_agent": "null",
+        "valid_from": "null",
+        "valid_to": "null"
+      },
+      "line": "int",
+      "outcomes": {},
+      "page": "null",
+      "publication": {
+        "acceptance": {
+          "at": "str",
+          "by": "str",
+          "kind": "str",
+          "legacy": "bool"
+        },
+        "channel": "str",
+        "content_id": "str",
+        "issuer_key": "null",
+        "published_at": "str",
+        "sequence": "null"
+      },
+      "status": "str",
+      "text": "str"
+    },
+    "envelope": {
+      "_meta": {
         "kutuphane/handling": {
           "books": {
             "kitap": {
@@ -374,123 +931,273 @@
           "sensitivity": "str"
         }
       },
-      "text_json": {
-        "citation": "str",
-        "item": {
-          "ai_use": {
-            "ai_input": "str",
-            "search": "str",
-            "train": "str"
-          },
-          "applies_to": "null",
-          "confirmed_by": "null",
-          "current": "bool",
-          "entered_by": "null",
-          "holder": "str",
-          "issuer": "str",
-          "license": "str",
-          "listed": "bool",
-          "notices": [],
-          "origin": "str",
-          "personal_data": "str",
-          "reviewed_by": "null",
-          "scope": "str",
-          "software_agent": "null",
-          "valid_from": "null",
-          "valid_to": "null"
-        },
-        "line": "int",
-        "outcomes": {},
-        "page": "null",
-        "publication": {
-          "acceptance": {
-            "at": "str",
-            "by": "str",
-            "kind": "str",
-            "legacy": "bool"
-          },
-          "channel": "str",
-          "content_id": "str",
-          "issuer_key": "null",
-          "published_at": "str",
-          "sequence": "null"
-        },
-        "status": "str",
-        "text": "str"
-      }
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
     }
   },
-  "package_status:found": {
-    "ok": {
-      "text_json": {
-        "book": "str",
-        "content_id": "str",
-        "decided_at": "null",
-        "decided_by": "null",
-        "diff": {
-          "added": [
-            "str"
-          ],
-          "changed": [],
-          "removed": []
-        },
-        "findings": [],
-        "id": "int",
-        "issuer": "str",
-        "reasons": [],
-        "received_at": "str",
-        "sequence": "int",
-        "status": "str"
-      }
-    }
+  "package_status:bad_request (schema)": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool package_status: import_id: Input should be a valid integer, unable to parse string as an integer"
   },
   "package_status:not_found": {
-    "refused": "Error executing tool package_status: not found"
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool package_status: not found"
   },
-  "propose_note:bad_request": {
-    "refused": "Error executing tool propose_note: kind must be one of finding, decision_proposal, dead_end, convention, lesson, test_result"
-  },
-  "propose_note:created": {
-    "ok": {
-      "text_json": {
-        "candidates": [],
-        "class_count": "int",
-        "guard_due": "bool",
-        "origin": "str",
-        "origin_notice": "null",
-        "recurrence": "int",
-        "ref": "str",
-        "standing": "str",
-        "status": "str",
-        "vector": "str"
-      }
+  "package_status:ok": {
+    "block_types": [
+      "text"
+    ],
+    "decoded_text": {
+      "book": {
+        "any_of": [
+          "null",
+          "str"
+        ]
+      },
+      "content_id": {
+        "any_of": [
+          "null",
+          "str"
+        ]
+      },
+      "decided_at": "null",
+      "decided_by": "null",
+      "diff": {
+        "any_of": [
+          "null",
+          {
+            "added": [
+              "str"
+            ],
+            "changed": [
+              "str"
+            ],
+            "removed": [
+              "str"
+            ]
+          }
+        ]
+      },
+      "findings": [
+        {
+          "kind": "str",
+          "lines": [
+            "int"
+          ],
+          "path": "str",
+          "rule": "str",
+          "sha256": "str"
+        }
+      ],
+      "id": "int",
+      "issuer": {
+        "any_of": [
+          "null",
+          "str"
+        ]
+      },
+      "reasons": [
+        "str"
+      ],
+      "received_at": "str",
+      "sequence": {
+        "any_of": [
+          "int",
+          "null"
+        ]
+      },
+      "status": "str"
+    },
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
     }
   },
-  "propose_note:decision": {
-    "ok": {
-      "text_json": {
-        "candidates": [],
-        "class_count": "int",
-        "guard_due": "bool",
-        "origin": "str",
-        "origin_notice": "null",
-        "recurrence": "int",
-        "ref": "str",
-        "standing": "str",
-        "status": "str",
-        "vector": "str"
-      }
+  "propose_note:bad_request": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool propose_note: kind must be one of finding, decision_proposal, dead_end, convention, lesson, test_result"
+  },
+  "propose_note:bad_request (schema)": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool propose_note: book: Field required; text: Field required"
+  },
+  "propose_note:not_found (no propose grant)": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool propose_note: forbidden"
+  },
+  "propose_note:ok": {
+    "block_types": [
+      "text"
+    ],
+    "decoded_text": {
+      "candidates": [],
+      "class_count": "int",
+      "guard_due": "bool",
+      "origin": "str",
+      "origin_notice": "null",
+      "recurrence": "int",
+      "ref": "str",
+      "standing": "str",
+      "status": "str",
+      "vector": "str"
+    },
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
     }
   },
   "query_notes:bad_request": {
-    "refused": "Error executing tool query_notes: order must be one of newest, oldest, relevance"
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool query_notes: order must be one of newest, oldest, relevance"
   },
-  "query_notes:found": {
-    "ok": {
-      "meta": {
+  "query_notes:ok": {
+    "block_types": [
+      "text"
+    ],
+    "decoded_text": {
+      "books": [
+        "str"
+      ],
+      "excluded": {
+        "code": "int",
+        "needs_context": "int"
+      },
+      "items": [
+        {
+          "acceptance": {
+            "at": "null",
+            "by": "null",
+            "kind": "str"
+          },
+          "citations": [
+            {
+              "ref": "str",
+              "status": "str"
+            }
+          ],
+          "class_key": "null",
+          "current": "bool",
+          "kind": "str",
+          "links": {
+            "about?": "int"
+          },
+          "observed_commit": "null",
+          "origin": "str",
+          "outcomes": {},
+          "recurrence": "int",
+          "ref": "str",
+          "role": "str",
+          "scope": "null",
+          "standing": "str",
+          "text": "str",
+          "withheld": "null",
+          "written_at": "str"
+        }
+      ],
+      "left": [],
+      "next_cursor": "null",
+      "targets": {},
+      "watermark": "int"
+    },
+    "envelope": {
+      "_meta": {
         "kutuphane/handling": {
           "books": {
             "hafiza": {
+              "egress": "str",
+              "sensitivity": "str"
+            },
+            "kitap": {
               "egress": "str",
               "sensitivity": "str"
             }
@@ -499,51 +1206,55 @@
           "sensitivity": "str"
         }
       },
-      "text_json": {
-        "books": [
-          "str"
-        ],
-        "excluded": {
-          "code": "int",
-          "needs_context": "int"
-        },
-        "items": [
-          {
-            "acceptance": {
-              "at": "null",
-              "by": "null",
-              "kind": "str"
-            },
-            "citations": [],
-            "class_key": "null",
-            "current": "bool",
-            "kind": "str",
-            "links": {
-              "about?": "int"
-            },
-            "observed_commit": "null",
-            "origin": "str",
-            "outcomes": {},
-            "recurrence": "int",
-            "ref": "str",
-            "role": "str",
-            "scope": "null",
-            "standing": "str",
-            "text": "str",
-            "withheld": "null",
-            "written_at": "str"
-          }
-        ],
-        "left": [],
-        "next_cursor": "null",
-        "targets": {},
-        "watermark": "int"
-      }
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
     }
   },
-  "read_document:found": {
-    "ok": {
-      "meta": {
+  "read_document:bad_request (schema)": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool read_document: content_id: Field required; path: Field required"
+  },
+  "read_document:not_found": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool read_document: not found"
+  },
+  "read_document:ok": {
+    "block_types": [
+      "text"
+    ],
+    "decoded_text": "not json",
+    "envelope": {
+      "_meta": {
         "kutuphane/handling": {
           "books": {
             "kitap": {
@@ -555,101 +1266,221 @@
           "sensitivity": "str"
         }
       },
-      "structured": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str",
+      "structuredContent": {
         "result": "str"
       }
     }
   },
-  "read_document:not_found": {
-    "refused": "Error executing tool read_document: not found"
+  "record_outcome:bad_request (conflict)": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool record_outcome: idempotency_key reused with another request"
   },
-  "record_outcome:conflict": {
-    "refused": "Error executing tool record_outcome: idempotency_key reused with another request"
+  "record_outcome:not_found": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool record_outcome: not found"
   },
-  "record_outcome:recorded": {
-    "ok": {
-      "text_json": {
-        "origin": "str",
-        "ref": "str",
-        "result": "str",
-        "task_ref": "str"
-      }
+  "record_outcome:ok": {
+    "block_types": [
+      "text"
+    ],
+    "decoded_text": {
+      "origin": "str",
+      "ref": "str",
+      "result": "str",
+      "task_ref": "str"
+    },
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
     }
   },
-  "reopen_answer:found": {
-    "ok": {
-      "text_json": {
-        "body": "str",
-        "evidence": [
-          {
-            "citation": "str",
-            "item": {
-              "ai_use": {
-                "ai_input": "str",
-                "search": "str",
-                "train": "str"
-              },
-              "applies_to": "null",
-              "confirmed_by": "null",
-              "current": "bool",
-              "entered_by": "null",
-              "holder": "str",
-              "issuer": "str",
-              "license": "str",
-              "listed": "bool",
-              "notices": [],
-              "origin": "str",
-              "personal_data": "str",
-              "reviewed_by": "null",
-              "scope": "str",
-              "software_agent": "null",
-              "valid_from": "null",
-              "valid_to": "null"
-            },
-            "line": "int",
-            "n": "int",
-            "quoted_records": [],
-            "record": "null",
-            "text": "str"
-          }
-        ],
-        "id": "str",
-        "question": "str",
-        "retrieval": {
-          "embedding": "str",
-          "rerank": "str",
-          "translation": "str"
-        },
-        "status": "str"
-      }
-    }
+  "reopen_answer:bad_request (schema)": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool reopen_answer: answer_id: Field required"
   },
   "reopen_answer:not_found": {
-    "refused": "Error executing tool reopen_answer: not found"
-  },
-  "search_library:bad_request": {
-    "refused": "Error executing tool search_library: acceptance: List should have at least 1 item after validation, not 0"
-  },
-  "search_library:empty": {
-    "ok": {
-      "meta": {
-        "kutuphane/handling": {
-          "books": {}
-        },
-        "kutuphane/retrieval": {
-          "embedding": "str",
-          "rerank": "str",
-          "translation": "str"
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
         }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool reopen_answer: not found"
+  },
+  "reopen_answer:ok": {
+    "block_types": [
+      "text"
+    ],
+    "decoded_text": {
+      "body": "str",
+      "evidence": [
+        {
+          "citation": "str",
+          "item": {
+            "ai_use": {
+              "ai_input": "str",
+              "search": "str",
+              "train": "str"
+            },
+            "applies_to": "null",
+            "confirmed_by": "null",
+            "current": "bool",
+            "entered_by": "null",
+            "holder": "str",
+            "issuer": "str",
+            "license": "str",
+            "listed": "bool",
+            "notices": [
+              "str"
+            ],
+            "origin": "str",
+            "personal_data": "str",
+            "reviewed_by": "null",
+            "scope": "str",
+            "software_agent": "null",
+            "valid_from": "null",
+            "valid_to": "null"
+          },
+          "line": "int",
+          "n": "int",
+          "quoted_records": [],
+          "record": "null",
+          "text": "str"
+        }
+      ],
+      "id": "str",
+      "question": "str",
+      "retrieval": {
+        "embedding": "str",
+        "rerank": "str",
+        "translation": "str"
       },
-      "structured": {
-        "result": []
-      }
+      "status": "str"
+    },
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
     }
   },
-  "search_library:found": {
-    "ok": {
-      "meta": {
+  "search_library:bad_request": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool search_library: acceptance: List should have at least 1 item after validation, not 0"
+  },
+  "search_library:ok": {
+    "block_types": [
+      "text"
+    ],
+    "decoded_text": {
+      "citation": "str",
+      "item": {
+        "ai_use": {
+          "ai_input": "str",
+          "search": "str",
+          "train": "str"
+        },
+        "applies_to": "null",
+        "confirmed_by": "null",
+        "current": "bool",
+        "entered_by": "null",
+        "holder": "str",
+        "issuer": "str",
+        "license": "str",
+        "listed": "bool",
+        "notices": [
+          "str"
+        ],
+        "origin": "str",
+        "personal_data": "str",
+        "reviewed_by": "null",
+        "scope": "str",
+        "software_agent": "null",
+        "valid_from": "null",
+        "valid_to": "null"
+      },
+      "line": "int",
+      "page": "null",
+      "quoted_records": [],
+      "score": "float",
+      "text": "str",
+      "truncated": "bool"
+    },
+    "envelope": {
+      "_meta": {
         "kutuphane/handling": {
           "books": {
             "kitap": {
@@ -666,7 +1497,15 @@
           "translation": "str"
         }
       },
-      "structured": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str",
+      "structuredContent": {
         "result": [
           {
             "citation": "str",
@@ -684,7 +1523,9 @@
               "issuer": "str",
               "license": "str",
               "listed": "bool",
-              "notices": [],
+              "notices": [
+                "str"
+              ],
               "origin": "str",
               "personal_data": "str",
               "reviewed_by": "null",
@@ -704,50 +1545,193 @@
       }
     }
   },
-  "submit_package:bad_request": {
-    "refused": "Error executing tool submit_package: package_base64 is not base64"
-  },
-  "submit_package:received": {
-    "ok": {
-      "text_json": {
-        "book": "str",
-        "content_id": "str",
-        "decided_at": "null",
-        "decided_by": "null",
-        "diff": {
-          "added": [
-            "str"
-          ],
-          "changed": [],
-          "removed": []
+  "search_library:ok (empty)": {
+    "block_types": [],
+    "decoded_text": "not json",
+    "envelope": {
+      "_meta": {
+        "kutuphane/handling": {
+          "books": {}
         },
-        "findings": [],
-        "id": "int",
-        "issuer": "str",
-        "reasons": [],
-        "received_at": "str",
-        "sequence": "int",
-        "status": "str"
+        "kutuphane/retrieval": {
+          "embedding": "str",
+          "rerank": "str",
+          "translation": "str"
+        }
+      },
+      "content": [],
+      "isError": "bool",
+      "resultType": "str",
+      "structuredContent": {
+        "result": []
       }
     }
   },
-  "verify_citations:bad_request": {
-    "refused": "Error executing tool verify_citations: give 1 to 200 citations"
+  "submit_package:bad_request": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool submit_package: package_base64 is not base64"
   },
-  "verify_citations:not_checked": {
-    "ok": {
-      "text_json": {
-        "results": [
+  "submit_package:not_found (no propose grant)": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool submit_package: forbidden"
+  },
+  "submit_package:ok": {
+    "block_types": [
+      "text"
+    ],
+    "decoded_text": {
+      "book": {
+        "any_of": [
+          "null",
+          "str"
+        ]
+      },
+      "content_id": {
+        "any_of": [
+          "null",
+          "str"
+        ]
+      },
+      "decided_at": "null",
+      "decided_by": "null",
+      "diff": {
+        "any_of": [
+          "null",
           {
-            "citation": "str",
-            "moved_to": "null",
-            "reason": "null",
-            "status": "str",
-            "symbol_found_at": "null"
+            "added": [
+              "str"
+            ],
+            "changed": [
+              "str"
+            ],
+            "removed": [
+              "str"
+            ]
           }
-        ],
-        "targets": {}
-      }
+        ]
+      },
+      "findings": [
+        {
+          "kind": "str",
+          "lines": [
+            "int"
+          ],
+          "path": "str",
+          "rule": "str",
+          "sha256": "str"
+        }
+      ],
+      "id": "int",
+      "issuer": {
+        "any_of": [
+          "null",
+          "str"
+        ]
+      },
+      "reasons": [
+        "str"
+      ],
+      "received_at": "str",
+      "sequence": {
+        "any_of": [
+          "int",
+          "null"
+        ]
+      },
+      "status": "str"
+    },
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    }
+  },
+  "verify_citations:bad_request": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool verify_citations: give 1 to 200 citations"
+  },
+  "verify_citations:not_found (forbidden)": {
+    "block_types": [
+      "text"
+    ],
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
+    },
+    "error_text": "Error executing tool verify_citations: forbidden"
+  },
+  "verify_citations:ok": {
+    "block_types": [
+      "text"
+    ],
+    "decoded_text": {
+      "results": [
+        {
+          "citation": "str",
+          "moved_to": "null",
+          "reason": "null",
+          "status": "str",
+          "symbol_found_at": "null"
+        }
+      ],
+      "targets": {}
+    },
+    "envelope": {
+      "content": [
+        {
+          "text": "str",
+          "type": "str"
+        }
+      ],
+      "isError": "bool",
+      "resultType": "str"
     }
   }
 }

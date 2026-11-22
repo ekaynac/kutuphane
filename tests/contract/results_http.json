@@ -6,7 +6,14 @@
     "content_type": "application/json",
     "status": 200
   },
-  "GET /v1/answers/{answer_id} [found]": {
+  "GET /v1/answers/{answer_id} [not_found]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 404
+  },
+  "GET /v1/answers/{answer_id} [ok]": {
     "body": {
       "body": "str",
       "evidence": [
@@ -26,7 +33,9 @@
             "issuer": "str",
             "license": "str",
             "listed": "bool",
-            "notices": [],
+            "notices": [
+              "str"
+            ],
             "origin": "str",
             "personal_data": "str",
             "reviewed_by": "null",
@@ -54,21 +63,21 @@
     "content_type": "application/json",
     "status": 200
   },
-  "GET /v1/answers/{answer_id} [no token]": {
+  "GET /v1/answers/{answer_id} [unauthorized]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 401
   },
-  "GET /v1/answers/{answer_id} [not found]": {
+  "GET /v1/books [ok (empty)]": {
     "body": {
-      "error": "str"
+      "books": []
     },
     "content_type": "application/json",
-    "status": 404
+    "status": 200
   },
-  "GET /v1/books [found]": {
+  "GET /v1/books [ok]": {
     "body": {
       "books": [
         {
@@ -107,35 +116,28 @@
     "content_type": "application/json",
     "status": 200
   },
-  "GET /v1/books [no token]": {
+  "GET /v1/books [unauthorized]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 401
   },
-  "GET /v1/books [stranger]": {
-    "body": {
-      "books": []
-    },
-    "content_type": "application/json",
-    "status": 200
-  },
-  "GET /v1/books/{book}/files [bad request]": {
+  "GET /v1/books/{book}/files [bad_request]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 400
   },
-  "GET /v1/books/{book}/files [forbidden]": {
+  "GET /v1/books/{book}/files [not_found (forbidden)]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 403
   },
-  "GET /v1/books/{book}/files [found]": {
+  "GET /v1/books/{book}/files [ok (page)]": {
     "body": {
       "book": "str",
       "content_id": "str",
@@ -158,7 +160,9 @@
                 "issuer": "str",
                 "license": "str",
                 "listed": "bool",
-                "notices": [],
+                "notices": [
+                  "str"
+                ],
                 "origin": "str",
                 "personal_data": "str",
                 "reviewed_by": "null",
@@ -195,35 +199,104 @@
     "content_type": "application/json",
     "status": 200
   },
-  "GET /v1/books/{book}/files [no token]": {
+  "GET /v1/books/{book}/files [ok]": {
+    "body": {
+      "book": "str",
+      "content_id": "str",
+      "files": [
+        {
+          "item": {
+            "any_of": [
+              "null",
+              {
+                "ai_use": {
+                  "ai_input": "str",
+                  "search": "str",
+                  "train": "str"
+                },
+                "applies_to": {
+                  "any_of": [
+                    "null",
+                    {
+                      "platform": [
+                        "str"
+                      ]
+                    }
+                  ]
+                },
+                "confirmed_by": "null",
+                "current": "bool",
+                "entered_by": "null",
+                "holder": "str",
+                "issuer": "str",
+                "license": "str",
+                "listed": "bool",
+                "notices": [
+                  "str"
+                ],
+                "origin": "str",
+                "personal_data": "str",
+                "reviewed_by": "null",
+                "scope": "str",
+                "software_agent": "null",
+                "valid_from": {
+                  "any_of": [
+                    "null",
+                    "str"
+                  ]
+                },
+                "valid_to": "null"
+              }
+            ]
+          },
+          "media_type": "str",
+          "passages": "int",
+          "path": "str",
+          "sha256": "str",
+          "size": "int"
+        }
+      ],
+      "next_cursor": "null",
+      "profile_id": "str",
+      "publication": {
+        "acceptance": {
+          "at": "str",
+          "by": "str",
+          "kind": "str",
+          "legacy": "bool"
+        },
+        "channel": "str",
+        "content_id": "str",
+        "issuer_key": "null",
+        "published_at": "str",
+        "sequence": "null"
+      }
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/books/{book}/files [unauthorized]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 401
   },
-  "GET /v1/citation [malformed]": {
+  "GET /v1/citation [bad_request (malformed)]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 400
   },
-  "GET /v1/citation [no token]": {
-    "body": {
-      "error": "str"
-    },
-    "content_type": "application/json",
-    "status": 401
-  },
-  "GET /v1/citation [not found]": {
+  "GET /v1/citation [not_found]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 404
   },
-  "GET /v1/citation [passage]": {
+  "GET /v1/citation [ok]": {
     "body": {
       "citation": "str",
       "item": {
@@ -240,7 +313,9 @@
         "issuer": "str",
         "license": "str",
         "listed": "bool",
-        "notices": [],
+        "notices": [
+          "str"
+        ],
         "origin": "str",
         "personal_data": "str",
         "reviewed_by": "null",
@@ -271,26 +346,26 @@
     "content_type": "application/json",
     "status": 200
   },
-  "GET /v1/files/{book}/{content_id}/{path:path} [found]": {
-    "body": "non-json",
-    "content_type": "text/markdown",
-    "status": 200
-  },
-  "GET /v1/files/{book}/{content_id}/{path:path} [no token]": {
+  "GET /v1/citation [unauthorized]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 401
   },
-  "GET /v1/files/{book}/{content_id}/{path:path} [not found]": {
+  "GET /v1/files/{book}/{content_id}/{path:path} [not_found]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 404
   },
-  "GET /v1/health [no token]": {
+  "GET /v1/files/{book}/{content_id}/{path:path} [ok]": {
+    "body": "non-json",
+    "content_type": "text/markdown",
+    "status": 200
+  },
+  "GET /v1/files/{book}/{content_id}/{path:path} [unauthorized]": {
     "body": {
       "error": "str"
     },
@@ -309,7 +384,21 @@
     "content_type": "application/json",
     "status": 200
   },
-  "GET /v1/jobs/{job_id} [found]": {
+  "GET /v1/health [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "GET /v1/jobs/{job_id} [not_found]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 404
+  },
+  "GET /v1/jobs/{job_id} [ok]": {
     "body": {
       "created_at": "str",
       "error": "null",
@@ -320,21 +409,21 @@
     "content_type": "application/json",
     "status": 200
   },
-  "GET /v1/jobs/{job_id} [no token]": {
+  "GET /v1/jobs/{job_id} [unauthorized]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 401
   },
-  "GET /v1/jobs/{job_id} [not found]": {
+  "GET /v1/jobs/{job_id}/result [not_found]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 404
   },
-  "GET /v1/jobs/{job_id}/result [found]": {
+  "GET /v1/jobs/{job_id}/result [ok]": {
     "body": {
       "body": "str",
       "evidence": [
@@ -354,7 +443,9 @@
             "issuer": "str",
             "license": "str",
             "listed": "bool",
-            "notices": [],
+            "notices": [
+              "str"
+            ],
             "origin": "str",
             "personal_data": "str",
             "reviewed_by": "null",
@@ -382,28 +473,21 @@
     "content_type": "application/json",
     "status": 200
   },
-  "GET /v1/jobs/{job_id}/result [no token]": {
+  "GET /v1/jobs/{job_id}/result [unauthorized]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 401
   },
-  "GET /v1/jobs/{job_id}/result [not found]": {
-    "body": {
-      "error": "str"
-    },
-    "content_type": "application/json",
-    "status": 404
-  },
-  "GET /v1/notes [bad request]": {
+  "GET /v1/notes [bad_request]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 400
   },
-  "GET /v1/notes [found]": {
+  "GET /v1/notes [ok]": {
     "body": {
       "books": [
         "str"
@@ -419,7 +503,12 @@
             "by": "null",
             "kind": "str"
           },
-          "citations": [],
+          "citations": [
+            {
+              "ref": "str",
+              "status": "str"
+            }
+          ],
           "class_key": "null",
           "current": "bool",
           "kind": "str",
@@ -449,21 +538,28 @@
     "content_type": "application/json",
     "status": 200
   },
-  "GET /v1/notes [no token]": {
+  "GET /v1/notes [unauthorized]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 401
   },
-  "GET /v1/notes/{book}/{id}/confirmation [forbidden]": {
+  "GET /v1/notes/{book}/{id}/confirmation [bad_request (malformed id)]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 400
+  },
+  "GET /v1/notes/{book}/{id}/confirmation [not_found (forbidden)]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 403
   },
-  "GET /v1/notes/{book}/{id}/confirmation [found]": {
+  "GET /v1/notes/{book}/{id}/confirmation [ok]": {
     "body": {
       "confirmation": {
         "state": "str"
@@ -474,24 +570,80 @@
     "content_type": "application/json",
     "status": 200
   },
-  "GET /v1/notes/{book}/{id}/confirmation [no token]": {
+  "GET /v1/notes/{book}/{id}/confirmation [unauthorized]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 401
   },
-  "GET /v1/notes/{book}/{id}/neighbours [found]": {
+  "GET /v1/notes/{book}/{id}/neighbours [bad_request (malformed id)]": {
     "body": {
-      "edges": [],
-      "nodes": [],
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 400
+  },
+  "GET /v1/notes/{book}/{id}/neighbours [not_found]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 404
+  },
+  "GET /v1/notes/{book}/{id}/neighbours [ok]": {
+    "body": {
+      "edges": [
+        {
+          "dst": "str",
+          "src": "str",
+          "type": "str"
+        }
+      ],
+      "nodes": [
+        {
+          "acceptance": {
+            "at": "null",
+            "by": "null",
+            "kind": "str"
+          },
+          "citations": [
+            {
+              "ref": "str",
+              "status": "str"
+            }
+          ],
+          "class_key": "null",
+          "current": "bool",
+          "kind": "str",
+          "links": {
+            "about": "int"
+          },
+          "observed_commit": "null",
+          "origin": "str",
+          "outcomes": {},
+          "recurrence": "int",
+          "ref": "str",
+          "role": "str",
+          "scope": "null",
+          "standing": "str",
+          "text": "str",
+          "withheld": "null",
+          "written_at": "str"
+        }
+      ],
       "root": {
         "acceptance": {
           "at": "null",
           "by": "null",
           "kind": "str"
         },
-        "citations": [],
+        "citations": [
+          {
+            "ref": "str",
+            "status": "str"
+          }
+        ],
         "class_key": "null",
         "current": "bool",
         "kind": "str",
@@ -517,66 +669,107 @@
     "content_type": "application/json",
     "status": 200
   },
-  "GET /v1/notes/{book}/{id}/neighbours [no token]": {
+  "GET /v1/notes/{book}/{id}/neighbours [unauthorized]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 401
   },
-  "GET /v1/notes/{book}/{id}/neighbours [not found]": {
+  "GET /v1/packages/{import_id} [bad_request (not a number)]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 404
   },
-  "GET /v1/packages/{import_id} [found]": {
+  "GET /v1/packages/{import_id} [not_found]": {
     "body": {
-      "book": "str",
-      "content_id": "str",
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 404
+  },
+  "GET /v1/packages/{import_id} [ok]": {
+    "body": {
+      "book": {
+        "any_of": [
+          "null",
+          "str"
+        ]
+      },
+      "content_id": {
+        "any_of": [
+          "null",
+          "str"
+        ]
+      },
       "decided_at": "null",
       "decided_by": "null",
       "diff": {
-        "added": [
-          "str"
-        ],
-        "changed": [],
-        "removed": []
+        "any_of": [
+          "null",
+          {
+            "added": [
+              "str"
+            ],
+            "changed": [
+              "str"
+            ],
+            "removed": [
+              "str"
+            ]
+          }
+        ]
       },
-      "findings": [],
+      "findings": [
+        {
+          "kind": "str",
+          "lines": [
+            "int"
+          ],
+          "path": "str",
+          "rule": "str",
+          "sha256": "str"
+        }
+      ],
       "id": "int",
-      "issuer": "str",
-      "reasons": [],
+      "issuer": {
+        "any_of": [
+          "null",
+          "str"
+        ]
+      },
+      "reasons": [
+        "str"
+      ],
       "received_at": "str",
-      "sequence": "int",
+      "sequence": {
+        "any_of": [
+          "int",
+          "null"
+        ]
+      },
       "status": "str"
     },
     "content_type": "application/json",
     "status": 200
   },
-  "GET /v1/packages/{import_id} [no token]": {
+  "GET /v1/packages/{import_id} [unauthorized]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 401
   },
-  "GET /v1/packages/{import_id} [not found]": {
-    "body": {
-      "error": "str"
-    },
-    "content_type": "application/json",
-    "status": 404
-  },
-  "GET /v1/search [bad request]": {
+  "GET /v1/search [bad_request]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 400
   },
-  "GET /v1/search [empty]": {
+  "GET /v1/search [ok (empty)]": {
     "body": {
       "correlation_id": "str",
       "results": [],
@@ -589,7 +782,7 @@
     "content_type": "application/json",
     "status": 200
   },
-  "GET /v1/search [found]": {
+  "GET /v1/search [ok]": {
     "body": {
       "correlation_id": "str",
       "results": [
@@ -609,7 +802,9 @@
             "issuer": "str",
             "license": "str",
             "listed": "bool",
-            "notices": [],
+            "notices": [
+              "str"
+            ],
             "origin": "str",
             "personal_data": "str",
             "reviewed_by": "null",
@@ -634,40 +829,20 @@
     "content_type": "application/json",
     "status": 200
   },
-  "GET /v1/search [no token]": {
+  "GET /v1/search [unauthorized]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 401
   },
-  "GET /v1/search [stranger]": {
-    "body": {
-      "correlation_id": "str",
-      "results": [],
-      "retrieval": {
-        "embedding": "str",
-        "rerank": "str",
-        "translation": "str"
-      }
-    },
-    "content_type": "application/json",
-    "status": 200
-  },
-  "GET /v1/whoami [delegated]": {
+  "GET /v1/whoami [ok (delegated)]": {
     "body": {
       "on_behalf_of": "str",
       "principal": "str"
     },
     "content_type": "application/json",
     "status": 200
-  },
-  "GET /v1/whoami [no token]": {
-    "body": {
-      "error": "str"
-    },
-    "content_type": "application/json",
-    "status": 401
   },
   "GET /v1/whoami [ok]": {
     "body": {
@@ -677,7 +852,236 @@
     "content_type": "application/json",
     "status": 200
   },
-  "POST /v1/ask [answered]": {
+  "GET /v1/whoami [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "HEAD /healthz [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/answers/{answer_id} [head_error]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 404
+  },
+  "HEAD /v1/answers/{answer_id} [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/books [head_error]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 401
+  },
+  "HEAD /v1/books [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/books/{book}/files [head_error]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": {
+      "any_of": [
+        400,
+        403
+      ]
+    }
+  },
+  "HEAD /v1/books/{book}/files [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/citation [head_error]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 404
+  },
+  "HEAD /v1/citation [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/files/{book}/{content_id}/{path:path} [head_error]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 404
+  },
+  "HEAD /v1/files/{book}/{content_id}/{path:path} [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "text/markdown",
+    "status": 200
+  },
+  "HEAD /v1/health [head_error]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 401
+  },
+  "HEAD /v1/health [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/jobs/{job_id} [head_error]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": {
+      "any_of": [
+        401,
+        404
+      ]
+    }
+  },
+  "HEAD /v1/jobs/{job_id} [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/jobs/{job_id}/result [head_error]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": {
+      "any_of": [
+        401,
+        404
+      ]
+    }
+  },
+  "HEAD /v1/jobs/{job_id}/result [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/notes [head_error]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 400
+  },
+  "HEAD /v1/notes [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/notes/{book}/{id}/confirmation [head_error]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 403
+  },
+  "HEAD /v1/notes/{book}/{id}/confirmation [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/notes/{book}/{id}/neighbours [head_error]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 404
+  },
+  "HEAD /v1/notes/{book}/{id}/neighbours [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/packages/{import_id} [head_error]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 404
+  },
+  "HEAD /v1/packages/{import_id} [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/search [head_error]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 400
+  },
+  "HEAD /v1/search [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/whoami [head_error]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 401
+  },
+  "HEAD /v1/whoami [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "POST /v1/ask [bad_request]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 400
+  },
+  "POST /v1/ask [ok (empty)]": {
+    "body": {
+      "body": "null",
+      "citations": [],
+      "correlation_id": "str",
+      "id": "str",
+      "retrieval": {
+        "embedding": "str",
+        "rerank": "str",
+        "translation": "str"
+      },
+      "status": "str",
+      "withheld": "int"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "POST /v1/ask [ok (queued)]": {
+    "body": {
+      "correlation_id": "str",
+      "job_id": "str",
+      "status": "str"
+    },
+    "content_type": "application/json",
+    "status": 202
+  },
+  "POST /v1/ask [ok]": {
     "body": {
       "body": "str",
       "citations": [
@@ -698,7 +1102,9 @@
             "issuer": "str",
             "license": "str",
             "listed": "bool",
-            "notices": [],
+            "notices": [
+              "str"
+            ],
             "origin": "str",
             "personal_data": "str",
             "reviewed_by": "null",
@@ -729,61 +1135,28 @@
     "content_type": "application/json",
     "status": 200
   },
-  "POST /v1/ask [bad request]": {
-    "body": {
-      "error": "str"
-    },
-    "content_type": "application/json",
-    "status": 400
-  },
-  "POST /v1/ask [no token]": {
+  "POST /v1/ask [unauthorized]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 401
   },
-  "POST /v1/ask [not in library]": {
-    "body": {
-      "body": "null",
-      "citations": [],
-      "correlation_id": "str",
-      "id": "str",
-      "retrieval": {
-        "embedding": "str",
-        "rerank": "str",
-        "translation": "str"
-      },
-      "status": "str",
-      "withheld": "int"
-    },
-    "content_type": "application/json",
-    "status": 200
-  },
-  "POST /v1/ask [queued]": {
-    "body": {
-      "correlation_id": "str",
-      "job_id": "str",
-      "status": "str"
-    },
-    "content_type": "application/json",
-    "status": 202
-  },
-  "POST /v1/citations/verify [bad request]": {
+  "POST /v1/citations/verify [bad_request]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 400
   },
-  "POST /v1/citations/verify [no token]": {
+  "POST /v1/citations/verify [not_found (forbidden)]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
-    "status": 401
+    "status": 403
   },
-  "POST /v1/citations/verify [not checked]": {
+  "POST /v1/citations/verify [ok]": {
     "body": {
       "results": [
         {
@@ -799,7 +1172,21 @@
     "content_type": "application/json",
     "status": 200
   },
-  "POST /v1/jobs/{job_id}/cancel [found]": {
+  "POST /v1/citations/verify [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "POST /v1/jobs/{job_id}/cancel [not_found]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 404
+  },
+  "POST /v1/jobs/{job_id}/cancel [ok]": {
     "body": {
       "created_at": "str",
       "error": "null",
@@ -810,58 +1197,44 @@
     "content_type": "application/json",
     "status": 200
   },
-  "POST /v1/jobs/{job_id}/cancel [no token]": {
+  "POST /v1/jobs/{job_id}/cancel [unauthorized]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 401
   },
-  "POST /v1/jobs/{job_id}/cancel [not found]": {
-    "body": {
-      "error": "str"
-    },
-    "content_type": "application/json",
-    "status": 404
-  },
-  "POST /v1/notes [bad request]": {
+  "POST /v1/notes [bad_request]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 400
   },
-  "POST /v1/notes [created]": {
-    "body": {
-      "candidates": [],
-      "class_count": "int",
-      "guard_due": "bool",
-      "origin": "str",
-      "origin_notice": "null",
-      "recurrence": "int",
-      "ref": "str",
-      "standing": "str",
-      "status": "str",
-      "vector": "str"
-    },
-    "content_type": "application/json",
-    "status": 201
-  },
-  "POST /v1/notes [forbidden]": {
+  "POST /v1/notes [not_found (forbidden)]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 403
   },
-  "POST /v1/notes [no token]": {
+  "POST /v1/notes [ok (created)]": {
     "body": {
-      "error": "str"
+      "candidates": [],
+      "class_count": "int",
+      "guard_due": "bool",
+      "origin": "str",
+      "origin_notice": "null",
+      "recurrence": "int",
+      "ref": "str",
+      "standing": "str",
+      "status": "str",
+      "vector": "str"
     },
     "content_type": "application/json",
-    "status": 401
+    "status": 201
   },
-  "POST /v1/notes [retried]": {
+  "POST /v1/notes [ok (retried)]": {
     "body": {
       "candidates": [],
       "class_count": "int",
@@ -877,14 +1250,44 @@
     "content_type": "application/json",
     "status": 200
   },
-  "POST /v1/notes/links [bad request]": {
+  "POST /v1/notes [ok (with a citation)]": {
+    "body": {
+      "candidates": [],
+      "class_count": "int",
+      "guard_due": "bool",
+      "origin": "str",
+      "origin_notice": "null",
+      "recurrence": "int",
+      "ref": "str",
+      "standing": "str",
+      "status": "str",
+      "vector": "str"
+    },
+    "content_type": "application/json",
+    "status": 201
+  },
+  "POST /v1/notes [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "POST /v1/notes/links [bad_request]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 400
   },
-  "POST /v1/notes/links [created]": {
+  "POST /v1/notes/links [not_found]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 404
+  },
+  "POST /v1/notes/links [ok (created)]": {
     "body": {
       "dst": "str",
       "src": "str",
@@ -894,14 +1297,7 @@
     "content_type": "application/json",
     "status": 201
   },
-  "POST /v1/notes/links [no token]": {
-    "body": {
-      "error": "str"
-    },
-    "content_type": "application/json",
-    "status": 401
-  },
-  "POST /v1/notes/links [retried]": {
+  "POST /v1/notes/links [ok (retried)]": {
     "body": {
       "dst": "str",
       "src": "str",
@@ -911,28 +1307,35 @@
     "content_type": "application/json",
     "status": 200
   },
-  "POST /v1/outcomes [bad request]": {
-    "body": {
-      "error": "str"
-    },
-    "content_type": "application/json",
-    "status": 400
-  },
-  "POST /v1/outcomes [conflict]": {
-    "body": {
-      "error": "str"
-    },
-    "content_type": "application/json",
-    "status": 409
-  },
-  "POST /v1/outcomes [no token]": {
+  "POST /v1/notes/links [unauthorized]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 401
   },
-  "POST /v1/outcomes [recorded]": {
+  "POST /v1/outcomes [bad_request (conflict)]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 409
+  },
+  "POST /v1/outcomes [bad_request]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 400
+  },
+  "POST /v1/outcomes [not_found]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 404
+  },
+  "POST /v1/outcomes [ok]": {
     "body": {
       "origin": "str",
       "ref": "str",
@@ -942,42 +1345,97 @@
     "content_type": "application/json",
     "status": 201
   },
-  "POST /v1/packages [bad request]": {
-    "body": {
-      "error": "str"
-    },
-    "content_type": "application/json",
-    "status": 400
-  },
-  "POST /v1/packages [no token]": {
+  "POST /v1/outcomes [unauthorized]": {
     "body": {
       "error": "str"
     },
     "content_type": "application/json",
     "status": 401
   },
-  "POST /v1/packages [received]": {
+  "POST /v1/packages [bad_request]": {
     "body": {
-      "book": "str",
-      "content_id": "str",
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 400
+  },
+  "POST /v1/packages [not_found (forbidden)]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 403
+  },
+  "POST /v1/packages [ok]": {
+    "body": {
+      "book": {
+        "any_of": [
+          "null",
+          "str"
+        ]
+      },
+      "content_id": {
+        "any_of": [
+          "null",
+          "str"
+        ]
+      },
       "decided_at": "null",
       "decided_by": "null",
       "diff": {
-        "added": [
-          "str"
-        ],
-        "changed": [],
-        "removed": []
+        "any_of": [
+          "null",
+          {
+            "added": [
+              "str"
+            ],
+            "changed": [
+              "str"
+            ],
+            "removed": [
+              "str"
+            ]
+          }
+        ]
       },
-      "findings": [],
+      "findings": [
+        {
+          "kind": "str",
+          "lines": [
+            "int"
+          ],
+          "path": "str",
+          "rule": "str",
+          "sha256": "str"
+        }
+      ],
       "id": "int",
-      "issuer": "str",
-      "reasons": [],
+      "issuer": {
+        "any_of": [
+          "null",
+          "str"
+        ]
+      },
+      "reasons": [
+        "str"
+      ],
       "received_at": "str",
-      "sequence": "int",
+      "sequence": {
+        "any_of": [
+          "int",
+          "null"
+        ]
+      },
       "status": "str"
     },
     "content_type": "application/json",
     "status": 201
+  },
+  "POST /v1/packages [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
   }
 }
