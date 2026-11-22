@@ -586,7 +586,25 @@ the person is as stated, not proven by a passkey), `by` that person, `at` the pu
 `true` for a version published before migration 051: it shows `operator_cli`, or `none` when no person was
 recorded, and is never upgraded. `channel` `ingest` or `import` (`approve-import`, with the signing key fingerprint
 `issuer_key` and package `sequence`). Before migration 045 `channel`, `issuer_key` and `sequence` are `null`.
-`acceptance.by` replaces the old `publication.approved_by`. **Errors:** `401`.
+`acceptance.by` replaces the old `publication.approved_by`. `consumer_attested`: a use policy published it on a
+sender's signed attestation, `by` is the attester. `policy` (#235): an unattended use policy published it, `by` is
+`policy:<id>`, and no person accepted it. **Errors:** `401`.
+
+#### Which read paths show or select the acceptance kind
+
+Excluding a kind is the consumer's selection, not a server gate: no path hides a version because of its kind.
+
+| Path | Shows the kind | Filters by kind |
+|---|---|---|
+| `search_library`, `GET /v1/search` | no (not in the hit) | yes: books whose current version has one of the kinds |
+| `ask_library`, `POST /v1/ask` | no (not in the citation) | yes, as search |
+| `list_books`, `GET /v1/books` | yes (`publication.acceptance`) | no |
+| `list_files`, `GET /v1/books/{book}/files` | yes | no |
+| `open_citation`, `GET /v1/citation` (a handle of any version) | yes (`publication`) | no |
+| `read_document`, `GET /v1/files/…` | no | no |
+
+To keep only person-accepted content in search and ask, set `acceptance` to `["curator_passkey", "operator_cli",
+"consumer_attested"]`; on `list_books`, `list_files` and `open_citation` read `publication.acceptance.kind` (`read_document` shows no kind).
 
 ### 5.19 `list_files`
 

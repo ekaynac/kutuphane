@@ -6,6 +6,10 @@ manifest) from one of the policy's attesters and nothing in it needs a person.
 person (`approve-import`), which always works. `publish_admitted()` is the timer entry (`kutuphane imports
 publish-admitted`); it publishes through `packages.approve`, which re-verifies under the same locks as a person's
 approval. The acceptance kind is `consumer_attested`; `approved_by` is the attester, `decided_by` is `policy:<id>`.
+
+An unattended use policy (#235) has no attesters and no attestation: the same rule applies except the `accepted_by`
+check, `accepted_by` of the manifest is ignored for the kind, and the publication is `policy` with `approved_by`
+`policy:<id>`. It records a standing decision of a curator, never a person's act on this package.
 """
 import re
 from contextlib import nullcontext
@@ -48,21 +52,27 @@ def _book_policy(policy: dict) -> dict:
     return policy
 
 
-def add(conn, book: str, key: str, attesters, *, sensitivity: str, egress: str, protection: str, by: str) -> int:
+def add(conn, book: str, key: str, attesters, *, sensitivity: str, egress: str, protection: str, by: str,
+        unattended: bool = False) -> int:
     if not SLUG.match(book):
         raise ValueError(f"{book!r} is not a book slug")
     if not (isinstance(by, str) and by.startswith("user:") and authz.PRINCIPAL.match(by)):
         raise ValueError("--by must be a user: principal such as user:<name>")
     catalog.require_curate(conn, by, book)
     policy = _book_policy(make_policy(sensitivity=sensitivity, egress=egress, protection=protection))
-    attesters = _attesters(attesters)
+    if unattended:
+        if attesters:
+            raise ValueError("an unattended use policy has no attesters")
+        attesters = []
+    else:
+        attesters = _attesters(attesters)
     trusted = conn.execute("SELECT revoked_at FROM trusted_key WHERE fingerprint = %s", (key,)).fetchone()
     if trusted is None or trusted[0] is not None:
         raise ValueError(f"{key} is not a trusted signing key (or it is revoked): `kutuphane trust` first")
     try:
-        return conn.execute("INSERT INTO use_policy (book, issuer, attesters, policy, created_by) "
-                            "VALUES (%s, %s, %s, %s, %s) RETURNING id",
-                            (book, key, attesters, Jsonb(policy), by)).fetchone()[0]
+        return conn.execute("INSERT INTO use_policy (book, issuer, attesters, policy, created_by, unattended) "
+                            "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+                            (book, key, attesters, Jsonb(policy), by, unattended)).fetchone()[0]
     except psycopg.errors.UniqueViolation:
         raise ValueError(f"{book} already has an active use policy for {key}: revoke it first") from None
 
@@ -80,10 +90,11 @@ def revoke(conn, policy_id: int, *, by: str) -> bool:
 
 
 def listing(conn, book: str | None = None) -> list[dict]:
-    rows = conn.execute("SELECT id, book, issuer, attesters, policy, created_by, created_at, revoked_at, revoked_by "
+    rows = conn.execute("SELECT id, book, issuer, attesters, policy, created_by, created_at, revoked_at, revoked_by, unattended "
                         "FROM use_policy WHERE book = %s OR %s::text IS NULL ORDER BY id", (book, book)).fetchall()
     return [{"id": i, "book": b, "issuer": k, "attesters": a, "policy": p, "created_by": c, "created_at": t.isoformat(),
-             "revoked_at": r.isoformat() if r else None, "revoked_by": rb} for i, b, k, a, p, c, t, r, rb in rows]
+             "revoked_at": r.isoformat() if r else None, "revoked_by": rb, "unattended": u}
+            for i, b, k, a, p, c, t, r, rb, u in rows]
 
 
 def admission(conn, manifest: dict, files: list, findings: list) -> Admission:
@@ -91,13 +102,13 @@ def admission(conn, manifest: dict, files: list, findings: list) -> Admission:
     The book's current policy must still be the use policy's (Q8), else a person decides.
     Returns the admitting use policy, or raises NotAdmitted with the first reason. The policy row is read FOR SHARE and the book row (made if new) FOR UPDATE,
     so a revocation either lands first or waits for the publication."""
-    row = conn.execute("SELECT u.id, u.attesters, u.policy FROM use_policy u JOIN trusted_key k "
+    row = conn.execute("SELECT u.id, u.attesters, u.policy, u.unattended FROM use_policy u JOIN trusted_key k "
                        "ON k.fingerprint = u.issuer AND k.revoked_at IS NULL "
                        "WHERE u.book = %s AND u.issuer = %s AND u.revoked_at IS NULL FOR SHARE OF u",
                        (manifest["book"], manifest["issuer"])).fetchone()
     if row is None:
         raise NotAdmitted("no active use policy for this book and signing key")
-    policy_id, attesters, doc = row
+    policy_id, attesters, doc, unattended = row
     try:
         policy = _book_policy(doc)
     except ValueError as exc:
@@ -115,11 +126,17 @@ def admission(conn, manifest: dict, files: list, findings: list) -> Admission:
             _book_policy(current[1])
         except ValueError:
             raise NotAdmitted("the book policy is restricted or cloud_ok; a person decides") from None
-    attested = manifest.get("accepted_by")
-    if attested is None:
-        raise NotAdmitted("the manifest has no accepted_by")
-    if not attested["principal"].startswith(tuple(attesters)):
-        raise NotAdmitted(f"{attested['principal']} is outside the attesters of use policy {policy_id}")
+    suggested = manifest.get("policy_suggestion")  # #235: with no person, the sender's advice must not be more strict
+    if unattended and not (isinstance(suggested, dict) and suggested.get("sensitivity") == "normal"
+                           and suggested.get("egress") == "local_only"):  # fail closed: missing, null or malformed
+        raise NotAdmitted("the sender does not suggest a normal, local_only book (restricted, cloud_ok, missing or "
+                          "not valid); a person decides")
+    attested = None if unattended else manifest.get("accepted_by")  # unattended: accepted_by is ignored
+    if not unattended:
+        if attested is None:
+            raise NotAdmitted("the manifest has no accepted_by")
+        if not attested["principal"].startswith(tuple(attesters)):
+            raise NotAdmitted(f"{attested['principal']} is outside the attesters of use policy {policy_id}")
     if findings:
         kinds = sorted({f.get("kind", "?") for f in findings})
         raise NotAdmitted(f"{len(findings)} finding(s) for a person ({', '.join(kinds)})")
@@ -135,7 +152,7 @@ def admission(conn, manifest: dict, files: list, findings: list) -> Admission:
                           if agentfiles.is_instruction({"path": f.path, "okf_type": f.okf_type}, skills))
     if instructions:
         raise NotAdmitted(f"agent instruction file (K3): {', '.join(instructions[:3])}")
-    return Admission(policy_id, policy, attested["principal"])
+    return Admission(policy_id, policy, f"policy:{policy_id}" if unattended else attested["principal"])
 
 
 def publish_admitted(conn, *, dry_run: bool = False):
