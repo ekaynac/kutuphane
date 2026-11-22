@@ -8,13 +8,10 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
-### Standalone install and model providers (D88)
-
-- Design and research: D88 in `docs/01`. The standalone compose will run the embedder as its own service, Kütüphane will call models through a direct OpenAI-compatible provider as well as LLMDAP (rights and `local_only` still checked in Kütüphane before each call), and the answer model stays external. No behaviour changes in this entry; the work is #242.
-
 ### The public install is the light install; LLMDAP only under an agreement (#236)
 
 - Docs: the light install (`compose.yaml`) is the public install and makes no model call. The full stack's LLMDAP bridge is a proprietary component, delivered as a signed release tarball under an LLMDAP agreement; the docs no longer say "build it from the LLMDAP repo" ([install.md](install.md), `deploy/llmdap/README.md`). No setting, image, service or code changes.
+- Design and research: D88 in `docs/01`: the standalone compose will run the embedder, Kütüphane may call models through a direct OpenAI-compatible provider as well as LLMDAP, and the answer model stays external. The work is #242.
 
 ### open_citation errors name the handle form (#232)
 
