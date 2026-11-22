@@ -8,8 +8,9 @@ Writing the files does not authorise a contract change (see test_contract.py).
 - tools.json: for every MCP tool: name, description, input schema, output schema (when declared). Two builds: the
   full one (with a model gateway: `ask_library` and the job tools) and the one without.
 - http.json: every HTTP route: path and all its methods (HEAD included).
-- errors.json: the HTTP status and text of every expected error class, the named error constants, and every message
-  literal in a `raise` of the modules the API and the tools run (the text a caller can read).
+- errors.json: the HTTP status and text of every expected error class, the value of every public module-level string constant
+  of those modules (SKILL_BLOCKED, CLOUD_OK, NOT_IN_LIBRARY, ...), and every message literal in a `raise` of the
+  modules the API and the tools run, as written. The executed cases of the results files hold the texts a caller gets.
 - matrix.json: which kinds of case (ok, not found, bad request, unauthorized, HEAD) the results cover for each tool
   and route, with the reason for each kind that does not apply (matrix.py).
 - results_mcp.json, results_http.json: the shape (keys and types, no values) of what every tool and route returns
@@ -20,6 +21,7 @@ Writing the files does not authorise a contract change (see test_contract.py).
 import argparse
 import ast
 import asyncio
+import importlib
 import json
 import os
 import sys
@@ -40,8 +42,6 @@ SRC = Path(server.__file__).parent
 ISSUER, AUDIENCE, PUBLIC_URL = "https://idp.contract.test/", "kutuphane", "https://kutuphane.contract.test"
 # Command line, passkey web and dev-login messages are not part of the API or tool contract.
 NOT_API = {"cli.py", "curatorweb.py", "passkey.py", "devauth.py", "__init__.py"}
-ERROR_CONSTANTS = {"server": ("NO_ANSWERS", "PASSAGE_NOT_FOUND"), "notes": ("MALFORMED_PASSAGE", "WITHHELD"),
-                   "decisions": ("WITHHELD",)}
 
 
 def _verifier(tmp: Path) -> Verifier:
@@ -75,28 +75,52 @@ def routes(verifier: Verifier) -> list[dict]:
     return sorted(out, key=lambda r: (r["path"], r.get("methods", [])))
 
 
-def raised_texts() -> dict[str, list[str]]:
+def raised() -> dict[str, list[str]]:
+    """{module file: the first argument of every `raise X(...)`, as written}."""
+    texts = {}
+    for path in sorted(SRC.glob("*.py")):
+        if path.name in NOT_API:
+            continue
+        found = set()
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call) and node.exc.args:
+                found.add(ast.unparse(node.exc.args[0]))
+        if found:
+            texts[path.name] = sorted(found)
+    return texts
+
+
+def constants() -> dict[str, str]:
+    """The VALUE of every public module-level string constant of the API and tool modules (an UPPER_CASE name without
+    a leading underscore, one line): `SKILL_BLOCKED`, `CLOUD_OK`, `NOT_IN_LIBRARY`, the environment variable names...
+    A raise or a response that names a constant would otherwise change its text with no change in the snapshot."""
     found = {}
     for path in sorted(SRC.glob("*.py")):
         if path.name in NOT_API:
             continue
-        texts = set()
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            if isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call) and node.exc.args:
-                texts.add(ast.unparse(node.exc.args[0]))
-        if texts:
-            found[path.name] = sorted(texts)
+        module = importlib.import_module(f"kutuphane.{path.stem}")
+        for name, value in sorted(vars(module).items()):
+            if name.isupper() and not name.startswith("_") and isinstance(value, str) and "\n" not in value \
+                    and name in _assigned_names(path):
+                found[f"{path.stem}.{name}"] = value
     return found
 
 
+def _assigned_names(path: Path) -> set[str]:
+    """The names a module assigns itself (not the ones it imports)."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return {t.id for node in tree.body if isinstance(node, ast.Assign) for target in node.targets
+            for t in ast.walk(target) if isinstance(t, ast.Name)}
+
+
 def errors() -> dict:
-    import importlib
+    texts = raised()
     return {
         "http": [{"class": kind.__name__, "status": status, "text": text} for kind, status, text in server.ERRORS],
         "unexpected": "internal error",
-        "constants": {f"{mod}.{name}": getattr(importlib.import_module(f"kutuphane.{mod}"), name)
-                      for mod, names in ERROR_CONSTANTS.items() for name in names},
-        "raised": raised_texts(),
+        "constants": constants(),
+        "raised": texts,
     }
 
 

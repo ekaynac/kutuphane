@@ -6,7 +6,7 @@ has no entry here, when a kind that applies has no recorded case, or when this f
 (matrix.json): coverage cannot shrink silently.
 
 MCP kinds: ok, not_found (also refused or forbidden), bad_request (also an argument the input schema refuses).
-HTTP kinds: the same, and unauthorized (no token: 401); for a GET route also head_ok and head_error: the same
+HTTP kinds (the mount at `/`, the MCP transport, too): the same, and unauthorized (no token: 401); for a GET route also head_ok and head_error: the same
 request with HEAD, for the ok and for the main error case.
 """
 RUN = "run"
@@ -60,6 +60,9 @@ MCP = {
 }
 
 HTTP = {
+    # the mount at `/`: the MCP endpoint (/mcp, every tool above is called through it) and the protected-resource
+    # metadata; its cases are JSON-RPC calls without a tool, plus a body that is not JSON and a missing token
+    "MOUNT /": route("MOUNT"),
     "GET /healthz": route("GET", not_found=PUBLIC, bad_request=PUBLIC, unauthorized=PUBLIC, head_error=PUBLIC),
     "GET /v1/whoami": route("GET", not_found=BODY_FREE, bad_request=BODY_FREE),
     "GET /v1/health": route("GET", not_found=BODY_FREE, bad_request=BODY_FREE),
@@ -86,9 +89,6 @@ HTTP = {
     "POST /v1/packages": route("POST"),
     "GET /v1/packages/{import_id}": route("GET"),
 }
-# Mounts and routes that the table above does not hold, with the reason.
-NOT_IN_MATRIX = {"MOUNT /": "the MCP transport (/mcp) and the protected-resource metadata: the tools above are "
-                            "called through the same server object; the endpoint itself is the SDK's"}
 
 # Lists that stay empty in a result, by the name of the field, and why. A list that is empty in a case named "(empty)"
 # is that case's point and is not listed. test_contract.py fails for an empty list that is not here, and for an entry
@@ -135,9 +135,9 @@ def problems(tools: list[str], routes: list[dict], mcp: dict, http: dict) -> lis
     found = []
     wanted = {f"{m} {r['path']}" if "mount" not in r else f"MOUNT {r['path']}": 0 for r in routes
               for m in (r.get("methods") or ["MOUNT"]) if m != "HEAD"}
-    for key in sorted(set(wanted) - set(HTTP) - set(NOT_IN_MATRIX)):
+    for key in sorted(set(wanted) - set(HTTP)):
         found.append(f"route without a matrix entry: {key}")
-    for key in sorted((set(HTTP) | set(NOT_IN_MATRIX)) - set(wanted)):
+    for key in sorted(set(HTTP) - set(wanted)):
         found.append(f"matrix entry of a route that does not exist: {key}")
     for key in sorted(set(tools) - set(MCP)):
         found.append(f"tool without a matrix entry: {key}")
@@ -174,4 +174,4 @@ def problems(tools: list[str], routes: list[dict], mcp: dict, http: dict) -> lis
 
 
 def snapshot() -> dict:
-    return {"mcp": MCP, "http": HTTP, "not_in_matrix": NOT_IN_MATRIX, "empty_collections": EMPTY_COLLECTIONS}
+    return {"mcp": MCP, "http": HTTP, "empty_collections": EMPTY_COLLECTIONS}

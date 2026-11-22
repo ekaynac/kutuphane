@@ -125,6 +125,12 @@
       "ok": "run",
       "unauthorized": "run"
     },
+    "MOUNT /": {
+      "bad_request": "run",
+      "not_found": "run",
+      "ok": "run",
+      "unauthorized": "run"
+    },
     "POST /v1/ask": {
       "bad_request": "run",
       "not_found": "no such failure: an answer the library cannot support is an ok result (status not_in_library)",
@@ -264,8 +270,5 @@
       "not_found": "run",
       "ok": "run"
     }
-  },
-  "not_in_matrix": {
-    "MOUNT /": "the MCP transport (/mcp) and the protected-resource metadata: the tools above are called through the same server object; the endpoint itself is the SDK's"
   }
 }

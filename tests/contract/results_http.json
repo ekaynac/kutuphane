@@ -1048,6 +1048,244 @@
     "content_type": "application/json",
     "status": 200
   },
+  "MOUNT / [bad_request (no tool name)]": {
+    "2025-11-25": {
+      "http_status": 200,
+      "message": {
+        "error": {
+          "code": "int",
+          "data": "str",
+          "message": "str"
+        },
+        "id": "int",
+        "jsonrpc": "str"
+      },
+      "rpc_error": {
+        "code": -32602,
+        "message": "Invalid request parameters"
+      }
+    },
+    "2026-07-28": {
+      "http_status": 400,
+      "message": {
+        "error": {
+          "code": "int",
+          "data": "str",
+          "message": "str"
+        },
+        "id": "int",
+        "jsonrpc": "str"
+      },
+      "rpc_error": {
+        "code": -32602,
+        "message": "Invalid request parameters"
+      }
+    }
+  },
+  "MOUNT / [bad_request (not json)]": {
+    "body": {
+      "error": {
+        "code": "int",
+        "message": "str"
+      },
+      "id": "null",
+      "jsonrpc": "str"
+    },
+    "content_type": "application/json",
+    "status": 400
+  },
+  "MOUNT / [not_found (unknown method)]": {
+    "2025-11-25": {
+      "http_status": 200,
+      "message": {
+        "error": {
+          "code": "int",
+          "data": "str",
+          "message": "str"
+        },
+        "id": "int",
+        "jsonrpc": "str"
+      },
+      "rpc_error": {
+        "code": -32601,
+        "message": "Method not found"
+      }
+    },
+    "2026-07-28": {
+      "http_status": 404,
+      "message": {
+        "error": {
+          "code": "int",
+          "data": "str",
+          "message": "str"
+        },
+        "id": "int",
+        "jsonrpc": "str"
+      },
+      "rpc_error": {
+        "code": -32601,
+        "message": "Method not found"
+      }
+    }
+  },
+  "MOUNT / [not_found (unknown tool)]": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "error_text": "Unknown tool: no_such_tool",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "error_text": "Unknown tool: no_such_tool",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "MOUNT / [ok (protected resource metadata)]": {
+    "body": {
+      "authorization_servers": [
+        "str"
+      ],
+      "bearer_methods_supported": [
+        "str"
+      ],
+      "resource": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "MOUNT / [ok (server/discover)]": {
+    "2026-07-28": {
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            }
+          },
+          "cacheScope": "str",
+          "capabilities": {
+            "extensions": {
+              "io.modelcontextprotocol/oauth-client-credentials": {},
+              "io.modelcontextprotocol/skills": {}
+            },
+            "prompts": {
+              "listChanged": "bool"
+            },
+            "resources": {
+              "listChanged": "bool",
+              "subscribe": "bool"
+            },
+            "tools": {
+              "listChanged": "bool"
+            }
+          },
+          "resultType": "str",
+          "supportedVersions": [
+            "str"
+          ],
+          "ttlMs": "int"
+        }
+      }
+    }
+  },
+  "MOUNT / [ok (tools/list)]": {
+    "2025-11-25": {
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "tools": [
+            {
+              "description": "str",
+              "inputSchema": "str",
+              "name": "str",
+              "outputSchema?": "str"
+            }
+          ]
+        }
+      }
+    },
+    "2026-07-28": {
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            }
+          },
+          "cacheScope": "str",
+          "resultType": "str",
+          "tools": [
+            {
+              "description": "str",
+              "inputSchema": "str",
+              "name": "str",
+              "outputSchema?": "str"
+            }
+          ],
+          "ttlMs": "int"
+        }
+      }
+    }
+  },
+  "MOUNT / [unauthorized]": {
+    "body": {
+      "error": "str",
+      "error_description": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
   "POST /v1/ask [bad_request]": {
     "body": {
       "error": "str"

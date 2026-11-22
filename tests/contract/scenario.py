@@ -5,7 +5,6 @@ publishes one small book, a journal, a note and a package, and calls every tool 
 result, a not-found or refused one, a bad request. The model gateway is the suite's own stub (FakeBridge). Values are
 never recorded, only keys and types: a result changes the snapshot when a field is added, removed or changes type.
 """
-import asyncio
 import base64
 import json
 import shutil
@@ -17,11 +16,6 @@ from pathlib import Path
 
 import jwt
 from cryptography.hazmat.primitives.asymmetric import rsa
-from mcp.server.auth.middleware.auth_context import auth_context_var
-from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
-from mcp.server.auth.provider import AccessToken
-from mcp.server.mcpserver.exceptions import ToolError
-from mcp.types import CallToolResult, TextContent
 from starlette.testclient import TestClient
 
 TESTS = Path(__file__).resolve().parent.parent
@@ -34,6 +28,7 @@ from kutuphane.source import read_source  # noqa: E402
 from test_egress_audit import FakeBridge  # noqa: E402
 from test_identity import AUD, ISS, token  # noqa: E402
 from test_kstd import write_manifest  # noqa: E402
+from test_server import LEGACY, MCP_HEADERS, MODERN, _message, mcp_rpc  # noqa: E402
 
 from .matrix import kind_of, label  # noqa: E402
 
@@ -169,17 +164,10 @@ class Context:
     def bearer(self, **claims) -> dict:
         return {"Authorization": f"Bearer {self.token(**claims)}"}
 
-    def claims(self, **claims) -> dict:
-        return asyncio.run(server._Verifier(self.verifier).verify_token(self.token(**claims))).claims
-
     def app(self, dsn=None, *, bridge=True):
         return server.create_app(dsn=dsn or self.dsn, verifier=self.verifier,
                                  bridge=self.fake.bridge() if bridge else None, model="qwen" if bridge else None,
                                  public_url=PUBLIC)
-
-    def mcp(self, dsn=None):
-        return server.build_mcp(dsn=dsn or self.dsn, verifier=self.verifier, bridge=self.fake.bridge(), model="qwen",
-                                public_url=PUBLIC)
 
     # -- the library (A) and its packages
     def build(self):
@@ -225,12 +213,20 @@ class Context:
         (self.book_dir / "runbook" / "yedek-geri-yukleme.md").write_text("# Yedek\n\nDegisti.\n", encoding="utf-8")
         (self.book_dir / "index.md").unlink()
         (self.book_dir / "ek").mkdir(exist_ok=True)
-        (self.book_dir / "ek" / "iletisim.md").write_text("# Iletisim\n\nyonetici@ornek.org\n", encoding="utf-8")
+        # built at run time: a review tool redacts e-mail addresses and IPs it finds written in a file
+        address = "@".join(["yonetici", "ornek.org"])
+        (self.book_dir / "ek" / "iletisim.md").write_text(f"# Iletisim\n\n{address}\n", encoding="utf-8")
         self._manifest()
         with db.connect(self.s_dsn) as conn:
             self._publish_source(conn)
             self._next = packages.export(conn, BOOK, self.private)
         return self._next
+
+    @staticmethod
+    def check_findings(receipt: dict) -> None:
+        """The e-mail address of version 2 must be a data finding of the receipt (the fixture would be wrong)."""
+        if not any(f.get("rule") == "email" for f in receipt["findings"]):
+            raise SystemExit(f"the package receipt has no e-mail finding: {receipt['findings']!r}")
 
     def untrusted_package(self) -> bytes:
         with db.connect(self.s_dsn) as conn:
@@ -247,34 +243,43 @@ def collect(dsn: str) -> dict[str, dict]:
         ctx = Context(dsn, work, keys, _verifier(work, keys), fake)
         fake.reply = "İki yıl saklanır [1]."
         ctx.build()
-        with TestClient(ctx.app(), base_url=PUBLIC):  # its lifespan runs the job workers the MCP jobs need
-            mcp = mcp_results(ctx)
-        return {"results_mcp": mcp, "results_http": http_results(ctx)}
+        tools, mount = mcp_results(ctx)
+        return {"results_mcp": tools, "results_http": {**http_results(ctx), **mount}}
     finally:
         fake.server.shutdown()
         shutil.rmtree(work, ignore_errors=True)
 
 
 # --- MCP ---------------------------------------------------------------------------------------------------------
+# Every tool is called through the streamable HTTP transport the server exposes at /mcp, as a client of each protocol
+# era sends it (test_server.mcp_rpc), and the JSON-RPC message that comes back is recorded as it is serialized.
 
-def _call(mcp, claims, name, args):
-    access = AccessToken(token="t", client_id="contract", scopes=[], claims=claims)
-    reset_token = auth_context_var.set(AuthenticatedUser(access))
-    try:
-        return asyncio.run(mcp.call_tool(name, args))
-    except ToolError as exc:  # the SDK turns a refusal into this result (mcpserver/server.py, _handle_call_tool)
-        return CallToolResult(content=[TextContent(type="text", text=str(exc))], is_error=True)
-    finally:
-        auth_context_var.reset(reset_token)
+ERAS = (LEGACY, MODERN)
 
 
-def _envelope(result: CallToolResult):
-    """The whole result as a client receives it: the block types and shapes, `structuredContent`, `isError`, `_meta`,
-    and the shape of the JSON a text block carries. An error result also keeps its text (an error text is a contract)."""
-    dump = result.model_dump(mode="json", by_alias=True, exclude_none=True)
-    out = {"envelope": shape(dump), "block_types": sorted({block["type"] for block in dump["content"]})}
-    text = " ".join(c.text for c in result.content if c.type == "text")
-    if result.is_error:
+def _is_error(message) -> bool:
+    return message is None or "error" in message or bool(message["result"].get("isError"))
+
+
+def _rpc_outcome(status, message):
+    """The envelope a client receives: the HTTP status, the JSON-RPC message (its shape: `content` blocks,
+    `structuredContent`, `isError`, `resultType`, `_meta`, or the `error` object), the block types, the shape of the
+    JSON a text block carries, and the text of an error (an error text is a contract)."""
+    if message is not None and "tools" in message.get("result", {}):  # the schemas are in tools.json
+        message = {**message, "result": {**message["result"], "tools": [
+            {k: type(v).__name__ for k, v in t.items()} for t in message["result"]["tools"]]}}
+    out = {"http_status": status, "message": shape(message)}
+    if message is None:
+        return out
+    if "error" in message:
+        out["rpc_error"] = {"code": message["error"]["code"], "message": message["error"]["message"]}
+        return out
+    result = message["result"]
+    if "content" not in result:
+        return out
+    out["block_types"] = sorted({block["type"] for block in result["content"]})
+    text = " ".join(c["text"] for c in result["content"] if c["type"] == "text")
+    if result.get("isError"):
         out["error_text"] = text
     else:
         try:
@@ -284,99 +289,149 @@ def _envelope(result: CallToolResult):
     return out
 
 
-def mcp_results(ctx: Context) -> dict:
-    cases, mcp, mcp_b = Cases(), ctx.mcp(), ctx.mcp(ctx.b_dsn)
-    agent = ctx.claims(act={"sub": "kobra-7"})
-    package_agent = ctx.claims(sub="inframedic", **{"kutuphane/principal_type": "agent"})
-    package_stranger = ctx.claims(sub="outsider", **{"kutuphane/principal_type": "agent"})
+def _both_eras(client, auth, method, params, eras=ERAS):
+    """({era: outcome}, the first era's message); the eras must agree on success."""
+    outcomes, messages = {}, {}
+    for era in eras:
+        status, message = mcp_rpc(client, auth, method, params, version=era)
+        outcomes[era], messages[era] = _rpc_outcome(status, message), message
+    if len({_is_error(m) for m in messages.values()}) != 1:
+        raise SystemExit(f"{method} {params}: the two protocol eras do not agree on the outcome")
+    return outcomes, messages[eras[0]]
 
-    def call(tool, kind, args, variant=None, *, server_=None, claims=None):
-        result = _call(server_ or mcp, claims or agent, tool, args)
-        cases.add(tool + label(tool, kind, variant), _envelope(result), success=not result.is_error)
-        return result
 
-    def data(result):
-        if result.structured_content is not None:
-            return result.structured_content.get("result", result.structured_content)
-        return json.loads(result.content[0].text)
+def mcp_results(ctx: Context) -> tuple[dict, dict]:
+    """(the tool cases, the cases of the mount `/`)."""
+    cases, mount = Cases(), Cases()
+    agent = ctx.bearer(act={"sub": "kobra-7"})
+    package_agent = ctx.bearer(sub="inframedic", **{"kutuphane/principal_type": "agent"})
+    package_stranger = ctx.bearer(sub="outsider", **{"kutuphane/principal_type": "agent"})
 
-    hit = data(call("search_library", "ok", {"query": QUESTION, "max_chars": 200}))[0]["citation"]
-    first = data(call("propose_note", "ok", {"book": JOURNAL, "kind": "finding", "text": "one"}))
-    second = data(call("propose_note", "ok", {"book": JOURNAL, "kind": "lesson", "text": "two",
-                                              "citations": [hit], "idempotency_key": "contract-note-1"}))
-    cited = data(call("propose_note", "ok", {"book": JOURNAL, "kind": "convention", "text": "with a citation",
-                                             "citations": [hit]}))
-    call("propose_note", "ok", {"book": JOURNAL, "kind": "decision_proposal", "text": "three",
-                                "decision": {"options": ["a", "b"], "choice": "b"}})
-    call("propose_note", "not_found", {"book": BOOK, "kind": "finding", "text": "x"}, "no propose grant")
-    call("propose_note", "bad_request", {"book": JOURNAL, "kind": "nonsense", "text": "x"})
-    call("propose_note", "bad_request", {"kind": "finding"}, "schema")
-    call("link_notes", "ok", {"src": second["ref"], "type": "about", "dst": first["ref"]})
-    call("link_notes", "ok", {"src": cited["ref"], "type": "about", "dst": second["ref"]})
-    call("link_notes", "not_found", {"src": second["ref"], "type": "about", "dst": f"{JOURNAL}@{NO_NOTE}"})
-    call("link_notes", "bad_request", {"src": second["ref"], "type": "nonsense", "dst": first["ref"]})
-    call("search_library", "ok", {"query": "zzzzqqqq", "book": ["yok"]}, "empty")
-    call("search_library", "bad_request", {"query": QUESTION, "acceptance": []})
-    call("open_citation", "ok", {"handle": hit}, "passage")
-    call("open_citation", "ok", {"handle": cited["ref"]}, "note")
-    call("open_citation", "bad_request", {"handle": hit.rsplit("#", 1)[0]})
-    call("open_citation", "not_found", {"handle": hit.rsplit("#", 1)[0] + "#999"})
-    asked = data(call("ask_library", "ok", {"question": "Erişim kayıtları ne kadar saklanır?"}))
-    call("ask_library", "bad_request", {"question": QUESTION, "idempotency_key": "contract-key-1"})
-    job = data(call("ask_library", "ok", {"question": QUESTION, "background": True,
-                                          "idempotency_key": "contract-key-2"}, "queued"))
-    call("reopen_answer", "ok", {"answer_id": asked["id"]})
-    call("reopen_answer", "not_found", {"answer_id": "an_unknown"})
-    call("reopen_answer", "bad_request", {}, "schema")
-    books = data(call("list_books", "ok", {}))
-    content_id = next(b["content_id"] for b in books if b["book"] == BOOK)
-    call("read_document", "ok", {"book": BOOK, "content_id": content_id, "path": "index.md"})
-    call("read_document", "not_found", {"book": BOOK, "content_id": content_id, "path": "yok.md"})
-    call("read_document", "bad_request", {"book": BOOK}, "schema")
-    call("list_files", "ok", {"book": BOOK})
-    call("list_files", "ok", {"book": BOOK, "limit": 3}, "page")
-    call("list_files", "not_found", {"book": "gizli"}, "forbidden")
-    call("list_files", "bad_request", {"book": BOOK, "limit": 0})
-    _wait_job(lambda: data(_call(mcp, agent, "job_status", {"job_id": job["job_id"]}))["status"])
-    for tool in ("job_status", "job_result", "job_cancel"):  # recorded once the job is settled
-        call(tool, "ok", {"job_id": job["job_id"]})
-        call(tool, "not_found", {"job_id": "jb_unknown"})
-        call(tool, "bad_request", {}, "schema")
-    call("verify_citations", "ok", {"book": JOURNAL, "citations": [f"adc@{NO_COMMIT}:f.py:1"], "at": "main"})
-    call("verify_citations", "not_found", {"book": "gizli", "citations": [f"adc@{NO_COMMIT}:f.py:1"], "at": "main"},
-         "forbidden")
-    call("verify_citations", "bad_request", {"book": JOURNAL, "citations": [], "at": "main"})
-    both = {"sets": ["current", "open"]}
-    call("query_notes", "ok", both)
-    call("query_notes", "bad_request", {"order": "nonsense"})
-    call("neighbours", "ok", {"ref": cited["ref"], **both})
-    call("neighbours", "not_found", {"ref": f"{JOURNAL}@{NO_NOTE}"})
-    call("neighbours", "bad_request", {"ref": "x"}, "malformed ref")
-    call("record_outcome", "ok", {"ref": first["ref"], "task_ref": "adc:run/1", "result": "passed",
-                                  "idempotency_key": "contract-outcome-1"})
-    call("record_outcome", "not_found", {"ref": f"{JOURNAL}@{NO_NOTE}", "task_ref": "adc:run/1", "result": "passed",
-                                        "idempotency_key": "contract-outcome-2"})
-    call("record_outcome", "bad_request", {"ref": first["ref"], "task_ref": "adc:run/1", "result": "failed",
-                                           "idempotency_key": "contract-outcome-1"}, "conflict")
-    call("confirm_origin", "ok", {"ref": first["ref"]})
-    call("confirm_origin", "not_found", {"ref": f"{JOURNAL}@{NO_NOTE}"})
-    call("confirm_origin", "bad_request", {"ref": "x"}, "malformed ref")
+    # the client sessions run the lifespan of the apps: the job workers the background jobs need
+    with TestClient(ctx.app(), base_url=PUBLIC) as client, TestClient(ctx.app(ctx.b_dsn), base_url=PUBLIC) as client_b:
+        def call(tool, kind, args, variant=None, *, c=client, auth=None):
+            outcomes, message = _both_eras(c, auth or agent, "tools/call", {"name": tool, "arguments": args})
+            cases.add(tool + label(tool, kind, variant), outcomes, success=not _is_error(message))
+            return message
 
-    def submit(blob, kind="ok", variant=None, claims=package_agent):
-        return call("submit_package", kind, {"package_base64": base64.b64encode(blob).decode()}, variant,
-                    server_=mcp_b, claims=claims)
-    received = data(submit(ctx.package))
-    call("package_status", "ok", {"import_id": received["id"]}, server_=mcp_b, claims=package_agent)
-    ctx.approve(received["id"])
-    received = data(submit(ctx.next_package()))
-    call("package_status", "ok", {"import_id": received["id"]}, server_=mcp_b, claims=package_agent)
-    rejected = data(submit(ctx.untrusted_package()))  # status rejected, with reasons
-    call("package_status", "ok", {"import_id": rejected["id"]}, server_=mcp_b, claims=package_agent)
-    submit(ctx.package, "not_found", "no propose grant", package_stranger)
-    call("submit_package", "bad_request", {"package_base64": "!!"}, server_=mcp_b, claims=package_agent)
-    call("package_status", "not_found", {"import_id": 999999}, server_=mcp_b, claims=package_agent)
-    call("package_status", "bad_request", {"import_id": "x"}, "schema", server_=mcp_b, claims=package_agent)
-    return cases.result()
+        def data(message):
+            result = message["result"]
+            if "structuredContent" in result:
+                return result["structuredContent"].get("result", result["structuredContent"])
+            return json.loads(result["content"][0]["text"])
+
+        def job_state(job_id):
+            _, message = mcp_rpc(client, agent, "tools/call", {"name": "job_status", "arguments": {"job_id": job_id}},
+                                 version=MODERN)
+            return data(message)["status"]
+
+        hit = data(call("search_library", "ok", {"query": QUESTION, "max_chars": 200}))[0]["citation"]
+        first = data(call("propose_note", "ok", {"book": JOURNAL, "kind": "finding", "text": "one"}))
+        second = data(call("propose_note", "ok", {"book": JOURNAL, "kind": "lesson", "text": "two",
+                                                  "citations": [hit], "idempotency_key": "contract-note-1"}))
+        cited = data(call("propose_note", "ok", {"book": JOURNAL, "kind": "convention", "text": "with a citation",
+                                                 "citations": [hit]}))
+        call("propose_note", "ok", {"book": JOURNAL, "kind": "decision_proposal", "text": "three",
+                                    "decision": {"options": ["a", "b"], "choice": "b"}}, "decision")
+        call("propose_note", "not_found", {"book": BOOK, "kind": "finding", "text": "x"}, "no propose grant")
+        call("propose_note", "bad_request", {"book": JOURNAL, "kind": "nonsense", "text": "x"})
+        call("propose_note", "bad_request", {"kind": "finding"}, "schema")
+        call("link_notes", "ok", {"src": second["ref"], "type": "about", "dst": first["ref"]})
+        call("link_notes", "ok", {"src": cited["ref"], "type": "about", "dst": second["ref"]})
+        call("link_notes", "not_found", {"src": second["ref"], "type": "about", "dst": f"{JOURNAL}@{NO_NOTE}"})
+        call("link_notes", "bad_request", {"src": second["ref"], "type": "nonsense", "dst": first["ref"]})
+        call("search_library", "ok", {"query": "zzzzqqqq", "book": ["yok"]}, "empty")
+        call("search_library", "bad_request", {"query": QUESTION, "acceptance": []})
+        call("open_citation", "ok", {"handle": hit}, "passage")
+        call("open_citation", "ok", {"handle": cited["ref"]}, "note")
+        call("open_citation", "bad_request", {"handle": hit.rsplit("#", 1)[0]})
+        call("open_citation", "not_found", {"handle": hit.rsplit("#", 1)[0] + "#999"})
+        asked = data(call("ask_library", "ok", {"question": "Erişim kayıtları ne kadar saklanır?"}))
+        call("ask_library", "bad_request", {"question": QUESTION, "idempotency_key": "contract-key-1"})
+        job = data(call("ask_library", "ok", {"question": QUESTION, "background": True,
+                                              "idempotency_key": "contract-key-2"}, "queued"))
+        call("reopen_answer", "ok", {"answer_id": asked["id"]})
+        call("reopen_answer", "not_found", {"answer_id": "an_unknown"})
+        call("reopen_answer", "bad_request", {}, "schema")
+        books = data(call("list_books", "ok", {}))
+        content_id = next(b["content_id"] for b in books if b["book"] == BOOK)
+        call("read_document", "ok", {"book": BOOK, "content_id": content_id, "path": "index.md"})
+        call("read_document", "not_found", {"book": BOOK, "content_id": content_id, "path": "yok.md"})
+        call("read_document", "bad_request", {"book": BOOK}, "schema")
+        call("list_files", "ok", {"book": BOOK})
+        call("list_files", "ok", {"book": BOOK, "limit": 3}, "page")
+        call("list_files", "not_found", {"book": "gizli"}, "forbidden")
+        call("list_files", "bad_request", {"book": BOOK, "limit": 0})
+        _wait_job(lambda: job_state(job["job_id"]))
+        for tool in ("job_status", "job_result", "job_cancel"):  # recorded once the job is settled
+            call(tool, "ok", {"job_id": job["job_id"]})
+            call(tool, "not_found", {"job_id": "jb_unknown"})
+            call(tool, "bad_request", {}, "schema")
+        call("verify_citations", "ok", {"book": JOURNAL, "citations": [f"adc@{NO_COMMIT}:f.py:1"], "at": "main"})
+        call("verify_citations", "not_found", {"book": "gizli", "citations": [f"adc@{NO_COMMIT}:f.py:1"],
+                                               "at": "main"}, "forbidden")
+        call("verify_citations", "bad_request", {"book": JOURNAL, "citations": [], "at": "main"})
+        both = {"sets": ["current", "open"]}
+        call("query_notes", "ok", both)
+        call("query_notes", "bad_request", {"order": "nonsense"})
+        call("neighbours", "ok", {"ref": cited["ref"], **both})
+        call("neighbours", "not_found", {"ref": f"{JOURNAL}@{NO_NOTE}"})
+        call("neighbours", "bad_request", {"ref": "x"}, "malformed ref")
+        call("record_outcome", "ok", {"ref": first["ref"], "task_ref": "adc:run/1", "result": "passed",
+                                      "idempotency_key": "contract-outcome-1"})
+        call("record_outcome", "not_found", {"ref": f"{JOURNAL}@{NO_NOTE}", "task_ref": "adc:run/1",
+                                            "result": "passed", "idempotency_key": "contract-outcome-2"})
+        call("record_outcome", "bad_request", {"ref": first["ref"], "task_ref": "adc:run/1", "result": "failed",
+                                               "idempotency_key": "contract-outcome-1"}, "conflict")
+        call("confirm_origin", "ok", {"ref": first["ref"]})
+        call("confirm_origin", "not_found", {"ref": f"{JOURNAL}@{NO_NOTE}"})
+        call("confirm_origin", "bad_request", {"ref": "x"}, "malformed ref")
+
+        def submit(blob, kind="ok", variant=None, auth=package_agent):
+            return call("submit_package", kind, {"package_base64": base64.b64encode(blob).decode()}, variant,
+                        c=client_b, auth=auth)
+
+        def status(import_id, kind="ok", variant=None):
+            return call("package_status", kind, {"import_id": import_id}, variant, c=client_b, auth=package_agent)
+        received = data(submit(ctx.package))
+        status(received["id"])
+        ctx.approve(received["id"])
+        received = data(submit(ctx.next_package()))
+        ctx.check_findings(received)
+        status(received["id"])
+        rejected = data(submit(ctx.untrusted_package()))  # status rejected, with reasons
+        status(rejected["id"])
+        submit(ctx.package, "not_found", "no propose grant", package_stranger)
+        call("submit_package", "bad_request", {"package_base64": "!!"}, c=client_b, auth=package_agent)
+        status(999999, "not_found")
+        call("package_status", "bad_request", {"import_id": "x"}, "schema", c=client_b, auth=package_agent)
+        _transport(client, mount, agent)
+    return cases.result(), mount.result()
+
+
+def _transport(client, cases, agent):
+    """The mount at `/`: the MCP endpoint and the protected-resource metadata, without a tool."""
+    def raw(kind, variant, r, *, success):
+        out = {"status": r.status_code, "content_type": r.headers.get("content-type", "").split(";")[0]}
+        try:
+            out["body"] = shape(_message(r))
+        except ValueError:
+            out["body"] = "non-json" if r.content else "empty"
+        cases.add(f"MOUNT / {label('MOUNT /', kind, variant)}", out, success=success)
+
+    def rpc_cases(kind, variant, method, params, eras=ERAS):
+        outcomes, message = _both_eras(client, agent, method, params, eras)
+        cases.add(f"MOUNT / {label('MOUNT /', kind, variant)}", outcomes, success=not _is_error(message))
+
+    rpc_cases("ok", "tools/list", "tools/list", {})
+    rpc_cases("ok", "server/discover", "server/discover", {}, (MODERN,))  # only the 2026-07-28 era has it
+    rpc_cases("not_found", "unknown tool", "tools/call", {"name": "no_such_tool", "arguments": {}})
+    rpc_cases("not_found", "unknown method", "no/such/method", {})
+    rpc_cases("bad_request", "no tool name", "tools/call", {"arguments": {}})
+    raw("ok", "protected resource metadata", client.get("/.well-known/oauth-protected-resource"), success=True)
+    raw("bad_request", "not json", client.post("/mcp", content=b"{", headers={**MCP_HEADERS, **agent}), success=False)
+    raw("unauthorized", None, client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                                          headers=MCP_HEADERS), success=False)
 
 
 def _wait_job(status, timeout=30.0):
@@ -531,6 +586,7 @@ def http_results(ctx: Context) -> dict:
                         content=blob)
         send(ctx.package)  # a retry of what the MCP calls submitted: the stored receipt
         sent = send(ctx.next_package()).json()
+        ctx.check_findings(sent)
         rejected = send(ctx.untrusted_package()).json()  # status rejected, with reasons
         send(ctx.package, "not_found", "forbidden", package_stranger)
         send(b"x", "bad_request")
