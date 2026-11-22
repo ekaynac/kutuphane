@@ -7,3 +7,9 @@ services:
   core:
     build: .
     pull_policy: build
+  embedder:
+    build: deploy/models
+    pull_policy: build
+  models-fetch:
+    build: deploy/models
+    pull_policy: build

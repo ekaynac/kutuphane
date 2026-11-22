@@ -124,7 +124,7 @@ Reference: `docs/guide/http-api.md`.
 - Only a person changes Standing: with a separate database credential on the CLI, or with a passkey act on the phone.
 - Skills can get a SkillSpector scan at ingest; a bad or failed scan blocks the skill until a curator clears it.
 - In the full install, all model calls go through LLMDAP, or through a direct OpenAI-compatible provider that you set
-  for a stage; a `local_only` book never reaches a cloud route or provider. The light install makes no model call.
+  for a stage; a `local_only` book never reaches a cloud route or provider. The light install calls only its own local embedder (embeddings and rerank).
 - Every read decision and every model call is audited. Details: `docs/guide/security.md`.
 
 ## Documentation

@@ -40,6 +40,9 @@ ROUTES = {env["route_class"]: env for env in (llmdap.ENV, llmdap.EMBED_ENV, llmd
 # no such route (operations.md); no gate depends on them, unlike the route classes.
 LOCAL_MODELS = {"KUTUPHANE_LLMDAP_ROUTE", "KUTUPHANE_ANSWER_MODEL", "KUTUPHANE_LLMDAP_EMBED_ROUTE",
                 "KUTUPHANE_EMBED_MODEL", "KUTUPHANE_LLMDAP_RERANK_ROUTE", "KUTUPHANE_RERANK_MODEL"}
+# compose.yaml sends embeddings and rerank to its own embedder: the CLI default is the LLMDAP provider (unset).
+STANDALONE_PROVIDERS = {llmdap.EMBED_ENV["provider"], llmdap.RERANK_ENV["provider"]}
+DIRECT = {var: env for env in (llmdap.EMBED_ENV, llmdap.RERANK_ENV) for var in (env["openai_url"], env["openai_key"], env["openai_class"])}
 
 
 def _bridge(m, class_env):
@@ -63,6 +66,8 @@ NAMED = {
     llmdap.ENV["url"]: lambda m, tmp_path: (m.setenv(llmdap.ENV["key"], KEY), m.setenv(llmdap.ENV["route"], ROUTE),
                                             m.setenv(llmdap.ENV["route_class"], "local"), llmdap.Bridge.from_env()),
     **{class_env: (lambda c: lambda m, tmp_path: _bridge(m, c))(class_env) for class_env in ROUTES},
+    # the standalone embedder (compose.yaml): the URL, the placeholder key and the class are compose values only
+    **{var: (lambda e: lambda m, tmp_path: llmdap.Bridge.openai_from_env(e))(env) for var, env in DIRECT.items()},
 }
 
 
@@ -76,7 +81,7 @@ def bare_env(monkeypatch):
 
 def test_every_compose_value_is_the_cli_default_or_named(bare_env, tmp_path):  # G13
     values = compose_values()
-    assert set(values) == set(SAME_DEFAULT) | set(NAMED) | LOCAL_MODELS
+    assert set(values) == set(SAME_DEFAULT) | set(NAMED) | LOCAL_MODELS | STANDALONE_PROVIDERS
     for var, default in SAME_DEFAULT.items():
         assert values[var] == {default}, var
     for var, trigger in NAMED.items():

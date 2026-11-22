@@ -15,6 +15,7 @@ at most MAX_INFLIGHT POST requests read a body or wait for the model at once; on
 import json
 import logging
 import os
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -76,6 +77,14 @@ def load(repo: str, cls):
     # Fails unless every needed file of the pinned commit is in the cache.
     path = snapshot_download(repo, revision=PINNED[repo], allow_patterns=FILES, local_files_only=True)
     return AutoTokenizer.from_pretrained(path), cls.from_pretrained(path, dtype=torch.float32).eval()
+
+
+def fetch() -> None:
+    """Fill the cache with the pinned commits (compose service `models-fetch`). Files that are there are not
+    downloaded again; when the Hub cannot be reached, a cache that has the commits is enough."""
+    for repo, revision in PINNED.items():
+        snapshot_download(repo, revision=revision, allow_patterns=FILES)
+        log.info("%s@%s is in the cache", repo, revision)
 
 
 def batches(texts: list[str]):
@@ -217,6 +226,9 @@ def handler(models: Models, inflight: threading.BoundedSemaphore):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    if sys.argv[1:] == ["fetch"]:
+        fetch()
+        sys.exit(0)
     models = Models()
     log.info("loaded %s", ", ".join(f"{m}@{r}" for m, r in PINNED.items()))
     ThreadingHTTPServer(("0.0.0.0", 8000), handler(models, threading.BoundedSemaphore(MAX_INFLIGHT))).serve_forever()

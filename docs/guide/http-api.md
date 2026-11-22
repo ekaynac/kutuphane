@@ -101,7 +101,7 @@ Checks each dependency now. Any valid token, no grant. Booleans only (no route n
 error texts): `db` (the database answers), `llmdap` (LLMDAP's own health: LLMDAP answered a model check that went
 through it, any HTTP status), `embedding`
 (a valid vector), `rerank` (valid scores), `chat` (the answer model answered), `ok` (none is `false`). Not
-configured: `null` (light install: `llmdap`, `embedding`, `rerank`, `chat`; also `llmdap` when every configured stage
+configured: `null` (light install: `llmdap`, `chat`, and `embedding` and `rerank` with the embedder switched off; also `llmdap` when every configured stage
 uses a direct OpenAI-compatible provider, which shows in `embedding`, `rerank` and `chat` only). When `db` is `false`, the
 others are `null`: model calls are recorded in the database, so none is made. Each model check is a real model call
 with a fixed input and no book content (purpose `health`), recorded in `model_call` (and in the LLMDAP audit when it
