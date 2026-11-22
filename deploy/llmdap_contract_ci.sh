@@ -38,9 +38,13 @@ if [ -z "$image" ]; then
   image=ghcr.io/ekaynac/kutuphane:${KUTUPHANE_VERSION}
 fi
 command -v docker >/dev/null || die "docker is not installed"
-docker network inspect "$NETWORK" >/dev/null 2>&1 && die "the network $NETWORK exists: a run is already active (or left by --keep); remove it first"
 
-io_dir=$(mktemp -d)
+# Ownership: creating the network is the one atomic step. If it fails (the network exists: another run is active, or
+# --keep left one), exit 2 at once and touch nothing. The EXIT trap is installed only after it succeeded, so a run
+# removes only what it created itself.
+docker network create --internal "$NETWORK" >/dev/null 2>&1 \
+  || die "cannot create the network $NETWORK (it exists: a run is active, or --keep left one); nothing was changed"
+io_dir=$(mktemp -d) || { docker network rm "$NETWORK" >/dev/null 2>&1; die "cannot create a temporary directory"; }
 chmod 777 "$io_dir"   # the image runs as another user
 export CONTRACT_IMAGE=$image CONTRACT_IO_DIR=$io_dir KUTUPHANE_LLMDAP_URL KUTUPHANE_LLMDAP_KEY
 CONTRACT_DB_PASSWORD=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')
@@ -54,7 +58,7 @@ cleanup() {
     echo "llmdap_contract_ci: --keep: project and network $NETWORK stay up (docker compose -f $compose_file -p kutuphane-contract --profile run down -v; docker network rm $NETWORK)" >&2
   else
     dc down -v --remove-orphans >&2 2>&1
-    # the caller's bridge is still attached: detach every container, then remove the network
+    # this run's own network: detach the bridge the caller attached to it, then remove the network
     for c in $(docker network inspect -f '{{range .Containers}}{{.Name}} {{end}}' "$NETWORK" 2>/dev/null); do
       docker network disconnect -f "$NETWORK" "$c" >/dev/null 2>&1
     done
@@ -85,7 +89,6 @@ serve_export() {
 # The command the contract runs inside the container.
 container_export="sh -c 'touch /io/want; while [ ! -f /io/done ]; do sleep 0.2; done; cat /io/export.jsonl; exit \$(cat /io/rc)'"
 
-docker network create --internal "$NETWORK" >/dev/null || die "cannot create the network $NETWORK"
 echo "network $NETWORK ready: attach the bridge with --alias llmdap" >&2
 dc up -d --wait postgres model-stub >&2 || { dc logs >&2; die "scratch stack did not start"; }
 

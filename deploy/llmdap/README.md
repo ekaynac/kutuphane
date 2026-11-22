@@ -110,7 +110,7 @@ KUTUPHANE_VERSION=<release tag> \
 
 What it does:
 
-1. Creates the internal Docker network `kutuphane-contract` and the compose project `kutuphane-contract`
+1. Creates the internal Docker network `kutuphane-contract` (this is the ownership step: one run at a time) and the compose project `kutuphane-contract`
    (`deploy/contract/compose.yaml`; never the project `kutuphane`): scratch `pgvector/pgvector:0.8.0-pg17` (no host
    port, no volume) and `model-stub` (`deploy/model_stub.py`, port 8000).
 2. Waits up to 60 s for the bridge. The caller attaches its bridge container to the network with the alias `llmdap`,
@@ -118,8 +118,10 @@ What it does:
 3. Runs `deploy/llmdap_contract.py` in the Kütüphane image against the book `deploy/contract/book`, with
    `--chat chat stub-chat --embed emb stub-embed --rerank rerank stub-rerank`.
 4. Prints one line per check on stdout (`PASS`/`FAIL`, then a JSON summary line). Exit 0 only if all checks pass;
-   2 for a wrong call or a bridge that does not answer.
-5. Always removes the project, its volumes and the network (it detaches the bridge first), unless `--keep`.
+   2 for a wrong call, a bridge that does not answer, or a network `kutuphane-contract` that already exists (another run
+   is active: the runner then changes nothing and removes nothing).
+5. Removes what this run created, always: the project, its volumes and the network (it detaches the bridge first),
+   unless `--keep`.
 
 The bridge routes are fixed (the same as `config/routes.json`):
 
