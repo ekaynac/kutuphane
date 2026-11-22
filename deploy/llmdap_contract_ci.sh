@@ -72,7 +72,10 @@ bridge_alias=${KUTUPHANE_LLMDAP_URL#*://}; bridge_alias=${bridge_alias%%/*}; bri
 # "alive". Never set it elsewhere.)
 group_alive() {
   local f line rest st ppid pgrp
-  if [ -n "${LLMDAP_CONTRACT_CI_TEST_GROUP_ALIVE:-}" ]; then [ -e "$LLMDAP_CONTRACT_CI_TEST_GROUP_ALIVE" ]; return; fi
+  # (explicit statuses: a bare `return` in a function called from a trap returns the trap's own status)
+  if [ -n "${LLMDAP_CONTRACT_CI_TEST_GROUP_ALIVE:-}" ]; then
+    if [ -e "$LLMDAP_CONTRACT_CI_TEST_GROUP_ALIVE" ]; then return 0; else return 1; fi
+  fi
   if [ -r /proc/self/stat ]; then
     for f in /proc/[0-9]*/stat; do
       read -r line <"$f" 2>/dev/null || continue
