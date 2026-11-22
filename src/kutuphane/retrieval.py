@@ -188,8 +188,8 @@ class Stages:
     @classmethod
     def from_env(cls, answer_model: str | None = None) -> "Stages":
         model = answer_model or os.environ.get(ANSWER_MODEL_ENV)
-        translator = llmdap.Routed(llmdap.Bridge.from_env(), model) if model and os.environ.get(
-            llmdap.ENV["route"]) else None
+        answering = llmdap.provider_of(llmdap.ENV) == "openai" or os.environ.get(llmdap.ENV["route"])
+        translator = llmdap.Routed(llmdap.Bridge.for_stage(llmdap.ENV), model) if model and answering else None
         return cls(llmdap.Routed.from_env(llmdap.EMBED_ENV), llmdap.Routed.from_env(llmdap.RERANK_ENV), translator)
 
 

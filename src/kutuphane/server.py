@@ -56,7 +56,7 @@ from .ids import normalize_path
 FEATURES: tuple = (notes, coderepo, notesquery, outcomes, confirm, packages)
 
 log = logging.getLogger(__name__)
-ENV = {"model": "KUTUPHANE_ANSWER_MODEL", "public_url": "KUTUPHANE_PUBLIC_URL"}  # the model: only with LLMDAP
+ENV = {"model": "KUTUPHANE_ANSWER_MODEL", "public_url": "KUTUPHANE_PUBLIC_URL"}  # the model: only with a provider
 TEXT_TYPES = ("text/markdown", "text/plain")
 NO_ANSWERS = "answers are not available: this install has no model gateway (LLMDAP); search is full text only"
 
@@ -758,8 +758,8 @@ def build_mcp(*, dsn: str, verifier: identity.Verifier, bridge, model, public_ur
               stages: retrieval.Stages = retrieval.Stages(), features: tuple | None = None) -> MCPServer:
     """The MCP server. Its tools are registered in a fixed order (built-ins, then features), so `tools/list` is
     stable. The list depends on the deployment only, never on the caller (#121: grants change during a session, and
-    the list has public cache hints): without LLMDAP it has no `ask_library` and no job tools. Each description names
-    the grant the tool needs. The host app mounts `mcp_http_app` of it."""
+    the list has public cache hints): without an answer provider it has no `ask_library` and no job tools. Each
+    description names the grant the tool needs. The host app mounts `mcp_http_app` of it."""
     features = FEATURES if features is None else features
     auth = AuthSettings(issuer_url=verifier.issuer, resource_server_url=public_url,
                         validate_token_resource=False)  # our verifier checks `aud` itself
@@ -896,11 +896,11 @@ def mcp_http_app(mcp: MCPServer, public_url: str) -> Starlette:
 
 def app_from_env() -> Starlette:
     """uvicorn --factory kutuphane.server:app_from_env"""
-    with_models = bool(os.environ.get(llmdap.ENV["url"]))
+    with_models = llmdap.provider_of(llmdap.ENV) == "openai" or bool(os.environ.get(llmdap.ENV["url"]))
     missing = [v for k, v in ENV.items() if not os.environ.get(v) and (k != "model" or with_models)]
     if missing:
         raise RuntimeError(f"server not configured: set {', '.join(missing)}")
-    bridge = llmdap.Bridge.from_env() if with_models else None
+    bridge = llmdap.Bridge.for_stage(llmdap.ENV) if with_models else None
     with db.connect(os.environ[db.DSN_ENV]) as conn:  # refuse to serve a schema the code does not match
         waiting = db.pending(conn)
     if waiting:

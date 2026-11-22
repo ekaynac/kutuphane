@@ -37,8 +37,8 @@ and fix:
 - `429` `daily note write limit reached (<n>)` (default 500): too many notes, links or outcomes today. Wait, or raise
   `KUTUPHANE_NOTE_WRITES_PER_DAY`. `429` `at most 3 open jobs per principal`: wait, or cancel one with `job_cancel`
   ([mcp.md](mcp.md#8-rate-limits-and-other-limits)).
-- `502` `model service unavailable or refused`: LLMDAP is down or refused, or the egress check refused (`local_only`
-  book on a `cloud` route). Run `kutuphane explain <correlation-id>`.
+- `502` `model service unavailable or refused`: LLMDAP or the direct provider is down or refused, or the egress check
+  refused (`local_only` book on a `cloud` route or provider). Run `kutuphane explain <correlation-id>`.
 - `503` `answers are not available: this install has no model gateway (LLMDAP); search is full text only`:
   `POST /v1/ask` on the [light install](install.md#light-install). Use search and citations, or move to the full stack.
 - `500`: unexpected; see the server log.
@@ -61,7 +61,8 @@ Each request gets a new correlation id (ours) for the audit. You may send your o
 - Every response of a route that needs a token (errors too, after the token is verified) has the header
   `X-Correlation-Id` with **our** id, and `X-Caller-Correlation-Id` with yours when you sent one.
 - `GET /v1/search` and `POST /v1/ask` also give our id in the body as `correlation_id`.
-- Model calls send `<your id>.<our id>.<n>` as the LLMDAP correlation id.
+- Model calls send `<your id>.<our id>.<n>` as the LLMDAP correlation id. A direct provider (D88) gets no id; the id is
+  only in `model_call`.
 - `kutuphane explain <id>` accepts either id ([operations.md](operations.md)).
 
 ### 1.6 Text for a model
@@ -97,7 +98,8 @@ The principal read from your token. **`200`:** `{"principal": "agent:adc", "on_b
 ### 3.3 `GET /v1/health`
 
 Checks each dependency now. Any valid token, no grant. Booleans only (no route names, model names, addresses or
-error texts): `db` (the database answers), `llmdap` (LLMDAP answered a model check, any HTTP status), `embedding`
+error texts): `db` (the database answers), `llmdap` (the model service, LLMDAP or the direct provider, answered a
+model check, any HTTP status), `embedding`
 (a valid vector), `rerank` (valid scores), `chat` (the answer model answered), `ok` (none is `false`). Not
 configured: `null` (light install: `llmdap`, `embedding`, `rerank`, `chat`). When `db` is `false`, the others are
 `null`: model calls are recorded in the database, so none is made. Each model check is a real LLMDAP call with a

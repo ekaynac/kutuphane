@@ -8,6 +8,13 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### A model stage can call a direct OpenAI-compatible provider (D88, #242)
+
+- New: the answer model (with question translation) and the embedder each have a provider setting, `KUTUPHANE_ANSWER_PROVIDER` and `KUTUPHANE_EMBED_PROVIDER`: `llmdap` (the default, with an unset or empty value; the LLMDAP settings keep their names, defaults and meaning) or `openai`. With `openai`, Core calls `<URL>/v1/chat/completions` or `<URL>/v1/embeddings` with the stage's `…_OPENAI_URL` (base address, no `/v1`), `…_OPENAI_KEY` and `…_OPENAI_CLASS` (`local` or `cloud`), and the model from `KUTUPHANE_ANSWER_MODEL` or `KUTUPHANE_EMBED_MODEL`. The URL, key and class are required and the class has no default: a missing one, an unknown class or an unknown provider value stops the server and the CLI at start-up and names the setting ([operations.md](operations.md#direct-model-providers), [install.md](install.md), [troubleshooting.md](troubleshooting.md)).
+- Rerank stays on LLMDAP: OpenAI has no standard rerank endpoint, so there is no rerank provider setting.
+- The rights and egress checks are the same for both providers and run before each call: a passage without `ai_input` is never sent, and a `local_only` book never goes to a `cloud` provider (the call is refused and nothing is sent). Every call is one `model_call` row, with `route` `openai:<host>:<port>` for a direct call. The API key is read from the environment only; it is never logged and never in `model_call` or an error text, and redirects are not followed. The provider gets no `x-llmdap-*` header.
+- Changed: `kutuphane explain` gives a direct call `llmdap_status` `direct` (it has no LLMDAP record to expect), so `complete` stays `true` for it. `GET /v1/health` keeps its fields; `llmdap` is `true` when the model service (LLMDAP or the direct provider) answered a check. The server needs `KUTUPHANE_ANSWER_MODEL` with `KUTUPHANE_ANSWER_PROVIDER=openai`, as with `KUTUPHANE_LLMDAP_URL`; with neither, `ask_library` and the job tools are not listed, as before ([security.md](security.md#model-calls-llmdap-or-a-direct-provider)). No change to a tool, route or error text. No compose file sets the new variables.
+
 ### The public install is the light install; LLMDAP only under an agreement (#236)
 
 - Docs: the light install (`compose.yaml`) is the public install and makes no model call. The full stack's LLMDAP bridge is a proprietary component, delivered as a signed release tarball under an LLMDAP agreement; the docs no longer say "build it from the LLMDAP repo" ([install.md](install.md), `deploy/llmdap/README.md`). No setting, image, service or code changes.
