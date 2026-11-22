@@ -95,11 +95,15 @@ Put these in `.env` (git-ignored), and secrets nowhere else:
 - `KUTUPHANE_ANSWER_MODEL` (pinned on the chat route), `KUTUPHANE_LLMDAP_ROUTE`, `KUTUPHANE_LLMDAP_EMBED_ROUTE`,
   `KUTUPHANE_LLMDAP_RERANK_ROUTE`, `KUTUPHANE_EMBED_MODEL`, `KUTUPHANE_RERANK_MODEL`, `KUTUPHANE_LLMDAP_ROUTES`
   (routes file): defaults in [local models](#local-models).
+- Optional: a direct OpenAI-compatible provider for the answer model or the embedder instead of LLMDAP:
+  `KUTUPHANE_ANSWER_PROVIDER` or `KUTUPHANE_EMBED_PROVIDER` `openai`, with `…_OPENAI_URL`, `…_OPENAI_KEY` and
+  `…_OPENAI_CLASS` of that stage ([operations.md](operations.md#direct-model-providers)). The compose files set none.
 - Optional: `KUTUPHANE_REPO_DIR` (bare git mirrors, default `deploy/repos`), `KUTUPHANE_BIND` (default `127.0.0.1`).
 
 Give `KUTUPHANE_OIDC_JWKS_FILE` and `KUTUPHANE_REPO_DIR` as absolute paths (the full stack reads a relative path
 from `deploy/`, the light install from the repository root). The server refuses to start without
-`KUTUPHANE_PUBLIC_URL` or an OIDC setting, with `KUTUPHANE_LLMDAP_URL` but no `KUTUPHANE_ANSWER_MODEL`, and with an
+`KUTUPHANE_PUBLIC_URL` or an OIDC setting, with `KUTUPHANE_LLMDAP_URL` or `KUTUPHANE_ANSWER_PROVIDER=openai` but no
+`KUTUPHANE_ANSWER_MODEL`, and with an
 issuer that the MCP SDK would rewrite ([security.md](security.md#identity)). All settings: [operations.md](operations.md).
 
 ### 2. Database roles
@@ -385,8 +389,11 @@ No LLMDAP, no model server (#76). `compose.yaml` starts `postgres` (`db`, `dev`,
   model gateway (LLMDAP); search is full text only`, also with `background: true` (no job is made).
 - No `model_call` row and no LLMDAP audit chain (AT-09).
 
-Core calls a model only through LLMDAP (D3), so there is no local embedder. An embedding or rerank route without
-`KUTUPHANE_LLMDAP_URL` stops the server (`LLMDAP not configured: set KUTUPHANE_LLMDAP_URL, …`).
+Core calls a model through LLMDAP or, if you set a direct provider, an OpenAI-compatible endpoint (D3, D88). The light
+install sets neither, so there is no embedder. An embedding or rerank route without `KUTUPHANE_LLMDAP_URL` stops the
+server (`LLMDAP not configured: set KUTUPHANE_LLMDAP_URL, …`); `KUTUPHANE_EMBED_PROVIDER=openai` needs no LLMDAP but
+needs a network path from Core to the endpoint, which the `db` and `web` networks do not give
+([operations.md](operations.md#direct-model-providers)).
 
 ### Steps
 

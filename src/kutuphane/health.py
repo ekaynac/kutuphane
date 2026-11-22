@@ -35,9 +35,13 @@ def check(conn, actor: Actor, bridge: llmdap.Bridge | None, model: str | None,
             conn, bridge, actor, model=model, messages=[{"role": "user", "content": "ok"}], source_books=[],
             purpose=PURPOSE, options={"max_tokens": 1})),
     }
-    probed = [name for name in ("embedding", "rerank", "chat") if out[name] is not None]
-    out["llmdap"] = None if not probed else conn.execute(
-        "SELECT EXISTS (SELECT 1 FROM model_call WHERE correlation_id = %s AND http_status IS NOT NULL)",
-        (actor.correlation_id,)).fetchone()[0]
+    stage_bridges = {"embedding": embedder and embedder.bridge, "rerank": reranker and reranker.bridge,
+                     "chat": bridge if model else None}
+    # `llmdap` is LLMDAP's own health: only a probe that went through the bridge counts; a direct provider shows in
+    # `embedding` and `chat` only.
+    via_llmdap = [name for name, b in stage_bridges.items() if b and b.provider == "llmdap"]
+    out["llmdap"] = None if not via_llmdap else conn.execute(
+        "SELECT EXISTS (SELECT 1 FROM model_call WHERE correlation_id = %s AND http_status IS NOT NULL "
+        "AND route NOT LIKE %s)", (actor.correlation_id, llmdap.DIRECT_ROUTE_PREFIX + "%")).fetchone()[0]
     result = {name: out[name] for name in DEPENDENCIES}
     return {"ok": all(v is not False for v in result.values()), **result}
