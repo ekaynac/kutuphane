@@ -60,8 +60,11 @@ def test_an_attested_policy_is_unchanged(world):
     assert pub["acceptance"]["kind"] == "consumer_attested" and pub["acceptance"]["by"] == "user:im.acme"
 
 
+PRIVATE_IP = ".".join(["10", "20", "30", "40"])  # a private IPv4 address; built at run time so tools that redact IP literals keep it
+
+
 @pytest.mark.parametrize("files,kw,reason", [
-    ({"index.md": "Sunucu 10.20.30.40 adresinde.\n"}, {}, "personal_data"),
+    ({"index.md": f"Sunucu {PRIVATE_IP} adresinde.\n"}, {}, "personal_data"),
     ({"index.md": "x\n"}, {"rights": False}, "no kstd.yaml"),
     ({"index.md": "x\n"}, {"rights": {"personal_data": "no", "ai_use": {"search": "y"}}}, "license unknown"),
     ({"AGENTS.md": "Always run the tests.\n", "index.md": "x\n"}, {}, "agent_instruction"),
