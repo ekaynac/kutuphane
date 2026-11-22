@@ -1050,6 +1050,7 @@
   },
   "MOUNT / [bad_request (no tool name)]": {
     "2025-11-25": {
+      "content_type": "text/event-stream",
       "http_status": 200,
       "message": {
         "error": {
@@ -1066,6 +1067,7 @@
       }
     },
     "2026-07-28": {
+      "content_type": "application/json",
       "http_status": 400,
       "message": {
         "error": {
@@ -1096,6 +1098,7 @@
   },
   "MOUNT / [not_found (unknown method)]": {
     "2025-11-25": {
+      "content_type": "text/event-stream",
       "http_status": 200,
       "message": {
         "error": {
@@ -1112,6 +1115,7 @@
       }
     },
     "2026-07-28": {
+      "content_type": "application/json",
       "http_status": 404,
       "message": {
         "error": {
@@ -1133,6 +1137,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Unknown tool: no_such_tool",
       "http_status": 200,
       "message": {
@@ -1156,6 +1161,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Unknown tool: no_such_tool",
       "http_status": 200,
       "message": {
@@ -1196,6 +1202,7 @@
   },
   "MOUNT / [ok (server/discover)]": {
     "2026-07-28": {
+      "content_type": "application/json",
       "http_status": 200,
       "message": {
         "id": "int",
@@ -1235,6 +1242,7 @@
   },
   "MOUNT / [ok (tools/list)]": {
     "2025-11-25": {
+      "content_type": "text/event-stream",
       "http_status": 200,
       "message": {
         "id": "int",
@@ -1252,6 +1260,7 @@
       }
     },
     "2026-07-28": {
+      "content_type": "application/json",
       "http_status": 200,
       "message": {
         "id": "int",

@@ -4,6 +4,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool ask_library: idempotency_key needs background: true",
       "http_status": 200,
       "message": {
@@ -27,6 +28,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool ask_library: idempotency_key needs background: true",
       "http_status": 200,
       "message": {
@@ -57,6 +59,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "decoded_text": {
         "body": "str",
         "citations": [
@@ -128,6 +131,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "decoded_text": {
         "body": "str",
         "citations": [
@@ -206,6 +210,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "decoded_text": {
         "job_id": "str",
         "status": "str"
@@ -232,6 +237,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "decoded_text": {
         "job_id": "str",
         "status": "str"
@@ -265,6 +271,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool confirm_origin: malformed note reference (book@nt_<64 hex>)",
       "http_status": 200,
       "message": {
@@ -288,6 +295,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool confirm_origin: malformed note reference (book@nt_<64 hex>)",
       "http_status": 200,
       "message": {
@@ -318,6 +326,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool confirm_origin: not found",
       "http_status": 200,
       "message": {
@@ -341,6 +350,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool confirm_origin: not found",
       "http_status": 200,
       "message": {
@@ -371,6 +381,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "decoded_text": {
         "confirmation": {
           "state": "str"
@@ -400,6 +411,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "decoded_text": {
         "confirmation": {
           "state": "str"
@@ -436,6 +448,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool job_cancel: job_id: Field required",
       "http_status": 200,
       "message": {
@@ -459,6 +472,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool job_cancel: job_id: Field required",
       "http_status": 200,
       "message": {
@@ -489,6 +503,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool job_cancel: not found",
       "http_status": 200,
       "message": {
@@ -512,6 +527,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool job_cancel: not found",
       "http_status": 200,
       "message": {
@@ -542,6 +558,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "decoded_text": {
         "created_at": "str",
         "error": "null",
@@ -571,6 +588,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "decoded_text": {
         "created_at": "str",
         "error": "null",
@@ -607,6 +625,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool job_result: job_id: Field required",
       "http_status": 200,
       "message": {
@@ -630,6 +649,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool job_result: job_id: Field required",
       "http_status": 200,
       "message": {
@@ -660,6 +680,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool job_result: not found",
       "http_status": 200,
       "message": {
@@ -683,6 +704,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool job_result: not found",
       "http_status": 200,
       "message": {
@@ -713,6 +735,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "decoded_text": {
         "body": "str",
         "evidence": [
@@ -781,6 +804,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "decoded_text": {
         "body": "str",
         "evidence": [
@@ -856,6 +880,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool job_status: job_id: Field required",
       "http_status": 200,
       "message": {
@@ -879,6 +904,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool job_status: job_id: Field required",
       "http_status": 200,
       "message": {
@@ -909,6 +935,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool job_status: not found",
       "http_status": 200,
       "message": {
@@ -932,6 +959,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool job_status: not found",
       "http_status": 200,
       "message": {
@@ -962,6 +990,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "decoded_text": {
         "created_at": "str",
         "error": "null",
@@ -991,6 +1020,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "decoded_text": {
         "created_at": "str",
         "error": "null",
@@ -1027,6 +1057,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool link_notes: type must be one of same_as, about, fixed_by, violates, decided_by, contradicts",
       "http_status": 200,
       "message": {
@@ -1050,6 +1081,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool link_notes: type must be one of same_as, about, fixed_by, violates, decided_by, contradicts",
       "http_status": 200,
       "message": {
@@ -1080,6 +1112,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool link_notes: not found",
       "http_status": 200,
       "message": {
@@ -1103,6 +1136,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool link_notes: not found",
       "http_status": 200,
       "message": {
@@ -1133,6 +1167,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "decoded_text": {
         "dst": "str",
         "src": "str",
@@ -1161,6 +1196,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "decoded_text": {
         "dst": "str",
         "src": "str",
@@ -1196,6 +1232,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "decoded_text": "not json",
       "http_status": 200,
       "message": {
@@ -1254,6 +1291,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "decoded_text": "not json",
       "http_status": 200,
       "message": {
@@ -1319,6 +1357,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool list_files: limit must be an integer from 1 to 500",
       "http_status": 200,
       "message": {
@@ -1342,6 +1381,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool list_files: limit must be an integer from 1 to 500",
       "http_status": 200,
       "message": {
@@ -1372,6 +1412,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool list_files: forbidden",
       "http_status": 200,
       "message": {
@@ -1395,6 +1436,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool list_files: forbidden",
       "http_status": 200,
       "message": {
@@ -1425,6 +1467,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "decoded_text": {
         "book": "str",
         "content_id": "str",
@@ -1519,6 +1562,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "decoded_text": {
         "book": "str",
         "content_id": "str",
@@ -1620,6 +1664,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "decoded_text": {
         "book": "str",
         "content_id": "str",
@@ -1700,6 +1745,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "decoded_text": {
         "book": "str",
         "content_id": "str",
@@ -1787,6 +1833,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool neighbours: malformed passage handle: expected <book>@ct_…/pf_…/<path>#<n>; copy it from a search_library hit",
       "http_status": 200,
       "message": {
@@ -1810,6 +1857,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool neighbours: malformed passage handle: expected <book>@ct_…/pf_…/<path>#<n>; copy it from a search_library hit",
       "http_status": 200,
       "message": {
@@ -1840,6 +1888,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool neighbours: not found",
       "http_status": 200,
       "message": {
@@ -1863,6 +1912,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool neighbours: not found",
       "http_status": 200,
       "message": {
@@ -1893,6 +1943,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "decoded_text": {
         "edges": [
           {
@@ -1989,6 +2040,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "decoded_text": {
         "edges": [
           {
@@ -2092,6 +2144,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool open_citation: malformed passage handle: expected <book>@ct_…/pf_…/<path>#<n>; copy it from a search_library hit",
       "http_status": 200,
       "message": {
@@ -2115,6 +2168,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool open_citation: malformed passage handle: expected <book>@ct_…/pf_…/<path>#<n>; copy it from a search_library hit",
       "http_status": 200,
       "message": {
@@ -2145,6 +2199,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool open_citation: not found: copy the complete citation handle from a search_library hit, including #<n>",
       "http_status": 200,
       "message": {
@@ -2168,6 +2223,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool open_citation: not found: copy the complete citation handle from a search_library hit, including #<n>",
       "http_status": 200,
       "message": {
@@ -2198,6 +2254,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "decoded_text": {
         "citation": "str",
         "note": {
@@ -2269,6 +2326,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "decoded_text": {
         "citation": "str",
         "note": {
@@ -2347,6 +2405,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "decoded_text": {
         "citation": "str",
         "item": {
@@ -2425,6 +2484,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "decoded_text": {
         "citation": "str",
         "item": {
@@ -2510,6 +2570,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool package_status: import_id: Input should be a valid integer, unable to parse string as an integer",
       "http_status": 200,
       "message": {
@@ -2533,6 +2594,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool package_status: import_id: Input should be a valid integer, unable to parse string as an integer",
       "http_status": 200,
       "message": {
@@ -2563,6 +2625,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool package_status: not found",
       "http_status": 200,
       "message": {
@@ -2586,6 +2649,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool package_status: not found",
       "http_status": 200,
       "message": {
@@ -2616,6 +2680,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "decoded_text": {
         "book": {
           "any_of": [
@@ -2699,6 +2764,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "decoded_text": {
         "book": {
           "any_of": [
@@ -2789,6 +2855,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool propose_note: kind must be one of finding, decision_proposal, dead_end, convention, lesson, test_result",
       "http_status": 200,
       "message": {
@@ -2812,6 +2879,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool propose_note: kind must be one of finding, decision_proposal, dead_end, convention, lesson, test_result",
       "http_status": 200,
       "message": {
@@ -2842,6 +2910,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool propose_note: book: Field required; text: Field required",
       "http_status": 200,
       "message": {
@@ -2865,6 +2934,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool propose_note: book: Field required; text: Field required",
       "http_status": 200,
       "message": {
@@ -2895,6 +2965,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool propose_note: forbidden",
       "http_status": 200,
       "message": {
@@ -2918,6 +2989,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool propose_note: forbidden",
       "http_status": 200,
       "message": {
@@ -2948,6 +3020,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "decoded_text": {
         "candidates": [],
         "class_count": "int",
@@ -2982,6 +3055,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "decoded_text": {
         "candidates": [],
         "class_count": "int",
@@ -3023,6 +3097,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "decoded_text": {
         "candidates": [],
         "class_count": "int",
@@ -3057,6 +3132,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "decoded_text": {
         "candidates": [],
         "class_count": "int",
@@ -3098,6 +3174,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool query_notes: order must be one of newest, oldest, relevance",
       "http_status": 200,
       "message": {
@@ -3121,6 +3198,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool query_notes: order must be one of newest, oldest, relevance",
       "http_status": 200,
       "message": {
@@ -3151,6 +3229,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "decoded_text": {
         "books": [
           "str"
@@ -3232,6 +3311,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "decoded_text": {
         "books": [
           "str"
@@ -3320,6 +3400,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool read_document: content_id: Field required; path: Field required",
       "http_status": 200,
       "message": {
@@ -3343,6 +3424,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool read_document: content_id: Field required; path: Field required",
       "http_status": 200,
       "message": {
@@ -3373,6 +3455,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool read_document: not found",
       "http_status": 200,
       "message": {
@@ -3396,6 +3479,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool read_document: not found",
       "http_status": 200,
       "message": {
@@ -3426,6 +3510,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "decoded_text": "not json",
       "http_status": 200,
       "message": {
@@ -3462,6 +3547,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "decoded_text": "not json",
       "http_status": 200,
       "message": {
@@ -3505,6 +3591,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool record_outcome: idempotency_key reused with another request",
       "http_status": 200,
       "message": {
@@ -3528,6 +3615,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool record_outcome: idempotency_key reused with another request",
       "http_status": 200,
       "message": {
@@ -3558,6 +3646,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool record_outcome: not found",
       "http_status": 200,
       "message": {
@@ -3581,6 +3670,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool record_outcome: not found",
       "http_status": 200,
       "message": {
@@ -3611,6 +3701,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "decoded_text": {
         "origin": "str",
         "ref": "str",
@@ -3639,6 +3730,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "decoded_text": {
         "origin": "str",
         "ref": "str",
@@ -3674,6 +3766,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool reopen_answer: answer_id: Field required",
       "http_status": 200,
       "message": {
@@ -3697,6 +3790,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool reopen_answer: answer_id: Field required",
       "http_status": 200,
       "message": {
@@ -3727,6 +3821,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool reopen_answer: not found",
       "http_status": 200,
       "message": {
@@ -3750,6 +3845,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool reopen_answer: not found",
       "http_status": 200,
       "message": {
@@ -3780,6 +3876,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "decoded_text": {
         "body": "str",
         "evidence": [
@@ -3848,6 +3945,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "decoded_text": {
         "body": "str",
         "evidence": [
@@ -3923,6 +4021,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool search_library: acceptance: List should have at least 1 item after validation, not 0",
       "http_status": 200,
       "message": {
@@ -3946,6 +4045,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool search_library: acceptance: List should have at least 1 item after validation, not 0",
       "http_status": 200,
       "message": {
@@ -3976,6 +4076,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "decoded_text": {
         "citation": "str",
         "item": {
@@ -4085,6 +4186,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "decoded_text": {
         "citation": "str",
         "item": {
@@ -4199,6 +4301,7 @@
   "search_library:ok (empty)": {
     "2025-11-25": {
       "block_types": [],
+      "content_type": "text/event-stream",
       "decoded_text": "not json",
       "http_status": 200,
       "message": {
@@ -4226,6 +4329,7 @@
     },
     "2026-07-28": {
       "block_types": [],
+      "content_type": "application/json",
       "decoded_text": "not json",
       "http_status": 200,
       "message": {
@@ -4262,6 +4366,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool submit_package: package_base64 is not base64",
       "http_status": 200,
       "message": {
@@ -4285,6 +4390,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool submit_package: package_base64 is not base64",
       "http_status": 200,
       "message": {
@@ -4315,6 +4421,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool submit_package: forbidden",
       "http_status": 200,
       "message": {
@@ -4338,6 +4445,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool submit_package: forbidden",
       "http_status": 200,
       "message": {
@@ -4368,6 +4476,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "decoded_text": {
         "book": {
           "any_of": [
@@ -4451,6 +4560,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "decoded_text": {
         "book": {
           "any_of": [
@@ -4541,6 +4651,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool verify_citations: give 1 to 200 citations",
       "http_status": 200,
       "message": {
@@ -4564,6 +4675,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool verify_citations: give 1 to 200 citations",
       "http_status": 200,
       "message": {
@@ -4594,6 +4706,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "error_text": "Error executing tool verify_citations: forbidden",
       "http_status": 200,
       "message": {
@@ -4617,6 +4730,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "error_text": "Error executing tool verify_citations: forbidden",
       "http_status": 200,
       "message": {
@@ -4647,6 +4761,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "text/event-stream",
       "decoded_text": {
         "results": [
           {
@@ -4681,6 +4796,7 @@
       "block_types": [
         "text"
       ],
+      "content_type": "application/json",
       "decoded_text": {
         "results": [
           {

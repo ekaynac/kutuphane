@@ -261,14 +261,30 @@ def _is_error(message) -> bool:
     return message is None or "error" in message or bool(message["result"].get("isError"))
 
 
-def _rpc_outcome(status, message):
+class _Last:
+    """A test client that remembers its last response: `mcp_rpc` returns only the status and the message, and the
+    content type of the response is part of the transport contract."""
+
+    def __init__(self, client):
+        self.client, self.last = client, None
+
+    def post(self, *args, **kw):
+        self.last = self.client.post(*args, **kw)
+        return self.last
+
+
+def _content_type(r) -> str:
+    return r.headers.get("content-type", "").split(";")[0]
+
+
+def _rpc_outcome(status, message, content_type):
     """The envelope a client receives: the HTTP status, the JSON-RPC message (its shape: `content` blocks,
     `structuredContent`, `isError`, `resultType`, `_meta`, or the `error` object), the block types, the shape of the
     JSON a text block carries, and the text of an error (an error text is a contract)."""
     if message is not None and "tools" in message.get("result", {}):  # the schemas are in tools.json
         message = {**message, "result": {**message["result"], "tools": [
             {k: type(v).__name__ for k, v in t.items()} for t in message["result"]["tools"]]}}
-    out = {"http_status": status, "message": shape(message)}
+    out = {"http_status": status, "content_type": content_type, "message": shape(message)}
     if message is None:
         return out
     if "error" in message:
@@ -292,9 +308,10 @@ def _rpc_outcome(status, message):
 def _both_eras(client, auth, method, params, eras=ERAS):
     """({era: outcome}, the first era's message); the eras must agree on success."""
     outcomes, messages = {}, {}
+    last = _Last(client)
     for era in eras:
-        status, message = mcp_rpc(client, auth, method, params, version=era)
-        outcomes[era], messages[era] = _rpc_outcome(status, message), message
+        status, message = mcp_rpc(last, auth, method, params, version=era)
+        outcomes[era], messages[era] = _rpc_outcome(status, message, _content_type(last.last)), message
     if len({_is_error(m) for m in messages.values()}) != 1:
         raise SystemExit(f"{method} {params}: the two protocol eras do not agree on the outcome")
     return outcomes, messages[eras[0]]
@@ -412,7 +429,7 @@ def mcp_results(ctx: Context) -> tuple[dict, dict]:
 def _transport(client, cases, agent):
     """The mount at `/`: the MCP endpoint and the protected-resource metadata, without a tool."""
     def raw(kind, variant, r, *, success):
-        out = {"status": r.status_code, "content_type": r.headers.get("content-type", "").split(";")[0]}
+        out = {"status": r.status_code, "content_type": _content_type(r)}
         try:
             out["body"] = shape(_message(r))
         except ValueError:
