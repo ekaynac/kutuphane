@@ -139,6 +139,38 @@ def test_verify_phase_with_a_damaged_export_that_exited_0_fails_explicitly(bridg
     assert_consistent_failure(rc, lines, out, reason)
 
 
+WRONG_TYPES = [("actor", []), ("actor", 7), ("correlationId", 5), ("correlationId", ["a"]), ("type", {}),
+               ("forSubject", 7), ("forSubject", ["x"]), ("seq", "0"), ("seq", True), ("seq", 1.5)]
+
+
+def wrong_type_export(field, value) -> bytes:
+    entry = {"seq": 0, "type": "llm.authz", "actor": "svc-kutuphane", "correlationId": "a:b", "forSubject": "u"}
+    entry[field] = value
+    return (json.dumps({"seq": 0}) + "\n" + json.dumps(entry) + "\n").encode()
+
+
+@pytest.mark.parametrize("field,value", WRONG_TYPES)
+def test_verify_phase_with_a_wrong_field_type_fails_explicitly_without_a_traceback(bridge, monkeypatch, capsys,
+                                                                                tmp_path, field, value):
+    assert run(monkeypatch, capsys, "--phase", "calls")[0] == 0
+    export = tmp_path / "export.jsonl"
+    export.write_bytes(wrong_type_export(field, value))
+    rc, lines, out = run(monkeypatch, capsys, "--phase", "verify", "--audit-export-file", str(export))
+    assert len(lines) == 3, lines
+    assert_consistent_failure(rc, lines, out, f'field "{field}" must be')
+
+
+@pytest.mark.parametrize("field,value", WRONG_TYPES)
+def test_single_run_with_a_wrong_field_type_fails_explicitly_without_a_traceback(bridge, monkeypatch, capsys, field,
+                                                                              value):
+    module = load()
+    raw = wrong_type_export(field, value)
+    monkeypatch.setattr(module.subprocess, "run", lambda argv, **kw: SimpleNamespace(returncode=0, stdout=raw, stderr=b""))
+    rc, lines, out = run(monkeypatch, capsys, "--audit-export", "export-cmd", module=module)
+    assert len(lines) == 11, lines
+    assert_consistent_failure(rc, lines, out, f'field "{field}" must be')
+
+
 @pytest.mark.parametrize("raw,reason", [
     (DAMAGED["invalid UTF-8"], "not valid UTF-8"),
     (DAMAGED["a line that is not JSON"], "not JSON"),

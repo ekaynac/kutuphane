@@ -180,6 +180,14 @@ def test_the_bridge_with_the_alias_is_detached_by_ids_and_the_other_container_is
     assert disconnects == [f"network disconnect -f {NETWORK_ID} {BRIDGE_ID}"], calls
 
 
+def test_the_bridge_is_found_by_the_fixed_alias_whatever_the_url_spelling(run):
+    proc, calls, state = run(KUTUPHANE_LLMDAP_URL="http://LLMDAP:8787", FAKE_NET_CONTAINERS=BRIDGE_ID,
+                             **{f"FAKE_ALIAS_{BRIDGE_ID}": "abc llmdap"})
+    assert proc.returncode == 0, proc.stderr
+    assert f"network disconnect -f {NETWORK_ID} {BRIDGE_ID}" in calls
+    assert not (state / "network").exists() and not (state / "lock").exists()
+
+
 def test_export_group_is_ended_before_verify_and_the_file_stays(run):
     # the leader prints and exits; its background child would append `late` after 3 s
     export = "sh -c '{ sleep 3; echo late; } & echo $! >\"$STATE/child.pid\"; echo x'"

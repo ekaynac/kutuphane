@@ -37,9 +37,15 @@ SHARED_SECRET_ENV = "LLMDAP_GATEWAY_TRUST_SECRET"
 QUESTION = "Erişim kayıtları ne kadar süre saklanır?"
 
 
+# The fields of an export entry that the checks use (audit.explain and the subject check), and their types. A missing
+# or null field is allowed (not every entry has every field).
+ENTRY_FIELDS = {"seq": int, "type": str, "actor": str, "correlationId": str, "forSubject": str}
+
+
 def parse_export(raw: bytes | str) -> tuple[list[dict], str | None]:
     """The entries of an export (JSON lines, each an object) and the reason it cannot be used, if any. An export that
-    exits 0 may still be damaged: invalid UTF-8, a line that is not JSON, or JSON that is not an object."""
+    exits 0 may still be damaged: invalid UTF-8, a line that is not JSON, JSON that is not an object, or a field of
+    the wrong type."""
     if isinstance(raw, bytes):
         try:
             raw = raw.decode("utf-8")
@@ -55,6 +61,11 @@ def parse_export(raw: bytes | str) -> tuple[list[dict], str | None]:
             return [], f"line {number} of the export is not JSON ({exc})"
         if not isinstance(entry, dict):
             return [], f"line {number} of the export is JSON but not an object ({type(entry).__name__})"
+        for field, kind in ENTRY_FIELDS.items():   # the fields the checks read: a wrong type must not crash them
+            value = entry.get(field)
+            if value is not None and (not isinstance(value, kind) or isinstance(value, bool)):
+                return [], (f'line {number} of the export: field "{field}" must be a {kind.__name__} '
+                            f"(got {type(value).__name__})")
         entries.append(entry)
     return entries, None
 

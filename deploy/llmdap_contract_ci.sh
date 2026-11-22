@@ -62,8 +62,9 @@ docker compose version >/dev/null 2>&1 || die "the docker compose plugin is not 
 run_id="$(date +%s)-$$-$RANDOM"
 label_filter="label=kutuphane.contract.run=$run_id"
 lock_id="" network_id="" export_dir="" export_pgid="" export_stuck=0
-# The alias the caller gives its bridge is the host name of the URL; only a container with that alias is detached.
-bridge_alias=${KUTUPHANE_LLMDAP_URL#*://}; bridge_alias=${bridge_alias%%/*}; bridge_alias=${bridge_alias%%:*}
+# The contract fixes the alias of the bridge on the network: `llmdap`. Only a container with that alias is detached
+# (the URL may spell the host in another form).
+bridge_alias=llmdap
 
 # Is any live process in the group? A zombie (state Z) has ended: it only waits to be collected, and `kill -0` counts it
 # as alive. So on Linux the members are read from /proc/<pid>/stat (field 3 is the state, field 5 the group) and the
