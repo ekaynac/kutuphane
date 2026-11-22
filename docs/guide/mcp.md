@@ -152,7 +152,8 @@ Messages, with the HTTP equivalent: `forbidden` (`403`: no needed right now, or 
 rights changed two times during one read); `idempotency_key reused with another request` (`409`, section 7);
 `daily note write limit reached (<n>)` and `at most 3 open jobs per principal` (`429`, section 8);
 `model service unavailable or refused` (`502`); a validation message such as `query must be 1..1000 characters`
-(`400`); `internal error` (`500`, details in the server log). Without LLMDAP, `POST /v1/ask` gives `503`
+(`400`); `internal error` (`500`, details in the server log). Without a model provider for answers (LLMDAP or a direct
+provider, D88), `POST /v1/ask` gives `503`
 `answers are not available: this install has no model gateway (LLMDAP); search is full text only`, and MCP does not
 list `ask_library`, `job_status`, `job_result` and `job_cancel` ([light install](install.md#light-install)).
 
@@ -293,7 +294,8 @@ you may not read gives `403` as before), `409`.
 
 ### 5.3 `ask_library`
 
-Answer a question through LLMDAP with `[n]` citations, in the question's language (Turkish or English), or
+Answer a question through LLMDAP or the configured direct provider with `[n]` citations, in the question's language
+(Turkish or English), or
 `not_in_library`. Only passages with AI input in their kstd rights go to the model, in rank order. The model is told
 to base the answer on `[1]` when it answers, to put each `[n]` after its claim, and to say what the passages do not
 show. A named document (a file name, or a name before `§`: `access-policy §5.3`) must be in a passage path, and a
@@ -604,7 +606,8 @@ example quarantined or `ai_use.search` not `y`). `item`: as in `search_library`,
 
 `ask_library` with `background: true` returns a job at once. Poll `job_status` until `succeeded`, `failed` or
 `cancelled`, then call `job_result`. At most 3 `queued` or `running` jobs per principal (one more: `429`).
-`KUTUPHANE_JOB_WORKERS` threads in the server process run them (default `1`; `0` runs none; none without LLMDAP,
+`KUTUPHANE_JOB_WORKERS` threads in the server process run them (default `1`; `0` runs none; none without an answer
+provider,
 and then `tools/list` has no job tools). The worker runs as the job's principal and user acted for, so the rights at
 run time apply. The lease is 60 seconds, renewed while running; when it ends (for example, the server stopped), the
 job is `failed` with `error: interrupted` and never runs again. A cancel or a lease end that commits before the

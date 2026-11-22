@@ -62,13 +62,18 @@ All `KUTUPHANE_*` variables of the code, the compose files (`compose.yaml`, `dep
 | `KUTUPHANE_LLMDAP_KEY` | none | Core's LLMDAP subject key. |
 | `KUTUPHANE_LLMDAP_ROUTE` | full: `chat` | Route for answers and question translation. |
 | `KUTUPHANE_LLMDAP_ROUTE_CLASS` | compose: `local` | `local` or `cloud`. A `local_only` book never goes to a `cloud` route. |
-| `KUTUPHANE_ANSWER_MODEL` | full: `nvidia/Qwen3.8-Flash-Next-NVFP4` | Answer model. Required by the server with `KUTUPHANE_LLMDAP_URL`. `ask --model` sets it for the CLI. |
+| `KUTUPHANE_ANSWER_MODEL` | full: `nvidia/Qwen3.8-Flash-Next-NVFP4` | Answer model. Required by the server with `KUTUPHANE_LLMDAP_URL` or `KUTUPHANE_ANSWER_PROVIDER=openai`. `ask --model` sets it for the CLI. |
+| `KUTUPHANE_ANSWER_PROVIDER` | `llmdap` | `llmdap` or `openai`: where answers and question translation go ([direct providers](#direct-model-providers)). |
+| `KUTUPHANE_ANSWER_OPENAI_URL`, `_KEY`, `_CLASS` | none | With provider `openai`, all three are required: the endpoint, the API key and the class (`local` or `cloud`, no default). |
 | `KUTUPHANE_LLMDAP_EMBED_ROUTE` | full: `emb` | Embeddings route. Without it, search is full text only. |
 | `KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS` | compose: `local` | Route class of the embeddings route. |
-| `KUTUPHANE_EMBED_MODEL` | full: `BAAI/bge-m3` | Pinned embedding model. |
+| `KUTUPHANE_EMBED_MODEL` | full: `BAAI/bge-m3` | Pinned embedding model. With provider `openai`: the model name that the endpoint takes. |
+| `KUTUPHANE_EMBED_PROVIDER` | `llmdap` | `llmdap` or `openai`: where embeddings go. With `openai`, the embedder is always on and needs `KUTUPHANE_EMBED_MODEL`. |
+| `KUTUPHANE_EMBED_OPENAI_URL`, `_KEY`, `_CLASS` | none | With provider `openai`, all three are required, as for the answer model. |
 | `KUTUPHANE_LLMDAP_RERANK_ROUTE` | full: `rerank` | Rerank route; without it, no reranking. Local: `rerank` (CPU) or `rerank-gpu` ([install.md](install.md#gpu-reranker)). |
 | `KUTUPHANE_LLMDAP_RERANK_ROUTE_CLASS` | compose: `local` | Route class of the rerank route. |
 | `KUTUPHANE_RERANK_MODEL` | full: `BAAI/bge-reranker-v2-m3` | Pinned rerank model. |
+| `KUTUPHANE_RERANK_PROVIDER` | `llmdap` | Rerank is LLMDAP only. Unset, empty or `llmdap` is accepted; any other value stops the server and the CLI ([direct providers](#direct-model-providers)). |
 | `KUTUPHANE_LLMDAP_ROUTES` | `routes.local.json` | Full compose: LLMDAP routes file in `deploy/llmdap/config/`: `routes.local.json`, `routes.json` (stub models) or `routes.hosted.json`. |
 | `KUTUPHANE_LLMDAP_OFFLINE` | `true` | Full compose: `false` gives LLMDAP's network `outbound` a way out, for a hosted decision model ([install.md](install.md#local-models)). Any other value stops compose. |
 | `KUTUPHANE_VLLM_IMAGE` | `vllm-node:latest` | Compose profile `gpu-rerank`: local vLLM image of `reranker-gpu`, never pulled. |
@@ -97,6 +102,33 @@ The host CLI reads no compose file (G13); an empty value is not set. Only `KUTUP
 routes, models and route classes; else the command stops and names the variable. A route class has no default:
 `local` skips the egress check, so set it only for an on-premises route. Else the CLI stops before publishing:
 `LLMDAP not configured: set KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS (…: local or cloud …)`.
+
+### Direct model providers
+
+Answers (and question translation) and embeddings can go to an OpenAI-compatible endpoint instead of LLMDAP (D88).
+Each of the two stages has its own provider (`KUTUPHANE_ANSWER_PROVIDER`, `KUTUPHANE_EMBED_PROVIDER`; unset or empty
+is `llmdap`, as before). Rerank is LLMDAP only: OpenAI has no standard rerank endpoint. `KUTUPHANE_RERANK_PROVIDER`
+must be unset, empty or `llmdap`; any other value (also `openai`) stops the server and the CLI at start-up with
+`KUTUPHANE_RERANK_PROVIDER must be llmdap: rerank is LLMDAP-only …`.
+
+- `…_OPENAI_URL` is the base address without `/v1`: Core adds `/v1/embeddings` or `/v1/chat/completions`. `…_KEY` is the
+  API key, sent only as the bearer. Give it in the environment and nowhere else; it is never logged and never in
+  `model_call` or an error text. Redirects are not followed, so the key never goes to another host.
+- `…_OPENAI_CLASS` says whether the provider keeps the data on premises: `local` or `cloud`. It has no default.
+  A missing URL, key or class, or any other class, stops the server and the CLI at start-up and names the setting. So
+  does any provider value other than `llmdap` or `openai`.
+- The checks are those of LLMDAP calls, and they run before the call: a passage whose kstd rights do not allow
+  `ai_input` is never sent, and a `local_only` book never goes to a `cloud` provider (the call is refused and nothing
+  is sent). Every call, also a refused one, is a `model_call` row. Its `route` is `openai:<host>:<port>`.
+- The provider gets the model, the input and the key only: no `x-llmdap-*` header, so it does not learn who asks.
+  A direct call has no LLMDAP audit record: `kutuphane explain` shows it with `llmdap_status` `direct`, and `model_call`
+  is its whole record.
+- Without an answer model the server does not list `ask_library` or the job tools, as before: with
+  `KUTUPHANE_ANSWER_PROVIDER=openai` the server refuses to start without `KUTUPHANE_ANSWER_MODEL`.
+- Vectors are stored with the model name. Another provider for the same model name must give the same vectors; else
+  use a new `KUTUPHANE_EMBED_MODEL` name and run `kutuphane index` again (a width change is refused).
+- The compose files set none of these variables, and Core's compose networks (`db`, `web`) have no route out. Give
+  Core a network path to the endpoint before you set a hosted provider.
 
 ### More than one token issuer
 
@@ -354,7 +386,8 @@ search. `ingest` and `approve-import` then embed the new version; `index` adds m
 kutuphane index <book> [--batch N] [--batch-chars N] [--concurrency N]
 ```
 
-Without the route, `index` exits 1: `no embeddings route: set KUTUPHANE_LLMDAP_EMBED_ROUTE`.
+Without the route, `index` exits 1: `no embeddings route: set KUTUPHANE_LLMDAP_EMBED_ROUTE`. With
+`KUTUPHANE_EMBED_PROVIDER=openai`, the route is not needed ([direct providers](#direct-model-providers)).
 
 - **G17:** a vector whose text, model and width did not change is copied from the same book, never from another book
   (`vectors_reused`; new ones are `vectors_embedded`).
@@ -1001,7 +1034,8 @@ kutuphane explain <answer_id> --answer --llmdap-export audit.jsonl
 `whoami` reads the token from stdin and prints `principal` and `on_behalf_of`. `explain` prints `access`,
 `model_calls` and `complete` for our id or a caller's id (#156); rows have `correlation_id` and
 `caller_correlation_id`. `--llmdap-export` takes `llmdap-audit-export` JSONL; `complete` is `false` when a call has no
-LLMDAP record. The database keeps `access_event`, `model_call`, `answer`, `standing_event`; LLMDAP's signed chain is
+LLMDAP record, except a call to a direct provider (`llmdap_status` `direct`: there is none to expect). The database
+keeps `access_event`, `model_call`, `answer`, `standing_event`; LLMDAP's signed chain is
 in the `llmdap-audit` volume. Logs (full stack, [install.md](install.md#full-stack)):
 `docker compose --profile app logs -f core` and `docker compose --profile app logs llmdap ingress`.
 

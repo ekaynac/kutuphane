@@ -226,14 +226,20 @@ no replace objects, grafts, lazy fetch or protocols, and 5 s per command. Only c
 reaches can be cited; others (for example a force-pushed secret) are `unverifiable: commit_not_published`. No result
 contains code text; files over 2 MiB and binary files are `unverifiable`.
 
-## Model calls (LLMDAP)
+## Model calls (LLMDAP or a direct provider)
 
-- Core reaches a model only through LLMDAP with its own subject key (`KUTUPHANE_LLMDAP_KEY`); no header can claim
-  another subject. The person served travels as the `x-llmdap-for-subject` label; a call id joins Core's
-  `model_call` row and LLMDAP's signed audit chain.
-- Every attempt is a `model_call` row, also one that the egress check stopped. Before a call, Core checks every
-  source book's egress now: a `local_only` book never goes to a `cloud` route (`KUTUPHANE_LLMDAP_ROUTE_CLASS`,
-  `_EMBED_ROUTE_CLASS`, `_RERANK_ROUTE_CLASS`).
+- Core reaches a model through LLMDAP with its own subject key (`KUTUPHANE_LLMDAP_KEY`) or, per stage (answer,
+  embeddings), through a direct OpenAI-compatible provider (D88; `KUTUPHANE_ANSWER_PROVIDER`,
+  `KUTUPHANE_EMBED_PROVIDER`). Rerank stays on LLMDAP. Through LLMDAP, no header can claim another subject. The
+  person served travels as the `x-llmdap-for-subject` label; a call id joins Core's `model_call` row and LLMDAP's
+  signed audit chain. A direct provider gets only the model, the input and its API key (`…_OPENAI_KEY`, from the
+  environment; never logged, never in `model_call` or an error text; redirects are not followed). It gets no
+  `x-llmdap-*` header and has no LLMDAP audit record: `model_call` is the whole record (`llmdap_status` `direct`).
+- The rights and egress rules are Core's own and the same for both. Every attempt is a `model_call` row, also one
+  that a check stopped. Before a call, a passage without `ai_input` is left out, and Core checks every source
+  book's egress now: a `local_only` book never goes to a `cloud` route or provider (`KUTUPHANE_LLMDAP_ROUTE_CLASS`,
+  `_EMBED_ROUTE_CLASS`, `_RERANK_ROUTE_CLASS`, `KUTUPHANE_ANSWER_OPENAI_CLASS`, `KUTUPHANE_EMBED_OPENAI_CLASS`).
+  A class is never defaulted: a missing or unknown class stops start-up. A refused call sends nothing.
 
 ## Egress (network)
 
