@@ -10,6 +10,8 @@ import json
 import re
 import shutil
 import sys
+import os
+import subprocess
 import tempfile
 import time
 from datetime import datetime, timedelta, timezone
@@ -22,7 +24,7 @@ from starlette.testclient import TestClient
 TESTS = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(TESTS))  # the suite's helpers (test_*.py, conftest.py) import each other by bare name
 
-from kutuphane import authz, catalog, db, notes, packages, profiles, server, signing  # noqa: E402
+from kutuphane import authz, catalog, coderepo, db, notes, packages, profiles, server, signing  # noqa: E402
 from kutuphane.identity import Verifier  # noqa: E402
 from kutuphane.policy import make_policy  # noqa: E402
 from kutuphane.source import read_source  # noqa: E402
@@ -97,7 +99,7 @@ def _merge_objects(objects):
 
 class Cases:
     """case name -> shape. A case is `tool:kind` or `tool:kind (variant)`, `METHOD route [kind]` or
-    `METHOD route [kind (variant)]`; outcomes recorded under one name merge. The kind must fit the outcome: `ok` is a
+    `METHOD route [kind (variant)]`; a name is recorded once. The kind must fit the outcome: `ok` is a
     success, every other kind a refusal; a case that does not fit stops the run (the matrix would be wrong)."""
 
     def __init__(self):
@@ -107,7 +109,9 @@ class Cases:
         kind = kind_of(name)
         if success != (kind in ("ok", "head_ok")):
             raise SystemExit(f"case {name!r}: the outcome does not fit the kind (success={success})")
-        self.found[name] = merge(self.found[name], outcome) if name in self.found else outcome
+        if name in self.found:  # one name, one request: a second request gets its own variant
+            raise SystemExit(f"case {name!r} is recorded twice")
+        self.found[name] = outcome
 
     def result(self):
         return dict(sorted(self.found.items()))
@@ -157,7 +161,7 @@ class Context:
         self.signer = signing.generate(work / "issuer.key")
         self.private = signing.load_private(work / "issuer.key")
         signing.generate(work / "unknown.key")  # a key that B does not trust
-        self.package = self._next = None
+        self.package = self._next = self.old_commit = None
 
     def token(self, **claims) -> str:
         return token((self.keys, self.keys), **claims)
@@ -181,7 +185,8 @@ class Context:
             notes.create_journal(conn, book=JOURNAL, title=JOURNAL, search=True, ai_input=True, policy=POLICY,
                                  by="user:admin")
             _allow(conn, JOURNAL, "read", "propose")
-            _allow(conn, BOOK, "read")
+            _allow(conn, BOOK, "read", "propose")  # propose: an outcome on a passage of the book
+            self.old_commit = self._code_repo(conn)
         with db.connect(self.s_dsn) as conn:
             authz.grant(conn, f"book:{BOOK}", "curate", "user:admin")
             self._publish_source(conn)
@@ -192,6 +197,34 @@ class Context:
             authz.grant(conn, f"book:{BOOK}", "curate", "user:admin")
             authz.grant(conn, f"book:{BOOK}", "propose", PACKAGE_AGENT)
             authz.grant(conn, f"book:{BOOK}", "read", PACKAGE_AGENT)
+
+    def _code_repo(self, conn) -> str:
+        """Repository `adc` for the journal: a work tree that pushes into a bare mirror inside the roots the verifier
+        may read. Commit 1 has `f.py`; commit 2 (main now) moves its lines. Returns commit 1."""
+        roots = os.path.realpath(self.work / "roots")
+        os.makedirs(roots)
+        os.environ[coderepo.ROOTS_ENV] = roots  # collect() puts the old value back
+        work, mirror = self.work / "work-adc", os.path.join(roots, "adc.git")
+        email = "@".join(["t", "example.org"])  # built at run time, as the address of the package fixture
+        env = {"PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "LC_ALL": "C", "GIT_CONFIG_NOSYSTEM": "1",
+               "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": email,
+               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": email}
+
+        def git(*args, cwd=None):
+            return subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True).stdout.decode().strip()
+
+        git("init", "-q", "-b", "main", str(work))
+        git("init", "-q", "--bare", mirror)
+        commits = []
+        for lines in (range(1, 21), [0, *range(1, 21)]):
+            (work / "f.py").write_text("".join(f"line {i}\n" for i in lines), encoding="utf-8")
+            git("add", "-A", cwd=work)
+            git("commit", "-q", "-m", "c", cwd=work)
+            commits.append(git("rev-parse", "HEAD", cwd=work))
+        git("push", "-q", "--force", mirror, f"{commits[1]}:refs/heads/main", cwd=work)
+        git("push", "-q", "--force", mirror, f"{commits[0]}:refs/heads/old", cwd=work)
+        coderepo.add(conn, JOURNAL, "adc", mirror, ["refs/heads/*"], by="user:admin")
+        return commits[0]
 
     def _publish_source(self, conn):
         catalog.publish(conn, book=BOOK, title=BOOK, files=read_source(self.book_dir), policy=POLICY,
@@ -238,7 +271,7 @@ def collect(dsn: str) -> dict[str, dict]:
     """{"results_mcp": {...}, "results_http": {...}}: case -> shape."""
     reset(dsn)
     work = Path(tempfile.mkdtemp(prefix="kutuphane-contract-"))
-    fake = FakeBridge()
+    fake, roots = FakeBridge(), os.environ.get(coderepo.ROOTS_ENV)
     try:
         keys = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         ctx = Context(dsn, work, keys, _verifier(work, keys), fake)
@@ -247,6 +280,10 @@ def collect(dsn: str) -> dict[str, dict]:
         tools, mount = mcp_results(ctx)
         return {"results_mcp": tools, "results_http": {**http_results(ctx), **mount}}
     finally:
+        if roots is None:
+            os.environ.pop(coderepo.ROOTS_ENV, None)
+        else:
+            os.environ[coderepo.ROOTS_ENV] = roots
         fake.server.shutdown()
         shutil.rmtree(work, ignore_errors=True)
 
@@ -347,24 +384,30 @@ def mcp_results(ctx: Context) -> tuple[dict, dict]:
             return data(message)["status"]
 
         hit = data(call("search_library", "ok", {"query": QUESTION, "max_chars": 200}))[0]["citation"]
-        first = data(call("propose_note", "ok", {"book": JOURNAL, "kind": "finding", "text": "one"}))
+        first = data(call("propose_note", "ok", {"book": JOURNAL, "kind": "finding", "text": "one"}, "plain"))
         second = data(call("propose_note", "ok", {"book": JOURNAL, "kind": "lesson", "text": "two",
-                                                  "citations": [hit], "idempotency_key": "contract-note-1"}))
+                                                  "citations": [hit], "idempotency_key": "contract-note-1"}, "keyed"))
         cited = data(call("propose_note", "ok", {"book": JOURNAL, "kind": "convention", "text": "with a citation",
-                                                 "citations": [hit]}))
+                                                 "citations": [hit]}, "with a citation"))
         call("propose_note", "ok", {"book": JOURNAL, "kind": "decision_proposal", "text": "three",
                                     "decision": {"options": ["a", "b"], "choice": "b"}}, "decision")
-        call("propose_note", "not_found", {"book": BOOK, "kind": "finding", "text": "x"}, "no propose grant")
+        call("propose_note", "not_found", {"book": "gizli", "kind": "finding", "text": "x"}, "no grant on the book")
         call("propose_note", "bad_request", {"book": JOURNAL, "kind": "nonsense", "text": "x"})
         call("propose_note", "bad_request", {"kind": "finding"}, "schema")
-        call("link_notes", "ok", {"src": second["ref"], "type": "about", "dst": first["ref"]})
-        call("link_notes", "ok", {"src": cited["ref"], "type": "about", "dst": second["ref"]})
+        call("link_notes", "ok", {"src": second["ref"], "type": "about", "dst": first["ref"]}, "first link")
+        call("link_notes", "ok", {"src": cited["ref"], "type": "about", "dst": second["ref"]}, "second link")
         call("link_notes", "not_found", {"src": second["ref"], "type": "about", "dst": f"{JOURNAL}@{NO_NOTE}"})
+        for ref, name in ((cited["ref"], "cited note"), (second["ref"], "second note"), (hit, "passage")):
+            call("record_outcome", "ok", {"ref": ref, "task_ref": "adc:run/2", "result": "passed",
+                                          "idempotency_key": f"contract-outcome-{name.replace(' ', '-')}"}, name)
         call("link_notes", "bad_request", {"src": second["ref"], "type": "nonsense", "dst": first["ref"]})
         call("search_library", "ok", {"query": "zzzzqqqq", "book": ["yok"]}, "empty")
         call("search_library", "bad_request", {"query": QUESTION, "acceptance": []})
         call("open_citation", "ok", {"handle": hit}, "passage")
         call("open_citation", "ok", {"handle": cited["ref"]}, "note")
+        call("open_citation", "ok", {"handle": cited["ref"], "repo": "adc", "branch": "main", "path": "f.py"},
+             "note with a code context")
+        call("open_citation", "ok", {"handle": hit}, "passage with outcomes of notes that cite it")
         call("open_citation", "bad_request", {"handle": hit.rsplit("#", 1)[0]})
         call("open_citation", "not_found", {"handle": hit.rsplit("#", 1)[0] + "#999"})
         asked = data(call("ask_library", "ok", {"question": "Erişim kayıtları ne kadar saklanır?"}))
@@ -388,14 +431,18 @@ def mcp_results(ctx: Context) -> tuple[dict, dict]:
             call(tool, "ok", {"job_id": job["job_id"]})
             call(tool, "not_found", {"job_id": "jb_unknown"})
             call(tool, "bad_request", {}, "schema")
-        call("verify_citations", "ok", {"book": JOURNAL, "citations": [f"adc@{NO_COMMIT}:f.py:1"], "at": "main"})
+        found = [f"adc@{ctx.old_commit}:f.py:5-7", f"adc@{NO_COMMIT}:f.py:1"]  # a line that moved; a commit never pushed
+        call("verify_citations", "ok", {"book": JOURNAL, "citations": found, "at": "main"})
         call("verify_citations", "not_found", {"book": "gizli", "citations": [f"adc@{NO_COMMIT}:f.py:1"],
                                                "at": "main"}, "forbidden")
         call("verify_citations", "bad_request", {"book": JOURNAL, "citations": [], "at": "main"})
         both = {"sets": ["current", "open"]}
         call("query_notes", "ok", both)
+        context = {"repo": "adc", "branch": "main", "path": "f.py", **both}  # a code context: targets
+        call("query_notes", "ok", context, "with a code context")
         call("query_notes", "bad_request", {"order": "nonsense"})
         call("neighbours", "ok", {"ref": cited["ref"], **both})
+        call("neighbours", "ok", {"ref": cited["ref"], **context}, "with a code context")
         call("neighbours", "not_found", {"ref": f"{JOURNAL}@{NO_NOTE}"})
         call("neighbours", "bad_request", {"ref": "x"}, "malformed ref")
         call("record_outcome", "ok", {"ref": first["ref"], "task_ref": "adc:run/1", "result": "passed",
@@ -414,14 +461,14 @@ def mcp_results(ctx: Context) -> tuple[dict, dict]:
 
         def status(import_id, kind="ok", variant=None):
             return call("package_status", kind, {"import_id": import_id}, variant, c=client_b, auth=package_agent)
-        received = data(submit(ctx.package))
-        status(received["id"])
+        received = data(submit(ctx.package, variant="first version"))
+        status(received["id"], variant="first version")
         ctx.approve(received["id"])
-        received = data(submit(ctx.next_package()))
+        received = data(submit(ctx.next_package(), variant="next version"))
         ctx.check_findings(received)
-        status(received["id"])
-        rejected = data(submit(ctx.untrusted_package()))  # status rejected, with reasons
-        status(rejected["id"])
+        status(received["id"], variant="next version")
+        rejected = data(submit(ctx.untrusted_package(), variant="rejected"))  # status rejected, with reasons
+        status(rejected["id"], variant="rejected")
         submit(ctx.package, "not_found", "no propose grant", package_stranger)
         call("submit_package", "bad_request", {"package_base64": "!!"}, c=client_b, auth=package_agent)
         status(999999, "not_found")
@@ -530,7 +577,8 @@ def http_results(ctx: Context) -> dict:
                       success=r.status_code < 400)
             if head:
                 h = c.head(path, headers=headers, **{k: v for k, v in kw.items() if k == "params"})
-                cases.add(f"HEAD {route} [head_{'ok' if kind == 'ok' else 'error'}]", _head_outcome(h),
+                source = "head_ok" if kind == "ok" else f"head_error:{kind}"  # the kind of the GET case it repeats
+                cases.add(f"HEAD {route} [{source}{f' ({variant})' if variant else ''}]", _head_outcome(h),
                           success=h.status_code < 400)
             return r
 
@@ -545,8 +593,8 @@ def http_results(ctx: Context) -> dict:
         unauthorized("GET", "/v1/health", "/v1/health", head=True)
 
         found = call("GET", "/v1/search", "ok", "/v1/search", params={"q": QUESTION}, head=True).json()["results"]
-        call("GET", "/v1/search", "ok", "/v1/search", "empty", params={"q": "zzzzqqqq"})
-        call("GET", "/v1/search", "ok", "/v1/search", "empty", params={"q": QUESTION}, headers=outsider)
+        call("GET", "/v1/search", "ok", "/v1/search", "empty: no match", params={"q": "zzzzqqqq"})
+        call("GET", "/v1/search", "ok", "/v1/search", "empty: no right", params={"q": QUESTION}, headers=outsider)
         call("GET", "/v1/search", "bad_request", "/v1/search", params={"q": QUESTION, "current_only": "maybe"},
              head=True)
         unauthorized("GET", "/v1/search", "/v1/search", params={"q": QUESTION})
@@ -606,15 +654,28 @@ def http_results(ctx: Context) -> dict:
         call("POST", "/v1/notes/links", "ok", "/v1/notes/links", "created", json=link)
         call("POST", "/v1/notes/links", "ok", "/v1/notes/links", "retried", json=link)
         call("POST", "/v1/notes/links", "not_found", "/v1/notes/links", json={**link, "dst": f"{JOURNAL}@{NO_NOTE}"})
+        outcome = {"ref": created["ref"], "task_ref": "adc:run/1", "result": "passed", "idempotency_key": "http-0001"}
+        call("POST", "/v1/outcomes", "ok", "/v1/outcomes", "created note", json=outcome)
+        call("POST", "/v1/outcomes", "ok", "/v1/outcomes", "second note",
+             json={**outcome, "ref": other["ref"], "idempotency_key": "http-0003"})
+        call("POST", "/v1/outcomes", "ok", "/v1/outcomes", "passage",
+             json={**outcome, "ref": handle, "idempotency_key": "http-0004"})
+        call("GET", "/v1/citation", "ok", "/v1/citation", "passage with outcomes of notes that cite it",
+             params={"handle": handle})
         call("POST", "/v1/notes/links", "bad_request", "/v1/notes/links", content=b"{")
         unauthorized("POST", "/v1/notes/links", "/v1/notes/links", json=link)
         call("GET", "/v1/notes", "ok", "/v1/notes", params=[("sets", "current"), ("sets", "open")], head=True)
+        code = [("repo", "adc"), ("branch", "main"), ("path", "f.py")]  # a code context: targets
+        call("GET", "/v1/notes", "ok", "/v1/notes", "with a code context",
+             params=[("sets", "current"), ("sets", "open"), *code])
         call("GET", "/v1/notes", "bad_request", "/v1/notes", params={"order": "x"}, head=True)
         unauthorized("GET", "/v1/notes", "/v1/notes")
         book, nid = other["ref"].split("@")
         near = f"/v1/notes/{book}/{nid}/neighbours"
         call("GET", "/v1/notes/{book}/{id}/neighbours", "ok", near, params=[("sets", "current"), ("sets", "open")],
              head=True)
+        call("GET", "/v1/notes/{book}/{id}/neighbours", "ok", near, "with a code context",
+             params=[("sets", "current"), ("sets", "open"), *code])
         call("GET", "/v1/notes/{book}/{id}/neighbours", "not_found", f"/v1/notes/{book}/{NO_NOTE}/neighbours",
              head=True)
         call("GET", "/v1/notes/{book}/{id}/neighbours", "bad_request", f"/v1/notes/{book}/x/neighbours", "malformed id")
@@ -625,14 +686,13 @@ def http_results(ctx: Context) -> dict:
         call("GET", "/v1/notes/{book}/{id}/confirmation", "bad_request", f"/v1/notes/{book}/x/confirmation",
              "malformed id")
         unauthorized("GET", "/v1/notes/{book}/{id}/confirmation", sure)
-        outcome = {"ref": created["ref"], "task_ref": "adc:run/1", "result": "passed", "idempotency_key": "http-0001"}
-        call("POST", "/v1/outcomes", "ok", "/v1/outcomes", json=outcome)
         call("POST", "/v1/outcomes", "not_found", "/v1/outcomes", json={**outcome, "ref": f"{JOURNAL}@{NO_NOTE}",
                                                                           "idempotency_key": "http-0002"})
         call("POST", "/v1/outcomes", "bad_request", "/v1/outcomes", "conflict", json={**outcome, "result": "failed"})
         call("POST", "/v1/outcomes", "bad_request", "/v1/outcomes", json={**outcome, "idempotency_key": None})
         unauthorized("POST", "/v1/outcomes", "/v1/outcomes", json=outcome)
-        verify = {"book": JOURNAL, "citations": [f"adc@{NO_COMMIT}:f.py:1"], "at": "main"}
+        verify = {"book": JOURNAL, "citations": [f"adc@{ctx.old_commit}:f.py:5-7", f"adc@{NO_COMMIT}:f.py:1"],
+                  "at": "main"}
         call("POST", "/v1/citations/verify", "ok", "/v1/citations/verify", json=verify)
         call("POST", "/v1/citations/verify", "not_found", "/v1/citations/verify", "forbidden",
              json={**verify, "book": "gizli"})
@@ -642,16 +702,17 @@ def http_results(ctx: Context) -> dict:
         def send(blob, kind="ok", variant=None, headers=package_agent):
             return call("POST", "/v1/packages", kind, "/v1/packages", variant, c=client_b, headers=headers,
                         content=blob)
-        send(ctx.package)  # a retry of what the MCP calls submitted: the stored receipt
-        sent = send(ctx.next_package()).json()
+        send(ctx.package, variant="retried")  # a retry of what the MCP calls submitted: the stored receipt
+        sent = send(ctx.next_package(), variant="next version").json()
         ctx.check_findings(sent)
-        rejected = send(ctx.untrusted_package()).json()  # status rejected, with reasons
+        rejected = send(ctx.untrusted_package(), variant="rejected").json()  # status rejected, with reasons
         send(ctx.package, "not_found", "forbidden", package_stranger)
         send(b"x", "bad_request")
         unauthorized("POST", "/v1/packages", "/v1/packages", c=client_b, content=ctx.package)
         status = f"/v1/packages/{sent['id']}"
-        call("GET", "/v1/packages/{import_id}", "ok", status, c=client_b, headers=package_agent, head=True)
-        call("GET", "/v1/packages/{import_id}", "ok", f"/v1/packages/{rejected['id']}", c=client_b,
+        call("GET", "/v1/packages/{import_id}", "ok", status, "next version", c=client_b, headers=package_agent,
+             head=True)
+        call("GET", "/v1/packages/{import_id}", "ok", f"/v1/packages/{rejected['id']}", "rejected", c=client_b,
              headers=package_agent)
         call("GET", "/v1/packages/{import_id}", "not_found", "/v1/packages/999999", c=client_b,
              headers=package_agent, head=True)

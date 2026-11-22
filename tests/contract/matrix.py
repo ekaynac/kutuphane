@@ -94,13 +94,19 @@ HTTP = {
     "GET /v1/packages/{import_id}": route("GET"),
 }
 
-# Lists that stay empty in a result, by the name of the field, and why. A list that is empty in a case named "(empty)"
-# is that case's point and is not listed. test_contract.py fails for an empty list that is not here, and for an entry
-# whose list is no longer empty.
+# Lists and mappings (a mapping is an object shape) that stay empty, by the name of the field, and why. The rule: in
+# the cases of one tool or route, a collection has an element in at least one case ("filled"), or its field is
+# declared here. A case named "(empty...)" is empty on purpose and is not counted. test_contract.py fails for a
+# collection that is empty in every case and not declared here, and for a declaration whose field is filled
+# everywhere.
 EMPTY_COLLECTIONS = {
     "quoted_records": "needs a data-scanned record file (quotes.py) in the book; the fixture book has none",
     "candidates": "a candidate is a searchable, approved note with the same text; every note of the fixture is "
                   "pending, and approving one is a curator act",
+    "io.modelcontextprotocol/oauth-client-credentials": "an MCP extension that the server advertises in "
+                                                        "server/discover with no settings: `{}` is its value",
+    "io.modelcontextprotocol/skills": "an MCP extension that the server advertises in server/discover with no "
+                                      "settings: `{}` is its value",
     "left": "tombstones of notes that left the requested sets by a Standing change; the fixture has no curator "
             "decision on a note",
 }
@@ -110,7 +116,7 @@ EMPTY_COLLECTIONS = {
 
 def kind_of(name: str) -> str:
     inner = name.split("[", 1)[1].rstrip("]") if "[" in name else name.split(":", 1)[1]
-    return inner.split(" ")[0]
+    return inner.split(" ")[0].split(":")[0]  # `head_error:not_found` is the kind head_error
 
 
 def entry_of(name: str) -> str:
@@ -125,15 +131,27 @@ def label(tool_or_route, kind, variant=None):
     return f"[{name}]" if " " in tool_or_route else f":{name}"
 
 
-def empty_lists(value, field="<root>"):
-    """The names of the fields that hold an empty list, anywhere in a shape."""
-    if isinstance(value, list):
-        return {field} if not value else set().union(*(empty_lists(v, field) for v in value))
-    if isinstance(value, dict):
-        # `tools` holds the raw tool objects of a tools/list result (their JSON schemas have empty defaults)
-        return set().union(set(), *(empty_lists(v, field if k == "any_of" else k.rstrip("?")) for k, v in value.items()
-                                    if k != "tools"))
-    return set()
+def collections(shape, field="<root>") -> dict[str, set[str]]:
+    """{field name: {"empty", "filled"}} for every list and every mapping (an object shape) in a shape. An empty
+    mapping is the shape `{}`. `tools` holds raw tool objects of a tools/list result (their JSON schemas have empty
+    defaults); it is not a shape and is skipped."""
+    found: dict[str, set[str]] = {}
+
+    def walk(value, name):
+        if isinstance(value, dict) and set(value) == {"any_of"}:
+            for alternative in value["any_of"]:
+                walk(alternative, name)
+        elif isinstance(value, (list, dict)):
+            found.setdefault(name, set()).add("filled" if value else "empty")
+            if isinstance(value, list):
+                for child in value:
+                    walk(child, name)
+            else:
+                for key, child in value.items():
+                    if key != "tools":
+                        walk(child, key.rstrip("?"))
+    walk(shape, field)
+    return found
 
 
 def problems(tools: list[str], routes: list[dict], mcp: dict, http: dict) -> list[str]:
@@ -172,15 +190,18 @@ def problems(tools: list[str], routes: list[dict], mcp: dict, http: dict) -> lis
                     found.append(f"{what} {entry}: a case of kind {kind}, which the matrix says does not apply")
         if len(recorded) < pairs:
             found.append(f"{what}s: {len(recorded)} recorded cases, fewer than the {pairs} kinds that apply")
-    empty = set()
+    states: dict[tuple[str, str], set[str]] = {}
     for recorded in (mcp, http):
         for case, outcome in recorded.items():
-            if "(empty)" not in case:
-                empty |= empty_lists(outcome)
-    for field in sorted(empty - set(EMPTY_COLLECTIONS)):
-        found.append(f"an empty list in a result that the matrix does not explain: {field}")
-    for field in sorted(set(EMPTY_COLLECTIONS) - empty):
-        found.append(f"the matrix says {field} stays empty, but it has an element in every result")
+            if "(empty" not in case:  # a case named (empty) is empty on purpose
+                for field, flags in collections(outcome).items():
+                    states.setdefault((entry_of(case), field), set()).update(flags)
+    never = {field for (_entry, field), flags in states.items() if "filled" not in flags}
+    for field in sorted(never - set(EMPTY_COLLECTIONS)):
+        found.append(f"a list or mapping that is empty in every case of a tool or route, and the matrix does not "
+                     f"explain it: {field}")
+    for field in sorted(set(EMPTY_COLLECTIONS) - never):
+        found.append(f"the matrix says {field} stays empty, but every tool and route that returns it has an element")
     return found
 
 

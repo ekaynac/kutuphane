@@ -1,6 +1,8 @@
 {
   "empty_collections": {
     "candidates": "a candidate is a searchable, approved note with the same text; every note of the fixture is pending, and approving one is a curator act",
+    "io.modelcontextprotocol/oauth-client-credentials": "an MCP extension that the server advertises in server/discover with no settings: `{}` is its value",
+    "io.modelcontextprotocol/skills": "an MCP extension that the server advertises in server/discover with no settings: `{}` is its value",
     "left": "tombstones of notes that left the requested sets by a Standing change; the fixture has no curator decision on a note",
     "quoted_records": "needs a data-scanned record file (quotes.py) in the book; the fixture book has none"
   },
