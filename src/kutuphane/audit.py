@@ -2,10 +2,13 @@
 model calls — Kütüphane's access log joined with LLMDAP's egress log by correlation id.
 
 LLMDAP has no HTTP audit query; its records come from `llmdap-audit-export` (verified JSONL), which also works
-offline. A model call Kütüphane made but LLMDAP did not record is reported as missing, never silently dropped.
+offline. A model call Kütüphane made but LLMDAP did not record is reported as missing, never silently dropped. A call
+to a direct OpenAI-compatible provider (D88) passes through no LLMDAP: `model_call` is its whole record (`direct`).
 """
 import json
 from pathlib import Path
+
+from . import llmdap
 
 ACCESS_FIELDS = ("at", "correlation_id", "caller_correlation_id", "principal", "on_behalf_of", "action", "object",
                  "mode", "allowed", "reason", "policy_id", "grant_ids", "delegation_id", "content_id", "path",
@@ -55,10 +58,13 @@ def explain(conn, correlation_id: str, llmdap_records: list[dict]) -> dict:
 
 def _status(call: dict) -> str:
     """complete: LLMDAP holds every record this call must have left; not_sent: provably never transmitted (our
-    egress check refused it, or the connection was refused); missing: anything else — including calls whose
-    outcome is uncertain because the connection broke after sending."""
+    egress check refused it, or the connection was refused); direct: the call went to a direct provider, so there is
+    no LLMDAP record to expect; missing: anything else — including calls whose outcome is uncertain because the
+    connection broke after sending."""
     if (call["error"] or "").startswith("not_sent:"):
         return "not_sent"
+    if call["route"].startswith(llmdap.DIRECT_ROUTE_PREFIX):
+        return "direct"
     expected = EXPECTED_OK if call["http_status"] and 200 <= call["http_status"] < 300 else EXPECTED_REFUSED
     seen = {r.get("type") for r in call["llmdap"]}
     return "complete" if call["derived_correlation_id"] and expected <= seen else "missing"

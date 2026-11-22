@@ -97,12 +97,12 @@ needs. Reference: `docs/guide/mcp.md`.
 |---|---|
 | `search_library` | Search the books that you may read now; `max_chars` gives short snippets. |
 | `open_citation` | Open a passage handle or a note reference at its exact version. |
-| `ask_library` | Answer with `[n]` citations, or `not_in_library` (LLMDAP only). |
+| `ask_library` | Answer with `[n]` citations, or `not_in_library` (needs an answer model). |
 | `reopen_answer` | Show a stored answer and its evidence again, with no model call. |
 | `read_document` | Read one text document of one version (instructions need `activate`). |
 | `list_books` | List the books and journals that you may read, with their latest publication. |
 | `list_files` | List the files of a book's current version, with kstd item information. |
-| `job_status`, `job_result`, `job_cancel` | Follow, read or cancel a background `ask_library` job (LLMDAP only). |
+| `job_status`, `job_result`, `job_cancel` | Follow, read or cancel a background `ask_library` job (needs an answer model). |
 | `propose_note` | Write a note into a journal; it starts `pending`. |
 | `link_notes` | Link a note to a note or a passage (`same_as`, `contradicts`, `about`, …). |
 | `verify_citations` | Check code citations against a branch or a commit. |
@@ -123,8 +123,8 @@ Reference: `docs/guide/http-api.md`.
 - Rights, `ai_input` and egress are checked before every embedding, rerank and answer, and again at delivery.
 - Only a person changes Standing: with a separate database credential on the CLI, or with a passkey act on the phone.
 - Skills can get a SkillSpector scan at ingest; a bad or failed scan blocks the skill until a curator clears it.
-- In the full install, all model calls go through LLMDAP; a `local_only` book never reaches a cloud route. The light
-  install makes no model call.
+- In the full install, all model calls go through LLMDAP, or through a direct OpenAI-compatible provider that you set
+  for a stage; a `local_only` book never reaches a cloud route or provider. The light install makes no model call.
 - Every read decision and every model call is audited. Details: `docs/guide/security.md`.
 
 ## Documentation

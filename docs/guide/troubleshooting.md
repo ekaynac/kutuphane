@@ -3,7 +3,7 @@
 ## The server does not start
 
 - `server not configured: set KUTUPHANE_PUBLIC_URL` (or `KUTUPHANE_ANSWER_MODEL`): set it. The answer model is
-  needed only with `KUTUPHANE_LLMDAP_URL`.
+  needed only with `KUTUPHANE_LLMDAP_URL` or `KUTUPHANE_ANSWER_PROVIDER=openai`.
 - `identity not configured: set …`: set `KUTUPHANE_OIDC_ISSUER` and `KUTUPHANE_OIDC_JWKS`.
   `KUTUPHANE_OIDC_AUDIENCE` defaults to `kutuphane`.
 - `database needs migrations (…): run kutuphane migrate`: run `kutuphane migrate` with the owner DSN, then apply
@@ -34,6 +34,11 @@
 - `KUTUPHANE_LLMDAP_…ROUTE_CLASS must be local or cloud`.
 - `LLMDAP route not configured: set KUTUPHANE_EMBED_MODEL` (or `_RERANK_MODEL`): set the route and its model name
   both, or neither.
+- `OpenAI provider not configured: set KUTUPHANE_…_OPENAI_URL, …` (also `…_OPENAI_KEY`, `…_OPENAI_CLASS`, or
+  `KUTUPHANE_EMBED_MODEL` / `KUTUPHANE_RERANK_MODEL`): a stage with provider `openai` needs its URL, key and class
+  (`local` or `cloud`; no default) and, for embeddings and rerank, the model. `KUTUPHANE_…_PROVIDER must be llmdap or
+  openai`; `KUTUPHANE_…_OPENAI_CLASS must be local or cloud`; `KUTUPHANE_…_OPENAI_URL must be https when
+  KUTUPHANE_…_OPENAI_CLASS is cloud`: use an `https` URL, or class `local` for an on-premises endpoint.
 - `KUTUPHANE_DSN is not set`: export the DSN (server and CLI).
 
 ## HTTP and MCP errors
