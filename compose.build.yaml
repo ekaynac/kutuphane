@@ -1,0 +1,9 @@
+# Build Core from this checkout instead of pulling the release image (development and CI).
+#   KUTUPHANE_VERSION=dev docker compose -f compose.yaml -f compose.build.yaml up -d --build --wait
+# Or put `KUTUPHANE_VERSION=dev` and `COMPOSE_FILE=compose.yaml:compose.build.yaml` in .env. Compose reads each file
+# alone before it merges them, so the `:?` check of compose.yaml still needs the value; `dev` is the tag for builds.
+# For the full stack use deploy/compose.full.build.yaml (the build path differs there).
+services:
+  core:
+    build: .
+    pull_policy: build

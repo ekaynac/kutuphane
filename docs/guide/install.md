@@ -17,11 +17,30 @@ Both compose files use project `kutuphane` and the same `postgres` service and v
 - git 2.45+ in the Core container, for code citations (the image build checks it).
 - An encrypted disk volume for the database and the audit volume (D48). Kütüphane does not encrypt data.
 
+## Image: release or source
+
+`core` and `curator` use the image `ghcr.io/ekaynac/kutuphane:${KUTUPHANE_VERSION}`. `KUTUPHANE_VERSION` is a release
+tag that you set in `.env` (see `.env.example`); there is no `latest`, and compose stops with `set KUTUPHANE_VERSION
+to a release tag` when it is empty. The tag is a compose setting only: Core does not read it, and no Core setting
+changes. The named volumes keep their names, so an existing install keeps its data.
+
+To build the image from this checkout instead (development, CI): set `KUTUPHANE_VERSION=dev` and add the override
+file `compose.build.yaml` (full stack: `deploy/compose.full.build.yaml`, which also builds `curator`):
+
+```sh
+KUTUPHANE_VERSION=dev docker compose -f compose.yaml -f compose.build.yaml up -d --build --wait
+KUTUPHANE_VERSION=dev docker compose -f deploy/compose.full.yaml -f deploy/compose.full.build.yaml --profile app up -d --build
+```
+
+Or put `KUTUPHANE_VERSION=dev` and `COMPOSE_FILE=compose.yaml:compose.build.yaml` (full stack:
+`deploy/compose.full.yaml:deploy/compose.full.build.yaml`) in `.env`; then the plain `docker compose … up -d --build`
+commands of this page build from source. Without `--build` and without the override, they pull the release image.
+
 ## Development install
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
-printf 'KUTUPHANE_DB_PASSWORD=%s\n' "$(python3 -c 'import secrets;print(secrets.token_urlsafe(24))')" > .env
+printf 'KUTUPHANE_VERSION=dev\nKUTUPHANE_DB_PASSWORD=%s\n' "$(python3 -c 'import secrets;print(secrets.token_urlsafe(24))')" > .env
 docker compose up -d --wait postgres
 set -a; . ./.env; set +a
 export KUTUPHANE_DSN="postgresql://kutuphane:${KUTUPHANE_DB_PASSWORD}@127.0.0.1:55432/kutuphane"
@@ -57,6 +76,8 @@ repository root) uses the full stack (project `kutuphane`; paths relative to `de
 - `reranker-gpu` (`gpu-rerank`; `models`): [GPU reranker](#gpu-reranker).
 - `curator`, `tailscale` (`curator`; `curator-db`, `curator` / `curator`, `tailnet`): [curator web](#curator-web).
 
+`core` and `curator` run `ghcr.io/ekaynac/kutuphane:${KUTUPHANE_VERSION}`; `.env.example` lists the settings.
+
 `db`, `web`, `gateway`, `models`, `curator-db` and `curator` are internal. `outbound` is internal too, except for a
 [hosted decision model](#local-models). Core reaches only Postgres and LLMDAP.
 
@@ -64,7 +85,8 @@ repository root) uses the full stack (project `kutuphane`; paths relative to `de
 
 Put these in `.env` (git-ignored), and secrets nowhere else:
 
-- `COMPOSE_FILE`: `deploy/compose.full.yaml`.
+- `COMPOSE_FILE`: `deploy/compose.full.yaml` (for a source build, `deploy/compose.full.yaml:deploy/compose.full.build.yaml`).
+- `KUTUPHANE_VERSION`: the release tag of the Kütüphane image (`dev` for a source build).
 - `KUTUPHANE_DB_PASSWORD`, `KUTUPHANE_APP_DB_PASSWORD`: owner and app role passwords.
 - `KUTUPHANE_PUBLIC_URL`: the ingress URL, for example `https://kb.example.org`.
 - `KUTUPHANE_OIDC_ISSUER` (exactly as tokens carry it), `KUTUPHANE_OIDC_AUDIENCE` (default `kutuphane`),
@@ -127,8 +149,8 @@ Routes files in `deploy/llmdap/config/`: `routes.json` (stub), `routes.local.jso
 ### 4. Start
 
 ```sh
-docker compose --profile app up -d --build                        # real model servers
-docker compose --profile app --profile dev-models up -d --build   # or: stub models
+docker compose --profile app up -d                        # real model servers
+docker compose --profile app --profile dev-models up -d   # or: stub models; a source build: add --build
 ```
 
 Other model servers: set the six route and model settings and `KUTUPHANE_LLMDAP_ROUTES`. Stub models:
@@ -285,7 +307,7 @@ a tailnet host name with HTTPS (WebAuthn needs a secure context). Core and curat
 **Start and check:**
 
 ```sh
-docker compose --profile curator up -d --build
+docker compose --profile curator up -d        # a source build: add --build
 python3 deploy/curator_probe.py https://kutuphane-curator.<tailnet>.ts.net    # from an operator device
 ```
 
@@ -368,15 +390,17 @@ Core calls a model only through LLMDAP (D3), so there is no local embedder. An e
 
 ### Steps
 
-1. In `.env`: `KUTUPHANE_DB_PASSWORD`, `KUTUPHANE_APP_DB_PASSWORD`, `KUTUPHANE_PUBLIC_URL`,
-   `KUTUPHANE_OIDC_ISSUER`, `KUTUPHANE_OIDC_JWKS_FILE`; optional `KUTUPHANE_OIDC_AUDIENCE`, `KUTUPHANE_BIND`,
-   `KUTUPHANE_REPO_DIR` (paths absolute). No `COMPOSE_FILE`, `KUTUPHANE_LLMDAP_*` or `KUTUPHANE_ANSWER_MODEL`. Shell
+1. In `.env`: `KUTUPHANE_VERSION` (the release tag; `dev` for a source build), `KUTUPHANE_DB_PASSWORD`,
+   `KUTUPHANE_APP_DB_PASSWORD`, `KUTUPHANE_PUBLIC_URL`, `KUTUPHANE_OIDC_ISSUER`, `KUTUPHANE_OIDC_JWKS_FILE`; optional
+   `KUTUPHANE_OIDC_AUDIENCE`, `KUTUPHANE_BIND`, `KUTUPHANE_REPO_DIR` (paths absolute). No `COMPOSE_FILE` (except
+   `compose.yaml:compose.build.yaml` for a source build), `KUTUPHANE_LLMDAP_*` or `KUTUPHANE_ANSWER_MODEL`. Shell
    variables override `.env`. Without `KUTUPHANE_PUBLIC_URL` or `KUTUPHANE_OIDC_ISSUER`, Core does not start and
    its log names the setting.
 2. Do [full stack step 2](#2-database-roles) (without the curator web script).
 3. Add books, journals and rights with the host CLI (`README.md` quick start, step 2), with no
    `KUTUPHANE_LLMDAP_*` in that shell.
-4. Start Core and the ingress proxy: `docker compose up -d --build --wait`.
+4. Start Core and the ingress proxy: `docker compose up -d --wait` (from source: [see above](#image-release-or-source),
+   with `--build`).
 5. Check (with `--light`, `egress_probe.py` exits 0 only if Core reaches Postgres and nothing else):
 
    ```sh
@@ -435,7 +459,9 @@ verdicts on known samples. What a scan blocks: [security.md](security.md#skill-s
 
 1. Pull or check out the new version.
 2. Run `kutuphane migrate` with the owner DSN, then apply `deploy/db-roles.sql` (step 2).
-3. Rebuild and start: `docker compose --profile app up -d --build` (light: `docker compose up -d --build --wait`).
+3. Start the new version: set `KUTUPHANE_VERSION` in `.env` to the new release tag and run `docker compose --profile app
+   up -d` (light: `docker compose up -d --wait`). For a [source build](#image-release-or-source), pull or check out
+   the new version and add `--build`.
 4. If you use SkillSpector and the pin changed, install the new pin into a new folder, point
    `KUTUPHANE_SKILLSPECTOR_BIN` at it, and run `kutuphane skill rescan`.
 5. Read `changelog.md` for changes that need an action, for example a re-ingest or a re-index.

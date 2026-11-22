@@ -41,7 +41,7 @@ development tokens and no model service.
 ```sh
 # 1. Install, start Postgres, apply the migrations
 python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
-printf 'KUTUPHANE_DB_PASSWORD=%s\n' "$(python3 -c 'import secrets;print(secrets.token_urlsafe(24))')" > .env
+printf 'KUTUPHANE_VERSION=dev\nKUTUPHANE_DB_PASSWORD=%s\n' "$(python3 -c 'import secrets;print(secrets.token_urlsafe(24))')" > .env
 docker compose up -d --wait postgres
 set -a; . ./.env; set +a
 export KUTUPHANE_DSN="postgresql://kutuphane:${KUTUPHANE_DB_PASSWORD}@127.0.0.1:55432/kutuphane"
