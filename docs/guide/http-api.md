@@ -102,7 +102,7 @@ error texts): `db` (the database answers), `llmdap` (LLMDAP's own health: LLMDAP
 through it, any HTTP status), `embedding`
 (a valid vector), `rerank` (valid scores), `chat` (the answer model answered), `ok` (none is `false`). Not
 configured: `null` (light install: `llmdap`, `embedding`, `rerank`, `chat`; also `llmdap` when every configured stage
-uses a direct OpenAI-compatible provider, which shows in `embedding` and `chat` only). When `db` is `false`, the
+uses a direct OpenAI-compatible provider, which shows in `embedding`, `rerank` and `chat` only). When `db` is `false`, the
 others are `null`: model calls are recorded in the database, so none is made. Each model check is a real model call
 with a fixed input and no book content (purpose `health`), recorded in `model_call` (and in the LLMDAP audit when it
 went through LLMDAP); the chat check asks for one token. Call it at a low rate (for example once a minute), not per
