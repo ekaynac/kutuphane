@@ -36,6 +36,7 @@ services:
     # The script is bind-mounted from this checkout, so the pinned SHA of the repository decides what runs.
     entrypoint: ["python", "-I", "/contract/llmdap_contract.py"]
     command: []
+    user: "${CONTRACT_UID:?set by deploy/llmdap_contract_ci.sh}:${CONTRACT_GID:?set by deploy/llmdap_contract_ci.sh}"   # the runner's user: it alone writes in /io
     environment:
       KUTUPHANE_DSN: postgresql://kutuphane:${CONTRACT_DB_PASSWORD:-}@postgres:5432/contract
       KUTUPHANE_LLMDAP_URL:

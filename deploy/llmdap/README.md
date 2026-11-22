@@ -96,7 +96,7 @@ own Postgres, model stub and book. LLMDAP's release CI runs it from this reposit
 KUTUPHANE_LLMDAP_URL=http://llmdap:8787 KUTUPHANE_LLMDAP_KEY=<token of subject svc-kutuphane> \
 KUTUPHANE_VERSION=<release tag> \
   deploy/llmdap_contract_ci.sh --audit-export "docker exec <bridge> llmdap-audit-export --path /var/lib/llmdap/audit/audit.log" \
-  [--image <kutuphane image>] [--keep]
+  [--image <kutuphane image>] [--export-timeout <seconds>] [--keep]
 ```
 
 | Input | Meaning |
@@ -105,6 +105,7 @@ KUTUPHANE_VERSION=<release tag> \
 | `KUTUPHANE_LLMDAP_KEY` | the token of subject `svc-kutuphane` |
 | `--audit-export "<cmd>"` | a command of the host that prints the verified LLMDAP chain as JSONL; the runner runs it after the calls. Exit non-zero fails the check. For a long chain see `LLMDAP_AUDIT_MAX_SCAN_BYTES` in the LLMDAP docs. |
 | `--image` | the Kütüphane image that runs the contract. Default `ghcr.io/ekaynac/kutuphane:${KUTUPHANE_VERSION}`. A local build is allowed. |
+| `--export-timeout <s>` | time limit of the export command, default 120. The host kills it (and its process group) at the limit; the check then fails. |
 | `--keep` | do not tear down (debugging) |
 | `LLMDAP_GATEWAY_TRUST_SECRET` | optional: the gateway's real shared secret, for the shared-secret check |
 
@@ -117,11 +118,21 @@ What it does:
    before or after the start: `docker network connect --alias llmdap kutuphane-contract <bridge>`.
 3. Runs `deploy/llmdap_contract.py` in the Kütüphane image against the book `deploy/contract/book`, with
    `--chat chat stub-chat --embed emb stub-embed --rerank rerank stub-rerank`.
-4. Prints one line per check on stdout (`PASS`/`FAIL`, then a JSON summary line). Exit 0 only if all checks pass;
-   2 for a wrong call, a bridge that does not answer, or a network `kutuphane-contract` that already exists (another run
-   is active: the runner then changes nothing and removes nothing).
-5. Removes what this run created, always: the project, its volumes and the network (it detaches the bridge first),
-   unless `--keep`.
+4. Prints one line per check on stdout (`PASS`/`FAIL`, then a JSON summary line). Exit codes:
+
+   | Exit | Meaning |
+   |---|---|
+   | 0 | every check passed and the teardown succeeded |
+   | 1 | a check failed (this includes an export command that failed or ran past `--export-timeout`) |
+   | 2 | wrong call, the network `kutuphane-contract` already exists (another run is active: nothing is changed or removed), or the bridge did not answer within 60 s |
+   | 3 | every check passed, but a teardown step failed; each failed step is named on stderr (an earlier failure code is kept) |
+
+5. Removes what this run created, always: the project, its volumes and the network (it detaches the bridge, the
+   container with the alias `llmdap`, first), unless `--keep`.
+
+The export command is a command of the host, but the contract runs in a container. They talk through a temporary
+directory that is `0700` and owned by the runner's user; the container runs as that same user. The host never follows a
+link in it: a request must be a regular file of that user, and every answer is a new file moved into place.
 
 The bridge routes are fixed (the same as `config/routes.json`):
 
