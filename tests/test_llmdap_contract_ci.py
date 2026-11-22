@@ -224,3 +224,90 @@ def test_a_leader_that_cannot_be_ended_does_not_block_the_run(run, tmp_path):
     assert time.monotonic() - start < 40, "the run waited for the leader"
     assert not [c for c in calls if "--phase verify" in c], calls
     assert "ran longer than 1s and was killed" in proc.stderr and "could not be ended" in proc.stderr
+
+
+@pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="needs Linux /proc")
+def test_a_zombie_in_the_group_does_not_count_as_alive(run):
+    import ctypes
+    libc = ctypes.CDLL(None, use_errno=True)
+    PR_SET_CHILD_SUBREAPER = 36
+    # This process becomes the subreaper: an orphan of the export is adopted here and, never waited for, stays a zombie
+    # of the export's process group (kill -0 on the group would still say "alive").
+    assert libc.prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) == 0
+    try:
+        proc, calls, _ = run("sh -c 'sh -c \"exit 0\" & echo x'")
+        assert proc.returncode == 0, proc.stderr
+        assert any("--phase verify" in c for c in calls), calls
+        assert "could not be ended" not in proc.stderr
+    finally:
+        libc.prctl(PR_SET_CHILD_SUBREAPER, 0, 0, 0, 0)
+        try:
+            while os.waitpid(-1, os.WNOHANG)[0]:   # collect the zombies
+                pass
+        except ChildProcessError:
+            pass
+
+
+def _docker_ready():
+    if shutil.which("docker") is None:
+        return False
+    try:
+        for cmd in (["docker", "info"], ["docker", "compose", "version"],
+                    ["docker", "image", "inspect", "python:3.12-slim", "pgvector/pgvector:0.8.0-pg17"]):
+            if subprocess.run(cmd, capture_output=True, timeout=30).returncode != 0:
+                return False
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return True
+
+
+def _docker_ids(*cmd):
+    return subprocess.run(["docker", *cmd], capture_output=True, text=True, timeout=30).stdout.split()
+
+
+@pytest.mark.skipif(not _docker_ready(), reason="needs a working docker with python:3.12-slim and pgvector locally")
+def test_two_runners_started_at_once_only_one_takes_the_lock_real_docker():
+    """Real daemon: the second runner exits 2 and removes nothing of the first. No bridge is attached, so the first
+    would fail only after 60 s: it is stopped with SIGTERM once the checks are done, and its teardown must leave
+    nothing behind."""
+    def everything():
+        return (_docker_ids("ps", "-a", "-q", "--filter", "name=kutuphane-contract")
+                + _docker_ids("ps", "-a", "-q", "--filter", "label=com.docker.compose.project=kutuphane-contract")
+                + _docker_ids("network", "ls", "-q", "--filter", "name=^kutuphane-contract$"))
+
+    if everything():
+        pytest.skip("a kutuphane-contract run or leftover exists on this daemon")
+    env = {**os.environ, "KUTUPHANE_LLMDAP_URL": "http://llmdap:8787", "KUTUPHANE_LLMDAP_KEY": "k"}
+    argv = [BASH, str(SCRIPT), "--image", "python:3.12-slim", "--audit-export", "true"]
+    runs = [subprocess.Popen(argv, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                             start_new_session=True) for _ in range(2)]
+    try:
+        deadline = time.monotonic() + 60
+        loser = None
+        while loser is None and time.monotonic() < deadline:
+            loser = next((r for r in runs if r.poll() is not None), None)
+            time.sleep(0.2)
+        assert loser is not None, "neither runner ended: the second did not see the lock"
+        winner = runs[1 - runs.index(loser)]
+        _, loser_err = loser.communicate(timeout=30)
+        assert loser.returncode == 2, loser_err
+        assert "cannot take the lock" in loser_err
+        # the winner goes on: it holds the lock, then the network, and nothing of it was removed by the loser
+        deadline = time.monotonic() + 60
+        while not _docker_ids("network", "ls", "-q", "--filter", "name=^kutuphane-contract$"):
+            assert winner.poll() is None and time.monotonic() < deadline, "the first runner did not get to the network"
+            time.sleep(0.5)
+        assert winner.poll() is None
+        assert _docker_ids("ps", "-a", "-q", "--filter", "name=^kutuphane-contract-lock$")
+    finally:
+        for r in runs:
+            if r.poll() is None:
+                r.terminate()
+        for r in runs:
+            try:
+                r.communicate(timeout=120)
+            except subprocess.TimeoutExpired:
+                r.kill()
+                r.communicate()
+    assert winner.returncode != 0
+    assert everything() == [], "the runners left something behind"

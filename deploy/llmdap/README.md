@@ -144,7 +144,8 @@ What it does:
 8. Removes what this run created, always (unless `--keep`): the containers and volumes with its run id (only ids of a
    successful listing), the bridge it finds on its network by the alias `llmdap` (detached by container and network
    id), the network by id, the private directory, and last the lock, by id. Then it checks that nothing of the run is
-   left. Every failed query or step is a failed teardown (exit 3). A process of the export command that survived is
+   left. Every failed query or step is a failed teardown (exit 3). Zombie processes of the export (ended, not yet
+   collected) do not count as alive (read from `/proc` on Linux). A process of the export command that survived is
    killed again here.
 
 The host needs Docker with the compose plugin, and bash. The contract container has no writable host mount.

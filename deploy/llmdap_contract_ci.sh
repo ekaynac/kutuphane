@@ -65,11 +65,24 @@ lock_id="" network_id="" export_dir="" export_pgid="" export_stuck=0
 # The alias the caller gives its bridge is the host name of the URL; only a container with that alias is detached.
 bridge_alias=${KUTUPHANE_LLMDAP_URL#*://}; bridge_alias=${bridge_alias%%/*}; bridge_alias=${bridge_alias%%:*}
 
-# Is any process of the group alive? (LLMDAP_CONTRACT_CI_TEST_GROUP_ALIVE is a hook of tests/test_llmdap_contract_ci.py:
-# a file whose existence means "alive". Never set it elsewhere.)
+# Is any live process in the group? A zombie (state Z) has ended: it only waits to be collected, and `kill -0` counts it
+# as alive. So on Linux the members are read from /proc/<pid>/stat (field 3 is the state, field 5 the group) and the
+# zombies are ignored. Without a readable /proc the check falls back to `kill -0` on the group.
+# (LLMDAP_CONTRACT_CI_TEST_GROUP_ALIVE is a hook of tests/test_llmdap_contract_ci.py: a file whose existence means
+# "alive". Never set it elsewhere.)
 group_alive() {
-  if [ -n "${LLMDAP_CONTRACT_CI_TEST_GROUP_ALIVE:-}" ]; then [ -e "$LLMDAP_CONTRACT_CI_TEST_GROUP_ALIVE" ]
-  else kill -0 -- "-$1" 2>/dev/null; fi
+  local f line rest st ppid pgrp
+  if [ -n "${LLMDAP_CONTRACT_CI_TEST_GROUP_ALIVE:-}" ]; then [ -e "$LLMDAP_CONTRACT_CI_TEST_GROUP_ALIVE" ]; return; fi
+  if [ -r /proc/self/stat ]; then
+    for f in /proc/[0-9]*/stat; do
+      read -r line <"$f" 2>/dev/null || continue
+      rest=${line##*) }   # the command name (field 2) may hold spaces and parentheses: cut after the last one
+      read -r st ppid pgrp _ <<<"$rest"
+      if [ "$pgrp" = "$1" ] && [ "$st" != Z ]; then return 0; fi
+    done
+    return 1
+  fi
+  kill -0 -- "-$1" 2>/dev/null
 }
 
 # Ends a whole process group: TERM, a few seconds of grace, KILL. Returns 1 if a member still lives.

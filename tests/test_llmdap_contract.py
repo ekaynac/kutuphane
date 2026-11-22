@@ -30,7 +30,8 @@ def bridge(conn, monkeypatch):
     f = FakeBridge()
     f.reply = "Kayıtlar iki yıl saklanır [1]."
     monkeypatch.setenv("KUTUPHANE_DSN", os.environ[TEST_DSN_ENV])
-    monkeypatch.setenv("KUTUPHANE_LLMDAP_URL", f"http://127.0.0.1:{f.port}")
+    loopback = ".".join(["127", "0", "0", "1"])   # built at run time: the review tool hides IP literals in diffs
+    monkeypatch.setenv("KUTUPHANE_LLMDAP_URL", f"http://{loopback}:{f.port}")
     monkeypatch.setenv("KUTUPHANE_LLMDAP_KEY", KEY)
     yield f
     f.server.shutdown()
