@@ -8,6 +8,21 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Compose `publisher` service for `publish-admitted` (#242, #254)
+
+- Added: the profile `publisher` (off by default) in `compose.yaml` and `deploy/compose.full.yaml` runs `kutuphane imports publish-admitted` every `KUTUPHANE_PUBLISH_INTERVAL` seconds (default 60; a positive whole number) with the owner credential from the file in `KUTUPHANE_PUBLISHER_ENV_FILE` (outside git and outside the image). One run at a time; a crash restarts the container; it is unhealthy when the last successful run is older than 3 intervals ([operations.md](operations.md#publisher-service-compose), `.env.example`). These two settings are compose settings; Core does not read them. No Core setting, route, error text or code changes.
+- **Action:** never run the compose publisher and the host timer at the same time. On a host that has the `kutuphane-publish-admitted` timer, stop and disable it first (`systemctl --user disable --now kutuphane-publish-admitted.timer`). Nothing changes for an install that does not use the profile.
+
+### A contract runner for LLMDAP's CI (#242, #243, #253)
+
+- Added: `deploy/llmdap_contract_ci.sh` runs Kütüphane's LLMDAP contract with only bash and Docker (compose plugin): its own project `kutuphane-contract` with a scratch Postgres, `deploy/model_stub.py` and a small OKF book; the caller attaches the bridge to the network `kutuphane-contract` with the alias `llmdap`. Exit 0 when every check passes, 1 when a check fails, 2 for a setup problem or when another run holds the lock, 3 when teardown failed, 125 when the export command could not be ended ([deploy/llmdap/README.md](../../deploy/llmdap/README.md)). Checked against the LLMDAP 3.0.0 bridge: 11 of 11.
+- Fixed: `deploy/llmdap_contract.py` failed on the `(vector, outcome)` result of `vectors.query_vector` (since #136). New optional `--phase calls|verify`, `--audit-export-file`, `--audit-export-status`; without `--phase` it works as before. A damaged audit export gives failed checks with the reason instead of a traceback.
+
+### CI and a consumer contract snapshot (#242, #251)
+
+- Added: GitHub Actions runs both test suites against Postgres with pgvector and builds the image on every pull request and push to `main` (no push to a registry, read-only permissions, actions pinned by commit SHA).
+- Added: `tests/contract/` holds a snapshot of what consumers see: the MCP tools (through the real MCP HTTP transport, both protocol eras), every HTTP route and method, the shape of every result, and the error texts by value, from a controlled fixture, with a case matrix that may not shrink. A change to it fails CI; updating the snapshot needs the approval a contract change needs (SCOPE.md: Enes).
+
 ### A model stage can call a direct OpenAI-compatible provider (D88, #242)
 
 - New: the answer model (with question translation) and the embedder each have a provider setting, `KUTUPHANE_ANSWER_PROVIDER` and `KUTUPHANE_EMBED_PROVIDER`: `llmdap` (the default, with an unset or empty value; the LLMDAP settings keep their names, defaults and meaning) or `openai`. With `openai`, Core calls `<URL>/v1/chat/completions` or `<URL>/v1/embeddings` with the stage's `…_OPENAI_URL` (base address, no `/v1`), `…_OPENAI_KEY` and `…_OPENAI_CLASS` (`local` or `cloud`), and the model from `KUTUPHANE_ANSWER_MODEL` or `KUTUPHANE_EMBED_MODEL`. The URL, key and class are required and the class has no default: a missing one, an unknown class or an unknown provider value stops the server and the CLI at start-up and names the setting ([operations.md](operations.md#direct-model-providers), [install.md](install.md), [troubleshooting.md](troubleshooting.md)).
