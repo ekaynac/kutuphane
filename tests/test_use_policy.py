@@ -34,7 +34,7 @@ def world(conn_b, tmp_path, monkeypatch):
     return conn_b, signing.load_private(tmp_path / "a.key"), info["fingerprint"], tmp_path
 
 
-def build(world, files, *, seq=1, accepted_by=ATT, rights=SITE, extra=None, book="kitap"):
+def build(world, files, *, seq=1, accepted_by=ATT, rights=SITE, extra=None, book="kitap", drop=()):
     """A signed package of `files` with an optional kstd.yaml (`rights`: its default rights, every file origin
     unknown, as InfraMedic writes it; `rights=False`: no kstd.yaml)."""
     _, private, _, tmp = world
@@ -53,6 +53,8 @@ def build(world, files, *, seq=1, accepted_by=ATT, rights=SITE, extra=None, book
     fields = {"book": book, "title": "Kitap", "sequence": seq, "policy_suggestion": POLICY,
               "content_id": packages.ids.content_id({f.path: f.sha256 for f in source}),
               **packages.origin_marks(infos), **({"accepted_by": accepted_by} if accepted_by is not None else {}), **(extra or {})}
+    for name in drop:  # a manifest field that the sender leaves out
+        fields.pop(name, None)
     return packages._sign(private, fields, [(f.path, f.data) for f in source])
 
 
