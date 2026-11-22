@@ -54,10 +54,14 @@ docker compose version >/dev/null 2>&1 || die "the docker compose plugin is not 
 
 # Ownership, step 1: refuse if anything of the project or the network exists (another run, or a leftover). Nothing is
 # changed or removed in that case.
-leftovers=$(docker ps -a -q --filter "label=com.docker.compose.project=$PROJECT"; \
-            docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT"; \
-            docker network ls -q --filter "name=^${NETWORK}\$") || die "cannot ask docker for existing containers"
-[ -z "$leftovers" ] || die "the compose project or network $NETWORK already exists (another run is active, or a leftover or --keep run is there); nothing was changed"
+found_containers=$(docker ps -a -q --filter "label=com.docker.compose.project=$PROJECT") \
+  || die "cannot list the containers of the project $PROJECT; nothing was changed"
+found_volumes=$(docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT") \
+  || die "cannot list the volumes of the project $PROJECT; nothing was changed"
+found_networks=$(docker network ls -q --filter "name=^${NETWORK}\$") \
+  || die "cannot list the networks; nothing was changed"
+[ -z "$found_containers$found_volumes$found_networks" ] \
+  || die "the compose project or network $NETWORK already exists (another run is active, or a leftover or --keep run is there); nothing was changed"
 # Step 2: creating the network is the atomic claim. The EXIT trap is installed only after it succeeded.
 run_id="$(date +%s)-$$-$RANDOM"
 docker network create --internal --label "kutuphane.contract.run=$run_id" "$NETWORK" >/dev/null 2>&1 \
@@ -77,64 +81,105 @@ label_filter="label=kutuphane.contract.run=$run_id"
 
 export_pid=""
 cleanup() {
-  local rc=$? failed=0 c out ids
-  [ -n "$export_pid" ] && { kill -KILL -- "-$export_pid" 2>/dev/null; kill -KILL "$export_pid" 2>/dev/null; }
+  local rc=$? failed=0 c out ids id names
+  local -a valid
+  [ -n "$export_pid" ] && reap_group "$export_pid"
   if [ "$keep" = 1 ]; then
     echo "llmdap_contract_ci: --keep: containers, network $NETWORK and $export_dir stay (remove them by the label kutuphane.contract.run=$run_id)" >&2
     exit "$rc"
   fi
   fail() { echo "llmdap_contract_ci: teardown failed: $*" >&2; failed=1; }
-  ids=$(docker ps -a -q --filter "$label_filter" 2>&1) || fail "docker ps: $ids"
-  if [ -n "$ids" ]; then
-    # shellcheck disable=SC2086   # ids are container ids: split on purpose
-    out=$(docker rm -f -v $ids 2>&1) || fail "docker rm of the run's containers: $out"
+  # A removal step runs only on ids of a successful listing (stderr of the listing is never captured into the ids).
+  if ids=$(docker ps -a -q --filter "$label_filter"); then
+    valid=()
+    for id in $ids; do
+      if [[ $id =~ ^[0-9a-f]{12,64}$ ]]; then valid+=("$id"); else fail "unexpected container id '$id' (not removed)"; fi
+    done
+    if [ "${#valid[@]}" -gt 0 ]; then
+      out=$(docker rm -f -v "${valid[@]}" 2>&1) || fail "docker rm of the run's containers: $out"
+    fi
+  else
+    fail "cannot list the run's containers (none removed)"
   fi
-  ids=$(docker volume ls -q --filter "$label_filter" 2>&1) || fail "docker volume ls: $ids"
-  if [ -n "$ids" ]; then
-    # shellcheck disable=SC2086
-    out=$(docker volume rm $ids 2>&1) || fail "docker volume rm: $out"
+  if ids=$(docker volume ls -q --filter "$label_filter"); then
+    valid=()
+    for id in $ids; do
+      if [[ $id =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then valid+=("$id"); else fail "unexpected volume name '$id' (not removed)"; fi
+    done
+    if [ "${#valid[@]}" -gt 0 ]; then
+      out=$(docker volume rm "${valid[@]}" 2>&1) || fail "docker volume rm: $out"
+    fi
+  else
+    fail "cannot list the run's volumes (none removed)"
   fi
   # the bridge the caller attached (alias = the URL's host): detach it, then remove the network
-  for c in $(docker network inspect -f '{{range .Containers}}{{.Name}} {{end}}' "$NETWORK" 2>/dev/null); do
-    if docker inspect -f "{{range (index .NetworkSettings.Networks \"$NETWORK\").Aliases}}{{.}} {{end}}" "$c" 2>/dev/null \
-        | tr ' ' '\n' | grep -qx "$bridge_alias"; then
-      out=$(docker network disconnect -f "$NETWORK" "$c" 2>&1) || fail "docker network disconnect $c: $out"
-    fi
-  done
+  if names=$(docker network inspect -f '{{range .Containers}}{{.Name}} {{end}}' "$NETWORK" 2>/dev/null); then
+    for c in $names; do
+      if docker inspect -f "{{range (index .NetworkSettings.Networks \"$NETWORK\").Aliases}}{{.}} {{end}}" "$c" 2>/dev/null \
+          | tr ' ' '\n' | grep -qx "$bridge_alias"; then
+        out=$(docker network disconnect -f "$NETWORK" "$c" 2>&1) || fail "docker network disconnect $c: $out"
+      fi
+    done
+  fi
   out=$(docker network rm "$NETWORK" 2>&1) || fail "docker network rm $NETWORK: $out"
   rm -rf "$export_dir" || fail "cannot remove $export_dir"
-  # nothing of this run may be left
-  [ -z "$(docker ps -a -q --filter "$label_filter" 2>/dev/null)" ] || fail "containers of the run are left"
-  [ -z "$(docker volume ls -q --filter "$label_filter" 2>/dev/null)" ] || fail "volumes of the run are left"
-  [ -z "$(docker network ls -q --filter "name=^${NETWORK}\$" 2>/dev/null)" ] || fail "the network $NETWORK is left"
+  # nothing of this run may be left (a failed query is a failure, not "nothing")
+  gone() {
+    local what=$1 o; shift
+    if o=$("$@"); then [ -z "$o" ] || fail "$what of the run are left"; else fail "cannot check that the $what of the run are gone"; fi
+  }
+  gone containers docker ps -a -q --filter "$label_filter"
+  gone volumes docker volume ls -q --filter "$label_filter"
+  gone networks docker network ls -q --filter "name=^${NETWORK}\$"
   [ "$failed" = 0 ] || [ "$rc" != 0 ] || rc=3
   exit "$rc"
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 
+# Ends a whole process group: TERM, a few seconds of grace, KILL. Returns 1 if a member still lives.
+reap_group() {
+  local i
+  kill -0 -- "-$1" 2>/dev/null || return 0
+  kill -TERM -- "-$1" 2>/dev/null
+  for i in 1 2 3; do
+    kill -0 -- "-$1" 2>/dev/null || return 0
+    sleep 1
+  done
+  kill -KILL -- "-$1" 2>/dev/null
+  for i in 1 2 3; do
+    kill -0 -- "-$1" 2>/dev/null || return 0
+    sleep 1
+  done
+  return 1
+}
+
 # The export command runs on the host, in its own process group (job control), with a time limit. Pure bash: poll with
-# kill -0; at the limit send TERM, then KILL, to the whole group. Returns its exit status, or 124 at the limit.
+# kill -0. When the leader ends, or at the limit, the whole group is ended before the file is read: the verify phase
+# never starts while a member lives. Returns the exit status of the command, 124 at the limit, 125 if a member of the
+# group could not be ended.
 run_export() {
-  local waited=0 rc
+  local waited=0 rc pgid
   set -m
   bash -c "$audit_export" </dev/null >"$export_file" 2>"$export_err" &
-  export_pid=$!
+  export_pid=$! pgid=$!
   set +m
   while kill -0 "$export_pid" 2>/dev/null; do
     if [ "$waited" -ge "$export_timeout" ]; then
-      kill -TERM -- "-$export_pid" 2>/dev/null
-      sleep 2
-      kill -KILL -- "-$export_pid" 2>/dev/null
+      echo "the export command ran longer than ${export_timeout}s and was killed" >>"$export_err"
+      reap_group "$pgid" || echo "a process of the export command could not be ended" >>"$export_err"
       wait "$export_pid" 2>/dev/null
       export_pid=""
-      echo "the export command ran longer than ${export_timeout}s and was killed" >>"$export_err"
       return 124
     fi
     sleep 1
     waited=$((waited + 1))
   done
   wait "$export_pid"; rc=$?
+  if ! reap_group "$pgid"; then
+    echo "a process of the export command could not be ended" >>"$export_err"
+    rc=125
+  fi
   export_pid=""
   return "$rc"
 }
