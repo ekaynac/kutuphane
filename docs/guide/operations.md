@@ -73,6 +73,7 @@ All `KUTUPHANE_*` variables of the code, the compose files (`compose.yaml`, `dep
 | `KUTUPHANE_LLMDAP_RERANK_ROUTE` | full: `rerank` | Rerank route; without it, no reranking. Local: `rerank` (CPU) or `rerank-gpu` ([install.md](install.md#gpu-reranker)). |
 | `KUTUPHANE_LLMDAP_RERANK_ROUTE_CLASS` | compose: `local` | Route class of the rerank route. |
 | `KUTUPHANE_RERANK_MODEL` | full: `BAAI/bge-reranker-v2-m3` | Pinned rerank model. |
+| `KUTUPHANE_RERANK_PROVIDER` | `llmdap` | Rerank is LLMDAP only. Unset, empty or `llmdap` is accepted; any other value stops the server and the CLI ([direct providers](#direct-model-providers)). |
 | `KUTUPHANE_LLMDAP_ROUTES` | `routes.local.json` | Full compose: LLMDAP routes file in `deploy/llmdap/config/`: `routes.local.json`, `routes.json` (stub models) or `routes.hosted.json`. |
 | `KUTUPHANE_LLMDAP_OFFLINE` | `true` | Full compose: `false` gives LLMDAP's network `outbound` a way out, for a hosted decision model ([install.md](install.md#local-models)). Any other value stops compose. |
 | `KUTUPHANE_VLLM_IMAGE` | `vllm-node:latest` | Compose profile `gpu-rerank`: local vLLM image of `reranker-gpu`, never pulled. |
@@ -106,8 +107,9 @@ routes, models and route classes; else the command stops and names the variable.
 
 Answers (and question translation) and embeddings can go to an OpenAI-compatible endpoint instead of LLMDAP (D88).
 Each of the two stages has its own provider (`KUTUPHANE_ANSWER_PROVIDER`, `KUTUPHANE_EMBED_PROVIDER`; unset or empty
-is `llmdap`, as before). Rerank has no provider setting: OpenAI has no standard rerank endpoint, so it stays on the
-LLMDAP rerank route.
+is `llmdap`, as before). Rerank is LLMDAP only: OpenAI has no standard rerank endpoint. `KUTUPHANE_RERANK_PROVIDER`
+must be unset, empty or `llmdap`; any other value (also `openai`) stops the server and the CLI at start-up with
+`KUTUPHANE_RERANK_PROVIDER must be llmdap: rerank is LLMDAP-only …`.
 
 - `…_OPENAI_URL` is the base address without `/v1`: Core adds `/v1/embeddings` or `/v1/chat/completions`. `…_KEY` is the
   API key, sent only as the bearer. Give it in the environment and nowhere else; it is never logged and never in

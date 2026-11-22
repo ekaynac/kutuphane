@@ -33,7 +33,7 @@ EMBED_ENV = {"route": "KUTUPHANE_LLMDAP_EMBED_ROUTE", "route_class": "KUTUPHANE_
              "openai_url": "KUTUPHANE_EMBED_OPENAI_URL", "openai_key": "KUTUPHANE_EMBED_OPENAI_KEY",
              "openai_class": "KUTUPHANE_EMBED_OPENAI_CLASS"}
 RERANK_ENV = {"route": "KUTUPHANE_LLMDAP_RERANK_ROUTE", "route_class": "KUTUPHANE_LLMDAP_RERANK_ROUTE_CLASS",
-              "model": "KUTUPHANE_RERANK_MODEL"}  # no provider setting: rerank stays on LLMDAP
+              "model": "KUTUPHANE_RERANK_MODEL", "provider": "KUTUPHANE_RERANK_PROVIDER"}  # only unset or `llmdap`
 TIMEOUT_SECONDS = 120
 CHAT_PATH = "/v1/chat/completions"  # openai schema on the bridge route
 EMBED_PATH = "/v1/embeddings"       # openai schema on an LLMDAP `surface: "embeddings"` route
@@ -78,11 +78,14 @@ PROVIDER_CLASS_HINT = "local or cloud: does the provider keep the data on premis
 
 def provider_of(env: dict) -> str:
     """The provider of one model stage: `llmdap` unless its setting says `openai` (unset or empty is `llmdap`).
-    Any other value stops start-up."""
-    name = env.get("provider")
-    value = (name and os.environ.get(name)) or "llmdap"
-    if value not in PROVIDERS:
-        raise RuntimeError(f"{name} must be {' or '.join(PROVIDERS)}")
+    Any other value stops start-up. Rerank (no `openai_url` in its settings) is LLMDAP-only: OpenAI has no standard
+    rerank endpoint, so `openai` there is refused, not ignored."""
+    name = env["provider"]
+    value = os.environ.get(name) or "llmdap"
+    allowed = PROVIDERS if "openai_url" in env else PROVIDERS[:1]
+    if value not in allowed:
+        why = "" if allowed == PROVIDERS else ": rerank is LLMDAP-only (OpenAI has no standard rerank endpoint)"
+        raise RuntimeError(f"{name} must be {' or '.join(allowed)}{why}")
     return value
 
 

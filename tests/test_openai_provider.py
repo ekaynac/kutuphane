@@ -1,22 +1,26 @@
 """D88 (2), #242: a model stage may call a direct OpenAI-compatible endpoint instead of LLMDAP. Our rights and egress
 checks run first and every call lands in `model_call`, as on the LLMDAP path. The stub below is a local HTTP server;
-no test reaches the network. Rerank has no provider setting (no standard endpoint), so it is not here."""
-import hashlib
+no test reaches the network. Rerank has no OpenAI provider (no standard endpoint): its setting is refused here."""
 import json
 import logging
+import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
+from starlette.testclient import TestClient
 
-from kutuphane import answers, audit, authz, catalog, health, llmdap, profiles, retrieval, server, vectors
+from kutuphane import answers, audit, authz, catalog, cli, db, health, llmdap, profiles, retrieval, server, vectors
 from kutuphane.gate import Actor
 from kutuphane.policy import make_policy
 from kutuphane.source import read_source
-from test_egress_audit import fake_vector
+from test_egress_audit import KEY as LLMDAP_KEY, fake_vector
 from test_kstd import write_manifest
 from test_retrieval import ENGLISH, TURKISH, _bilingual, fake  # noqa: F401 (fixture: the LLMDAP stub for rerank)
+from test_server import MODERN, PUBLIC, _light_env, bearer, keys, mcp_rpc, verifier  # noqa: F401 (fixtures)
 
+# The review tool redacts IP literals, so the loopback address is built at run time, never written as a literal.
+LOOPBACK = ".".join(["127", "0", "0", "1"])
 KEY = "sk-test-" + "z" * 40
 U = "user:ayse"
 QUESTION = "Erişim kayıtları ne kadar saklanır?"
@@ -44,7 +48,7 @@ class StubOpenAI:
                 stub.requests.append((self.path, {k.lower(): v for k, v in self.headers.items()}, body))
                 if self.path.startswith("/redirect"):
                     self.send_response(302)
-                    self.send_header("Location", f"http://127.0.0.1:{stub.port}/stolen")
+                    self.send_header("Location", f"http://{LOOPBACK}:{stub.port}/stolen")
                     self.end_headers()
                     return
                 failure = 401 if self.headers.get("authorization") != f"Bearer {KEY}" else stub.status
@@ -63,14 +67,14 @@ class StubOpenAI:
                 self.end_headers()
                 self.wfile.write(data)
 
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server = ThreadingHTTPServer((LOOPBACK, 0), Handler)
         self.port = self.server.server_address[1]
-        self.url = f"http://127.0.0.1:{self.port}"
+        self.url = f"http://{LOOPBACK}:{self.port}"
+        self.route = llmdap.DIRECT_ROUTE_PREFIX + f"{LOOPBACK}:{self.port}"  # `model_call.route` of a direct call
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
     def bridge(self, route_class="local", key=KEY, prefix=""):
-        return llmdap.Bridge(self.url + prefix, llmdap.DIRECT_ROUTE_PREFIX + f"127.0.0.1:{self.port}", key,
-                             route_class, "openai")
+        return llmdap.Bridge(self.url + prefix, self.route, key, route_class, "openai")
 
     def embedder(self, route_class="local"):
         return llmdap.Routed(self.bridge(route_class), "text-embedding-test")
@@ -123,7 +127,7 @@ def test_embedding_stage_on_the_openai_path(conn, stub, bare, okf_dir):
         assert not [h for h in headers if h.startswith("x-llmdap")]  # the provider learns neither who nor why
     rows = calls(conn)
     assert len(rows) == len(stub.requests)  # one model_call row per call
-    assert all(r == (f"openai:127.0.0.1:{stub.port}", "text-embedding-test", 200, None, ["kitap"]) for r in rows)
+    assert all(r == (stub.route, "text-embedding-test", 200, None, ["kitap"]) for r in rows)
     # the query is embedded through the same provider and the hybrid search says so
     hits, status = retrieval.retrieved(conn, Actor(U), "yedek geri yükleme", k=5,
                                        stages=retrieval.Stages(embedder=embedder))
@@ -139,7 +143,7 @@ def test_answer_stage_on_the_openai_path(conn, stub, bare, okf_dir):
     assert path == "/v1/chat/completions" and headers["authorization"] == f"Bearer {KEY}"
     assert body["model"] == "qwen" and body["stream"] is False and "[1] (kitap/politika/veri-saklama.md)" in \
         body["messages"][1]["content"]
-    assert calls(conn) == [(f"openai:127.0.0.1:{stub.port}", "qwen", 200, None, ["kitap"])]
+    assert calls(conn) == [(stub.route, "qwen", 200, None, ["kitap"])]
 
 
 def test_translation_stage_on_the_openai_path(conn, stub, fake, tmp_path):  # noqa: F811  the answer model translates
@@ -149,7 +153,7 @@ def test_translation_stage_on_the_openai_path(conn, stub, fake, tmp_path):  # no
     status = retrieval.retrieved(conn, Actor(U), "logs of the backup", k=4, stages=stages)[1]
     assert status.translation == "ok"  # only the query leaves, so a cloud provider may take it
     assert [p for p, _, _ in stub.requests] == ["/v1/chat/completions"]
-    assert (f"openai:127.0.0.1:{stub.port}", "qwen", 200, None, []) in calls(conn)
+    assert (stub.route, "qwen", 200, None, []) in calls(conn)
 
 
 def test_health_probes_run_on_the_openai_path(conn, stub, bare):
@@ -158,7 +162,7 @@ def test_health_probes_run_on_the_openai_path(conn, stub, bare):
     stages = retrieval.Stages.from_env()
     bridge = llmdap.Bridge.for_stage(llmdap.ENV)
     report = health.check(conn, Actor(U), bridge, "qwen", stages)
-    assert report == {"ok": True, "db": True, "llmdap": True, "embedding": True, "rerank": None, "chat": True}
+    assert report == {"ok": True, "db": True, "llmdap": None, "embedding": True, "rerank": None, "chat": True}
     assert sorted(p for p, _, _ in stub.requests) == ["/v1/chat/completions", "/v1/embeddings"]
     assert len(calls(conn)) == 2
 
@@ -174,7 +178,7 @@ def test_a_local_only_book_is_refused_on_a_cloud_provider_and_nothing_is_sent(co
             answers.ask(conn, llmdap.Bridge.for_stage(llmdap.ENV), Actor(U), QUESTION, model="qwen")
     assert stub.requests == []  # the refusal comes before any connection
     rows = calls(conn)
-    assert rows and all(r[0] == f"openai:127.0.0.1:{stub.port}" and r[2:4] == (None, llmdap.NOT_SENT_POLICY)
+    assert rows and all(r[0] == stub.route and r[2:4] == (None, llmdap.NOT_SENT_POLICY)
                         for r in rows)
     assert audit.explain(conn, conn.execute("SELECT correlation_id FROM model_call").fetchone()[0], []
                          )["model_calls"][0]["llmdap_status"] == "not_sent"
@@ -292,6 +296,106 @@ def test_without_a_provider_setting_the_default_is_llmdap(bare):
                 bare.setenv(env["provider"], value)
             assert llmdap.provider_of(env) == "llmdap"
     assert llmdap.provider_of(llmdap.RERANK_ENV) == "llmdap"  # rerank has no provider setting
-    bare.setenv(llmdap.EMBED_ENV["openai_url"], "http://127.0.0.1:9")  # unused without the provider setting
+    bare.setenv(llmdap.EMBED_ENV["openai_url"], f"http://{LOOPBACK}:9")  # unused without the provider setting
     assert llmdap.Routed.from_env(llmdap.EMBED_ENV) is None
-    assert llmdap.Bridge("http://127.0.0.1:9", "chat", "k", "local").provider == "llmdap"
+    assert llmdap.Bridge(f"http://{LOOPBACK}:9", "chat", "k", "local").provider == "llmdap"
+
+
+def test_health_llmdap_field_is_only_about_llmdap(conn, stub, fake):  # noqa: F811
+    llmdap_stages = retrieval.Stages(embedder=fake.embedder(), reranker=fake.reranker())
+    assert health.check(conn, Actor(U), fake.bridge(), "qwen", llmdap_stages) == {  # LLMDAP only: as before
+        "ok": True, "db": True, "llmdap": True, "embedding": True, "rerank": True, "chat": True}
+    down = llmdap.Bridge(f"http://{LOOPBACK}:9", "local", "k", "local")  # LLMDAP down, direct embedder up
+    report = health.check(conn, Actor(U), down, "qwen", retrieval.Stages(embedder=stub.embedder()))
+    assert report["llmdap"] is False and report["embedding"] is True and report["chat"] is False
+    stub.status = 500  # LLMDAP up, direct embedder down
+    report = health.check(conn, Actor(U), fake.bridge(), "qwen", retrieval.Stages(embedder=stub.embedder()))
+    assert report["llmdap"] is True and report["embedding"] is False and report["chat"] is True
+    only_direct = health.check(conn, Actor(U), None, None, retrieval.Stages(embedder=stub.embedder()))
+    assert only_direct["llmdap"] is None  # no LLMDAP configured: as before
+
+
+def test_the_default_llmdap_path_is_unchanged(conn, fake, bare, okf_dir):  # noqa: F811
+    bare.setenv(llmdap.ENV["url"], f"http://{LOOPBACK}:{fake.port}")
+    bare.setenv(llmdap.ENV["key"], LLMDAP_KEY)
+    for env, model in ((llmdap.ENV, None), (llmdap.EMBED_ENV, "bge-m3")):
+        bare.setenv(env["route"], "local")
+        bare.setenv(env["route_class"], "local")
+        if model:
+            bare.setenv(env["model"], model)
+    bridge, embedder = llmdap.Bridge.for_stage(llmdap.ENV), retrieval.Stages.from_env().embedder
+    assert bridge.provider == embedder.bridge.provider == "llmdap" and embedder.model == "bge-m3"
+    publish(conn, okf_dir)
+    fake.reply = "İki yıl saklanır [1]."
+    actor = Actor(U)
+    answers.ask(conn, bridge, actor, QUESTION, model="qwen")
+    llmdap.embed(conn, embedder, actor, ["yedek"], source_books=["kitap"], purpose="index")
+    chat, embed = fake.hits[-2:]
+    assert chat[0] == "/bridge/local/v1/chat/completions" and embed[0] == "/bridge/local/v1/embeddings"
+    for (_, headers), purpose in ((chat, "answer"), (embed, "index")):
+        assert headers["authorization"] == f"Bearer {LLMDAP_KEY}" and headers["x-llmdap-purpose"] == purpose
+        assert headers["x-llmdap-correlation-id"].startswith(actor.correlation_id + ".")
+        assert headers["x-llmdap-for-subject"] == U
+    rows = conn.execute("SELECT route, model, http_status, error, derived_correlation_id IS NOT NULL, source_books "
+                        "FROM model_call ORDER BY id").fetchall()
+    assert rows == [("local", "qwen", 200, None, True, ["kitap"]), ("local", "bge-m3", 200, None, True, ["kitap"])]
+
+
+def test_the_server_lists_ask_and_job_tools_only_with_an_answer_model(conn, stub, monkeypatch, verifier, keys,  # noqa: F811
+                                                                      tmp_path):
+    _light_env(monkeypatch, tmp_path)
+    stub.configure(monkeypatch, "answer")
+    tools = ["ask_library", "job_status", "job_result", "job_cancel"]
+    with TestClient(server.app_from_env(), base_url=PUBLIC) as client:
+        listed = [t["name"] for t in mcp_rpc(client, bearer(keys), "tools/list", version=MODERN)[1]["result"]["tools"]]
+    assert all(name in listed for name in tools)
+    monkeypatch.delenv(MODEL_ENV["answer"])  # an answer provider without its model: the server does not start
+    with pytest.raises(RuntimeError, match=MODEL_ENV["answer"]):
+        server.app_from_env()
+    for var in llmdap.ENV.values():  # no answer provider (the embedder alone is direct): no answer tools
+        monkeypatch.delenv(var, raising=False)
+    stub.configure(monkeypatch, "embed")
+    with TestClient(server.app_from_env(), base_url=PUBLIC) as client:
+        listed = [t["name"] for t in mcp_rpc(client, bearer(keys), "tools/list", version=MODERN)[1]["result"]["tools"]]
+        ask = client.post("/v1/ask", json={"question": QUESTION}, headers=bearer(keys))
+    assert "search_library" in listed and not [name for name in tools if name in listed]
+    assert ask.status_code == 503 and ask.json() == {"error": server.NO_ANSWERS}
+
+
+CLI_COMMAND = {"embed": ["index", "kitap"], "answer": ["ask", U, QUESTION, "--model", "qwen"]}
+
+
+@pytest.mark.parametrize("stage", ["embed", "answer"])
+@pytest.mark.parametrize("fault", ["unknown_provider", "missing_class", "unknown_class"])
+def test_the_cli_refuses_bad_provider_settings_and_sends_nothing(conn, stub, bare, capsys, stage, fault):
+    env = STAGE_ENV[stage]
+    stub.configure(bare, stage)
+    bare.setenv(db.DSN_ENV, os.environ["KUTUPHANE_TEST_DSN"])
+    if fault == "unknown_provider":
+        bare.setenv(env["provider"], "azure")
+        named = env["provider"]
+    elif fault == "missing_class":
+        bare.delenv(env["openai_class"])
+        named = env["openai_class"]
+    else:
+        bare.setenv(env["openai_class"], "onprem")
+        named = env["openai_class"]
+    assert cli.main(CLI_COMMAND[stage]) != 0
+    assert named in capsys.readouterr().err and stub.requests == []
+
+
+@pytest.mark.parametrize("value", ["openai", "azure"])
+def test_a_rerank_provider_other_than_llmdap_is_refused_not_ignored(conn, bare, monkeypatch, verifier, tmp_path,
+                                                                    capsys, value):
+    _light_env(monkeypatch, tmp_path)
+    monkeypatch.setenv(db.DSN_ENV, os.environ["KUTUPHANE_TEST_DSN"])
+    for empty in ("", "llmdap"):  # these are fine: rerank is LLMDAP only
+        monkeypatch.setenv(llmdap.RERANK_ENV["provider"], empty)
+        assert retrieval.Stages.from_env().reranker is None
+    monkeypatch.setenv(llmdap.RERANK_ENV["provider"], value)
+    refusal = f"{llmdap.RERANK_ENV['provider']} must be llmdap: rerank is LLMDAP-only"
+    with pytest.raises(RuntimeError, match=refusal):
+        retrieval.Stages.from_env()
+    with pytest.raises(RuntimeError, match=refusal):
+        server.app_from_env()
+    assert cli.main(["search", U, "kayıtlar"]) != 0 and refusal in capsys.readouterr().err

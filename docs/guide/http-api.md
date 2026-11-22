@@ -98,13 +98,15 @@ The principal read from your token. **`200`:** `{"principal": "agent:adc", "on_b
 ### 3.3 `GET /v1/health`
 
 Checks each dependency now. Any valid token, no grant. Booleans only (no route names, model names, addresses or
-error texts): `db` (the database answers), `llmdap` (the model service, LLMDAP or the direct provider, answered a
-model check, any HTTP status), `embedding`
+error texts): `db` (the database answers), `llmdap` (LLMDAP's own health: LLMDAP answered a model check that went
+through it, any HTTP status), `embedding`
 (a valid vector), `rerank` (valid scores), `chat` (the answer model answered), `ok` (none is `false`). Not
-configured: `null` (light install: `llmdap`, `embedding`, `rerank`, `chat`). When `db` is `false`, the others are
-`null`: model calls are recorded in the database, so none is made. Each model check is a real LLMDAP call with a
-fixed input and no book content (purpose `health`), recorded in `model_call` and the LLMDAP audit; the chat check
-asks for one token. Call it at a low rate (for example once a minute), not per request.
+configured: `null` (light install: `llmdap`, `embedding`, `rerank`, `chat`; also `llmdap` when every configured stage
+uses a direct OpenAI-compatible provider, which shows in `embedding` and `chat` only). When `db` is `false`, the
+others are `null`: model calls are recorded in the database, so none is made. Each model check is a real model call
+with a fixed input and no book content (purpose `health`), recorded in `model_call` (and in the LLMDAP audit when it
+went through LLMDAP); the chat check asks for one token. Call it at a low rate (for example once a minute), not per
+request.
 
 **`200`** when all are up, **`503`** when one is `false`.
 
