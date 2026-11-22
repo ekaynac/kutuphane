@@ -145,6 +145,9 @@ class Bridge:
             raise RuntimeError("LLMDAP route must be a plain name")
         if self.route_class not in ROUTE_CLASSES:
             raise RuntimeError(f"{self.label} route class must be one of {', '.join(ROUTE_CLASSES)}")
+        if self.provider == "openai" and self.route_class == "cloud" and parts.scheme != "https":
+            raise ValueError("a cloud OpenAI provider must use an https url: its key and the text must not cross "
+                             "the network in clear")
 
 
 @dataclass(frozen=True)

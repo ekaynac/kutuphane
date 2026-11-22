@@ -1,13 +1,21 @@
 """D88 (2), #242: a model stage may call a direct OpenAI-compatible endpoint instead of LLMDAP. Our rights and egress
-checks run first and every call lands in `model_call`, as on the LLMDAP path. The stub below is a local HTTP server;
-no test reaches the network. Rerank has no OpenAI provider (no standard endpoint): its setting is refused here."""
+checks run first and every call lands in `model_call`, as on the LLMDAP path. The stub below is a local HTTP (or, for
+cloud providers, https) server; no test reaches the network. All three stages have a direct provider."""
+import datetime
+import ipaddress
 import json
 import logging
 import os
+import ssl
 import threading
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.x509.oid import NameOID
 from starlette.testclient import TestClient
 
 from kutuphane import answers, audit, authz, catalog, cli, db, health, llmdap, profiles, retrieval, server, vectors
@@ -28,12 +36,31 @@ LOCAL = make_policy(sensitivity="normal", egress="local_only", protection="stand
 CLOUD = make_policy(sensitivity="normal", egress="cloud_ok", protection="standard")
 MODEL_ENV = {"answer": "KUTUPHANE_ANSWER_MODEL", "embed": "KUTUPHANE_EMBED_MODEL", "rerank": "KUTUPHANE_RERANK_MODEL"}
 STAGE_ENV = {"answer": llmdap.ENV, "embed": llmdap.EMBED_ENV, "rerank": llmdap.RERANK_ENV}
+NOWHERE = "https://models.invalid"  # no listener: a refused call must never try to connect
+
+
+def _self_signed(directory):
+    """A certificate for the loopback address, valid for a day; the key is written beside it as `stub.key`."""
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "stub")])
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
+            .serial_number(x509.random_serial_number()).not_valid_before(now - datetime.timedelta(days=1))
+            .not_valid_after(now + datetime.timedelta(days=1))
+            .add_extension(x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address(LOOPBACK))]),
+                           critical=False)
+            .sign(key, hashes.SHA256()))
+    (directory / "stub.pem").write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    (directory / "stub.key").write_bytes(key.private_bytes(serialization.Encoding.PEM,
+                                                           serialization.PrivateFormat.PKCS8,
+                                                           serialization.NoEncryption()))
+    return directory / "stub.pem"
 
 
 class StubOpenAI:
     """An OpenAI-compatible server: /v1/embeddings, /v1/chat/completions and /v1/rerank with a bearer key."""
 
-    def __init__(self):
+    def __init__(self, tls=None):  # tls: (certificate file, key file) to serve https
         self.requests = []  # (path, lower-case headers, body) of every request that arrived
         self.reply, self.status = "İki yıl saklanır [1].", None  # `status`: answer every request with it
         stub = self
@@ -70,14 +97,22 @@ class StubOpenAI:
                 self.end_headers()
                 self.wfile.write(data)
 
+        self.tls = tls
         self.server = ThreadingHTTPServer((LOOPBACK, 0), Handler)
+        if tls:
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(*tls)
+            self.server.socket = context.wrap_socket(self.server.socket, server_side=True)
         self.port = self.server.server_address[1]
-        self.url = f"http://{LOOPBACK}:{self.port}"
+        self.url = f"{'https' if tls else 'http'}://{LOOPBACK}:{self.port}"
         self.route = llmdap.DIRECT_ROUTE_PREFIX + f"{LOOPBACK}:{self.port}"  # `model_call.route` of a direct call
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
     def bridge(self, route_class="local", key=KEY, prefix=""):
-        return llmdap.Bridge(self.url + prefix, self.route, key, route_class, "openai")
+        # A cloud bridge on the plain stub points nowhere (https, no listener): only refusal tests use it, and a
+        # refusal comes before any send. A cloud call that is sent goes to the tls stub.
+        url = NOWHERE if route_class == "cloud" and not self.tls else self.url
+        return llmdap.Bridge(url + prefix, self.route, key, route_class, "openai")
 
     def embedder(self, route_class="local"):
         return llmdap.Routed(self.bridge(route_class), "text-embedding-test")
@@ -97,6 +132,19 @@ class StubOpenAI:
 @pytest.fixture
 def stub():
     s = StubOpenAI()
+    yield s
+    s.server.shutdown()
+
+
+@pytest.fixture
+def tls_stub(tmp_path_factory, monkeypatch):
+    """The same stub over https with a self-signed certificate made now, which the client trusts only here."""
+    directory = tmp_path_factory.mktemp("tls")
+    cert = _self_signed(directory)
+    context = ssl.create_default_context(cafile=str(cert))
+    monkeypatch.setattr(llmdap, "_OPENER", urllib.request.build_opener(llmdap._NoRedirect,
+                                                                       urllib.request.HTTPSHandler(context=context)))
+    s = StubOpenAI(tls=(cert, directory / "stub.key"))
     yield s
     s.server.shutdown()
 
@@ -152,14 +200,14 @@ def test_answer_stage_on_the_openai_path(conn, stub, bare, okf_dir):
     assert calls(conn) == [(stub.route, "qwen", 200, None, ["kitap"])]
 
 
-def test_translation_stage_on_the_openai_path(conn, stub, fake, tmp_path):  # noqa: F811  the answer model translates
+def test_translation_stage_on_the_openai_path(conn, tls_stub, fake, tmp_path):  # noqa: F811  the answer model
     _bilingual(conn, tmp_path, {**ENGLISH, **TURKISH})
-    stub.reply = "Yedekler ve loglar için ne yapılır?"
-    stages = retrieval.Stages(reranker=fake.reranker(), translator=llmdap.Routed(stub.bridge("cloud"), "qwen"))
+    tls_stub.reply = "Yedekler ve loglar için ne yapılır?"
+    stages = retrieval.Stages(reranker=fake.reranker(), translator=llmdap.Routed(tls_stub.bridge("cloud"), "qwen"))
     status = retrieval.retrieved(conn, Actor(U), "logs of the backup", k=4, stages=stages)[1]
     assert status.translation == "ok"  # only the query leaves, so a cloud provider may take it
-    assert [p for p, _, _ in stub.requests] == ["/v1/chat/completions"]
-    assert (stub.route, "qwen", 200, None, []) in calls(conn)
+    assert [p for p, _, _ in tls_stub.requests] == ["/v1/chat/completions"]
+    assert (tls_stub.route, "qwen", 200, None, []) in calls(conn)
 
 
 def test_health_probes_run_on_the_openai_path(conn, stub, bare):
@@ -189,10 +237,34 @@ def test_a_local_only_book_is_refused_on_a_cloud_provider_and_nothing_is_sent(co
                          )["model_calls"][0]["llmdap_status"] == "not_sent"
 
 
-def test_a_cloud_ok_book_may_go_to_a_cloud_provider(conn, stub, okf_dir):
+@pytest.mark.parametrize("stage", ["embed", "answer", "rerank"])
+def test_a_cloud_ok_book_may_go_to_a_cloud_provider_over_https(conn, tls_stub, okf_dir, stage):
     publish(conn, okf_dir, policy=CLOUD)
-    out = answers.ask(conn, stub.bridge("cloud"), Actor(U), QUESTION, model="qwen")
-    assert out["status"] == "answered" and len(stub.requests) == 1
+    if stage == "embed":
+        assert vectors.index(conn, tls_stub.embedder("cloud"), "kitap").embedded > 0
+    elif stage == "answer":
+        out = answers.ask(conn, tls_stub.bridge("cloud"), Actor(U), QUESTION, model="qwen")
+        assert out["status"] == "answered"
+    else:
+        stages = retrieval.Stages(reranker=tls_stub.reranker("cloud"))
+        assert retrieval.retrieved(conn, Actor(U), "yedek geri yükleme kayıtlar", k=8, stages=stages)[1].rerank == "ok"
+    assert tls_stub.requests and all(r[0] == tls_stub.route and r[2:4] == (200, None) for r in calls(conn))
+
+
+def test_a_cloud_provider_set_in_the_environment_works_over_https(conn, tls_stub, bare, okf_dir):
+    tls_stub.configure(bare, "answer", route_class="cloud")
+    publish(conn, okf_dir, policy=CLOUD)
+    out = answers.ask(conn, llmdap.Bridge.for_stage(llmdap.ENV), Actor(U), QUESTION, model="qwen")
+    assert out["status"] == "answered" and len(tls_stub.requests) == 1
+
+
+def test_a_cloud_bridge_over_http_cannot_be_constructed():
+    http = f"http://{LOOPBACK}:9"
+    with pytest.raises(ValueError, match="must use an https url"):
+        llmdap.Bridge(http, "openai:x", "k", "cloud", "openai")
+    llmdap.Bridge("https://models.example", "openai:x", "k", "cloud", "openai")
+    llmdap.Bridge(http, "openai:x", "k", "local", "openai")  # local may use http
+    llmdap.Bridge(http, "chat", "k", "cloud")  # an LLMDAP route is not the direct provider: unchanged
 
 
 def test_item_rights_apply_before_the_openai_provider_is_called(conn, stub, bare, okf_dir):
