@@ -70,6 +70,8 @@ def test_the_q8_exclusions_hold_without_an_attester(world, files, kw, reason):
     conn = world[0]
     unattended(world)
     got = packages.receive(conn, build(world, files, **kw))
+    if reason == "personal_data":  # the finding is recorded at receive, before any publish attempt
+        assert [(f["kind"], f["rule"]) for f in got["findings"]] == [("personal_data", "private-ipv4")]
     [result] = run(conn)
     assert result["status"] == "skipped" and reason in result["reason"]
     assert status(conn, got["id"]) == ("verified", None) and catalog.book_state(conn, "kitap") is None
@@ -273,7 +275,7 @@ def test_a_package_that_suggests_a_restricted_or_cloud_ok_book_waits_for_a_perso
     got = packages.receive(conn, build(world, CLEAN, extra={"policy_suggestion": suggestion}))
     assert got["status"] == "verified"
     [result] = run(conn)
-    assert result["status"] == "skipped" and "suggests a restricted or cloud_ok" in result["reason"]
+    assert result["status"] == "skipped" and "does not suggest a normal, local_only book" in result["reason"]
     assert status(conn, got["id"]) == ("verified", None) and catalog.book_state(conn, "kitap") is None
 
 
@@ -345,3 +347,25 @@ def test_migration_054_keeps_existing_attested_policies_and_their_publications(c
     assert (conn.execute(pubs).fetchall(), conn.execute("SELECT id, attesters, policy FROM use_policy").fetchall()
             ) == before
     assert conn.execute("SELECT unattended FROM use_policy").fetchall() == [(False,)]
+
+
+@pytest.mark.parametrize("how", [{"drop": ["policy_suggestion"]}, {"extra": {"policy_suggestion": None}},
+                                 {"extra": {"policy_suggestion": "normal"}},
+                                 {"extra": {"policy_suggestion": {"sensitivity": "normal"}}}])
+def test_an_unattended_policy_fails_closed_on_a_missing_null_or_malformed_suggestion(world, how):
+    """`receive` does not require `policy_suggestion`, so such a package is verified; the policy must not publish it."""
+    conn = world[0]
+    unattended(world)
+    got = packages.receive(conn, build(world, CLEAN, **how))
+    assert got["status"] == "verified"
+    [result] = run(conn)
+    assert result["status"] == "skipped" and "does not suggest a normal, local_only book" in result["reason"]
+    assert status(conn, got["id"]) == ("verified", None) and catalog.book_state(conn, "kitap") is None
+
+
+def test_an_attested_policy_still_publishes_a_package_without_a_suggestion(world):
+    conn = world[0]
+    usepolicy.add(conn, "kitap", world[2], ["user:im."], sensitivity="normal", egress="local_only",
+                  protection="standard", by="user:ayse")
+    packages.receive(conn, build(world, CLEAN, drop=["policy_suggestion"]))
+    assert run(conn)[0]["status"] == "published"  # as on main
