@@ -9,6 +9,12 @@ LLMDAP must run with GATEWAY_AUTH_MODE=subject-keys and grant Core's subject `ll
 check publishes the book as `contract-check` into the given database, indexes it, searches, answers, joins the
 unified audit with LLMDAP's own chain, and verifies that LLMDAP refuses a claimed subject, a wrong key and the
 shared secret. Exit 0 only if every check passes.
+
+Two phases (deploy/llmdap_contract_ci.sh uses them, so that nothing in the container needs to reach the host): `--phase
+calls` does every model call and the authentication checks and writes only to the database; `--phase verify
+--audit-export-file PATH [--audit-export-status N]` reads the export from a file (N is the exit status of the command
+that wrote it, default 0) and runs the audit checks against the rows of the calls phase. Without `--phase` both run in
+one process and `--audit-export CMD` runs the command, as before.
 """
 import argparse
 import json
@@ -31,14 +37,59 @@ SHARED_SECRET_ENV = "LLMDAP_GATEWAY_TRUST_SECRET"
 QUESTION = "Erişim kayıtları ne kadar süre saklanır?"
 
 
+# The fields of an export entry that the checks use (audit.explain and the subject check), and their types. A missing
+# or null field is allowed (not every entry has every field).
+ENTRY_FIELDS = {"seq": int, "type": str, "actor": str, "correlationId": str, "forSubject": str}
+
+
+def parse_export(raw: bytes | str) -> tuple[list[dict], str | None]:
+    """The entries of an export (JSON lines, each an object) and the reason it cannot be used, if any. An export that
+    exits 0 may still be damaged: invalid UTF-8, a line that is not JSON, JSON that is not an object, or a field of
+    the wrong type."""
+    if isinstance(raw, bytes):
+        try:
+            raw = raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            return [], f"the export is not valid UTF-8 ({exc.reason} at byte {exc.start})"
+    entries = []
+    for number, line in enumerate(raw.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+        except ValueError as exc:
+            return [], f"line {number} of the export is not JSON ({exc})"
+        if not isinstance(entry, dict):
+            return [], f"line {number} of the export is JSON but not an object ({type(entry).__name__})"
+        for field, kind in ENTRY_FIELDS.items():   # the fields the checks read: a wrong type must not crash them
+            value = entry.get(field)
+            if value is not None and (not isinstance(value, kind) or isinstance(value, bool)):
+                return [], (f'line {number} of the export: field "{field}" must be a {kind.__name__} '
+                            f"(got {type(value).__name__})")
+        entries.append(entry)
+    return entries, None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("book_dir")
     ap.add_argument("--chat", nargs=2, required=True, metavar=("ROUTE", "MODEL"))
     ap.add_argument("--embed", nargs=2, required=True, metavar=("ROUTE", "MODEL"))
     ap.add_argument("--rerank", nargs=2, metavar=("ROUTE", "MODEL"), help="optional rerank route (#236)")
-    ap.add_argument("--audit-export", required=True)
+    ap.add_argument("--audit-export", help="command that prints the verified LLMDAP chain as JSONL (no --phase)")
+    ap.add_argument("--phase", choices=("calls", "verify"))
+    ap.add_argument("--audit-export-file", help="with --phase verify: the export, as a file")
+    ap.add_argument("--audit-export-status", type=int, default=0, help="with --phase verify: exit status of the export")
     args = ap.parse_args()
+    if args.phase is None and not args.audit_export:
+        ap.error("--audit-export is required without --phase")
+    if args.phase == "verify" and not args.audit_export_file:
+        ap.error("--phase verify needs --audit-export-file")
+    if args.phase != "verify" and (args.audit_export_file or args.audit_export_status):
+        ap.error("--audit-export-file and --audit-export-status belong to --phase verify")
+    if args.phase and args.audit_export:
+        ap.error("--audit-export cannot be combined with --phase")
+    do_calls, do_verify = args.phase in (None, "calls"), args.phase in (None, "verify")
     url, key = os.environ[llmdap.ENV["url"]].rstrip("/"), os.environ[llmdap.ENV["key"]]
     chat = llmdap.Bridge(url, args.chat[0], key, "local")
     emb = llmdap.Routed(llmdap.Bridge(url, args.embed[0], key, "local"), args.embed[1])
@@ -60,52 +111,74 @@ def main() -> int:
             return e.code
 
     with db.connect() as conn:
-        db.migrate(conn)
-        catalog.publish(conn, book=BOOK, title=BOOK, files=read_source(Path(args.book_dir)),
-                        policy=make_policy(sensitivity="normal", egress="local_only", protection="standard"),
-                        profile=profiles.spec("chunked"))
-        authz.grant(conn, f"book:{BOOK}", "read", USER)
-        authz.delegate(conn, delegator=USER, delegate_to=AGENT, obj=f"book:{BOOK}", mode="read",
-                       expires_at=datetime.now(timezone.utc) + timedelta(hours=1))
-        vectors.index(conn, emb, BOOK)
-        count = conn.execute("SELECT count(*) FROM chunk_vector WHERE book = %s AND model = %s",
-                             (BOOK, emb.model)).fetchone()[0]
-        check("index through the embeddings route", count > 0, f"{count} vectors")
+        if do_calls:
+            db.migrate(conn)
+            catalog.publish(conn, book=BOOK, title=BOOK, files=read_source(Path(args.book_dir)),
+                            policy=make_policy(sensitivity="normal", egress="local_only", protection="standard"),
+                            profile=profiles.spec("chunked"))
+            authz.grant(conn, f"book:{BOOK}", "read", USER)
+            authz.delegate(conn, delegator=USER, delegate_to=AGENT, obj=f"book:{BOOK}", mode="read",
+                           expires_at=datetime.now(timezone.utc) + timedelta(hours=1))
+            vectors.index(conn, emb, BOOK)
+            count = conn.execute("SELECT count(*) FROM chunk_vector WHERE book = %s AND model = %s",
+                                 (BOOK, emb.model)).fetchone()[0]
+            check("index through the embeddings route", count > 0, f"{count} vectors")
 
-        actor = Actor(AGENT, on_behalf_of=USER)
-        vector = vectors.query_vector(conn, emb, actor, QUESTION)
-        hits = search.search(conn, actor, QUESTION, k=3, vector=vector)
-        check("hybrid search with a query vector", vector is not None and hits)
-        if rr:
-            ranked = retrieval.retrieve(conn, actor, QUESTION, k=3, stages=retrieval.Stages(emb, rr))
-            rerank_ok = conn.execute("SELECT count(*) FROM model_call WHERE correlation_id = %s AND route = %s "
-                                     "AND http_status = 200", (actor.correlation_id, rr.bridge.route)).fetchone()[0]
-            check("rerank through the rerank route", ranked and rerank_ok == 1, f"{len(ranked)} hits")
-        result = answers.ask(conn, chat, actor, QUESTION, model=args.chat[1], stages=retrieval.Stages(emb, rr))
-        check("answer through the chat route", result["status"] in ("answered", "not_in_library"), result["status"])
+            actor = Actor(AGENT, on_behalf_of=USER)
+            vector, _outcome = vectors.query_vector(conn, emb, actor, QUESTION)  # (vector, stage outcome) since #136
+            hits = search.search(conn, actor, QUESTION, k=3, vector=vector)
+            check("hybrid search with a query vector", vector is not None and hits)
+            if rr:
+                ranked = retrieval.retrieve(conn, actor, QUESTION, k=3, stages=retrieval.Stages(emb, rr))
+                rerank_ok = conn.execute("SELECT count(*) FROM model_call WHERE correlation_id = %s AND route = %s "
+                                         "AND http_status = 200", (actor.correlation_id, rr.bridge.route)).fetchone()[0]
+                check("rerank through the rerank route", ranked and rerank_ok == 1, f"{len(ranked)} hits")
+            result = answers.ask(conn, chat, actor, QUESTION, model=args.chat[1], stages=retrieval.Stages(emb, rr))
+            check("answer through the chat route", result["status"] in ("answered", "not_in_library"), result["status"])
 
-        calls = conn.execute("SELECT call_id, derived_correlation_id, http_status FROM model_call "
-                             "WHERE correlation_id = %s", (actor.correlation_id,)).fetchall()
-        check("every call carries LLMDAP's derived id", calls and all(
-            d and d.endswith(":" + c) and s == 200 for c, d, s in calls), f"{len(calls)} calls")
-        export = subprocess.run(shlex.split(args.audit_export), capture_output=True, text=True, check=False)
-        check("LLMDAP audit chain verifies", export.returncode == 0, f"export exit {export.returncode}")
-        entries = [json.loads(line) for line in export.stdout.splitlines() if line.strip()] \
-            if export.returncode == 0 else []
-        check("unified audit is complete against LLMDAP's chain (AT-09)",
-              audit.explain(conn, actor.correlation_id, entries)["complete"])
-        mine = [e for e in entries if actor.correlation_id in e.get("correlationId", "")]
-        subjects = {e.get("actor") for e in mine}
-        check("LLMDAP records one authenticated Core subject and the user served",
-              len(subjects) == 1 and all(e.get("forSubject") == USER for e in mine), f"{subjects}")
+            calls = conn.execute("SELECT call_id, derived_correlation_id, http_status FROM model_call "
+                                 "WHERE correlation_id = %s", (actor.correlation_id,)).fetchall()
+            check("every call carries LLMDAP's derived id", calls and all(
+                d and d.endswith(":" + c) and s == 200 for c, d, s in calls), f"{len(calls)} calls")
+        if do_verify:
+            if not do_calls:  # the calls phase left its rows in the database: find its actor again
+                row = conn.execute("SELECT correlation_id FROM model_call WHERE principal = %s AND on_behalf_of = %s "
+                                   "ORDER BY id DESC LIMIT 1", (AGENT, USER)).fetchone()
+                if row is None:
+                    check("the calls phase left its rows in the database", False)
+                    print(json.dumps({"passed": sum(results.values()), "of": len(results), "phase": args.phase}))
+                    return 1
+                actor = Actor(AGENT, on_behalf_of=USER, correlation_id=row[0])
+            if args.phase == "verify":
+                export_status, export_raw = args.audit_export_status, b""
+                if export_status == 0:
+                    try:
+                        export_raw = Path(args.audit_export_file).read_bytes()
+                    except OSError as exc:
+                        export_status = 1
+                        print(f"cannot read the export file: {exc}", file=sys.stderr)
+            else:
+                export = subprocess.run(shlex.split(args.audit_export), capture_output=True, check=False)
+                export_status, export_raw = export.returncode, export.stdout
+            entries, problem = parse_export(export_raw) if export_status == 0 else ([], None)
+            check("LLMDAP audit chain verifies", export_status == 0 and problem is None,
+                  f"export exit {export_status}" if problem is None else f"export exit 0, but {problem}")
+            check("unified audit is complete against LLMDAP's chain (AT-09)",
+                  audit.explain(conn, actor.correlation_id, entries)["complete"])
+            mine = [e for e in entries if actor.correlation_id in str(e.get("correlationId") or "")]
+            subjects = {e.get("actor") for e in mine}
+            check("LLMDAP records one authenticated Core subject and the user served",
+                  len(subjects) == 1 and all(e.get("forSubject") == USER for e in mine), f"{subjects}")
 
-    good = {"authorization": f"Bearer {key}"}
-    check("a header naming another subject is refused (AT-11)", status({**good, "x-llmdap-user": USER}) == 401)
-    check("a wrong key is refused", status({"authorization": "Bearer llmdap_sk_" + "x" * 43}) == 401)
-    secret = os.environ.get(SHARED_SECRET_ENV)  # the gateway's real GATEWAY_TRUST_SECRET, if it has one
-    check("the shared secret alone authenticates nothing" + ("" if secret else f" (dummy; set {SHARED_SECRET_ENV})"),
-          status({"x-llmdap-auth": secret or "s" * 40}) == 401)
-    print(json.dumps({"passed": sum(results.values()), "of": len(results)}))
+    if do_calls:
+        good = {"authorization": f"Bearer {key}"}
+        check("a header naming another subject is refused (AT-11)", status({**good, "x-llmdap-user": USER}) == 401)
+        check("a wrong key is refused", status({"authorization": "Bearer llmdap_sk_" + "x" * 43}) == 401)
+        secret = os.environ.get(SHARED_SECRET_ENV)  # the gateway's real GATEWAY_TRUST_SECRET, if it has one
+        check("the shared secret alone authenticates nothing" + ("" if secret else f" (dummy; set {SHARED_SECRET_ENV})"),
+              status({"x-llmdap-auth": secret or "s" * 40}) == 401)
+    print(json.dumps({"passed": sum(results.values()), "of": len(results),
+                      **({"phase": args.phase} if args.phase else {})}))
     return 0 if all(results.values()) else 1
 
 
