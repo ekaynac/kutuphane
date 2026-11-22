@@ -11,7 +11,7 @@ For the terms, read [concepts.md](concepts.md).
 ### Compose runs a release image; `KUTUPHANE_VERSION` (#242)
 
 - Changed: `compose.yaml` and `deploy/compose.full.yaml` start `core` and `curator` from the image `ghcr.io/ekaynac/kutuphane:${KUTUPHANE_VERSION}` and no longer build it. `KUTUPHANE_VERSION` is a new compose setting that you must set in `.env` to a release tag; there is no `latest`. Without it compose stops with `set KUTUPHANE_VERSION to a release tag`. Core does not read it. **Action:** set `KUTUPHANE_VERSION` in `.env` before the next `docker compose up`; to build from your checkout, set `KUTUPHANE_VERSION=dev` and add `compose.build.yaml` (full stack: `deploy/compose.full.build.yaml`) ([install.md](install.md#image-release-or-source), `.env.example`). The volume names do not change, so an existing install keeps its data.
-- Added: health checks for `core`, `ingress`, `curator`, `tailscale`, `model-stub` and `spark-chat`; `ingress` now starts after `core` is healthy. The `tailscale` sidecar also gets `TS_ENABLE_HEALTH_CHECK` and `TS_LOCAL_ADDR_PORT=127.0.0.1:9002` for its check. No Core setting, default, route or error text changes; no code change.
+- Added: health checks for `core`, `ingress`, `curator`, `model-stub` and `spark-chat`; `ingress` now starts after `core` is healthy. The `tailscale` sidecar is unchanged. No Core setting, default, route or error text changes; no code change.
 
 ### The public install is the light install; LLMDAP only under an agreement (#236)
 
