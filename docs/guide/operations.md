@@ -897,7 +897,7 @@ filter ([Scope filters](#scope-filters-g14)). Why a package was skipped: [troubl
 #### Publisher service (compose)
 
 In a compose install the `publisher` service does the work of the timer. It is in the profile `publisher`, so it is
-off by default. It runs the Core image and, once every `KUTUPHANE_PUBLISH_INTERVAL` seconds (default 60), the command
+off by default. It runs the Core image and, once every `KUTUPHANE_PUBLISH_INTERVAL` seconds (default 60; a positive whole number without a leading zero, else the service stops with exit code 2 and a message), the command
 `kutuphane imports publish-admitted`. A run never starts before the last run has ended. The log has one line for each
 run (`publisher: run exit=0 seconds=1`) after the JSON lines of the command.
 
@@ -921,7 +921,7 @@ run (`publisher: run exit=0 seconds=1`) after the JSON lines of the command.
    is never in git and never in the image; do not store it where an agent can read it.
 2. Start it: `KUTUPHANE_PUBLISHER_ENV_FILE=/abs/path/publisher.env docker compose --profile publisher up -d publisher`
    (or put the variable in `.env`). Use an absolute path. Without the file the service stops with
-   `set KUTUPHANE_PUBLISHER_ENV_FILE to the owner credential file`.
+   `KUTUPHANE_CURATOR_DSN is not set: put it in the file named by KUTUPHANE_PUBLISHER_ENV_FILE`.
 3. Check: `docker compose --profile publisher logs publisher` and `docker compose --profile publisher ps publisher`.
 
 The container is `healthy` while the last successful run is not older than 3 intervals (the loop touches a file in a
