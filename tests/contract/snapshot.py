@@ -135,26 +135,36 @@ def raised() -> dict[str, list[str]]:
 
 
 def constants() -> dict[str, str]:
-    """The VALUE of every public module-level string constant of the API and tool modules (an UPPER_CASE name without
-    a leading underscore, one line): `SKILL_BLOCKED`, `CLOUD_OK`, `NOT_IN_LIBRARY`, the environment variable names...
-    A raise or a response that names a constant would otherwise change its text with no change in the snapshot."""
+    """The VALUE of every public module-level string constant of the API and tool modules: `SKILL_BLOCKED`,
+    `CLOUD_OK`, `NOT_IN_LIBRARY`, the environment variable names, the SQL fragments... A raise or a response that
+    names a constant would otherwise change its text with no change in the snapshot."""
     found = {}
     for path in sorted(SRC.glob("*.py")):
-        if path.name in NOT_API:
-            continue
-        module = importlib.import_module(f"kutuphane.{path.stem}")
-        for name, value in sorted(vars(module).items()):
-            if name.isupper() and not name.startswith("_") and isinstance(value, str) and "\n" not in value \
-                    and name in _assigned_names(path):
-                found[f"{path.stem}.{name}"] = value
+        if path.name not in NOT_API:
+            module = importlib.import_module(f"kutuphane.{path.stem}")
+            found |= {f"{path.stem}.{name}": value for name, value in constants_of(module, path).items()}
     return found
 
 
-def _assigned_names(path: Path) -> set[str]:
-    """The names a module assigns itself (not the ones it imports)."""
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    return {t.id for node in tree.body if isinstance(node, ast.Assign) for target in node.targets
-            for t in ast.walk(target) if isinstance(t, ast.Name)}
+def constants_of(module, path: Path) -> dict[str, str]:
+    """{NAME: value} of the string constants that `module` (its source is `path`) assigns at module level: an
+    UPPER_CASE name without a leading underscore, set by a plain or an annotated assignment (`NAME: str = "..."`).
+    The value is what Python made of it, so a multi-line string, an implicit concatenation and a parenthesised
+    string are held as they are, line breaks included. A name the module only imports is not its own."""
+    own = assigned_names(ast.parse(path.read_text(encoding="utf-8")))
+    return {name: value for name, value in sorted(vars(module).items())
+            if name.isupper() and not name.startswith("_") and isinstance(value, str) and name in own}
+
+
+def assigned_names(tree: ast.Module) -> set[str]:
+    """The names a module assigns itself at its top level, by `=` (also in a tuple) or `NAME: type = value`."""
+    names = set()
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            names |= {n.id for target in node.targets for n in ast.walk(target) if isinstance(n, ast.Name)}
+        elif isinstance(node, ast.AnnAssign) and node.value is not None and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+    return names
 
 
 def errors() -> dict:

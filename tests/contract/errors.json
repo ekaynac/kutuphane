@@ -20,6 +20,7 @@
     "db.CURATOR_DSN_ENV": "KUTUPHANE_CURATOR_DSN",
     "db.DSN_ENV": "KUTUPHANE_DSN",
     "decisions.ACTION": "export_decisions",
+    "decisions.RESTRICTED_SOURCE": "EXISTS (SELECT 1 FROM book b JOIN policy_version p ON p.id = b.current_policy\n                WHERE b.slug = ANY(n.source_books) AND p.doc->>'sensitivity' = 'restricted')",
     "decisions.WITHHELD": "rights do not allow AI training (ai_input and train)",
     "gate.SKILL_BLOCKED": "skill blocked by a scan (D71); only a curator clears it",
     "gate.SKILL_WITHHELD": "derived from a skill blocked by a scan (D71); only a curator clears it",

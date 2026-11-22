@@ -99,3 +99,25 @@ def test_the_schema_goes_into_the_options_and_nothing_else_changes(dsn, expected
     assert "-csearch_path=install_b,public" in options.split(" ")
     if "statement_timeout" in dsn:
         assert "-cstatement_timeout=5s" in options.split(" ")  # an existing option is kept, not replaced
+
+
+def test_the_constant_collector_finds_plain_annotated_and_multi_line_constants(tmp_path):
+    import importlib.util
+    source = tmp_path / "synthetic.py"
+    source.write_text(
+        'from os import sep as SEP_IMPORTED\n'
+        'PLAIN = "a text"\n'
+        'ANNOTATED: str = "an annotated text"\n'
+        'MULTI_LINE = """first line\nsecond line"""\n'
+        'CONCATENATED = ("one " "two")\n'
+        'FIRST, SECOND = "x", "y"\n'
+        '_PRIVATE = "hidden"\n'
+        'lower = "not a constant"\n'
+        'NUMBER = 3\n'
+        'DECLARED_ONLY: str\n', encoding="utf-8")
+    spec = importlib.util.spec_from_file_location("synthetic", source)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert snapshot.constants_of(module, source) == {
+        "ANNOTATED": "an annotated text", "CONCATENATED": "one two", "FIRST": "x", "MULTI_LINE": "first line\nsecond line",
+        "PLAIN": "a text", "SECOND": "y"}
