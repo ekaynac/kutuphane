@@ -14,7 +14,7 @@ from kutuphane import answers, audit, authz, catalog, cli, db, health, llmdap, p
 from kutuphane.gate import Actor
 from kutuphane.policy import make_policy
 from kutuphane.source import read_source
-from test_egress_audit import KEY as LLMDAP_KEY, fake_vector
+from test_egress_audit import KEY as LLMDAP_KEY, fake_relevance, fake_vector
 from test_kstd import write_manifest
 from test_retrieval import ENGLISH, TURKISH, _bilingual, fake  # noqa: F401 (fixture: the LLMDAP stub for rerank)
 from test_server import MODERN, PUBLIC, _light_env, bearer, keys, mcp_rpc, verifier  # noqa: F401 (fixtures)
@@ -26,12 +26,12 @@ U = "user:ayse"
 QUESTION = "Erişim kayıtları ne kadar saklanır?"
 LOCAL = make_policy(sensitivity="normal", egress="local_only", protection="standard")
 CLOUD = make_policy(sensitivity="normal", egress="cloud_ok", protection="standard")
-MODEL_ENV = {"answer": "KUTUPHANE_ANSWER_MODEL", "embed": "KUTUPHANE_EMBED_MODEL"}
-STAGE_ENV = {"answer": llmdap.ENV, "embed": llmdap.EMBED_ENV}
+MODEL_ENV = {"answer": "KUTUPHANE_ANSWER_MODEL", "embed": "KUTUPHANE_EMBED_MODEL", "rerank": "KUTUPHANE_RERANK_MODEL"}
+STAGE_ENV = {"answer": llmdap.ENV, "embed": llmdap.EMBED_ENV, "rerank": llmdap.RERANK_ENV}
 
 
 class StubOpenAI:
-    """An OpenAI-compatible server: /v1/embeddings and /v1/chat/completions with a bearer key, nothing else."""
+    """An OpenAI-compatible server: /v1/embeddings, /v1/chat/completions and /v1/rerank with a bearer key."""
 
     def __init__(self):
         self.requests = []  # (path, lower-case headers, body) of every request that arrived
@@ -52,12 +52,15 @@ class StubOpenAI:
                     self.end_headers()
                     return
                 failure = 401 if self.headers.get("authorization") != f"Bearer {KEY}" else stub.status
-                if failure or self.path not in ("/v1/embeddings", "/v1/chat/completions"):
+                if failure or self.path not in ("/v1/embeddings", "/v1/chat/completions", "/v1/rerank"):
                     self.send_response(failure or 404)
                     self.end_headers()
                     return
                 if self.path == "/v1/embeddings":
                     answer = {"data": [{"index": i, "embedding": fake_vector(t)} for i, t in enumerate(body["input"])]}
+                elif self.path == "/v1/rerank":  # the shape of deploy/models/server.py, vLLM and TEI
+                    answer = {"results": [{"index": i, "relevance_score": fake_relevance(body["query"], d)}
+                                          for i, d in enumerate(body["documents"])]}
                 else:
                     answer = {"choices": [{"message": {"role": "assistant", "content": stub.reply}}]}
                 data = json.dumps(answer).encode()
@@ -79,13 +82,16 @@ class StubOpenAI:
     def embedder(self, route_class="local"):
         return llmdap.Routed(self.bridge(route_class), "text-embedding-test")
 
+    def reranker(self, route_class="local"):
+        return llmdap.Routed(self.bridge(route_class), "rerank-test")
+
     def configure(self, mp, stage, route_class="local"):
         env = STAGE_ENV[stage]
         mp.setenv(env["provider"], "openai")
         mp.setenv(env["openai_url"], self.url)
         mp.setenv(env["openai_key"], KEY)
         mp.setenv(env["openai_class"], route_class)
-        mp.setenv(MODEL_ENV[stage], "text-embedding-test" if stage == "embed" else "qwen")
+        mp.setenv(MODEL_ENV[stage], {"embed": "text-embedding-test", "answer": "qwen", "rerank": "rerank-test"}[stage])
 
 
 @pytest.fixture
@@ -168,14 +174,13 @@ def test_health_probes_run_on_the_openai_path(conn, stub, bare):
 
 
 @pytest.mark.parametrize("stage", ["embed", "answer"])
-def test_a_local_only_book_is_refused_on_a_cloud_provider_and_nothing_is_sent(conn, stub, bare, okf_dir, stage):
-    stub.configure(bare, stage, route_class="cloud")
-    publish(conn, okf_dir)
+def test_a_local_only_book_is_refused_on_a_cloud_provider_and_nothing_is_sent(conn, stub, okf_dir, stage):
+    publish(conn, okf_dir)  # a cloud provider is built directly: the stub speaks http, which start-up refuses
     with pytest.raises(llmdap.PolicyRefused, match="kitap"):
         if stage == "embed":
-            vectors.index(conn, retrieval.Stages.from_env().embedder, "kitap")
+            vectors.index(conn, stub.embedder("cloud"), "kitap")
         else:
-            answers.ask(conn, llmdap.Bridge.for_stage(llmdap.ENV), Actor(U), QUESTION, model="qwen")
+            answers.ask(conn, stub.bridge("cloud"), Actor(U), QUESTION, model="qwen")
     assert stub.requests == []  # the refusal comes before any connection
     rows = calls(conn)
     assert rows and all(r[0] == stub.route and r[2:4] == (None, llmdap.NOT_SENT_POLICY)
@@ -184,10 +189,9 @@ def test_a_local_only_book_is_refused_on_a_cloud_provider_and_nothing_is_sent(co
                          )["model_calls"][0]["llmdap_status"] == "not_sent"
 
 
-def test_a_cloud_ok_book_may_go_to_a_cloud_provider(conn, stub, bare, okf_dir):
-    stub.configure(bare, "answer", route_class="cloud")
+def test_a_cloud_ok_book_may_go_to_a_cloud_provider(conn, stub, okf_dir):
     publish(conn, okf_dir, policy=CLOUD)
-    out = answers.ask(conn, llmdap.Bridge.for_stage(llmdap.ENV), Actor(U), QUESTION, model="qwen")
+    out = answers.ask(conn, stub.bridge("cloud"), Actor(U), QUESTION, model="qwen")
     assert out["status"] == "answered" and len(stub.requests) == 1
 
 
@@ -241,47 +245,69 @@ def test_the_api_key_is_never_sent_to_a_redirect_target(conn, stub):
     assert [p for p, _, _ in stub.requests] == ["/redirect/v1/embeddings"]
 
 
-@pytest.mark.parametrize("stage", ["embed", "answer"])
+BUILD = {"embed": lambda: llmdap.Routed.from_env(llmdap.EMBED_ENV),
+         "answer": lambda: llmdap.Bridge.for_stage(llmdap.ENV),
+         "rerank": lambda: llmdap.Routed.from_env(llmdap.RERANK_ENV)}
+
+
+@pytest.mark.parametrize("stage", ["embed", "answer", "rerank"])
 @pytest.mark.parametrize("gap", ["openai_url", "openai_key", "openai_class"])
 def test_start_up_refuses_a_missing_url_key_or_class(stub, bare, stage, gap):
     stub.configure(bare, stage)
     bare.delenv(STAGE_ENV[stage][gap])
     with pytest.raises(RuntimeError) as err:
-        llmdap.Routed.from_env(llmdap.EMBED_ENV) if stage == "embed" else llmdap.Bridge.for_stage(llmdap.ENV)
+        BUILD[stage]()
     assert f"set {STAGE_ENV[stage][gap]}" in str(err.value) and KEY not in str(err.value)
     if gap == "openai_class":
         assert "no default" in str(err.value)
 
 
-@pytest.mark.parametrize("stage", ["embed", "answer"])
+@pytest.mark.parametrize("stage", ["embed", "answer", "rerank"])
 def test_start_up_refuses_an_unknown_class_or_provider(stub, bare, stage):
     env = STAGE_ENV[stage]
-    build = (lambda: llmdap.Routed.from_env(env)) if stage == "embed" else (lambda: llmdap.Bridge.for_stage(env))
     stub.configure(bare, stage)
     bare.setenv(env["openai_class"], "onprem")
     with pytest.raises(RuntimeError, match=f"{env['openai_class']} must be local or cloud"):
-        build()
+        BUILD[stage]()
     stub.configure(bare, stage)
     bare.setenv(env["provider"], "azure")
     with pytest.raises(RuntimeError, match=f"{env['provider']} must be llmdap or openai"):
-        build()
+        BUILD[stage]()
     stub.configure(bare, stage)
     bare.setenv(env["openai_url"], "ftp://models.example")
     with pytest.raises(RuntimeError, match="url must be http"):
-        build()
+        BUILD[stage]()
 
 
-def test_start_up_refuses_an_embedder_without_a_model(stub, bare):
-    stub.configure(bare, "embed")
-    bare.delenv(MODEL_ENV["embed"])
-    with pytest.raises(RuntimeError, match=f"set {MODEL_ENV['embed']}"):
-        llmdap.Routed.from_env(llmdap.EMBED_ENV)
+@pytest.mark.parametrize("stage", ["embed", "answer", "rerank"])
+def test_a_cloud_provider_must_be_https_and_a_local_one_may_be_http(stub, bare, stage):
+    env = STAGE_ENV[stage]
+    stub.configure(bare, stage, route_class="cloud")  # the stub speaks http
+    with pytest.raises(RuntimeError, match=f"{env['openai_url']} must be https when {env['openai_class']} is cloud"):
+        BUILD[stage]()
+    assert stub.requests == []
+    bare.setenv(env["openai_url"], "https://models.example")
+    built = BUILD[stage]()
+    assert getattr(built, "bridge", built).route_class == "cloud"
+    stub.configure(bare, stage, route_class="local")
+    BUILD[stage]()  # local over http is fine
+
+
+@pytest.mark.parametrize("stage", ["embed", "rerank"])
+def test_start_up_refuses_a_stage_without_a_model(stub, bare, stage):
+    stub.configure(bare, stage)
+    bare.delenv(MODEL_ENV[stage])
+    with pytest.raises(RuntimeError, match=f"set {MODEL_ENV[stage]}"):
+        BUILD[stage]()
 
 
 def test_the_server_refuses_to_start_on_a_bad_answer_provider(stub, bare):
     bare.setenv(server.ENV["public_url"], "https://kutuphane.example")
     stub.configure(bare, "answer", route_class="onprem")
     with pytest.raises(RuntimeError, match=f"{llmdap.ENV['openai_class']} must be local or cloud"):
+        server.app_from_env()
+    stub.configure(bare, "answer", route_class="cloud")  # the stub speaks http
+    with pytest.raises(RuntimeError, match=f"{llmdap.ENV['openai_url']} must be https when "):
         server.app_from_env()
     stub.configure(bare, "answer")
     bare.delenv(MODEL_ENV["answer"])  # an answer provider needs its model, as LLMDAP does (the list has no ask_library)
@@ -291,11 +317,10 @@ def test_the_server_refuses_to_start_on_a_bad_answer_provider(stub, bare):
 
 def test_without_a_provider_setting_the_default_is_llmdap(bare):
     for value in (None, ""):  # compose passes an empty value for an unset `${X:-}`
-        for env in (llmdap.ENV, llmdap.EMBED_ENV):
+        for env in (llmdap.ENV, llmdap.EMBED_ENV, llmdap.RERANK_ENV):
             if value is not None:
                 bare.setenv(env["provider"], value)
             assert llmdap.provider_of(env) == "llmdap"
-    assert llmdap.provider_of(llmdap.RERANK_ENV) == "llmdap"  # rerank has no provider setting
     bare.setenv(llmdap.EMBED_ENV["openai_url"], f"http://{LOOPBACK}:9")  # unused without the provider setting
     assert llmdap.Routed.from_env(llmdap.EMBED_ENV) is None
     assert llmdap.Bridge(f"http://{LOOPBACK}:9", "chat", "k", "local").provider == "llmdap"
@@ -362,38 +387,41 @@ def test_the_server_lists_ask_and_job_tools_only_with_an_answer_model(conn, stub
     assert ask.status_code == 503 and ask.json() == {"error": server.NO_ANSWERS}
 
 
-CLI_COMMAND = {"embed": ["index", "kitap"], "answer": ["ask", U, QUESTION, "--model", "qwen"]}
+CLI_COMMAND = {"embed": ["index", "kitap"], "answer": ["ask", U, QUESTION, "--model", "qwen"],
+               "rerank": ["search", U, "kayıtlar"]}
 
 
-@pytest.mark.parametrize("stage", ["embed", "answer"])
-@pytest.mark.parametrize("fault", ["unknown_provider", "missing_class", "unknown_class"])
+@pytest.mark.parametrize("stage", ["embed", "answer", "rerank"])
+@pytest.mark.parametrize("fault", ["unknown_provider", "missing_class", "unknown_class", "cloud_over_http"])
 def test_the_cli_refuses_bad_provider_settings_and_sends_nothing(conn, stub, bare, capsys, stage, fault):
     env = STAGE_ENV[stage]
     stub.configure(bare, stage)
     bare.setenv(db.DSN_ENV, os.environ["KUTUPHANE_TEST_DSN"])
+    named, text = env["openai_class"], ""
     if fault == "unknown_provider":
         bare.setenv(env["provider"], "azure")
         named = env["provider"]
     elif fault == "missing_class":
         bare.delenv(env["openai_class"])
-        named = env["openai_class"]
-    else:
+    elif fault == "unknown_class":
         bare.setenv(env["openai_class"], "onprem")
-        named = env["openai_class"]
+    else:  # the stub speaks http, and a cloud provider must be https
+        bare.setenv(env["openai_class"], "cloud")
+        named, text = env["openai_url"], "must be https"
     assert cli.main(CLI_COMMAND[stage]) != 0
-    assert named in capsys.readouterr().err and stub.requests == []
+    err = capsys.readouterr().err
+    assert named in err and text in err and stub.requests == []
 
 
-@pytest.mark.parametrize("value", ["openai", "azure"])
-def test_a_rerank_provider_other_than_llmdap_is_refused_not_ignored(conn, bare, monkeypatch, verifier, tmp_path,
-                                                                    capsys, value):
+@pytest.mark.parametrize("value", ["azure", "llmdap-only"])
+def test_an_unknown_rerank_provider_is_refused_not_ignored(conn, bare, monkeypatch, verifier, tmp_path, capsys, value):
     _light_env(monkeypatch, tmp_path)
     monkeypatch.setenv(db.DSN_ENV, os.environ["KUTUPHANE_TEST_DSN"])
-    for empty in ("", "llmdap"):  # these are fine: rerank is LLMDAP only
-        monkeypatch.setenv(llmdap.RERANK_ENV["provider"], empty)
+    for fine in ("", "llmdap"):  # empty and `llmdap` are the default
+        monkeypatch.setenv(llmdap.RERANK_ENV["provider"], fine)
         assert retrieval.Stages.from_env().reranker is None
     monkeypatch.setenv(llmdap.RERANK_ENV["provider"], value)
-    refusal = f"{llmdap.RERANK_ENV['provider']} must be llmdap: rerank is LLMDAP-only"
+    refusal = f"{llmdap.RERANK_ENV['provider']} must be llmdap or openai"
     with pytest.raises(RuntimeError, match=refusal):
         retrieval.Stages.from_env()
     with pytest.raises(RuntimeError, match=refusal):
@@ -423,3 +451,58 @@ def test_cli_search_with_a_valid_answer_provider_and_no_model_sends_nothing(conn
     bare.setenv(db.DSN_ENV, os.environ["KUTUPHANE_TEST_DSN"])
     publish(conn, okf_dir)
     assert cli.main(["search", U, "kayıtlar saklanır"]) == 0 and stub.requests == []
+
+
+RERANK_QUERY = "yedek geri yükleme kayıtlar"
+
+
+def test_rerank_stage_on_the_openai_path(conn, stub, bare, okf_dir):
+    stub.configure(bare, "rerank")
+    publish(conn, okf_dir)
+    reranker = retrieval.Stages.from_env().reranker
+    assert reranker.bridge.provider == "openai" and reranker.model == "rerank-test"
+    ranked, status = retrieval.retrieved(conn, Actor(U), RERANK_QUERY, k=8, stages=retrieval.Stages(reranker=reranker))
+    assert ranked and status.rerank == "ok"
+    assert [h.score for h in ranked] == sorted((h.score for h in ranked), reverse=True)  # relevance order
+    assert stub.requests and {p for p, _, _ in stub.requests} == {"/v1/rerank"}
+    for _path, headers, body in stub.requests:
+        assert headers["authorization"] == f"Bearer {KEY}" and not [h for h in headers if h.startswith("x-llmdap")]
+        assert body["model"] == "rerank-test" and body["top_n"] == len(body["documents"]) and body["query"]
+    rows = calls(conn)
+    assert len(rows) == len(stub.requests)  # one model_call row per call
+    assert all(r[:4] == (stub.route, "rerank-test", 200, None) and r[4] == ["kitap"] for r in rows)
+
+
+def test_a_bad_rerank_answer_keeps_the_hybrid_order(conn, stub, okf_dir):
+    publish(conn, okf_dir)
+    stub.status = 500
+    plain = retrieval.retrieve(conn, Actor(U), RERANK_QUERY, k=8)
+    ranked, status = retrieval.retrieved(conn, Actor(U), RERANK_QUERY, k=8,
+                                         stages=retrieval.Stages(reranker=stub.reranker()))
+    assert status.rerank == "failed" and [h.citation for h in ranked] == [h.citation for h in plain]
+
+
+def test_item_rights_apply_before_the_openai_reranker_is_called(conn, stub, okf_dir):
+    write_manifest(okf_dir, runbook_item={"rights": {"ai_use": {"search": "y", "ai_input": "n"}}})
+    publish(conn, okf_dir)
+    retrieval.retrieve(conn, Actor(U), RERANK_QUERY + " politika runbook", k=8,
+                       stages=retrieval.Stages(reranker=stub.reranker()))
+    runbook = {t for (t,) in conn.execute("SELECT text FROM chunk WHERE path = 'runbook/yedek-geri-yukleme.md'")}
+    sent = {d for _, _, body in stub.requests for d in body["documents"]}
+    assert runbook and sent and not runbook & sent  # other passages were reranked, the runbook never
+
+
+def test_a_local_only_book_never_reaches_a_cloud_openai_reranker(conn, stub, okf_dir):
+    publish(conn, okf_dir)
+    ranked, status = retrieval.retrieved(conn, Actor(U), RERANK_QUERY, k=8,
+                                         stages=retrieval.Stages(reranker=stub.reranker("cloud")))
+    assert ranked and status.rerank == "failed"  # the hybrid order stays
+    assert stub.requests == []  # refused before any connection
+    rows = calls(conn)
+    assert rows and all(r[0] == stub.route and r[2:4] == (None, llmdap.NOT_SENT_POLICY) for r in rows)
+
+
+def test_health_probes_the_openai_reranker(conn, stub):
+    report = health.check(conn, Actor(U), None, None, retrieval.Stages(reranker=stub.reranker()))
+    assert report == {"ok": True, "db": True, "llmdap": None, "embedding": None, "rerank": True, "chat": None}
+    assert [p for p, _, _ in stub.requests] == ["/v1/rerank"] and len(calls(conn)) == 1

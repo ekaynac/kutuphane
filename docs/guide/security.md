@@ -229,8 +229,8 @@ contains code text; files over 2 MiB and binary files are `unverifiable`.
 ## Model calls (LLMDAP or a direct provider)
 
 - Core reaches a model through LLMDAP with its own subject key (`KUTUPHANE_LLMDAP_KEY`) or, per stage (answer,
-  embeddings), through a direct OpenAI-compatible provider (D88; `KUTUPHANE_ANSWER_PROVIDER`,
-  `KUTUPHANE_EMBED_PROVIDER`). Rerank stays on LLMDAP. Through LLMDAP, no header can claim another subject. The
+  embeddings, rerank), through a direct OpenAI-compatible provider (D88; `KUTUPHANE_ANSWER_PROVIDER`,
+  `KUTUPHANE_EMBED_PROVIDER`, `KUTUPHANE_RERANK_PROVIDER`). Through LLMDAP, no header can claim another subject. The
   person served travels as the `x-llmdap-for-subject` label; a call id joins Core's `model_call` row and LLMDAP's
   signed audit chain. A direct provider gets only the model, the input and its API key (`…_OPENAI_KEY`, from the
   environment; never logged, never in `model_call` or an error text; redirects are not followed). It gets no
@@ -238,8 +238,10 @@ contains code text; files over 2 MiB and binary files are `unverifiable`.
 - The rights and egress rules are Core's own and the same for both. Every attempt is a `model_call` row, also one
   that a check stopped. Before a call, a passage without `ai_input` is left out, and Core checks every source
   book's egress now: a `local_only` book never goes to a `cloud` route or provider (`KUTUPHANE_LLMDAP_ROUTE_CLASS`,
-  `_EMBED_ROUTE_CLASS`, `_RERANK_ROUTE_CLASS`, `KUTUPHANE_ANSWER_OPENAI_CLASS`, `KUTUPHANE_EMBED_OPENAI_CLASS`).
-  A class is never defaulted: a missing or unknown class stops start-up. A refused call sends nothing.
+  `_EMBED_ROUTE_CLASS`, `_RERANK_ROUTE_CLASS`, `KUTUPHANE_ANSWER_OPENAI_CLASS`, `KUTUPHANE_EMBED_OPENAI_CLASS`,
+  `KUTUPHANE_RERANK_OPENAI_CLASS`). A class is never defaulted: a missing or unknown class stops start-up, and so does
+  a `cloud` provider with an `http` URL (the key and the text would cross the network in clear). A refused call
+  sends nothing.
 
 ## Egress (network)
 

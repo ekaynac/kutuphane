@@ -9,8 +9,8 @@ store. Every attempt is recorded in `model_call`, including failures.
 
 The `openai` provider (D88 (2)) sends the same bodies to `<url>/v1/...` with the stage's API key as the bearer and no
 `x-llmdap-*` header: that provider must not learn who asks. Our rights and egress checks run first for both
-providers, and the declared class of the provider (`local` or `cloud`) feeds the egress check. Rerank has no standard
-OpenAI endpoint, so it stays on LLMDAP.
+providers, and the declared class of the provider (`local` or `cloud`) feeds the egress check; a `cloud` provider
+must be `https`. Rerank takes `POST <url>/v1/rerank` as the bundled model server, vLLM and TEI serve it.
 """
 import http.client
 import json
@@ -33,11 +33,13 @@ EMBED_ENV = {"route": "KUTUPHANE_LLMDAP_EMBED_ROUTE", "route_class": "KUTUPHANE_
              "openai_url": "KUTUPHANE_EMBED_OPENAI_URL", "openai_key": "KUTUPHANE_EMBED_OPENAI_KEY",
              "openai_class": "KUTUPHANE_EMBED_OPENAI_CLASS"}
 RERANK_ENV = {"route": "KUTUPHANE_LLMDAP_RERANK_ROUTE", "route_class": "KUTUPHANE_LLMDAP_RERANK_ROUTE_CLASS",
-              "model": "KUTUPHANE_RERANK_MODEL", "provider": "KUTUPHANE_RERANK_PROVIDER"}  # only unset or `llmdap`
+              "model": "KUTUPHANE_RERANK_MODEL", "provider": "KUTUPHANE_RERANK_PROVIDER",
+              "openai_url": "KUTUPHANE_RERANK_OPENAI_URL", "openai_key": "KUTUPHANE_RERANK_OPENAI_KEY",
+              "openai_class": "KUTUPHANE_RERANK_OPENAI_CLASS"}
 TIMEOUT_SECONDS = 120
 CHAT_PATH = "/v1/chat/completions"  # openai schema on the bridge route
 EMBED_PATH = "/v1/embeddings"       # openai schema on an LLMDAP `surface: "embeddings"` route
-RERANK_PATH = "/v1/rerank"          # openai-compatible schema on an LLMDAP `surface: "rerank"` route (#236)
+RERANK_PATH = "/v1/rerank"  # Jina/Cohere-style: an LLMDAP `surface: "rerank"` route (#236) or a direct endpoint
 # #165: every call names one of these as `x-llmdap-purpose`, so one shared LLMDAP chain (D76) tells our calls apart.
 # The product is the LLMDAP subject (`svc-kutuphane`), so the names carry no product prefix.
 PURPOSES = ("answer", "search", "index", "translate", "rerank", "note", "decide", "health")
@@ -78,14 +80,11 @@ PROVIDER_CLASS_HINT = "local or cloud: does the provider keep the data on premis
 
 def provider_of(env: dict) -> str:
     """The provider of one model stage: `llmdap` unless its setting says `openai` (unset or empty is `llmdap`).
-    Any other value stops start-up. Rerank (no `openai_url` in its settings) is LLMDAP-only: OpenAI has no standard
-    rerank endpoint, so `openai` there is refused, not ignored."""
+    Any other value stops start-up."""
     name = env["provider"]
     value = os.environ.get(name) or "llmdap"
-    allowed = PROVIDERS if "openai_url" in env else PROVIDERS[:1]
-    if value not in allowed:
-        why = "" if allowed == PROVIDERS else ": rerank is LLMDAP-only (OpenAI has no standard rerank endpoint)"
-        raise RuntimeError(f"{name} must be {' or '.join(allowed)}{why}")
+    if value not in PROVIDERS:
+        raise RuntimeError(f"{name} must be {' or '.join(PROVIDERS)}")
     return value
 
 
@@ -119,6 +118,8 @@ class Bridge:
         if os.environ[env["openai_class"]] not in ROUTE_CLASSES:
             raise RuntimeError(f"{env['openai_class']} must be {' or '.join(ROUTE_CLASSES)}")
         url = os.environ[env["openai_url"]].rstrip("/")
+        if os.environ[env["openai_class"]] == "cloud" and urllib.parse.urlsplit(url).scheme != "https":
+            raise RuntimeError(f"{env['openai_url']} must be https when {env['openai_class']} is cloud")
         host = urllib.parse.urlsplit(url).netloc.rpartition("@")[2]
         return cls(url, DIRECT_ROUTE_PREFIX + host, os.environ[env["openai_key"]], os.environ[env["openai_class"]],
                    "openai")
@@ -149,7 +150,7 @@ class Bridge:
 @dataclass(frozen=True)
 class Routed:
     """A model behind one LLMDAP route or one direct provider: the embedder (vectors are stored with its name) or the
-    reranker (LLMDAP only)."""
+    reranker."""
     bridge: Bridge
     model: str  # the route's pinned model, as LLMDAP serves it; for a direct provider, the model name it takes
 
