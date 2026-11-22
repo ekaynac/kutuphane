@@ -399,3 +399,27 @@ def test_a_rerank_provider_other_than_llmdap_is_refused_not_ignored(conn, bare, 
     with pytest.raises(RuntimeError, match=refusal):
         server.app_from_env()
     assert cli.main(["search", U, "kayıtlar"]) != 0 and refusal in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("fault", ["missing_url", "missing_key", "missing_class", "unknown_class"])
+def test_cli_search_checks_the_answer_provider_even_without_an_answer_model(conn, stub, bare, capsys, fault):
+    env = llmdap.ENV
+    stub.configure(bare, "answer")
+    bare.delenv(MODEL_ENV["answer"])  # search needs no answer model, but the selected provider must be valid
+    bare.setenv(db.DSN_ENV, os.environ["KUTUPHANE_TEST_DSN"])
+    if fault == "unknown_class":
+        bare.setenv(env["openai_class"], "onprem")
+        named = env["openai_class"]
+    else:
+        named = env["openai_" + fault.split("_")[1]]
+        bare.delenv(named)
+    assert cli.main(["search", U, "kayıtlar"]) != 0
+    assert named in capsys.readouterr().err and stub.requests == []
+
+
+def test_cli_search_with_a_valid_answer_provider_and_no_model_sends_nothing(conn, stub, bare, okf_dir, capsys):
+    stub.configure(bare, "answer")
+    bare.delenv(MODEL_ENV["answer"])
+    bare.setenv(db.DSN_ENV, os.environ["KUTUPHANE_TEST_DSN"])
+    publish(conn, okf_dir)
+    assert cli.main(["search", U, "kayıtlar saklanır"]) == 0 and stub.requests == []
