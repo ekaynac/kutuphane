@@ -61,7 +61,7 @@ docker compose version >/dev/null 2>&1 || die "the docker compose plugin is not 
 
 run_id="$(date +%s)-$$-$RANDOM"
 label_filter="label=kutuphane.contract.run=$run_id"
-lock_id="" network_id="" export_dir="" export_pgid=""
+lock_id="" network_id="" export_dir="" export_pgid="" export_stuck=0
 # The alias the caller gives its bridge is the host name of the URL; only a container with that alias is detached.
 bridge_alias=${KUTUPHANE_LLMDAP_URL#*://}; bridge_alias=${bridge_alias%%/*}; bridge_alias=${bridge_alias%%:*}
 
@@ -102,9 +102,9 @@ cleanup() {
     exit "$rc"
   fi
   # A removal step runs only on ids of a successful listing (stderr of the listing is never captured into the ids).
-  if ids=$(docker ps -a -q --filter "$label_filter"); then
+  if ids=$(docker ps -a -q --no-trunc --filter "$label_filter"); then
     valid=()
-    for id in $ids; do
+    for id in $ids; do   # full ids (--no-trunc), as `docker create` printed the lock's
       if [ "$id" = "$lock_id" ]; then continue; fi   # the lock is removed last
       if [[ $id =~ ^[0-9a-f]{12,64}$ ]]; then valid+=("$id"); else fail "unexpected container id '$id' (not removed)"; fi
     done
@@ -152,19 +152,21 @@ cleanup() {
     local what=$1 o; shift
     if o=$("$@"); then [ -z "$o" ] || fail "$what of the run are left"; else fail "cannot check that the $what of the run are gone"; fi
   }
-  gone containers docker ps -a -q --filter "$label_filter"
+  gone containers docker ps -a -q --no-trunc --filter "$label_filter"
   gone volumes docker volume ls -q --filter "$label_filter"
-  [ -z "$network_id" ] || gone networks docker network ls -q --filter "id=$network_id"
+  [ -z "$network_id" ] || gone networks docker network ls -q --no-trunc --filter "id=$network_id"
   [ "$failed" = 0 ] || [ "$rc" != 0 ] || rc=3
   exit "$rc"
 }
 
 # The export command runs on the host, in its own process group (job control), with a time limit. Pure bash: poll with
 # kill -0. When the leader ends, or at the limit, the whole group is ended before the file is read. Returns the exit
-# status of the command, 124 at the limit, 125 if a member of the group could not be ended (the group stays in
-# $export_pgid for cleanup to retry).
+# status of the command (124 at the limit). If a member of the group could not be ended, it also sets export_stuck=1
+# (a variable of its own, so a command that itself exits 125 stays an ordinary failure) and leaves the group in
+# $export_pgid for cleanup to retry.
 run_export() {
   local waited=0 rc leader
+  export_stuck=0
   set -m
   bash -c "$audit_export" </dev/null >"$export_file" 2>"$export_err" &
   leader=$! export_pgid=$!
@@ -174,7 +176,7 @@ run_export() {
       echo "the export command ran longer than ${export_timeout}s and was killed" >>"$export_err"
       if reap_group "$export_pgid"; then export_pgid=""; else
         echo "a process of the export command could not be ended" >>"$export_err"
-        return 125
+        export_stuck=1
       fi
       wait "$leader" 2>/dev/null
       return 124
@@ -185,7 +187,7 @@ run_export() {
   wait "$leader"; rc=$?
   if reap_group "$export_pgid"; then export_pgid=""; else
     echo "a process of the export command could not be ended" >>"$export_err"
-    return 125
+    export_stuck=1
   fi
   return "$rc"
 }
@@ -241,7 +243,7 @@ out1=$(dc run --rm -T contract "${contract_args[@]}" --phase calls); rc1=$?
 # The export, on the host, into the private file.
 run_export; export_rc=$?
 [ ! -s "$export_err" ] || sed 's/^/audit-export: /' "$export_err" >&2
-if [ "$export_rc" = 125 ]; then   # a process of the export command lives: verify must not start
+if [ "$export_stuck" = 1 ]; then   # a process of the export command lives: verify must not start
   lines=$(printf '%s\n' "$out1" | grep -E '^(PASS|FAIL) ')
   [ -z "$lines" ] || printf '%s\n' "$lines"
   echo "llmdap_contract_ci: the verify phase did not run: a process of the export command could not be ended" >&2

@@ -15,7 +15,7 @@ SCRIPT = Path(__file__).resolve().parent.parent / "deploy" / "llmdap_contract_ci
 BASH = shutil.which("bash")
 pytestmark = pytest.mark.skipif(BASH is None, reason="bash is missing")
 
-LOCK_ID, CONTAINER_ID, NETWORK_ID = "cccccccccccc", "aaaaaaaaaaaa", "bbbbbbbbbbbb"
+LOCK_ID, CONTAINER_ID, NETWORK_ID = "c" * 64, "a" * 64, "b" * 64   # `docker create` prints the full id; `ps -q` 12 characters
 
 FAKE_DOCKER = r'''#!/usr/bin/env bash
 # fake docker: logs every call. FAKE_STATE is a directory of markers (lock, containers, network).
@@ -27,7 +27,7 @@ cannot() { echo "fake: cannot connect" >&2; exit 1; }
 case "$1" in
   create)   # the lock container
     [ "$FAKE_FAIL" = lock ] && { echo "fake: Conflict. The container name is already in use" >&2; exit 1; }
-    touch "$st/lock"; echo cccccccccccc; exit 0 ;;
+    touch "$st/lock"; printf "c%.0s" $(seq 64); echo; exit 0 ;;
   compose)
     case "$args" in
       *" version "*) exit 0 ;;
@@ -44,8 +44,10 @@ case "$1" in
     case "$args" in
       *com.docker.compose.project*) [ "$FAKE_FAIL" = pre_ps ] && cannot; exit 0 ;;
       *) [ "$FAKE_FAIL" = td_ps ] && cannot
-         [ -e "$st/containers" ] && echo aaaaaaaaaaaa
-         [ -e "$st/lock" ] && echo cccccccccccc
+         a=aaaaaaaaaaaa c=cccccccccccc   # without --no-trunc: 12 characters, like the real docker
+         case "$args" in *" --no-trunc "*) a=$a$a$a$a$a$a; a=${a:0:64}; c=$c$c$c$c$c$c; c=${c:0:64} ;; esac
+         [ -e "$st/containers" ] && echo "$a"
+         [ -e "$st/lock" ] && echo "$c"
          exit 0 ;;
     esac ;;
   volume)
@@ -57,9 +59,9 @@ case "$1" in
     case "$2" in
       ls) case "$args" in
             *" name="*) [ "$FAKE_FAIL" = pre_net ] && cannot; exit 0 ;;
-            *) [ -e "$st/network" ] && echo bbbbbbbbbbbb; exit 0 ;;
+            *) [ -e "$st/network" ] && echo bbbbbbbbbbbb; exit 0 ;;   # short id: only a presence check
           esac ;;
-      create) touch "$st/network"; echo bbbbbbbbbbbb; exit 0 ;;
+      create) touch "$st/network"; printf "b%.0s" $(seq 64); echo; exit 0 ;;
       rm) rm -f "$st/network"; exit 0 ;;
       inspect) [ "$FAKE_FAIL" = net_inspect ] && cannot; echo "$FAKE_NET_CONTAINERS"; exit 0 ;;
       disconnect) exit 0 ;;
@@ -118,7 +120,16 @@ def test_good_run_removes_its_resources_by_id_and_exits_0(run):
     assert f"network rm {NETWORK_ID}" in calls
     # the lock goes last of the removals
     assert removals(calls)[-1] == f"rm -f -v {LOCK_ID}"
+    assert len([c for c in removals(calls) if "cccc" in c]) == 1, "the lock (any id length) is removed once, and last"
+    assert "teardown failed" not in proc.stderr
     assert not (state / "network").exists() and not (state / "lock").exists()
+
+
+def test_an_export_command_that_exits_125_is_an_ordinary_failure(run):
+    proc, calls, _ = run("sh -c 'echo x; exit 125'")
+    assert proc.returncode == 1, proc.stderr
+    assert any("--phase verify" in c and "--audit-export-status 125" in c for c in calls), calls   # verify ran
+    assert "could not be ended" not in proc.stderr
 
 
 def test_second_run_cannot_take_the_lock_and_changes_nothing(run):

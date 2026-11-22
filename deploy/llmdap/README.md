@@ -139,7 +139,7 @@ What it does:
    | 1 | a check failed (this includes an export command that failed or ran past `--export-timeout`) |
    | 2 | wrong call, the lock is held, a leftover or running `kutuphane-contract` project or network (nothing is created), or the bridge did not answer within 60 s |
    | 3 | every check passed, but a teardown step failed; each failed step is named on stderr (an earlier failure code is kept) |
-   | 125 | a process of the export command could not be ended (TERM, then KILL, to its group): the verify phase did not run |
+   | 125 | a process of the export command could not be ended (TERM, then KILL, to its group): the verify phase did not run. (An export command that itself exits 125 is an ordinary failure: verify runs with that status, exit 1.) |
 
 8. Removes what this run created, always (unless `--keep`): the containers and volumes with its run id (only ids of a
    successful listing), the bridge it finds on its network by the alias `llmdap` (detached by container and network
