@@ -43,6 +43,8 @@ def test_the_shape_of_the_results_is_unchanged(results, name):
 
 
 def test_every_tool_and_route_is_covered_and_coverage_does_not_shrink(static, results):
-    tools = [t["name"] for t in static["tools.json"]["with_model_gateway"]]
+    per_era = [outcome["tools"] for outcome in results["results_http.json"]["MOUNT / [ok (tools/list)]"].values()]
+    assert all(listed == per_era[0] for listed in per_era), "the protocol eras list different tools"
+    tools = [t["name"] for t in per_era[0]]
     found = matrix.problems(tools, static["http.json"], results["results_mcp.json"], results["results_http.json"])
     assert not found, "the case matrix and the recorded cases disagree:\n" + "\n".join(found)

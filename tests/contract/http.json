@@ -4,11 +4,25 @@
     "path": "/"
   },
   {
+    "inside": "/",
+    "methods": [
+      "GET",
+      "HEAD",
+      "OPTIONS"
+    ],
+    "path": "/.well-known/oauth-protected-resource"
+  },
+  {
     "methods": [
       "GET",
       "HEAD"
     ],
     "path": "/healthz"
+  },
+  {
+    "inside": "/",
+    "methods": [],
+    "path": "/mcp"
   },
   {
     "methods": [

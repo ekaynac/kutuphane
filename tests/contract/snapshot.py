@@ -5,8 +5,9 @@ shape of real results.
 KUTUPHANE_TEST_DSN (a database whose name ends in `_test`: it is RESET, as the `conn` fixture does).
 Writing the files does not authorise a contract change (see test_contract.py).
 
-- tools.json: for every MCP tool: name, description, input schema, output schema (when declared). Two builds: the
-  full one (with a model gateway: `ask_library` and the job tools) and the one without.
+- tools.json: the tools of a deployment WITHOUT a model gateway (no `ask_library`, no job tools): name, description,
+  input schema, output schema. The tools of the deployment with a gateway are recorded as the client receives them,
+  by the `tools/list` cases over POST /mcp in results_http.json.
 - http.json: every HTTP route: path and all its methods (HEAD included).
 - errors.json: the HTTP status and text of every expected error class, the value of every public module-level string constant
   of those modules (SKILL_BLOCKED, CLOUD_OK, NOT_IN_LIBRARY, ...), and every message literal in a `raise` of the
@@ -72,6 +73,9 @@ def routes(verifier: Verifier) -> list[dict]:
             out.append({"path": r.path, "methods": sorted(r.methods) if r.methods else []})
         elif isinstance(r, Mount):
             out.append({"path": r.path or "/", "mount": True})
+            for inner in getattr(r.app, "routes", []):  # the routes the mount serves: /mcp, the metadata
+                out.append({"path": (r.path or "") + inner.path, "inside": r.path or "/",
+                            "methods": sorted(inner.methods) if getattr(inner, "methods", None) else []})
     return sorted(out, key=lambda r: (r["path"], r.get("methods", [])))
 
 
@@ -132,8 +136,7 @@ def build_static() -> dict[str, object]:
     """The files that need no database."""
     with tempfile.TemporaryDirectory() as tmp:
         verifier = _verifier(Path(tmp))
-        return {"tools.json": {"with_model_gateway": tools(verifier, answering=True),
-                               "without_model_gateway": tools(verifier, answering=False)},
+        return {"tools.json": {"without_model_gateway": tools(verifier, answering=False)},
                 "http.json": routes(verifier), "errors.json": errors(), "matrix.json": matrix.snapshot()}
 
 

@@ -63,6 +63,10 @@ HTTP = {
     # the mount at `/`: the MCP endpoint (/mcp, every tool above is called through it) and the protected-resource
     # metadata; its cases are JSON-RPC calls without a tool, plus a body that is not JSON and a missing token
     "MOUNT /": route("MOUNT"),
+    "GET /.well-known/oauth-protected-resource": route("GET", not_found=PUBLIC, bad_request=PUBLIC,
+                                                       unauthorized=PUBLIC, head_error=PUBLIC),
+    "OPTIONS /.well-known/oauth-protected-resource": route("OPTIONS", not_found=PUBLIC, bad_request=PUBLIC,
+                                                           unauthorized=PUBLIC),
     "GET /healthz": route("GET", not_found=PUBLIC, bad_request=PUBLIC, unauthorized=PUBLIC, head_error=PUBLIC),
     "GET /v1/whoami": route("GET", not_found=BODY_FREE, bad_request=BODY_FREE),
     "GET /v1/health": route("GET", not_found=BODY_FREE, bad_request=BODY_FREE),
@@ -126,15 +130,22 @@ def empty_lists(value, field="<root>"):
     if isinstance(value, list):
         return {field} if not value else set().union(*(empty_lists(v, field) for v in value))
     if isinstance(value, dict):
-        return set().union(set(), *(empty_lists(v, field if k == "any_of" else k.rstrip("?")) for k, v in value.items()))
+        # `tools` holds the raw tool objects of a tools/list result (their JSON schemas have empty defaults)
+        return set().union(set(), *(empty_lists(v, field if k == "any_of" else k.rstrip("?")) for k, v in value.items()
+                                    if k != "tools"))
     return set()
 
 
 def problems(tools: list[str], routes: list[dict], mcp: dict, http: dict) -> list[str]:
     """What is missing or wrong in the coverage; [] when the matrix and the recorded cases agree."""
     found = []
-    wanted = {f"{m} {r['path']}" if "mount" not in r else f"MOUNT {r['path']}": 0 for r in routes
-              for m in (r.get("methods") or ["MOUNT"]) if m != "HEAD"}
+    wanted = {}
+    for r in routes:
+        if "mount" in r:
+            wanted[f"MOUNT {r['path']}"] = 0
+        for method in r.get("methods", []):  # a route of a mount without a method (/mcp) is the mount's own entry
+            if method != "HEAD":
+                wanted[f"{method} {r['path']}"] = 0
     for key in sorted(set(wanted) - set(HTTP)):
         found.append(f"route without a matrix entry: {key}")
     for key in sorted(set(HTTP) - set(wanted)):

@@ -7,6 +7,7 @@ never recorded, only keys and types: a result changes the snapshot when a field 
 """
 import base64
 import json
+import re
 import shutil
 import sys
 import tempfile
@@ -281,10 +282,13 @@ def _rpc_outcome(status, message, content_type):
     """The envelope a client receives: the HTTP status, the JSON-RPC message (its shape: `content` blocks,
     `structuredContent`, `isError`, `resultType`, `_meta`, or the `error` object), the block types, the shape of the
     JSON a text block carries, and the text of an error (an error text is a contract)."""
-    if message is not None and "tools" in message.get("result", {}):  # the schemas are in tools.json
-        message = {**message, "result": {**message["result"], "tools": [
-            {k: type(v).__name__ for k, v in t.items()} for t in message["result"]["tools"]]}}
+    tools = None
+    if message is not None and "tools" in message.get("result", {}):  # kept whole below, not as a shape
+        tools = message["result"]["tools"]
+        message = {**message, "result": {**message["result"], "tools": "see tools"}}
     out = {"http_status": status, "content_type": content_type, "message": shape(message)}
+    if tools is not None:
+        out["tools"] = tools  # every tool object as the client receives it: name, description, schemas, annotations
     if message is None:
         return out
     if "error" in message:
@@ -431,7 +435,10 @@ def _transport(client, cases, agent):
     def raw(kind, variant, r, *, success):
         out = {"status": r.status_code, "content_type": _content_type(r)}
         try:
-            out["body"] = shape(_message(r))
+            message = _message(r)
+            out["body"] = shape(message)
+            if r.status_code >= 400 and error_values(message):
+                out["error_text"] = error_values(message)
         except ValueError:
             out["body"] = "non-json" if r.content else "empty"
         cases.add(f"MOUNT / {label('MOUNT /', kind, variant)}", out, success=success)
@@ -445,7 +452,11 @@ def _transport(client, cases, agent):
     rpc_cases("not_found", "unknown tool", "tools/call", {"name": "no_such_tool", "arguments": {}})
     rpc_cases("not_found", "unknown method", "no/such/method", {})
     rpc_cases("bad_request", "no tool name", "tools/call", {"arguments": {}})
-    raw("ok", "protected resource metadata", client.get("/.well-known/oauth-protected-resource"), success=True)
+    meta = "/.well-known/oauth-protected-resource"  # public: a route of the mount, with its own matrix entries
+    for method, kind, outcome in (("GET", "ok", _http_outcome), ("HEAD", "head_ok", _head_outcome),
+                                  ("OPTIONS", "ok", _http_outcome)):
+        r = client.request(method, meta)
+        cases.add(f"{method} {meta} [{kind}]", outcome(r), success=r.status_code < 400)
     raw("bad_request", "not json", client.post("/mcp", content=b"{", headers={**MCP_HEADERS, **agent}), success=False)
     raw("unauthorized", None, client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
                                           headers=MCP_HEADERS), success=False)
@@ -462,13 +473,44 @@ def _wait_job(status, timeout=30.0):
 
 # --- HTTP --------------------------------------------------------------------------------------------------------
 
+# The variable parts of an error text: an id (a hex digest, or a prefixed id such as `nt_…`, `jb_…`) is replaced by
+# this placeholder, so that the text itself is compared by value. Nothing else is normalised.
+ID_PLACEHOLDER = "<id>"
+_ID = re.compile(r"\b(?:[a-z]{1,3}_)?[0-9a-f]{12,}\b|\b(?:ct|pf|nt|an|jb)_[0-9a-z]+\b")
+ERROR_KEYS = ("error", "error_description", "detail", "message")
+
+
+def error_values(body) -> dict:
+    """The strings a JSON error body carries (`error`, `error_description`, `detail`, or the `message` of an `error`
+    object), by value, with ids replaced by ID_PLACEHOLDER."""
+    found = {}
+    if isinstance(body, dict):
+        for key in ERROR_KEYS:
+            value = body.get(key)
+            if isinstance(value, dict):
+                value = value.get("message")
+            if isinstance(value, str):
+                found[key] = _ID.sub(ID_PLACEHOLDER, value)
+    return found
+
+
 def _http_outcome(r):
-    type_ = r.headers.get("content-type", "").split(";")[0]
+    type_ = _content_type(r)
     try:
-        body = shape(r.json()) if type_ == "application/json" else "non-json"
+        parsed = r.json() if type_ == "application/json" else None
+        body = shape(parsed) if type_ == "application/json" else "non-json"
     except ValueError:
-        body = "invalid-json"
-    return {"status": r.status_code, "content_type": type_, "body": body}
+        parsed, body = None, "invalid-json"
+    out = {"status": r.status_code, "content_type": type_, "body": body}
+    if r.status_code >= 400 and error_values(parsed):
+        out["error_text"] = error_values(parsed)
+    return out
+
+
+def _head_outcome(h):
+    """HEAD: the status, the content type, and that the body is empty."""
+    return {"status": h.status_code, "content_type": _content_type(h), "body": "empty" if not h.content else "NOT EMPTY",
+            "body_empty": not h.content}
 
 
 def http_results(ctx: Context) -> dict:
@@ -488,8 +530,7 @@ def http_results(ctx: Context) -> dict:
                       success=r.status_code < 400)
             if head:
                 h = c.head(path, headers=headers, **{k: v for k, v in kw.items() if k == "params"})
-                outcome = {**_http_outcome(h), "body": "empty" if not h.content else "NOT EMPTY", "body_empty": not h.content}
-                cases.add(f"HEAD {route} [head_{'ok' if kind == 'ok' else 'error'}]", outcome,
+                cases.add(f"HEAD {route} [head_{'ok' if kind == 'ok' else 'error'}]", _head_outcome(h),
                           success=h.status_code < 400)
             return r
 

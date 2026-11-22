@@ -5,6 +5,14 @@
     "quoted_records": "needs a data-scanned record file (quotes.py) in the book; the fixture book has none"
   },
   "http": {
+    "GET /.well-known/oauth-protected-resource": {
+      "bad_request": "public: needs no token and has nothing to refuse",
+      "head_error": "public: needs no token and has nothing to refuse",
+      "head_ok": "run",
+      "not_found": "public: needs no token and has nothing to refuse",
+      "ok": "run",
+      "unauthorized": "public: needs no token and has nothing to refuse"
+    },
     "GET /healthz": {
       "bad_request": "public: needs no token and has nothing to refuse",
       "head_error": "public: needs no token and has nothing to refuse",
@@ -130,6 +138,12 @@
       "not_found": "run",
       "ok": "run",
       "unauthorized": "run"
+    },
+    "OPTIONS /.well-known/oauth-protected-resource": {
+      "bad_request": "public: needs no token and has nothing to refuse",
+      "not_found": "public: needs no token and has nothing to refuse",
+      "ok": "run",
+      "unauthorized": "public: needs no token and has nothing to refuse"
     },
     "POST /v1/ask": {
       "bad_request": "run",
