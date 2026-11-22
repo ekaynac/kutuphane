@@ -859,8 +859,8 @@ kutuphane imports publish-admitted [--dry-run]
   4. the package has a `kstd.yaml` and no file has `license: unknown` (a license that is not stated counts as
      `unknown`, so a package without `kstd.yaml` always waits for a person);
   5. no file is an agent instruction (K3, [Agent instructions](#agent-instructions-k3));
-  6. the sender's `policy_suggestion` is `normal` and `local_only` (a `restricted` or `cloud_ok` suggestion waits for
-     a person; the receiver's policy is still the use policy's);
+  6. under an **unattended** policy only: the sender's `policy_suggestion` is `normal` and `local_only` (a
+     `restricted` or `cloud_ok` suggestion waits for a person; the receiver's policy is still the use policy's);
   7. the book policy is still the policy of the use policy. If a person published the book with another policy,
      the admission stops until a person approves a package, or the book has the policy of the use policy again. A
      book that does not exist yet gets the policy of the use policy.

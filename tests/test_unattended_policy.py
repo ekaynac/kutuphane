@@ -287,3 +287,61 @@ def test_a_cloud_ok_book_stops_an_unattended_policy(world):
     [result] = run(conn)
     assert result["status"] == "skipped" and "the book policy changed" in result["reason"]
     assert status(conn, nxt) == ("verified", None)
+
+
+def test_an_attested_policy_still_publishes_a_package_that_suggests_cloud_ok_as_on_main(world):
+    """Pins today's behaviour: the suggestion is advice, and an attested policy ignores it. That gap is tracked in its
+    own issue; the unattended policy (no person at all) does not take it (the test above)."""
+    conn = world[0]
+    usepolicy.add(conn, "kitap", world[2], ["user:im."], sensitivity="normal", egress="local_only",
+                  protection="standard", by="user:ayse")
+    packages.receive(conn, build(world, CLEAN, extra={"policy_suggestion": {
+        "v": 1, "sensitivity": "normal", "egress": "cloud_ok", "protection": "standard"}}))
+    assert run(conn)[0]["status"] == "published"
+    assert catalog.book_state(conn, "kitap")["policy"] == POLICY  # the receiver's policy, not the suggestion
+
+
+def test_the_database_refuses_unattended_with_attesters_and_a_policy_publication_of_another_use_policy(world):
+    import psycopg
+    conn = world[0]
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute("INSERT INTO use_policy (book, issuer, attesters, policy, created_by, unattended) "
+                     "VALUES ('kitap', %s, '{user:im.}', '{}', 'user:ayse', true)", (world[2],))
+    pid = unattended(world)
+    with pytest.raises(psycopg.errors.CheckViolation):  # approved_by names another policy than its use_policy
+        conn.execute("INSERT INTO publication (book, content_id, profile_id, policy_id, acceptance, approved_by, "
+                     "use_policy) VALUES ('k', 'c', 'p', 'l', 'policy', %s, %s)", (f"policy:{pid + 1}", pid))
+
+
+def test_migration_054_keeps_existing_attested_policies_and_their_publications(conn):
+    """Database at 053 (the 054 changes undone): an attested policy and its `consumer_attested` publication stay as
+    they are, and the policy is not unattended."""
+    from kutuphane import db
+    conn.execute("ALTER TABLE publication DROP CONSTRAINT publication_policy_kind, "
+                 "DROP CONSTRAINT publication_use_policy, DROP CONSTRAINT publication_approved_by_check")
+    conn.execute("ALTER TABLE publication ADD CONSTRAINT publication_approved_by_check "
+                 "CHECK (approved_by ~ '^(user|agent|role):[a-z0-9][a-z0-9._@-]{0,121}$'), "
+                 "ADD CONSTRAINT publication_use_policy CHECK ((acceptance = 'consumer_attested') = "
+                 "(use_policy IS NOT NULL))")
+    conn.execute("ALTER TABLE use_policy DROP CONSTRAINT use_policy_unattended, DROP COLUMN unattended")
+    conn.execute("ALTER TABLE use_policy ADD CONSTRAINT use_policy_attesters_check CHECK (cardinality(attesters) > 0)")
+    conn.execute("DELETE FROM schema_migration WHERE name = '054_unattended_use_policy.sql'")
+    conn.execute("INSERT INTO trusted_key (fingerprint, public_key, name, added_by) VALUES ('k', '\\x00', 'A', "
+                 "'user:admin')")
+    pid = conn.execute("INSERT INTO use_policy (book, issuer, attesters, policy, created_by) VALUES ('kitap', 'k', "
+                       "'{user:im.}', '{}', 'user:ayse') RETURNING id").fetchone()[0]
+    conn.execute("INSERT INTO profile_version (id, spec) VALUES ('pf_old', '{}')")
+    conn.execute("INSERT INTO policy_version (id, doc) VALUES ('pl_old', '{}')")
+    conn.execute("INSERT INTO book (slug, title) VALUES ('kitap', 'kitap')")
+    conn.execute("INSERT INTO content_version (book, id, manifest) VALUES ('kitap', 'ct_old', '[]')")
+    imp = conn.execute("INSERT INTO package_import (status, package) VALUES ('published', '\\x00') "
+                       "RETURNING id").fetchone()[0]
+    conn.execute("INSERT INTO publication (book, content_id, profile_id, policy_id, acceptance, approved_by, channel, "
+                 "package_import, use_policy) VALUES ('kitap', 'ct_old', 'pf_old', 'pl_old', 'consumer_attested', "
+                 "'user:im.acme', 'import', %s, %s)", (imp, pid))
+    pubs = "SELECT book, acceptance, approved_by, use_policy, acceptance_legacy FROM publication"
+    before = conn.execute(pubs).fetchall(), conn.execute("SELECT id, attesters, policy FROM use_policy").fetchall()
+    assert db.migrate(conn) == ["054_unattended_use_policy.sql"]
+    assert (conn.execute(pubs).fetchall(), conn.execute("SELECT id, attesters, policy FROM use_policy").fetchall()
+            ) == before
+    assert conn.execute("SELECT unattended FROM use_policy").fetchall() == [(False,)]

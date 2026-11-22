@@ -602,7 +602,7 @@ Excluding a kind is the consumer's selection, not a server gate: no path hides a
 | `read_document`, `GET /v1/files/…` | no | no |
 
 To keep only person-accepted content in search and ask, set `acceptance` to `["curator_passkey", "operator_cli",
-"consumer_attested"]`; on the other paths read `publication.acceptance.kind`.
+"consumer_attested"]`; on `list_books`, `list_files` and `open_citation` read `publication.acceptance.kind` (`read_document` shows no kind).
 
 ### 5.19 `list_files`
 
