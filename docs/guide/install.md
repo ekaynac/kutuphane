@@ -75,8 +75,10 @@ repository root) uses the full stack (project `kutuphane`; paths relative to `de
 - `embedder`, `spark-chat` (`local-models`; `models`, `spark-chat` also `spark`): [local models](#local-models).
 - `reranker-gpu` (`gpu-rerank`; `models`): [GPU reranker](#gpu-reranker).
 - `curator`, `tailscale` (`curator`; `curator-db`, `curator` / `curator`, `tailnet`): [curator web](#curator-web).
+- `publisher` (`publisher`; `db`, `gateway`): the owner-credential loop of `imports publish-admitted`, off by default.
+  It replaces the host timer; never run both ([operations.md](operations.md#publisher-service-compose)).
 
-`core` and `curator` run `ghcr.io/ekaynac/kutuphane:${KUTUPHANE_VERSION}`; `.env.example` lists the settings.
+`core`, `curator` and `publisher` run `ghcr.io/ekaynac/kutuphane:${KUTUPHANE_VERSION}`; `.env.example` lists the settings.
 
 `db`, `web`, `gateway`, `models`, `curator-db` and `curator` are internal. `outbound` is internal too, except for a
 [hosted decision model](#local-models). Core reaches only Postgres and LLMDAP.
@@ -412,6 +414,9 @@ Core calls a model only through LLMDAP (D3), so there is no local embedder. An e
 Development tokens (README quick start, step 3): `KUTUPHANE_OIDC_ISSUER` is `<KUTUPHANE_PUBLIC_URL>/dev`,
 `KUTUPHANE_OIDC_JWKS_FILE` the `jwks.json` of `kutuphane dev-keys`.
 
+To publish packages without a person at the command line, the `publisher` profile of `compose.yaml` runs the owner
+credential loop (`imports publish-admitted`); it replaces a host timer, never run both ([operations.md](operations.md#publisher-service-compose)).
+
 To add models later, set `COMPOSE_FILE=deploy/compose.full.yaml`, start the [full stack](#full-stack) (same
 volume) and run `kutuphane index <book>` per book. An install from the old `deploy/compose.light.yaml` uses project
 `kutuphane-light` (volume `kutuphane-light_pgdata`): keep it with `COMPOSE_PROJECT_NAME=kutuphane-light` in `.env`.
@@ -440,7 +445,7 @@ verdicts on known samples. What a scan blocks: [security.md](security.md#skill-s
   too): Docker restarts them after a crash or reboot if the daemon starts at boot (`systemctl is-enabled docker`);
   `docker compose … stop` and `docker kill` keep one stopped (Docker counts both as a stop by a person; start it
   with `docker start`). `model-stub` and the curator services have no policy: run their `docker compose … up -d`
-  again.
+  again. `publisher` has `restart: unless-stopped`.
 - `reranker-gpu` has `restart: unless-stopped` too (#141). Docker starts it again after a failed start (for example
   `CUDA error: out of memory` while the host's GPU memory is busy) and after an engine death (vLLM exits with code
   0). A failed start takes 20 to 60 s, and Docker starts the next one after 0.1 s, until a start works. It is

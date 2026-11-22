@@ -277,6 +277,48 @@ services:
     networks: [curator, tailnet]
     depends_on: [curator]
 
+  publisher:   # owner-credential loop; profile `publisher`, off by default (docs/guide/operations.md)
+    profiles: [publisher]
+    image: ghcr.io/ekaynac/kutuphane:${KUTUPHANE_VERSION:?set KUTUPHANE_VERSION to a release tag}
+    restart: unless-stopped
+    # One `kutuphane imports publish-admitted` every KUTUPHANE_PUBLISH_INTERVAL seconds, never two at once. Only the
+    # exit codes 0 (done) and 3 (done, an index is incomplete) count as a run; any other code ends the container
+    # with that code, so `restart` starts it again. The heartbeat file is the health check's proof of a run.
+    command:
+      - sh
+      - -c
+      - |
+        i=$${KUTUPHANE_PUBLISH_INTERVAL}
+        case "$$i" in ""|*[!0-9]*|0) echo "publisher: KUTUPHANE_PUBLISH_INTERVAL must be a whole number of seconds, 1 or more" >&2; exit 2;; esac
+        [ -n "$$KUTUPHANE_CURATOR_DSN" ] || { echo "publisher: set KUTUPHANE_PUBLISHER_ENV_FILE to the owner credential file" >&2; exit 2; }
+        while :; do
+          t=$$(date +%s)
+          kutuphane imports publish-admitted; rc=$$?
+          echo "publisher: run exit=$$rc seconds=$$(( $$(date +%s) - t ))"
+          case "$$rc" in 0|3) touch /tmp/publisher-ok;; *) exit "$$rc";; esac
+          d=$$(( i - ( $$(date +%s) - t ) ))
+          [ "$$d" -gt 0 ] && sleep "$$d"
+        done
+    env_file:
+      # The owner credential (KUTUPHANE_CURATOR_DSN, KUTUPHANE_WEBAUTHN_*): a file outside git and outside the image.
+      # Compose reads every service of the file, also one whose profile is off, so `:?` here would stop every
+      # command. The default is empty; the loop below stops with the same message when the credential is missing.
+      - ${KUTUPHANE_PUBLISHER_ENV_FILE:-/dev/null}
+    environment:
+      KUTUPHANE_PUBLISH_INTERVAL: ${KUTUPHANE_PUBLISH_INTERVAL:-60}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    networks: [db, gateway]
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck:   # unhealthy when the last successful run is older than 3 intervals
+      test: ["CMD", "python", "-c", "import os, sys, time; sys.exit(0 if time.time() - os.stat('/tmp/publisher-ok').st_mtime <= 3 * int(os.environ['KUTUPHANE_PUBLISH_INTERVAL']) else 1)"]
+      interval: 15s
+      start_period: 120s
+      retries: 1
+
 volumes:
   pgdata:
   llmdap-audit:

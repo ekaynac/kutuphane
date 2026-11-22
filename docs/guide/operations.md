@@ -894,6 +894,41 @@ Then `systemctl --user daemon-reload && systemctl --user enable --now kutuphane-
 `journalctl --user -u kutuphane-publish-admitted`. Readers can keep only these versions with the `acceptance`
 filter ([Scope filters](#scope-filters-g14)). Why a package was skipped: [troubleshooting.md](troubleshooting.md).
 
+#### Publisher service (compose)
+
+In a compose install the `publisher` service does the work of the timer. It is in the profile `publisher`, so it is
+off by default. It runs the Core image and, once every `KUTUPHANE_PUBLISH_INTERVAL` seconds (default 60), the command
+`kutuphane imports publish-admitted`. A run never starts before the last run has ended. The log has one line for each
+run (`publisher: run exit=0 seconds=1`) after the JSON lines of the command.
+
+> **Warning: never run the compose publisher and a host timer at the same time.** Two publishers work on the same
+> imports and the same owner credential. On a host that has the timer, stop and disable it first:
+> `systemctl --user disable --now kutuphane-publish-admitted.timer`. To go back, stop the service
+> (`docker compose --profile publisher stop publisher`) before you enable the timer again.
+
+1. Make a credential file outside the checkout, mode 600, for example `/etc/kutuphane/publisher.env` or
+   `~/.config/kutuphane/publisher.env`. It has the same content that a timer reads, with the database host of the
+   compose network (`postgres`, not `127.0.0.1:55432`):
+
+   ```sh
+   KUTUPHANE_CURATOR_DSN=postgresql://kutuphane:<KUTUPHANE_DB_PASSWORD>@postgres:5432/kutuphane
+   KUTUPHANE_WEBAUTHN_RP_ID=<same as curator web>
+   KUTUPHANE_WEBAUTHN_ORIGIN=<same as curator web>
+   ```
+
+   In the full stack you can add the `KUTUPHANE_LLMDAP_*` embeddings settings of Core, so that a published book is
+   indexed (the service is on the `gateway` network there). Without them it publishes and does not index. The file
+   is never in git and never in the image; do not store it where an agent can read it.
+2. Start it: `KUTUPHANE_PUBLISHER_ENV_FILE=/abs/path/publisher.env docker compose --profile publisher up -d publisher`
+   (or put the variable in `.env`). Use an absolute path. Without the file the service stops with
+   `set KUTUPHANE_PUBLISHER_ENV_FILE to the owner credential file`.
+3. Check: `docker compose --profile publisher logs publisher` and `docker compose --profile publisher ps publisher`.
+
+The container is `healthy` while the last successful run is not older than 3 intervals (the loop touches a file in a
+`tmpfs`). A run counts as successful with exit code 0, or 3 (every import was handled and an index is incomplete).
+Any other exit code (for example a database that does not answer) ends the container with that code and
+`restart: unless-stopped` starts it again; the log shows the reason.
+
 ### Packages from an application (HTTP and MCP, #139)
 
 An application sends a package with `POST /v1/packages` ([http-api.md](http-api.md#12-packages)) or `submit_package`
