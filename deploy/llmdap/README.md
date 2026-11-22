@@ -89,7 +89,7 @@ python -I deploy/llmdap_contract.py <okf dir> --chat chat stub-chat --embed emb 
 
 ## Contract runner for LLMDAP's CI (#243)
 
-`deploy/llmdap_contract_ci.sh` runs the contract above in one command. It needs only Docker on the host; it brings its
+`deploy/llmdap_contract_ci.sh` runs the contract above in one command. It needs only Docker (with compose) and bash on the host; it brings its
 own Postgres, model stub and book. LLMDAP's release CI runs it from this repository at a pinned commit.
 
 ```sh
@@ -111,28 +111,38 @@ KUTUPHANE_VERSION=<release tag> \
 
 What it does:
 
-1. Creates the internal Docker network `kutuphane-contract` (this is the ownership step: one run at a time) and the compose project `kutuphane-contract`
-   (`deploy/contract/compose.yaml`; never the project `kutuphane`): scratch `pgvector/pgvector:0.8.0-pg17` (no host
-   port, no volume) and `model-stub` (`deploy/model_stub.py`, port 8000).
-2. Waits up to 60 s for the bridge. The caller attaches its bridge container to the network with the alias `llmdap`,
+1. Refuses (exit 2, nothing changed or removed) if a container, volume or network of the compose project
+   `kutuphane-contract` exists: another run is active, or a leftover (or a `--keep` run) is there.
+2. Creates the internal Docker network `kutuphane-contract` (the atomic claim: one run at a time), then the compose
+   project `kutuphane-contract` (`deploy/contract/compose.yaml`; never the project `kutuphane`): scratch
+   `pgvector/pgvector:0.8.0-pg17` (no host port, no volume) and `model-stub` (`deploy/model_stub.py`, port 8000). Every
+   container carries the label `kutuphane.contract.run=<run id>` of this run.
+3. Waits up to 60 s for the bridge. The caller attaches its bridge container to the network with the alias `llmdap`,
    before or after the start: `docker network connect --alias llmdap kutuphane-contract <bridge>`.
-3. Runs `deploy/llmdap_contract.py` in the Kütüphane image against the book `deploy/contract/book`, with
-   `--chat chat stub-chat --embed emb stub-embed --rerank rerank stub-rerank`.
-4. Prints one line per check on stdout (`PASS`/`FAIL`, then a JSON summary line). Exit codes:
+4. Phase 1: runs `deploy/llmdap_contract.py --phase calls` in the Kütüphane image against the book
+   `deploy/contract/book`, with `--chat chat stub-chat --embed emb stub-embed --rerank rerank stub-rerank`: every model
+   call and the authentication checks.
+5. Runs the `--audit-export` command on the host, with stdout in a file of a private directory (`mktemp -d`, mode 0700)
+   that no container can write to. The command runs in its own process group with the time limit `--export-timeout`
+   (TERM, then KILL, to the group); at the limit the check fails.
+6. Phase 2: `--phase verify --audit-export-file /export/export.jsonl --audit-export-status <exit status of the export>`,
+   with that directory mounted **read-only**: the audit checks (chain, AT-09, one authenticated subject) against the
+   database rows of phase 1.
+7. Prints one line per check on stdout (`PASS`/`FAIL`, both phases), then a JSON summary line. Exit codes:
 
    | Exit | Meaning |
    |---|---|
    | 0 | every check passed and the teardown succeeded |
    | 1 | a check failed (this includes an export command that failed or ran past `--export-timeout`) |
-   | 2 | wrong call, the network `kutuphane-contract` already exists (another run is active: nothing is changed or removed), or the bridge did not answer within 60 s |
+   | 2 | wrong call, a leftover or running `kutuphane-contract` project or network (nothing is changed or removed), or the bridge did not answer within 60 s |
    | 3 | every check passed, but a teardown step failed; each failed step is named on stderr (an earlier failure code is kept) |
 
-5. Removes what this run created, always: the project, its volumes and the network (it detaches the bridge, the
-   container with the alias `llmdap`, first), unless `--keep`.
+8. Removes what this run created, always (unless `--keep`): the containers and volumes with its run id, the network
+   (it detaches the container with the alias `llmdap` first), and the private directory. Then it checks that nothing of the
+   run is left; a leftover is a failed teardown.
 
-The export command is a command of the host, but the contract runs in a container. They talk through a temporary
-directory that is `0700` and owned by the runner's user; the container runs as that same user. The host never follows a
-link in it: a request must be a regular file of that user, and every answer is a new file moved into place.
+The host needs Docker with the compose plugin, and bash. The contract container has no writable host mount.
+`llmdap_contract.py` without `--phase` works as before (one process, `--audit-export "<cmd>"`).
 
 The bridge routes are fixed (the same as `config/routes.json`):
 
