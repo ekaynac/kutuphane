@@ -50,18 +50,19 @@ services:
       KUTUPHANE_OIDC_AUDIENCE: ${KUTUPHANE_OIDC_AUDIENCE:-kutuphane}
       KUTUPHANE_OIDC_JWKS: /run/kutuphane/jwks.json
       KUTUPHANE_REPO_ROOTS: /srv/repos
-      # Embeddings and rerank: the embedder below, through the direct provider. They are compose defaults, not code
-      # defaults (G13). The key is a placeholder that the embedder ignores: it is not a secret. `llmdap` as provider
-      # (and no LLMDAP settings) is the old behaviour: full text search only.
+      # Embeddings and rerank: the embedder below, through the direct provider. The URL, the key and the class are one
+      # fixed set (C3): the class `local` belongs to this URL only, so no setting of yours changes one of them. For another
+      # endpoint use compose.nomodels.yaml, which gives no class. The key is a placeholder that the embedder ignores:
+      # it is not a secret. They are compose values, not code defaults (G13).
       KUTUPHANE_EMBED_PROVIDER: ${KUTUPHANE_EMBED_PROVIDER:-openai}
-      KUTUPHANE_EMBED_OPENAI_URL: ${KUTUPHANE_EMBED_OPENAI_URL:-http://embedder:8000}
-      KUTUPHANE_EMBED_OPENAI_KEY: ${KUTUPHANE_EMBED_OPENAI_KEY:-not-a-secret}
-      KUTUPHANE_EMBED_OPENAI_CLASS: ${KUTUPHANE_EMBED_OPENAI_CLASS:-local}
+      KUTUPHANE_EMBED_OPENAI_URL: http://embedder:8000
+      KUTUPHANE_EMBED_OPENAI_KEY: not-a-secret
+      KUTUPHANE_EMBED_OPENAI_CLASS: local
       KUTUPHANE_EMBED_MODEL: ${KUTUPHANE_EMBED_MODEL:-BAAI/bge-m3}
       KUTUPHANE_RERANK_PROVIDER: ${KUTUPHANE_RERANK_PROVIDER:-openai}
-      KUTUPHANE_RERANK_OPENAI_URL: ${KUTUPHANE_RERANK_OPENAI_URL:-http://embedder:8000}
-      KUTUPHANE_RERANK_OPENAI_KEY: ${KUTUPHANE_RERANK_OPENAI_KEY:-not-a-secret}
-      KUTUPHANE_RERANK_OPENAI_CLASS: ${KUTUPHANE_RERANK_OPENAI_CLASS:-local}
+      KUTUPHANE_RERANK_OPENAI_URL: http://embedder:8000
+      KUTUPHANE_RERANK_OPENAI_KEY: not-a-secret
+      KUTUPHANE_RERANK_OPENAI_CLASS: local
       KUTUPHANE_RERANK_MODEL: ${KUTUPHANE_RERANK_MODEL:-BAAI/bge-reranker-v2-m3}
       # The answer model is external and not set: an OpenAI-compatible server that you name (operations.md).
       KUTUPHANE_ANSWER_PROVIDER: ${KUTUPHANE_ANSWER_PROVIDER:-}

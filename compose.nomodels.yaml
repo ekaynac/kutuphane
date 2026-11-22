@@ -2,8 +2,9 @@
 # Core no longer waits for the embedder, and `embedder` and `models-fetch` sit in a profile that nothing turns on, so
 # they do not start and nothing is downloaded. Both stages default to the `llmdap` provider with no LLMDAP settings:
 # Core calls no model, search is full text only, `/v1/health` shows `embedding` and `rerank` as `null`.
-# Another embedder (or rerank server): set KUTUPHANE_EMBED_PROVIDER=openai and the URL, key, class and model of the
-# stage in `.env` (docs/guide/operations.md, "Standalone embedder"); this file already removed the local one.
+# Another embedder (or rerank server): set KUTUPHANE_EMBED_PROVIDER=openai and the URL, key, class (`local` or `cloud`)
+# and model of the stage in `.env` (docs/guide/operations.md, "Standalone embedder"). This file gives no default URL,
+# key or class (C3): without a class, Core refuses to start and names the setting.
 # Use the same `-f` options at every command, also `down` and `ps`.
 services:
   core:
@@ -12,6 +13,12 @@ services:
     environment:
       KUTUPHANE_EMBED_PROVIDER: ${KUTUPHANE_EMBED_PROVIDER:-llmdap}
       KUTUPHANE_RERANK_PROVIDER: ${KUTUPHANE_RERANK_PROVIDER:-llmdap}
+      KUTUPHANE_EMBED_OPENAI_URL: ${KUTUPHANE_EMBED_OPENAI_URL:-}
+      KUTUPHANE_EMBED_OPENAI_KEY: ${KUTUPHANE_EMBED_OPENAI_KEY:-}
+      KUTUPHANE_EMBED_OPENAI_CLASS: ${KUTUPHANE_EMBED_OPENAI_CLASS:-}
+      KUTUPHANE_RERANK_OPENAI_URL: ${KUTUPHANE_RERANK_OPENAI_URL:-}
+      KUTUPHANE_RERANK_OPENAI_KEY: ${KUTUPHANE_RERANK_OPENAI_KEY:-}
+      KUTUPHANE_RERANK_OPENAI_CLASS: ${KUTUPHANE_RERANK_OPENAI_CLASS:-}
   embedder:
     profiles: [local-models-off]
   models-fetch:

@@ -69,12 +69,12 @@ All `KUTUPHANE_*` variables of the code, the compose files (`compose.yaml`, `dep
 | `KUTUPHANE_LLMDAP_EMBED_ROUTE_CLASS` | compose: `local` | Route class of the embeddings route. |
 | `KUTUPHANE_EMBED_MODEL` | compose: `BAAI/bge-m3` | Pinned embedding model. With provider `openai`: the model name that the endpoint takes. |
 | `KUTUPHANE_EMBED_PROVIDER` | `llmdap`; `compose.yaml`: `openai` | `llmdap` or `openai`: where embeddings go. With `openai`, the embedder is always on and needs `KUTUPHANE_EMBED_MODEL`. |
-| `KUTUPHANE_EMBED_OPENAI_URL`, `_KEY`, `_CLASS` | none; `compose.yaml`: `http://embedder:8000`, `not-a-secret`, `local` | With provider `openai`, all three are required, as for the answer model ([standalone embedder](#standalone-embedder)). |
+| `KUTUPHANE_EMBED_OPENAI_URL`, `_KEY`, `_CLASS` | none; `compose.yaml`: fixed `http://embedder:8000`, `not-a-secret`, `local` | With provider `openai`, all three are required, as for the answer model. In `compose.yaml` the three are one fixed set: your settings do not change them; `compose.nomodels.yaml` takes yours with no default ([standalone embedder](#standalone-embedder)). |
 | `KUTUPHANE_LLMDAP_RERANK_ROUTE` | full: `rerank` | Rerank route; without it, no reranking. Local: `rerank` (CPU) or `rerank-gpu` ([install.md](install.md#gpu-reranker)). |
 | `KUTUPHANE_LLMDAP_RERANK_ROUTE_CLASS` | compose: `local` | Route class of the rerank route. |
 | `KUTUPHANE_RERANK_MODEL` | compose: `BAAI/bge-reranker-v2-m3` | Pinned rerank model. |
 | `KUTUPHANE_RERANK_PROVIDER` | `llmdap`; `compose.yaml`: `openai` | `llmdap` or `openai`: where reranking goes. With `openai`, the reranker is always on and needs `KUTUPHANE_RERANK_MODEL`. |
-| `KUTUPHANE_RERANK_OPENAI_URL`, `_KEY`, `_CLASS` | none; `compose.yaml`: `http://embedder:8000`, `not-a-secret`, `local` | With provider `openai`, all three are required, as for the answer model. |
+| `KUTUPHANE_RERANK_OPENAI_URL`, `_KEY`, `_CLASS` | none; `compose.yaml`: fixed `http://embedder:8000`, `not-a-secret`, `local` | As for embeddings. |
 | `KUTUPHANE_EMBEDDER_THREADS`, `KUTUPHANE_EMBEDDER_MEMORY` | `compose.yaml`: `4`, `6g` | Compose settings of the `embedder` service (CPU threads, memory limit); Core does not read them. |
 | `KUTUPHANE_LLMDAP_ROUTES` | `routes.local.json` | Full compose: LLMDAP routes file in `deploy/llmdap/config/`: `routes.local.json`, `routes.json` (stub models) or `routes.hosted.json`. |
 | `KUTUPHANE_LLMDAP_OFFLINE` | `true` | Full compose: `false` gives LLMDAP's network `outbound` a way out, for a hosted decision model ([install.md](install.md#local-models)). Any other value stops compose. |
@@ -160,9 +160,12 @@ the call stays on the internal network `models` and is a `model_call` row with r
   provider `llmdap` with no LLMDAP settings: Core calls no model, and `/v1/health` shows `embedding` and `rerank`
   `null`. On an install that ran the embedder, the same `up` leaves the old containers running: stop them once with
   `docker compose -f compose.yaml -f compose.nomodels.yaml stop embedder` (then `rm -f embedder models-fetch`). The `models` volume stays.
-- **Another embedder**: use the same override and set `KUTUPHANE_EMBED_PROVIDER=openai` (and the rerank twin) with
-  `…_OPENAI_URL`, `…_KEY`, `…_CLASS` and the model of the stage in `.env`. A cloud endpoint needs `https` and a network
-  path for Core. Vectors of another model need `kutuphane index` again.
+- **Another embedder**: use the same override. It gives no default URL, key or class, so set all three for each stage
+  in `.env` with `KUTUPHANE_EMBED_PROVIDER=openai` (and the rerank twin) and the model: `…_OPENAI_URL`, `…_OPENAI_KEY`,
+  `…_OPENAI_CLASS` (`local` or `cloud`). Without a class (or a URL, or a key) Core does not start and its log names the
+  setting. The class `local` belongs only to the bundled `http://embedder:8000` in `compose.yaml`: it skips the egress
+  check, so a URL of yours never inherits it. A `cloud` class sends no `local_only` book and needs `https` and a
+  network path for Core. Vectors of another model need `kutuphane index` again.
 - **Answers**: the answer model is not set. Name an OpenAI-compatible server (hosted, or a local vLLM) in `.env`:
   `KUTUPHANE_ANSWER_PROVIDER=openai`, `KUTUPHANE_ANSWER_OPENAI_URL`, `KUTUPHANE_ANSWER_OPENAI_KEY` (a real secret, only
   in `.env`), `KUTUPHANE_ANSWER_OPENAI_CLASS` (`local` or `cloud`) and `KUTUPHANE_ANSWER_MODEL`. Core needs a network
