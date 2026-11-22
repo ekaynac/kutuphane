@@ -15,13 +15,19 @@ SCRIPT = Path(__file__).resolve().parent.parent / "deploy" / "llmdap_contract_ci
 BASH = shutil.which("bash")
 pytestmark = pytest.mark.skipif(BASH is None, reason="bash is missing")
 
+LOCK_ID, CONTAINER_ID, NETWORK_ID = "cccccccccccc", "aaaaaaaaaaaa", "bbbbbbbbbbbb"
+
 FAKE_DOCKER = r'''#!/usr/bin/env bash
-# fake docker: logs every call; FAKE_STATE is a directory (created / removed markers)
+# fake docker: logs every call. FAKE_STATE is a directory of markers (lock, containers, network).
+# FAKE_FAIL names the one call that fails; FAKE_NET_CONTAINERS lists the containers `network inspect` shows.
 echo "$*" >>"$FAKE_LOG"
 args=" $* "
 st="$FAKE_STATE"
-before() { [ ! -e "$st/network" ]; }   # before `network create`
+cannot() { echo "fake: cannot connect" >&2; exit 1; }
 case "$1" in
+  create)   # the lock container
+    [ "$FAKE_FAIL" = lock ] && { echo "fake: Conflict. The container name is already in use" >&2; exit 1; }
+    touch "$st/lock"; echo cccccccccccc; exit 0 ;;
   compose)
     case "$args" in
       *" version "*) exit 0 ;;
@@ -32,30 +38,37 @@ case "$1" in
         if [ -f "$st/child.pid" ] && kill -0 "$(cat "$st/child.pid")" 2>/dev/null; then echo alive >"$st/child_alive_at_verify"; fi
         case "$args" in *" --audit-export-status 0 "*) echo "PASS verify one"; exit 0 ;; esac
         echo "FAIL verify one (export failed)"; exit 1 ;;   # like the real contract: a failed export fails the check
-      *" --entrypoint python "*) exit 0 ;;   # the bridge probe
     esac
     exit 0 ;;
   ps)
-    if before; then [ "$FAKE_FAIL" = pre_ps ] && { echo "fake: cannot connect" >&2; exit 1; }; exit 0; fi
-    [ "$FAKE_FAIL" = td_ps ] && { echo "fake: cannot connect" >&2; exit 1; }
-    [ -e "$st/containers" ] && echo aaaaaaaaaaaa
-    exit 0 ;;
+    case "$args" in
+      *com.docker.compose.project*) [ "$FAKE_FAIL" = pre_ps ] && cannot; exit 0 ;;
+      *) [ "$FAKE_FAIL" = td_ps ] && cannot
+         [ -e "$st/containers" ] && echo aaaaaaaaaaaa
+         [ -e "$st/lock" ] && echo cccccccccccc
+         exit 0 ;;
+    esac ;;
   volume)
     case "$2" in
-      ls) if before; then [ "$FAKE_FAIL" = pre_vol ] && { echo "fake: cannot connect" >&2; exit 1; }; fi; exit 0 ;;
+      ls) case "$args" in *com.docker.compose.project*) [ "$FAKE_FAIL" = pre_vol ] && cannot ;; esac; exit 0 ;;
       rm) exit 0 ;;
     esac ;;
   network)
     case "$2" in
-      ls) if before; then [ "$FAKE_FAIL" = pre_net ] && { echo "fake: cannot connect" >&2; exit 1; }; exit 0; fi
-          [ -e "$st/network" ] && echo bbbbbbbbbbbb; exit 0 ;;
-      create) touch "$st/network"; exit 0 ;;
+      ls) case "$args" in
+            *" name="*) [ "$FAKE_FAIL" = pre_net ] && cannot; exit 0 ;;
+            *) [ -e "$st/network" ] && echo bbbbbbbbbbbb; exit 0 ;;
+          esac ;;
+      create) touch "$st/network"; echo bbbbbbbbbbbb; exit 0 ;;
       rm) rm -f "$st/network"; exit 0 ;;
-      inspect) exit 0 ;;
+      inspect) [ "$FAKE_FAIL" = net_inspect ] && cannot; echo "$FAKE_NET_CONTAINERS"; exit 0 ;;
       disconnect) exit 0 ;;
     esac ;;
-  rm) rm -f "$st/containers"; exit 0 ;;
-  inspect) exit 0 ;;
+  rm)
+    case "$args" in *" aaaaaaaaaaaa"*) rm -f "$st/containers" ;; esac
+    case "$args" in *" cccccccccccc"*) rm -f "$st/lock" ;; esac
+    exit 0 ;;
+  inspect) [ "$FAKE_FAIL" = ctr_inspect ] && cannot; echo "${FAKE_ALIASES:-}"; exit 0 ;;
 esac
 exit 0
 '''
@@ -73,10 +86,10 @@ def run(tmp_path):
     log = tmp_path / "docker.log"
     log.write_text("")
 
-    def go(export, fail="", extra=(), timeout=60):
+    def go(export="echo x", fail="", extra=(), timeout=90, **env_extra):
         env = {**os.environ, "PATH": f"{fakebin}:{os.environ['PATH']}", "FAKE_LOG": str(log), "FAKE_STATE": str(state),
                "FAKE_FAIL": fail, "KUTUPHANE_LLMDAP_URL": "http://llmdap:8787", "KUTUPHANE_LLMDAP_KEY": "k",
-               "STATE": str(state)}
+               "STATE": str(state), **env_extra}
         proc = subprocess.run([BASH, str(SCRIPT), "--image", "x", "--audit-export", export, *extra], env=env,
                               capture_output=True, text=True, timeout=timeout)
         return proc, log.read_text().splitlines(), state
@@ -92,30 +105,60 @@ def alive(pid: int) -> bool:
     return True
 
 
-def test_teardown_listing_fails_removes_nothing_and_exits_3(run):
-    proc, calls, _ = run("echo x", fail="td_ps")
-    assert proc.returncode == 3, proc.stderr
-    assert "teardown failed" in proc.stderr
-    # no removal with an argument that is not an id: here no removal at all
-    assert not [c for c in calls if c.startswith(("rm ", "volume rm"))], calls
-    assert not any("fake: cannot connect" in c for c in calls)
+def removals(calls):
+    return [c for c in calls if c.startswith(("rm ", "volume rm", "network rm"))]
 
 
-def test_good_run_removes_its_containers_by_id_and_exits_0(run):
-    proc, calls, state = run("echo x")
+def test_good_run_removes_its_resources_by_id_and_exits_0(run):
+    proc, calls, state = run()
     assert proc.returncode == 0, proc.stderr
     assert "PASS calls one" in proc.stdout and "PASS verify one" in proc.stdout
     assert '{"passed": 2, "of": 2}' in proc.stdout
-    assert "rm -f -v aaaaaaaaaaaa" in calls
-    assert not (state / "network").exists()
+    assert f"rm -f -v {CONTAINER_ID}" in calls
+    assert f"network rm {NETWORK_ID}" in calls
+    # the lock goes last of the removals
+    assert removals(calls)[-1] == f"rm -f -v {LOCK_ID}"
+    assert not (state / "network").exists() and not (state / "lock").exists()
+
+
+def test_second_run_cannot_take_the_lock_and_changes_nothing(run):
+    proc, calls, _ = run(fail="lock")
+    assert proc.returncode == 2, proc.stderr
+    assert "cannot take the lock" in proc.stderr
+    assert not [c for c in calls if c.startswith("network create")], calls
+    assert not removals(calls), calls
 
 
 @pytest.mark.parametrize("fail", ["pre_ps", "pre_vol", "pre_net"])
 def test_each_precheck_query_failing_exits_2_and_creates_nothing(run, fail):
-    proc, calls, _ = run("echo x", fail=fail)
+    proc, calls, _ = run(fail=fail)
     assert proc.returncode == 2, proc.stderr
     assert not [c for c in calls if c.startswith("network create")], calls
-    assert not [c for c in calls if c.startswith(("rm ", "network rm", "volume rm"))], calls
+    # only the lock, which this run holds, is removed
+    assert removals(calls) == [f"rm -f -v {LOCK_ID}"], calls
+
+
+def test_teardown_listing_fails_removes_no_listed_container_and_exits_3(run):
+    proc, calls, _ = run(fail="td_ps")
+    assert proc.returncode == 3, proc.stderr
+    assert "teardown failed: cannot list the run's containers" in proc.stderr
+    assert f"rm -f -v {CONTAINER_ID}" not in calls
+    assert all(c.split()[-1] in (LOCK_ID, NETWORK_ID) for c in removals(calls)), calls   # by known id only
+
+
+@pytest.mark.parametrize("fail", ["net_inspect", "ctr_inspect"])
+def test_a_failed_detach_query_is_a_teardown_failure(run, fail):
+    proc, calls, _ = run(fail=fail, FAKE_NET_CONTAINERS="bridgex", FAKE_ALIASES="llmdap")
+    assert proc.returncode == 3, proc.stderr
+    assert "teardown failed: cannot inspect" in proc.stderr
+    assert not [c for c in calls if c.startswith("network disconnect")], calls
+    assert f"network rm {NETWORK_ID}" in calls   # the removal is still tried
+
+
+def test_the_bridge_with_the_alias_is_detached_by_network_id(run):
+    proc, calls, _ = run(FAKE_NET_CONTAINERS="bridgex other", FAKE_ALIASES="llmdap")
+    assert proc.returncode == 0, proc.stderr
+    assert f"network disconnect -f {NETWORK_ID} bridgex" in calls
 
 
 def test_export_group_is_ended_before_verify_and_the_file_stays(run):
@@ -126,18 +169,26 @@ def test_export_group_is_ended_before_verify_and_the_file_stays(run):
     pid = int((state / "child.pid").read_text())
     assert not (state / "child_alive_at_verify").exists(), "a member of the group lived when verify started"
     assert not alive(pid)
-    saw = (state / "verify_saw").read_text()
-    assert saw == "x\n"
+    assert (state / "verify_saw").read_text() == "x\n"
     time.sleep(3.5)   # a surviving child would have written by now
-    assert saw == "x\n"
-    # the file of the run is gone with its directory; the content verify read was the leader's output only
+    assert (state / "verify_saw").read_text() == "x\n"
 
 
 def test_timeout_kills_the_whole_group(run):
     export = "sh -c 'sleep 30 & echo $! >\"$STATE/child.pid\"; sleep 30'"
-    proc, calls, state = run(export, extra=("--export-timeout", "1"), timeout=60)
+    proc, calls, state = run(export, extra=("--export-timeout", "1"))
     assert proc.returncode == 1, proc.stderr
     assert "ran longer than 1s and was killed" in proc.stderr
     assert any("--audit-export-status 124" in c for c in calls), calls
     assert not (state / "child_alive_at_verify").exists()
     assert not alive(int((state / "child.pid").read_text()))
+
+
+def test_a_group_that_cannot_be_ended_stops_before_verify(run, tmp_path):
+    hook = tmp_path / "alive"
+    hook.write_text("")   # test hook: the group counts as alive while this file exists
+    proc, calls, _ = run(LLMDAP_CONTRACT_CI_TEST_GROUP_ALIVE=str(hook))
+    assert proc.returncode == 125, proc.stderr
+    assert "could not be ended" in proc.stderr
+    assert not [c for c in calls if "--phase verify" in c], calls
+    assert "still alive" in proc.stderr   # cleanup tried again and says so

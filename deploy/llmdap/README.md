@@ -111,12 +111,15 @@ KUTUPHANE_VERSION=<release tag> \
 
 What it does:
 
-1. Refuses (exit 2, nothing changed or removed) if a container, volume or network of the compose project
-   `kutuphane-contract` exists: another run is active, or a leftover (or a `--keep` run) is there.
-2. Creates the internal Docker network `kutuphane-contract` (the atomic claim: one run at a time), then the compose
-   project `kutuphane-contract` (`deploy/contract/compose.yaml`; never the project `kutuphane`): scratch
-   `pgvector/pgvector:0.8.0-pg17` (no host port, no volume) and `model-stub` (`deploy/model_stub.py`, port 8000). Every
-   container carries the label `kutuphane.contract.run=<run id>` of this run.
+1. Takes the lock: it creates (never starts) the container `kutuphane-contract-lock` from the Kütüphane image. Docker
+   keeps container names unique, so a second run fails here, exits 2, and changes nothing. A lock left by a crashed run
+   or by `--keep` blocks every run until you remove it: `docker rm -f kutuphane-contract-lock`.
+2. Under the lock, refuses (exit 2, nothing created) if a container, volume or network of the compose project
+   `kutuphane-contract` exists (a leftover, or a `--keep` run). Each of the three queries must succeed.
+   Then creates the internal Docker network `kutuphane-contract` (the name the caller attaches to; the script keeps
+   its id and uses the id from then on) and the compose project `kutuphane-contract` (`deploy/contract/compose.yaml`;
+   never the project `kutuphane`): scratch `pgvector/pgvector:0.8.0-pg17` (no host port, no volume) and `model-stub`
+   (`deploy/model_stub.py`, port 8000). Every container carries the label `kutuphane.contract.run=<run id>` of this run.
 3. Waits up to 60 s for the bridge. The caller attaches its bridge container to the network with the alias `llmdap`,
    before or after the start: `docker network connect --alias llmdap kutuphane-contract <bridge>`.
 4. Phase 1: runs `deploy/llmdap_contract.py --phase calls` in the Kütüphane image against the book
@@ -134,12 +137,15 @@ What it does:
    |---|---|
    | 0 | every check passed and the teardown succeeded |
    | 1 | a check failed (this includes an export command that failed or ran past `--export-timeout`) |
-   | 2 | wrong call, a leftover or running `kutuphane-contract` project or network (nothing is changed or removed), or the bridge did not answer within 60 s |
+   | 2 | wrong call, the lock is held, a leftover or running `kutuphane-contract` project or network (nothing is created), or the bridge did not answer within 60 s |
    | 3 | every check passed, but a teardown step failed; each failed step is named on stderr (an earlier failure code is kept) |
+   | 125 | a process of the export command could not be ended (TERM, then KILL, to its group): the verify phase did not run |
 
-8. Removes what this run created, always (unless `--keep`): the containers and volumes with its run id, the network
-   (it detaches the container with the alias `llmdap` first), and the private directory. Then it checks that nothing of the
-   run is left; a leftover is a failed teardown.
+8. Removes what this run created, always (unless `--keep`): the containers and volumes with its run id (only ids of a
+   successful listing), the bridge it finds on its network by the alias `llmdap` (detached by container and network
+   id), the network by id, the private directory, and last the lock, by id. Then it checks that nothing of the run is
+   left. Every failed query or step is a failed teardown (exit 3). A process of the export command that survived is
+   killed again here.
 
 The host needs Docker with the compose plugin, and bash. The contract container has no writable host mount.
 `llmdap_contract.py` without `--phase` works as before (one process, `--audit-export "<cmd>"`).
