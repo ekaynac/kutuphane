@@ -1,0 +1,12 @@
+# Build Core and curator web from this checkout instead of pulling the release image (development and CI). It is
+# the full-stack twin of ../compose.build.yaml; Compose reads a relative path from the directory of the first file,
+# so the build context here is `..`. Set KUTUPHANE_VERSION=dev (the tag for builds), as there.
+#   KUTUPHANE_VERSION=dev docker compose -f deploy/compose.full.yaml -f deploy/compose.full.build.yaml --profile app up -d --build
+# Or put `KUTUPHANE_VERSION=dev` and `COMPOSE_FILE=deploy/compose.full.yaml:deploy/compose.full.build.yaml` in .env.
+services:
+  core:
+    build: ..
+    pull_policy: build
+  curator:
+    build: ..
+    pull_policy: build

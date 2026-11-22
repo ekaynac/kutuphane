@@ -8,8 +8,9 @@
 # The local embedder of the full stack is not part of this file: Core calls a model only through LLMDAP (D3), which
 # grants the call and keeps the signed audit chain (AT-09). A direct call would bypass both.
 #
-# Dev and tests: `docker compose up -d --wait postgres` (port 55432 on localhost).
-# Light install (docs/guide/install.md, "Light install"): `docker compose up -d --build --wait`.
+# Dev and tests: `docker compose -f compose.yaml -f compose.build.yaml up -d --wait postgres` (port 55432 on localhost).
+# Light install (docs/guide/install.md, "Light install"): `KUTUPHANE_VERSION=<release tag> docker compose up -d --wait`;
+# from this checkout: `docker compose -f compose.yaml -f compose.build.yaml up -d --build --wait`.
 # Restart (#141): postgres, core and ingress have `restart: unless-stopped`, so they come back after a crash or a
 # host reboot (the Docker daemon must start at boot). `docker compose stop` keeps them stopped.
 name: kutuphane
@@ -33,7 +34,7 @@ services:
       retries: 30
 
   core:
-    build: .
+    image: ghcr.io/ekaynac/kutuphane:${KUTUPHANE_VERSION:?set KUTUPHANE_VERSION to a release tag}
     restart: unless-stopped
     environment:
       # The app role (deploy/db-roles.sql). No KUTUPHANE_LLMDAP_* and no KUTUPHANE_ANSWER_MODEL: no model calls.
@@ -51,6 +52,11 @@ services:
     networks: [db, web]
     depends_on:
       postgres: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5)"]
+      interval: 10s
+      start_period: 30s
+      retries: 3
 
   ingress:
     image: nginx:1.27-alpine
@@ -60,7 +66,12 @@ services:
     ports:
       - "${KUTUPHANE_BIND:-127.0.0.1}:8080:8080"
     networks: [edge, web]
-    depends_on: [core]
+    depends_on:
+      core: {condition: service_healthy}
+    healthcheck:   # through the proxy to Core
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      retries: 3
 
 volumes:
   pgdata:

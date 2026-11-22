@@ -19,6 +19,8 @@
 #   local-models    embedder and spark-chat (D61; routes.local.json)
 #   gpu-rerank      reranker-gpu (G26; route rerank-gpu)
 #   curator         curator web and its tailscale sidecar (D72, docs/25 §3)
+# Core and curator web run the release image ghcr.io/ekaynac/kutuphane:${KUTUPHANE_VERSION} (required, no `latest`).
+# To build it from this checkout, add deploy/compose.full.build.yaml and set KUTUPHANE_VERSION=dev.
 # Restart (#141): postgres, core, ingress, llmdap, embedder and spark-chat have `restart: unless-stopped`, so they
 # come back after a crash or a host reboot (the Docker daemon must start at boot). `docker compose stop` keeps them
 # stopped.
@@ -44,7 +46,7 @@ services:
 
   core:
     profiles: [app]
-    build: ..
+    image: ghcr.io/ekaynac/kutuphane:${KUTUPHANE_VERSION:?set KUTUPHANE_VERSION to a release tag}
     restart: unless-stopped
     environment:
       # The app role (deploy/db-roles.sql): it cannot write Standing. The owner credential never enters this container.
@@ -77,6 +79,11 @@ services:
     networks: [db, web, gateway]
     depends_on:
       postgres: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5)"]
+      interval: 10s
+      start_period: 30s
+      retries: 3
 
   ingress:
     profiles: [app]
@@ -87,7 +94,12 @@ services:
     ports:
       - "${KUTUPHANE_BIND:-127.0.0.1}:8080:8080"
     networks: [edge, web]
-    depends_on: [core]
+    depends_on:
+      core: {condition: service_healthy}
+    healthcheck:   # through the proxy to Core
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      retries: 3
 
   llmdap:
     profiles: [app]
@@ -117,6 +129,10 @@ services:
     volumes:
       - ./model_stub.py:/srv/model_stub.py:ro
     networks: [models]
+    healthcheck:   # the port answers (the stub has no GET route)
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8000), 5).close()"]
+      interval: 5s
+      retries: 6
 
   # Real local models (D61). Nothing leaves the machine. routes.local.json:
   #   chat → spark-chat → the host's vLLM (nvidia/Qwen3.8-Flash-Next-NVFP4, host port 8000; thinking forced off);
@@ -161,6 +177,10 @@ services:
       - ./spark-chat:/etc/nginx/spark-chat:ro
     extra_hosts: ["vllm-host:host-gateway"]
     networks: [models, spark]   # `models` is internal; `spark` is the one way to the host
+    healthcheck:   # the port answers; the only route that exists forwards to the host's vLLM
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8000"]
+      interval: 10s
+      retries: 3
 
   reranker-gpu:
     profiles: [gpu-rerank]
@@ -219,7 +239,7 @@ services:
   # KUTUPHANE_WEBAUTHN_ORIGIN (https://<that>). Without them, curator web stops at start and names the setting.
   curator:
     profiles: [curator]
-    build: ..
+    image: ghcr.io/ekaynac/kutuphane:${KUTUPHANE_VERSION:?set KUTUPHANE_VERSION to a release tag}
     command: ["kutuphane", "curator", "web", "--host", "0.0.0.0", "--port", "8090"]
     environment:
       KUTUPHANE_CURATOR_WEB_DSN: postgresql://kutuphane_curator_web:${KUTUPHANE_CURATOR_WEB_DB_PASSWORD:-}@postgres:5432/kutuphane
@@ -233,6 +253,11 @@ services:
     networks: [curator-db, curator]
     depends_on:
       postgres: {condition: service_healthy}
+    healthcheck:   # the port answers
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8090), 5).close()"]
+      interval: 10s
+      start_period: 30s
+      retries: 3
 
   tailscale:
     profiles: [curator]
