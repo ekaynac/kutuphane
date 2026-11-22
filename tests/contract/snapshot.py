@@ -118,19 +118,27 @@ def routes(verifier: Verifier, key) -> list[dict]:
     return sorted(out, key=lambda r: (r["path"], r.get("methods", [])))
 
 
+def raised_texts(source: str) -> set[str]:
+    """The first argument of every `raise X(...)` in `source`, as written: the exact source text, so that it does not
+    depend on how an interpreter version prints an AST (`ast.unparse` quotes f-strings differently from one patch
+    release to the next). Only the layout is normalised: the stripped lines of a multi-line argument are joined by
+    one space."""
+    found = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call) and node.exc.args:
+            segment = ast.get_source_segment(source, node.exc.args[0])
+            found.add(" ".join(line.strip() for line in segment.splitlines()))
+    return found
+
+
 def raised() -> dict[str, list[str]]:
     """{module file: the first argument of every `raise X(...)`, as written}."""
     texts = {}
     for path in sorted(SRC.glob("*.py")):
-        if path.name in NOT_API:
-            continue
-        found = set()
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call) and node.exc.args:
-                found.add(ast.unparse(node.exc.args[0]))
-        if found:
-            texts[path.name] = sorted(found)
+        if path.name not in NOT_API:
+            found = raised_texts(path.read_text(encoding="utf-8"))
+            if found:
+                texts[path.name] = sorted(found)
     return texts
 
 

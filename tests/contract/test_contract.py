@@ -121,3 +121,13 @@ def test_the_constant_collector_finds_plain_annotated_and_multi_line_constants(t
     assert snapshot.constants_of(module, source) == {
         "ANNOTATED": "an annotated text", "CONCATENATED": "one two", "FIRST": "x", "MULTI_LINE": "first line\nsecond line",
         "PLAIN": "a text", "SECOND": "y"}
+
+
+def test_raised_texts_are_the_source_text_whatever_the_quotes():
+    single = "raise ValueError(f'one of {', '.join(X)}')\n"  # Python 3.12 accepts the same quote inside the braces
+    double = 'raise ValueError(f"one of {\', \'.join(X)}")\n'
+    assert snapshot.raised_texts(single) == {"f'one of {', '.join(X)}'"}
+    assert snapshot.raised_texts(double) == {'f"one of {\', \'.join(X)}"'}
+    wrapped = 'raise ValueError(\n    "first "\n    "second",\n    code)\n'
+    assert snapshot.raised_texts(wrapped) == {'"first " "second"'}
+    assert snapshot.raised_texts("raise ValueError\nraise\n") == set()  # no call, no argument
