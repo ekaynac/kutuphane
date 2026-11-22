@@ -1,0 +1,256 @@
+[
+  {
+    "mount": true,
+    "path": "/"
+  },
+  {
+    "inside": "/",
+    "methods": [
+      "GET",
+      "HEAD",
+      "OPTIONS"
+    ],
+    "path": "/.well-known/oauth-protected-resource"
+  },
+  {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "path": "/healthz"
+  },
+  {
+    "answers": {
+      "DELETE": {
+        "2025-11-25": {
+          "allow": null,
+          "content_type": "application/json",
+          "status": 405
+        },
+        "2026-07-28": {
+          "allow": "POST",
+          "content_type": null,
+          "status": 405
+        }
+      },
+      "GET": {
+        "2025-11-25": {
+          "allow": null,
+          "content_type": "text/event-stream",
+          "status": 200
+        },
+        "2026-07-28": {
+          "allow": "POST",
+          "content_type": null,
+          "status": 405
+        }
+      },
+      "HEAD": {
+        "2025-11-25": {
+          "allow": "GET, POST, DELETE",
+          "content_type": "application/json",
+          "status": 405
+        },
+        "2026-07-28": {
+          "allow": "POST",
+          "content_type": null,
+          "status": 405
+        }
+      },
+      "OPTIONS": {
+        "2025-11-25": {
+          "allow": "GET, POST, DELETE",
+          "content_type": "application/json",
+          "status": 405
+        },
+        "2026-07-28": {
+          "allow": "POST",
+          "content_type": null,
+          "status": 405
+        }
+      },
+      "PATCH": {
+        "2025-11-25": {
+          "allow": "GET, POST, DELETE",
+          "content_type": "application/json",
+          "status": 405
+        },
+        "2026-07-28": {
+          "allow": "POST",
+          "content_type": null,
+          "status": 405
+        }
+      },
+      "POST": {
+        "2025-11-25": {
+          "allow": null,
+          "content_type": null,
+          "status": 400
+        },
+        "2026-07-28": {
+          "allow": null,
+          "content_type": null,
+          "status": 400
+        }
+      },
+      "PUT": {
+        "2025-11-25": {
+          "allow": "GET, POST, DELETE",
+          "content_type": "application/json",
+          "status": 405
+        },
+        "2026-07-28": {
+          "allow": "POST",
+          "content_type": null,
+          "status": 405
+        }
+      }
+    },
+    "inside": "/",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "path": "/mcp"
+  },
+  {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "path": "/v1/answers/{answer_id}"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/v1/ask"
+  },
+  {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "path": "/v1/books"
+  },
+  {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "path": "/v1/books/{book}/files"
+  },
+  {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "path": "/v1/citation"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/v1/citations/verify"
+  },
+  {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "path": "/v1/files/{book}/{content_id}/{path:path}"
+  },
+  {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "path": "/v1/health"
+  },
+  {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "path": "/v1/jobs/{job_id}"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/v1/jobs/{job_id}/cancel"
+  },
+  {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "path": "/v1/jobs/{job_id}/result"
+  },
+  {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "path": "/v1/notes"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/v1/notes"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/v1/notes/links"
+  },
+  {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "path": "/v1/notes/{book}/{id}/confirmation"
+  },
+  {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "path": "/v1/notes/{book}/{id}/neighbours"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/v1/outcomes"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/v1/packages"
+  },
+  {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "path": "/v1/packages/{import_id}"
+  },
+  {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "path": "/v1/search"
+  },
+  {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "path": "/v1/whoami"
+  }
+]

@@ -1,0 +1,227 @@
+"""Builds the snapshot of the contracts a consumer depends on (#242): MCP tools, HTTP routes, error texts, and the
+shape of real results.
+
+`python -m tests.contract.snapshot` prints it; `--write` rewrites tests/contract/*.json. Both need
+KUTUPHANE_TEST_DSN (a database whose name ends in `_test`: it is RESET, as the `conn` fixture does).
+Writing the files does not authorise a contract change (see test_contract.py).
+
+- tools.json: the tools of a deployment WITHOUT a model gateway (no `ask_library`, no job tools): name, description,
+  input schema, output schema. The tools of the deployment with a gateway are recorded as the client receives them,
+  by the `tools/list` cases over POST /mcp in results_http.json.
+- http.json: every HTTP route: path and all its methods (HEAD included).
+- errors.json: the HTTP status and text of every expected error class, the value of every public module-level string constant
+  of those modules (SKILL_BLOCKED, CLOUD_OK, NOT_IN_LIBRARY, ...), and every message literal in a `raise` of the
+  modules the API and the tools run, as written. The executed cases of the results files hold the texts a caller gets.
+- matrix.json: which kinds of case (ok, not found, bad request, unauthorized, HEAD) the results cover for each tool
+  and route, with the reason for each kind that does not apply (matrix.py).
+- results_mcp.json, results_http.json: the shape (keys and types, no values) of what every tool and route returns
+  for the cases of the matrix, from the controlled fixture of scenario.py. MCP keeps the whole result envelope
+  (content blocks, structuredContent, isError, _meta); HTTP keeps status and content type (and, for HEAD, that the
+  body is empty).
+"""
+import argparse
+import ast
+import asyncio
+import importlib
+import json
+import os
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+import jwt
+from cryptography.hazmat.primitives.asymmetric import rsa
+from starlette.routing import Mount, Route
+from starlette.testclient import TestClient
+
+from kutuphane import server
+from kutuphane.identity import Verifier
+
+from . import matrix
+from .helpers import stream_answer
+
+HERE = Path(__file__).parent
+SRC = Path(server.__file__).parent
+ISSUER, AUDIENCE, PUBLIC_URL = "https://idp.contract.test/", "kutuphane", "https://kutuphane.contract.test"
+# Command line, passkey web and dev-login messages are not part of the API or tool contract.
+NOT_API = {"cli.py", "curatorweb.py", "passkey.py", "devauth.py", "__init__.py"}
+
+
+def _verifier(tmp: Path) -> tuple[Verifier, object]:
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    jwk = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(key.public_key()))
+    path = tmp / "jwks.json"
+    path.write_text(json.dumps({"keys": [{**jwk, "kid": "k1", "use": "sig", "alg": "RS256"}]}))
+    return Verifier.from_files(ISSUER, AUDIENCE, path), key
+
+
+def tools(verifier: Verifier, *, answering: bool) -> list[dict]:
+    mcp = server.build_mcp(dsn="postgresql://contract.invalid/none", verifier=verifier,
+                           bridge=object() if answering else None, model="contract-model" if answering else None,
+                           public_url=PUBLIC_URL)
+    out = []
+    for t in asyncio.run(mcp.list_tools()):  # list order is fixed by build_mcp
+        out.append({"name": t.name, "description": t.description, "input_schema": t.input_schema,
+                    **({"output_schema": t.output_schema} if t.output_schema else {})})
+    return out
+
+
+PROBE_METHODS = ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+
+
+def token_for(key) -> str:
+    now = int(time.time())
+    return jwt.encode({"iss": ISSUER, "aud": AUDIENCE, "sub": "probe", "iat": now, "exp": now + 300}, key,
+                      algorithm="RS256", headers={"kid": "k1"})
+
+
+def bare_app(verifier: Verifier):
+    """The app without a database or a model gateway: enough for what the routes and the MCP endpoint answer."""
+    return server.create_app(dsn="postgresql://contract.invalid/none", verifier=verifier, bridge=None, model=None,
+                             public_url=PUBLIC_URL)
+
+
+def probe_mcp(app, key) -> dict[str, dict[str, dict]]:
+    """How the MCP endpoint answers each method, with a valid token, in each protocol era: {method: {era: {status,
+    content type, Allow}}}. A route table cannot say it: the endpoint is an ASGI app that decides by method."""
+    token = token_for(key)
+    answers: dict[str, dict[str, dict]] = {m: {} for m in PROBE_METHODS}
+    with TestClient(app, base_url=PUBLIC_URL) as client:
+        for method in PROBE_METHODS:
+            for era in matrix.ERAS:
+                headers = {"Authorization": f"Bearer {token}", "MCP-Protocol-Version": era,
+                           "Accept": "application/json, text/event-stream"}
+                got = stream_answer(client, method, "/mcp", headers)  # the headers only: a GET may be a stream
+                answers[method][era] = {"status": got["status"], "allow": got["headers"].get("allow"),
+                                        "content_type": got["headers"].get("content-type", "").split(";")[0] or None}
+    return answers
+
+
+def routes(verifier: Verifier, key) -> list[dict]:
+    app = bare_app(verifier)
+    out = []
+    for r in app.routes:
+        if isinstance(r, Route):
+            out.append({"path": r.path, "methods": sorted(r.methods) if r.methods else []})
+        elif isinstance(r, Mount):
+            out.append({"path": r.path or "/", "mount": True})
+            for inner in getattr(r.app, "routes", []):  # the routes the mount serves: /mcp, the metadata
+                entry = {"path": (r.path or "") + inner.path, "inside": r.path or "/",
+                         "methods": sorted(inner.methods) if getattr(inner, "methods", None) else []}
+                if not entry["methods"]:  # an ASGI endpoint: ask it which methods it serves
+                    answers = probe_mcp(app, key)
+                    entry["answers"] = answers
+                    entry["methods"] = sorted(m for m, eras in answers.items()
+                                              if any(a["status"] not in (404, 405) for a in eras.values()))
+                out.append(entry)
+    return sorted(out, key=lambda r: (r["path"], r.get("methods", [])))
+
+
+def raised_texts(source: str) -> set[str]:
+    """The first argument of every `raise X(...)` in `source`, as written: the exact source text, so that it does not
+    depend on how an interpreter version prints an AST (`ast.unparse` quotes f-strings differently from one patch
+    release to the next). Only the layout is normalised: the stripped lines of a multi-line argument are joined by
+    one space."""
+    found = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call) and node.exc.args:
+            segment = ast.get_source_segment(source, node.exc.args[0])
+            found.add(" ".join(line.strip() for line in segment.splitlines()))
+    return found
+
+
+def raised() -> dict[str, list[str]]:
+    """{module file: the first argument of every `raise X(...)`, as written}."""
+    texts = {}
+    for path in sorted(SRC.glob("*.py")):
+        if path.name not in NOT_API:
+            found = raised_texts(path.read_text(encoding="utf-8"))
+            if found:
+                texts[path.name] = sorted(found)
+    return texts
+
+
+def constants() -> dict[str, str]:
+    """The VALUE of every public module-level string constant of the API and tool modules: `SKILL_BLOCKED`,
+    `CLOUD_OK`, `NOT_IN_LIBRARY`, the environment variable names, the SQL fragments... A raise or a response that
+    names a constant would otherwise change its text with no change in the snapshot."""
+    found = {}
+    for path in sorted(SRC.glob("*.py")):
+        if path.name not in NOT_API:
+            module = importlib.import_module(f"kutuphane.{path.stem}")
+            found |= {f"{path.stem}.{name}": value for name, value in constants_of(module, path).items()}
+    return found
+
+
+def constants_of(module, path: Path) -> dict[str, str]:
+    """{NAME: value} of the string constants that `module` (its source is `path`) assigns at module level: an
+    UPPER_CASE name without a leading underscore, set by a plain or an annotated assignment (`NAME: str = "..."`).
+    The value is what Python made of it, so a multi-line string, an implicit concatenation and a parenthesised
+    string are held as they are, line breaks included. A name the module only imports is not its own."""
+    own = assigned_names(ast.parse(path.read_text(encoding="utf-8")))
+    return {name: value for name, value in sorted(vars(module).items())
+            if name.isupper() and not name.startswith("_") and isinstance(value, str) and name in own}
+
+
+def assigned_names(tree: ast.Module) -> set[str]:
+    """The names a module assigns itself at its top level, by `=` (also in a tuple) or `NAME: type = value`."""
+    names = set()
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            names |= {n.id for target in node.targets for n in ast.walk(target) if isinstance(n, ast.Name)}
+        elif isinstance(node, ast.AnnAssign) and node.value is not None and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+    return names
+
+
+def errors() -> dict:
+    texts = raised()
+    return {
+        "http": [{"class": kind.__name__, "status": status, "text": text} for kind, status, text in server.ERRORS],
+        "unexpected": "internal error",
+        "constants": constants(),
+        "raised": texts,
+    }
+
+
+DSN_ENV = "KUTUPHANE_TEST_DSN"
+RESULTS = ("results_mcp.json", "results_http.json")
+
+
+def build_static() -> dict[str, object]:
+    """The files that need no database."""
+    with tempfile.TemporaryDirectory() as tmp:
+        verifier, key = _verifier(Path(tmp))
+        return {"tools.json": {"without_model_gateway": tools(verifier, answering=False)},
+                "http.json": routes(verifier, key), "errors.json": errors(), "matrix.json": matrix.snapshot()}
+
+
+def build_results(dsn: str) -> dict[str, object]:
+    from . import scenario
+    return {f"{name}.json": value for name, value in scenario.collect(dsn).items()}
+
+
+def dump(value) -> str:
+    return json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--write", action="store_true", help="rewrite tests/contract/*.json (needs contract approval)")
+    args = ap.parse_args(argv)
+    dsn = os.environ.get(DSN_ENV)
+    if not dsn:
+        sys.exit(f"{DSN_ENV} is not set (a database whose name ends in _test; it is reset)")
+    built = {**build_static(), **build_results(dsn)}
+    for name, value in built.items():
+        if args.write:
+            (HERE / name).write_text(dump(value), encoding="utf-8")
+            print(f"wrote tests/contract/{name}")
+        else:
+            print(f"== {name}\n{dump(value)}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

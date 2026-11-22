@@ -1,0 +1,6262 @@
+{
+  "ask_library:bad_request": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool ask_library: idempotency_key needs background: true",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool ask_library: idempotency_key needs background: true",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "ask_library:ok": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "body": "str",
+        "citations": [
+          {
+            "book": "str",
+            "content_id": "str",
+            "item": {
+              "ai_use": {
+                "ai_input": "str",
+                "search": "str",
+                "train": "str"
+              },
+              "applies_to": "null",
+              "confirmed_by": "null",
+              "current": "bool",
+              "entered_by": "null",
+              "holder": "str",
+              "issuer": "str",
+              "license": "str",
+              "listed": "bool",
+              "notices": [
+                "str"
+              ],
+              "origin": "str",
+              "personal_data": "str",
+              "reviewed_by": "null",
+              "scope": "str",
+              "software_agent": "null",
+              "valid_from": "null",
+              "valid_to": "null"
+            },
+            "line": "int",
+            "n": "int",
+            "ordinal": "int",
+            "path": "str",
+            "profile_id": "str",
+            "quoted_records": [],
+            "record": "null"
+          }
+        ],
+        "id": "str",
+        "retrieval": {
+          "embedding": "str",
+          "rerank": "str",
+          "translation": "str"
+        },
+        "status": "str",
+        "withheld": "int"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "body": "str",
+        "citations": [
+          {
+            "book": "str",
+            "content_id": "str",
+            "item": {
+              "ai_use": {
+                "ai_input": "str",
+                "search": "str",
+                "train": "str"
+              },
+              "applies_to": "null",
+              "confirmed_by": "null",
+              "current": "bool",
+              "entered_by": "null",
+              "holder": "str",
+              "issuer": "str",
+              "license": "str",
+              "listed": "bool",
+              "notices": [
+                "str"
+              ],
+              "origin": "str",
+              "personal_data": "str",
+              "reviewed_by": "null",
+              "scope": "str",
+              "software_agent": "null",
+              "valid_from": "null",
+              "valid_to": "null"
+            },
+            "line": "int",
+            "n": "int",
+            "ordinal": "int",
+            "path": "str",
+            "profile_id": "str",
+            "quoted_records": [],
+            "record": "null"
+          }
+        ],
+        "id": "str",
+        "retrieval": {
+          "embedding": "str",
+          "rerank": "str",
+          "translation": "str"
+        },
+        "status": "str",
+        "withheld": "int"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "ask_library:ok (queued)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "job_id": "str",
+        "status": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "job_id": "str",
+        "status": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "confirm_origin:bad_request (malformed ref)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool confirm_origin: malformed note reference (book@nt_<64 hex>)",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool confirm_origin: malformed note reference (book@nt_<64 hex>)",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "confirm_origin:not_found": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool confirm_origin: not found",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool confirm_origin: not found",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "confirm_origin:ok": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "confirmation": {
+          "state": "str"
+        },
+        "origin": "str",
+        "ref": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "confirmation": {
+          "state": "str"
+        },
+        "origin": "str",
+        "ref": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "job_cancel:bad_request (schema)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool job_cancel: job_id: Field required",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool job_cancel: job_id: Field required",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "job_cancel:not_found": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool job_cancel: not found",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool job_cancel: not found",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "job_cancel:ok": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "created_at": "str",
+        "error": "null",
+        "finished_at": "str",
+        "started_at": "str",
+        "status": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "created_at": "str",
+        "error": "null",
+        "finished_at": "str",
+        "started_at": "str",
+        "status": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "job_result:bad_request (schema)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool job_result: job_id: Field required",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool job_result: job_id: Field required",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "job_result:not_found": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool job_result: not found",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool job_result: not found",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "job_result:ok": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "body": "str",
+        "evidence": [
+          {
+            "citation": "str",
+            "item": {
+              "ai_use": {
+                "ai_input": "str",
+                "search": "str",
+                "train": "str"
+              },
+              "applies_to": "null",
+              "confirmed_by": "null",
+              "current": "bool",
+              "entered_by": "null",
+              "holder": "str",
+              "issuer": "str",
+              "license": "str",
+              "listed": "bool",
+              "notices": [
+                "str"
+              ],
+              "origin": "str",
+              "personal_data": "str",
+              "reviewed_by": "null",
+              "scope": "str",
+              "software_agent": "null",
+              "valid_from": "null",
+              "valid_to": "null"
+            },
+            "line": "int",
+            "n": "int",
+            "quoted_records": [],
+            "record": "null",
+            "text": "str"
+          }
+        ],
+        "id": "str",
+        "question": "str",
+        "retrieval": {
+          "embedding": "str",
+          "rerank": "str",
+          "translation": "str"
+        },
+        "status": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "body": "str",
+        "evidence": [
+          {
+            "citation": "str",
+            "item": {
+              "ai_use": {
+                "ai_input": "str",
+                "search": "str",
+                "train": "str"
+              },
+              "applies_to": "null",
+              "confirmed_by": "null",
+              "current": "bool",
+              "entered_by": "null",
+              "holder": "str",
+              "issuer": "str",
+              "license": "str",
+              "listed": "bool",
+              "notices": [
+                "str"
+              ],
+              "origin": "str",
+              "personal_data": "str",
+              "reviewed_by": "null",
+              "scope": "str",
+              "software_agent": "null",
+              "valid_from": "null",
+              "valid_to": "null"
+            },
+            "line": "int",
+            "n": "int",
+            "quoted_records": [],
+            "record": "null",
+            "text": "str"
+          }
+        ],
+        "id": "str",
+        "question": "str",
+        "retrieval": {
+          "embedding": "str",
+          "rerank": "str",
+          "translation": "str"
+        },
+        "status": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "job_status:bad_request (schema)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool job_status: job_id: Field required",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool job_status: job_id: Field required",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "job_status:not_found": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool job_status: not found",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool job_status: not found",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "job_status:ok": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "created_at": "str",
+        "error": "null",
+        "finished_at": "str",
+        "started_at": "str",
+        "status": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "created_at": "str",
+        "error": "null",
+        "finished_at": "str",
+        "started_at": "str",
+        "status": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "link_notes:bad_request": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool link_notes: type must be one of same_as, about, fixed_by, violates, decided_by, contradicts",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool link_notes: type must be one of same_as, about, fixed_by, violates, decided_by, contradicts",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "link_notes:not_found": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool link_notes: not found",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool link_notes: not found",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "link_notes:ok (first link)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "dst": "str",
+        "src": "str",
+        "status": "str",
+        "type": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "dst": "str",
+        "src": "str",
+        "status": "str",
+        "type": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "link_notes:ok (second link)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "dst": "str",
+        "src": "str",
+        "status": "str",
+        "type": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "dst": "str",
+        "src": "str",
+        "status": "str",
+        "type": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "list_books:ok": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": "not json",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "structuredContent": {
+            "result": [
+              {
+                "book": "str",
+                "content_id": {
+                  "any_of": [
+                    "null",
+                    "str"
+                  ]
+                },
+                "kind": "str",
+                "policy_id": "str",
+                "profile_id": "str",
+                "publication": {
+                  "any_of": [
+                    "null",
+                    {
+                      "acceptance": {
+                        "at": "str",
+                        "by": "str",
+                        "kind": "str",
+                        "legacy": "bool"
+                      },
+                      "channel": "str",
+                      "content_id": "str",
+                      "issuer_key": "null",
+                      "published_at": "str",
+                      "sequence": "null"
+                    }
+                  ]
+                },
+                "title": "str"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": "not json",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str",
+          "structuredContent": {
+            "result": [
+              {
+                "book": "str",
+                "content_id": {
+                  "any_of": [
+                    "null",
+                    "str"
+                  ]
+                },
+                "kind": "str",
+                "policy_id": "str",
+                "profile_id": "str",
+                "publication": {
+                  "any_of": [
+                    "null",
+                    {
+                      "acceptance": {
+                        "at": "str",
+                        "by": "str",
+                        "kind": "str",
+                        "legacy": "bool"
+                      },
+                      "channel": "str",
+                      "content_id": "str",
+                      "issuer_key": "null",
+                      "published_at": "str",
+                      "sequence": "null"
+                    }
+                  ]
+                },
+                "title": "str"
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "list_files:bad_request": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool list_files: limit must be an integer from 1 to 500",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool list_files: limit must be an integer from 1 to 500",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "list_files:not_found (forbidden)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool list_files: forbidden",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool list_files: forbidden",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "list_files:ok": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "book": "str",
+        "content_id": "str",
+        "files": [
+          {
+            "item": {
+              "any_of": [
+                "null",
+                {
+                  "ai_use": {
+                    "ai_input": "str",
+                    "search": "str",
+                    "train": "str"
+                  },
+                  "applies_to": {
+                    "any_of": [
+                      "null",
+                      {
+                        "platform": [
+                          "str"
+                        ]
+                      }
+                    ]
+                  },
+                  "confirmed_by": "null",
+                  "current": "bool",
+                  "entered_by": "null",
+                  "holder": "str",
+                  "issuer": "str",
+                  "license": "str",
+                  "listed": "bool",
+                  "notices": [
+                    "str"
+                  ],
+                  "origin": "str",
+                  "personal_data": "str",
+                  "reviewed_by": "null",
+                  "scope": "str",
+                  "software_agent": "null",
+                  "valid_from": {
+                    "any_of": [
+                      "null",
+                      "str"
+                    ]
+                  },
+                  "valid_to": "null"
+                }
+              ]
+            },
+            "media_type": "str",
+            "passages": "int",
+            "path": "str",
+            "sha256": "str",
+            "size": "int"
+          }
+        ],
+        "next_cursor": "null",
+        "profile_id": "str",
+        "publication": {
+          "acceptance": {
+            "at": "str",
+            "by": "str",
+            "kind": "str",
+            "legacy": "bool"
+          },
+          "channel": "str",
+          "content_id": "str",
+          "issuer_key": "null",
+          "published_at": "str",
+          "sequence": "null"
+        }
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "book": "str",
+        "content_id": "str",
+        "files": [
+          {
+            "item": {
+              "any_of": [
+                "null",
+                {
+                  "ai_use": {
+                    "ai_input": "str",
+                    "search": "str",
+                    "train": "str"
+                  },
+                  "applies_to": {
+                    "any_of": [
+                      "null",
+                      {
+                        "platform": [
+                          "str"
+                        ]
+                      }
+                    ]
+                  },
+                  "confirmed_by": "null",
+                  "current": "bool",
+                  "entered_by": "null",
+                  "holder": "str",
+                  "issuer": "str",
+                  "license": "str",
+                  "listed": "bool",
+                  "notices": [
+                    "str"
+                  ],
+                  "origin": "str",
+                  "personal_data": "str",
+                  "reviewed_by": "null",
+                  "scope": "str",
+                  "software_agent": "null",
+                  "valid_from": {
+                    "any_of": [
+                      "null",
+                      "str"
+                    ]
+                  },
+                  "valid_to": "null"
+                }
+              ]
+            },
+            "media_type": "str",
+            "passages": "int",
+            "path": "str",
+            "sha256": "str",
+            "size": "int"
+          }
+        ],
+        "next_cursor": "null",
+        "profile_id": "str",
+        "publication": {
+          "acceptance": {
+            "at": "str",
+            "by": "str",
+            "kind": "str",
+            "legacy": "bool"
+          },
+          "channel": "str",
+          "content_id": "str",
+          "issuer_key": "null",
+          "published_at": "str",
+          "sequence": "null"
+        }
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "list_files:ok (page)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "book": "str",
+        "content_id": "str",
+        "files": [
+          {
+            "item": {
+              "any_of": [
+                "null",
+                {
+                  "ai_use": {
+                    "ai_input": "str",
+                    "search": "str",
+                    "train": "str"
+                  },
+                  "applies_to": "null",
+                  "confirmed_by": "null",
+                  "current": "bool",
+                  "entered_by": "null",
+                  "holder": "str",
+                  "issuer": "str",
+                  "license": "str",
+                  "listed": "bool",
+                  "notices": [
+                    "str"
+                  ],
+                  "origin": "str",
+                  "personal_data": "str",
+                  "reviewed_by": "null",
+                  "scope": "str",
+                  "software_agent": "null",
+                  "valid_from": "null",
+                  "valid_to": "null"
+                }
+              ]
+            },
+            "media_type": "str",
+            "passages": "int",
+            "path": "str",
+            "sha256": "str",
+            "size": "int"
+          }
+        ],
+        "next_cursor": "str",
+        "profile_id": "str",
+        "publication": {
+          "acceptance": {
+            "at": "str",
+            "by": "str",
+            "kind": "str",
+            "legacy": "bool"
+          },
+          "channel": "str",
+          "content_id": "str",
+          "issuer_key": "null",
+          "published_at": "str",
+          "sequence": "null"
+        }
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "book": "str",
+        "content_id": "str",
+        "files": [
+          {
+            "item": {
+              "any_of": [
+                "null",
+                {
+                  "ai_use": {
+                    "ai_input": "str",
+                    "search": "str",
+                    "train": "str"
+                  },
+                  "applies_to": "null",
+                  "confirmed_by": "null",
+                  "current": "bool",
+                  "entered_by": "null",
+                  "holder": "str",
+                  "issuer": "str",
+                  "license": "str",
+                  "listed": "bool",
+                  "notices": [
+                    "str"
+                  ],
+                  "origin": "str",
+                  "personal_data": "str",
+                  "reviewed_by": "null",
+                  "scope": "str",
+                  "software_agent": "null",
+                  "valid_from": "null",
+                  "valid_to": "null"
+                }
+              ]
+            },
+            "media_type": "str",
+            "passages": "int",
+            "path": "str",
+            "sha256": "str",
+            "size": "int"
+          }
+        ],
+        "next_cursor": "str",
+        "profile_id": "str",
+        "publication": {
+          "acceptance": {
+            "at": "str",
+            "by": "str",
+            "kind": "str",
+            "legacy": "bool"
+          },
+          "channel": "str",
+          "content_id": "str",
+          "issuer_key": "null",
+          "published_at": "str",
+          "sequence": "null"
+        }
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "neighbours:bad_request (malformed ref)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool neighbours: malformed passage handle: expected <book>@ct_…/pf_…/<path>#<n>; copy it from a search_library hit",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool neighbours: malformed passage handle: expected <book>@ct_…/pf_…/<path>#<n>; copy it from a search_library hit",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "neighbours:not_found": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool neighbours: not found",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool neighbours: not found",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "neighbours:ok": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "edges": [
+          {
+            "dst": "str",
+            "src": "str",
+            "type": "str"
+          }
+        ],
+        "nodes": [
+          {
+            "acceptance": {
+              "at": "null",
+              "by": "null",
+              "kind": "str"
+            },
+            "citations": [
+              {
+                "ref": "str",
+                "status": "str"
+              }
+            ],
+            "class_key": "null",
+            "current": "bool",
+            "kind": "str",
+            "links": {
+              "about": "int"
+            },
+            "observed_commit": "null",
+            "origin": "str",
+            "outcomes": {
+              "passed": "int"
+            },
+            "recurrence": "int",
+            "ref": "str",
+            "role": "str",
+            "scope": "null",
+            "standing": "str",
+            "text": "str",
+            "withheld": "null",
+            "written_at": "str"
+          }
+        ],
+        "root": {
+          "acceptance": {
+            "at": "null",
+            "by": "null",
+            "kind": "str"
+          },
+          "citations": [
+            {
+              "ref": "str",
+              "status": "str"
+            }
+          ],
+          "class_key": "null",
+          "current": "bool",
+          "kind": "str",
+          "links": {
+            "about": "int"
+          },
+          "observed_commit": "null",
+          "origin": "str",
+          "outcomes": {
+            "passed": "int"
+          },
+          "recurrence": "int",
+          "ref": "str",
+          "role": "str",
+          "scope": "null",
+          "standing": "str",
+          "text": "str",
+          "withheld": "null",
+          "written_at": "str"
+        },
+        "targets": {},
+        "truncated": "bool",
+        "watermark": "int"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "edges": [
+          {
+            "dst": "str",
+            "src": "str",
+            "type": "str"
+          }
+        ],
+        "nodes": [
+          {
+            "acceptance": {
+              "at": "null",
+              "by": "null",
+              "kind": "str"
+            },
+            "citations": [
+              {
+                "ref": "str",
+                "status": "str"
+              }
+            ],
+            "class_key": "null",
+            "current": "bool",
+            "kind": "str",
+            "links": {
+              "about": "int"
+            },
+            "observed_commit": "null",
+            "origin": "str",
+            "outcomes": {
+              "passed": "int"
+            },
+            "recurrence": "int",
+            "ref": "str",
+            "role": "str",
+            "scope": "null",
+            "standing": "str",
+            "text": "str",
+            "withheld": "null",
+            "written_at": "str"
+          }
+        ],
+        "root": {
+          "acceptance": {
+            "at": "null",
+            "by": "null",
+            "kind": "str"
+          },
+          "citations": [
+            {
+              "ref": "str",
+              "status": "str"
+            }
+          ],
+          "class_key": "null",
+          "current": "bool",
+          "kind": "str",
+          "links": {
+            "about": "int"
+          },
+          "observed_commit": "null",
+          "origin": "str",
+          "outcomes": {
+            "passed": "int"
+          },
+          "recurrence": "int",
+          "ref": "str",
+          "role": "str",
+          "scope": "null",
+          "standing": "str",
+          "text": "str",
+          "withheld": "null",
+          "written_at": "str"
+        },
+        "targets": {},
+        "truncated": "bool",
+        "watermark": "int"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "neighbours:ok (with a code context)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "edges": [
+          {
+            "dst": "str",
+            "src": "str",
+            "type": "str"
+          }
+        ],
+        "nodes": [
+          {
+            "acceptance": {
+              "at": "null",
+              "by": "null",
+              "kind": "str"
+            },
+            "citations": [
+              {
+                "ref": "str",
+                "status": "str"
+              }
+            ],
+            "class_key": "null",
+            "current": "bool",
+            "kind": "str",
+            "links": {
+              "about": "int"
+            },
+            "observed_commit": "null",
+            "origin": "str",
+            "outcomes": {
+              "passed": "int"
+            },
+            "recurrence": "int",
+            "ref": "str",
+            "role": "str",
+            "scope": "null",
+            "standing": "str",
+            "text": "str",
+            "withheld": "null",
+            "written_at": "str"
+          }
+        ],
+        "root": {
+          "acceptance": {
+            "at": "null",
+            "by": "null",
+            "kind": "str"
+          },
+          "citations": [
+            {
+              "ref": "str",
+              "status": "str"
+            }
+          ],
+          "class_key": "null",
+          "current": "bool",
+          "kind": "str",
+          "links": {
+            "about": "int"
+          },
+          "observed_commit": "null",
+          "origin": "str",
+          "outcomes": {
+            "passed": "int"
+          },
+          "recurrence": "int",
+          "ref": "str",
+          "role": "str",
+          "scope": "null",
+          "standing": "str",
+          "text": "str",
+          "withheld": "null",
+          "written_at": "str"
+        },
+        "targets": {
+          "hafiza/adc": "str"
+        },
+        "truncated": "bool",
+        "watermark": "int"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "edges": [
+          {
+            "dst": "str",
+            "src": "str",
+            "type": "str"
+          }
+        ],
+        "nodes": [
+          {
+            "acceptance": {
+              "at": "null",
+              "by": "null",
+              "kind": "str"
+            },
+            "citations": [
+              {
+                "ref": "str",
+                "status": "str"
+              }
+            ],
+            "class_key": "null",
+            "current": "bool",
+            "kind": "str",
+            "links": {
+              "about": "int"
+            },
+            "observed_commit": "null",
+            "origin": "str",
+            "outcomes": {
+              "passed": "int"
+            },
+            "recurrence": "int",
+            "ref": "str",
+            "role": "str",
+            "scope": "null",
+            "standing": "str",
+            "text": "str",
+            "withheld": "null",
+            "written_at": "str"
+          }
+        ],
+        "root": {
+          "acceptance": {
+            "at": "null",
+            "by": "null",
+            "kind": "str"
+          },
+          "citations": [
+            {
+              "ref": "str",
+              "status": "str"
+            }
+          ],
+          "class_key": "null",
+          "current": "bool",
+          "kind": "str",
+          "links": {
+            "about": "int"
+          },
+          "observed_commit": "null",
+          "origin": "str",
+          "outcomes": {
+            "passed": "int"
+          },
+          "recurrence": "int",
+          "ref": "str",
+          "role": "str",
+          "scope": "null",
+          "standing": "str",
+          "text": "str",
+          "withheld": "null",
+          "written_at": "str"
+        },
+        "targets": {
+          "hafiza/adc": "str"
+        },
+        "truncated": "bool",
+        "watermark": "int"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "open_citation:bad_request": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool open_citation: malformed passage handle: expected <book>@ct_…/pf_…/<path>#<n>; copy it from a search_library hit",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool open_citation: malformed passage handle: expected <book>@ct_…/pf_…/<path>#<n>; copy it from a search_library hit",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "open_citation:not_found": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool open_citation: not found: copy the complete citation handle from a search_library hit, including #<n>",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool open_citation: not found: copy the complete citation handle from a search_library hit, including #<n>",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "open_citation:ok (note with a code context)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "citation": "str",
+        "note": {
+          "acceptance": {
+            "at": "null",
+            "by": "null",
+            "kind": "str"
+          },
+          "citations": [
+            {
+              "ref": "str",
+              "status": "str"
+            }
+          ],
+          "class_key": "null",
+          "current": "bool",
+          "kind": "str",
+          "links": {
+            "about": "int"
+          },
+          "observed_commit": "null",
+          "origin": "str",
+          "outcomes": {
+            "passed": "int"
+          },
+          "recurrence": "int",
+          "ref": "str",
+          "role": "str",
+          "scope": "null",
+          "standing": "str",
+          "text": "str",
+          "withheld": "null",
+          "written_at": "str"
+        },
+        "targets": {
+          "hafiza/adc": "str"
+        },
+        "watermark": "int"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str",
+            "kutuphane/handling": {
+              "books": {
+                "hafiza": {
+                  "egress": "str",
+                  "sensitivity": "str"
+                },
+                "kitap": {
+                  "egress": "str",
+                  "sensitivity": "str"
+                }
+              },
+              "egress": "str",
+              "sensitivity": "str"
+            }
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "citation": "str",
+        "note": {
+          "acceptance": {
+            "at": "null",
+            "by": "null",
+            "kind": "str"
+          },
+          "citations": [
+            {
+              "ref": "str",
+              "status": "str"
+            }
+          ],
+          "class_key": "null",
+          "current": "bool",
+          "kind": "str",
+          "links": {
+            "about": "int"
+          },
+          "observed_commit": "null",
+          "origin": "str",
+          "outcomes": {
+            "passed": "int"
+          },
+          "recurrence": "int",
+          "ref": "str",
+          "role": "str",
+          "scope": "null",
+          "standing": "str",
+          "text": "str",
+          "withheld": "null",
+          "written_at": "str"
+        },
+        "targets": {
+          "hafiza/adc": "str"
+        },
+        "watermark": "int"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str",
+            "kutuphane/handling": {
+              "books": {
+                "hafiza": {
+                  "egress": "str",
+                  "sensitivity": "str"
+                },
+                "kitap": {
+                  "egress": "str",
+                  "sensitivity": "str"
+                }
+              },
+              "egress": "str",
+              "sensitivity": "str"
+            }
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "open_citation:ok (note)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "citation": "str",
+        "note": {
+          "acceptance": {
+            "at": "null",
+            "by": "null",
+            "kind": "str"
+          },
+          "citations": [
+            {
+              "ref": "str",
+              "status": "str"
+            }
+          ],
+          "class_key": "null",
+          "current": "bool",
+          "kind": "str",
+          "links": {
+            "about": "int"
+          },
+          "observed_commit": "null",
+          "origin": "str",
+          "outcomes": {
+            "passed": "int"
+          },
+          "recurrence": "int",
+          "ref": "str",
+          "role": "str",
+          "scope": "null",
+          "standing": "str",
+          "text": "str",
+          "withheld": "null",
+          "written_at": "str"
+        },
+        "targets": {},
+        "watermark": "int"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str",
+            "kutuphane/handling": {
+              "books": {
+                "hafiza": {
+                  "egress": "str",
+                  "sensitivity": "str"
+                },
+                "kitap": {
+                  "egress": "str",
+                  "sensitivity": "str"
+                }
+              },
+              "egress": "str",
+              "sensitivity": "str"
+            }
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "citation": "str",
+        "note": {
+          "acceptance": {
+            "at": "null",
+            "by": "null",
+            "kind": "str"
+          },
+          "citations": [
+            {
+              "ref": "str",
+              "status": "str"
+            }
+          ],
+          "class_key": "null",
+          "current": "bool",
+          "kind": "str",
+          "links": {
+            "about": "int"
+          },
+          "observed_commit": "null",
+          "origin": "str",
+          "outcomes": {
+            "passed": "int"
+          },
+          "recurrence": "int",
+          "ref": "str",
+          "role": "str",
+          "scope": "null",
+          "standing": "str",
+          "text": "str",
+          "withheld": "null",
+          "written_at": "str"
+        },
+        "targets": {},
+        "watermark": "int"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str",
+            "kutuphane/handling": {
+              "books": {
+                "hafiza": {
+                  "egress": "str",
+                  "sensitivity": "str"
+                },
+                "kitap": {
+                  "egress": "str",
+                  "sensitivity": "str"
+                }
+              },
+              "egress": "str",
+              "sensitivity": "str"
+            }
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "open_citation:ok (passage with outcomes of notes that cite it)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "citation": "str",
+        "item": {
+          "ai_use": {
+            "ai_input": "str",
+            "search": "str",
+            "train": "str"
+          },
+          "applies_to": "null",
+          "confirmed_by": "null",
+          "current": "bool",
+          "entered_by": "null",
+          "holder": "str",
+          "issuer": "str",
+          "license": "str",
+          "listed": "bool",
+          "notices": [
+            "str"
+          ],
+          "origin": "str",
+          "personal_data": "str",
+          "reviewed_by": "null",
+          "scope": "str",
+          "software_agent": "null",
+          "valid_from": "null",
+          "valid_to": "null"
+        },
+        "line": "int",
+        "outcomes": {
+          "passed": "int"
+        },
+        "page": "null",
+        "publication": {
+          "acceptance": {
+            "at": "str",
+            "by": "str",
+            "kind": "str",
+            "legacy": "bool"
+          },
+          "channel": "str",
+          "content_id": "str",
+          "issuer_key": "null",
+          "published_at": "str",
+          "sequence": "null"
+        },
+        "status": "str",
+        "text": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str",
+            "kutuphane/handling": {
+              "books": {
+                "kitap": {
+                  "egress": "str",
+                  "sensitivity": "str"
+                }
+              },
+              "egress": "str",
+              "sensitivity": "str"
+            }
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "citation": "str",
+        "item": {
+          "ai_use": {
+            "ai_input": "str",
+            "search": "str",
+            "train": "str"
+          },
+          "applies_to": "null",
+          "confirmed_by": "null",
+          "current": "bool",
+          "entered_by": "null",
+          "holder": "str",
+          "issuer": "str",
+          "license": "str",
+          "listed": "bool",
+          "notices": [
+            "str"
+          ],
+          "origin": "str",
+          "personal_data": "str",
+          "reviewed_by": "null",
+          "scope": "str",
+          "software_agent": "null",
+          "valid_from": "null",
+          "valid_to": "null"
+        },
+        "line": "int",
+        "outcomes": {
+          "passed": "int"
+        },
+        "page": "null",
+        "publication": {
+          "acceptance": {
+            "at": "str",
+            "by": "str",
+            "kind": "str",
+            "legacy": "bool"
+          },
+          "channel": "str",
+          "content_id": "str",
+          "issuer_key": "null",
+          "published_at": "str",
+          "sequence": "null"
+        },
+        "status": "str",
+        "text": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str",
+            "kutuphane/handling": {
+              "books": {
+                "kitap": {
+                  "egress": "str",
+                  "sensitivity": "str"
+                }
+              },
+              "egress": "str",
+              "sensitivity": "str"
+            }
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "open_citation:ok (passage)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "citation": "str",
+        "item": {
+          "ai_use": {
+            "ai_input": "str",
+            "search": "str",
+            "train": "str"
+          },
+          "applies_to": "null",
+          "confirmed_by": "null",
+          "current": "bool",
+          "entered_by": "null",
+          "holder": "str",
+          "issuer": "str",
+          "license": "str",
+          "listed": "bool",
+          "notices": [
+            "str"
+          ],
+          "origin": "str",
+          "personal_data": "str",
+          "reviewed_by": "null",
+          "scope": "str",
+          "software_agent": "null",
+          "valid_from": "null",
+          "valid_to": "null"
+        },
+        "line": "int",
+        "outcomes": {
+          "passed": "int"
+        },
+        "page": "null",
+        "publication": {
+          "acceptance": {
+            "at": "str",
+            "by": "str",
+            "kind": "str",
+            "legacy": "bool"
+          },
+          "channel": "str",
+          "content_id": "str",
+          "issuer_key": "null",
+          "published_at": "str",
+          "sequence": "null"
+        },
+        "status": "str",
+        "text": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str",
+            "kutuphane/handling": {
+              "books": {
+                "kitap": {
+                  "egress": "str",
+                  "sensitivity": "str"
+                }
+              },
+              "egress": "str",
+              "sensitivity": "str"
+            }
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "citation": "str",
+        "item": {
+          "ai_use": {
+            "ai_input": "str",
+            "search": "str",
+            "train": "str"
+          },
+          "applies_to": "null",
+          "confirmed_by": "null",
+          "current": "bool",
+          "entered_by": "null",
+          "holder": "str",
+          "issuer": "str",
+          "license": "str",
+          "listed": "bool",
+          "notices": [
+            "str"
+          ],
+          "origin": "str",
+          "personal_data": "str",
+          "reviewed_by": "null",
+          "scope": "str",
+          "software_agent": "null",
+          "valid_from": "null",
+          "valid_to": "null"
+        },
+        "line": "int",
+        "outcomes": {
+          "passed": "int"
+        },
+        "page": "null",
+        "publication": {
+          "acceptance": {
+            "at": "str",
+            "by": "str",
+            "kind": "str",
+            "legacy": "bool"
+          },
+          "channel": "str",
+          "content_id": "str",
+          "issuer_key": "null",
+          "published_at": "str",
+          "sequence": "null"
+        },
+        "status": "str",
+        "text": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str",
+            "kutuphane/handling": {
+              "books": {
+                "kitap": {
+                  "egress": "str",
+                  "sensitivity": "str"
+                }
+              },
+              "egress": "str",
+              "sensitivity": "str"
+            }
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "package_status:bad_request (schema)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool package_status: import_id: Input should be a valid integer, unable to parse string as an integer",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool package_status: import_id: Input should be a valid integer, unable to parse string as an integer",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "package_status:not_found": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool package_status: not found",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool package_status: not found",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "package_status:ok (first version)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "book": "str",
+        "content_id": "str",
+        "decided_at": "null",
+        "decided_by": "null",
+        "diff": {
+          "added": [
+            "str"
+          ],
+          "changed": [],
+          "removed": []
+        },
+        "findings": [],
+        "id": "int",
+        "issuer": "str",
+        "reasons": [],
+        "received_at": "str",
+        "sequence": "int",
+        "status": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "book": "str",
+        "content_id": "str",
+        "decided_at": "null",
+        "decided_by": "null",
+        "diff": {
+          "added": [
+            "str"
+          ],
+          "changed": [],
+          "removed": []
+        },
+        "findings": [],
+        "id": "int",
+        "issuer": "str",
+        "reasons": [],
+        "received_at": "str",
+        "sequence": "int",
+        "status": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "package_status:ok (next version)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "book": "str",
+        "content_id": "str",
+        "decided_at": "null",
+        "decided_by": "null",
+        "diff": {
+          "added": [
+            "str"
+          ],
+          "changed": [
+            "str"
+          ],
+          "removed": [
+            "str"
+          ]
+        },
+        "findings": [
+          {
+            "kind": "str",
+            "lines": [
+              "int"
+            ],
+            "path": "str",
+            "rule": "str",
+            "sha256": "str"
+          }
+        ],
+        "id": "int",
+        "issuer": "str",
+        "reasons": [],
+        "received_at": "str",
+        "sequence": "int",
+        "status": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "book": "str",
+        "content_id": "str",
+        "decided_at": "null",
+        "decided_by": "null",
+        "diff": {
+          "added": [
+            "str"
+          ],
+          "changed": [
+            "str"
+          ],
+          "removed": [
+            "str"
+          ]
+        },
+        "findings": [
+          {
+            "kind": "str",
+            "lines": [
+              "int"
+            ],
+            "path": "str",
+            "rule": "str",
+            "sha256": "str"
+          }
+        ],
+        "id": "int",
+        "issuer": "str",
+        "reasons": [],
+        "received_at": "str",
+        "sequence": "int",
+        "status": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "package_status:ok (rejected)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "book": "null",
+        "content_id": "null",
+        "decided_at": "null",
+        "decided_by": "null",
+        "diff": "null",
+        "findings": [],
+        "id": "int",
+        "issuer": "null",
+        "reasons": [
+          "str"
+        ],
+        "received_at": "str",
+        "sequence": "null",
+        "status": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "book": "null",
+        "content_id": "null",
+        "decided_at": "null",
+        "decided_by": "null",
+        "diff": "null",
+        "findings": [],
+        "id": "int",
+        "issuer": "null",
+        "reasons": [
+          "str"
+        ],
+        "received_at": "str",
+        "sequence": "null",
+        "status": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "propose_note:bad_request": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool propose_note: kind must be one of finding, decision_proposal, dead_end, convention, lesson, test_result",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool propose_note: kind must be one of finding, decision_proposal, dead_end, convention, lesson, test_result",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "propose_note:bad_request (schema)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool propose_note: book: Field required; text: Field required",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool propose_note: book: Field required; text: Field required",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "propose_note:not_found (no grant on the book)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool propose_note: forbidden",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool propose_note: forbidden",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "propose_note:ok (decision)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "candidates": [],
+        "class_count": "int",
+        "guard_due": "bool",
+        "origin": "str",
+        "origin_notice": "null",
+        "recurrence": "int",
+        "ref": "str",
+        "standing": "str",
+        "status": "str",
+        "vector": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "candidates": [],
+        "class_count": "int",
+        "guard_due": "bool",
+        "origin": "str",
+        "origin_notice": "null",
+        "recurrence": "int",
+        "ref": "str",
+        "standing": "str",
+        "status": "str",
+        "vector": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "propose_note:ok (keyed)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "candidates": [],
+        "class_count": "int",
+        "guard_due": "bool",
+        "origin": "str",
+        "origin_notice": "null",
+        "recurrence": "int",
+        "ref": "str",
+        "standing": "str",
+        "status": "str",
+        "vector": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "candidates": [],
+        "class_count": "int",
+        "guard_due": "bool",
+        "origin": "str",
+        "origin_notice": "null",
+        "recurrence": "int",
+        "ref": "str",
+        "standing": "str",
+        "status": "str",
+        "vector": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "propose_note:ok (plain)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "candidates": [],
+        "class_count": "int",
+        "guard_due": "bool",
+        "origin": "str",
+        "origin_notice": "null",
+        "recurrence": "int",
+        "ref": "str",
+        "standing": "str",
+        "status": "str",
+        "vector": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "candidates": [],
+        "class_count": "int",
+        "guard_due": "bool",
+        "origin": "str",
+        "origin_notice": "null",
+        "recurrence": "int",
+        "ref": "str",
+        "standing": "str",
+        "status": "str",
+        "vector": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "propose_note:ok (with a citation)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "candidates": [],
+        "class_count": "int",
+        "guard_due": "bool",
+        "origin": "str",
+        "origin_notice": "null",
+        "recurrence": "int",
+        "ref": "str",
+        "standing": "str",
+        "status": "str",
+        "vector": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "candidates": [],
+        "class_count": "int",
+        "guard_due": "bool",
+        "origin": "str",
+        "origin_notice": "null",
+        "recurrence": "int",
+        "ref": "str",
+        "standing": "str",
+        "status": "str",
+        "vector": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "query_notes:bad_request": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool query_notes: order must be one of newest, oldest, relevance",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool query_notes: order must be one of newest, oldest, relevance",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "query_notes:ok": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "books": [
+          "str"
+        ],
+        "excluded": {
+          "code": "int",
+          "needs_context": "int"
+        },
+        "items": [
+          {
+            "acceptance": {
+              "at": "null",
+              "by": "null",
+              "kind": "str"
+            },
+            "citations": [
+              {
+                "ref": "str",
+                "status": "str"
+              }
+            ],
+            "class_key": "null",
+            "current": "bool",
+            "kind": "str",
+            "links": {
+              "about?": "int"
+            },
+            "observed_commit": "null",
+            "origin": "str",
+            "outcomes": {
+              "passed?": "int"
+            },
+            "recurrence": "int",
+            "ref": "str",
+            "role": "str",
+            "scope": "null",
+            "standing": "str",
+            "text": "str",
+            "withheld": "null",
+            "written_at": "str"
+          }
+        ],
+        "left": [],
+        "next_cursor": "null",
+        "targets": {},
+        "watermark": "int"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str",
+            "kutuphane/handling": {
+              "books": {
+                "hafiza": {
+                  "egress": "str",
+                  "sensitivity": "str"
+                },
+                "kitap": {
+                  "egress": "str",
+                  "sensitivity": "str"
+                }
+              },
+              "egress": "str",
+              "sensitivity": "str"
+            }
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "books": [
+          "str"
+        ],
+        "excluded": {
+          "code": "int",
+          "needs_context": "int"
+        },
+        "items": [
+          {
+            "acceptance": {
+              "at": "null",
+              "by": "null",
+              "kind": "str"
+            },
+            "citations": [
+              {
+                "ref": "str",
+                "status": "str"
+              }
+            ],
+            "class_key": "null",
+            "current": "bool",
+            "kind": "str",
+            "links": {
+              "about?": "int"
+            },
+            "observed_commit": "null",
+            "origin": "str",
+            "outcomes": {
+              "passed?": "int"
+            },
+            "recurrence": "int",
+            "ref": "str",
+            "role": "str",
+            "scope": "null",
+            "standing": "str",
+            "text": "str",
+            "withheld": "null",
+            "written_at": "str"
+          }
+        ],
+        "left": [],
+        "next_cursor": "null",
+        "targets": {},
+        "watermark": "int"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str",
+            "kutuphane/handling": {
+              "books": {
+                "hafiza": {
+                  "egress": "str",
+                  "sensitivity": "str"
+                },
+                "kitap": {
+                  "egress": "str",
+                  "sensitivity": "str"
+                }
+              },
+              "egress": "str",
+              "sensitivity": "str"
+            }
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "query_notes:ok (with a code context)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "books": [
+          "str"
+        ],
+        "excluded": {
+          "code": "int",
+          "needs_context": "int"
+        },
+        "items": [
+          {
+            "acceptance": {
+              "at": "null",
+              "by": "null",
+              "kind": "str"
+            },
+            "citations": [
+              {
+                "ref": "str",
+                "status": "str"
+              }
+            ],
+            "class_key": "null",
+            "current": "bool",
+            "kind": "str",
+            "links": {
+              "about?": "int"
+            },
+            "observed_commit": "null",
+            "origin": "str",
+            "outcomes": {
+              "passed?": "int"
+            },
+            "recurrence": "int",
+            "ref": "str",
+            "role": "str",
+            "scope": "null",
+            "standing": "str",
+            "text": "str",
+            "withheld": "null",
+            "written_at": "str"
+          }
+        ],
+        "left": [],
+        "next_cursor": "null",
+        "targets": {
+          "hafiza/adc": "str"
+        },
+        "watermark": "int"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str",
+            "kutuphane/handling": {
+              "books": {
+                "hafiza": {
+                  "egress": "str",
+                  "sensitivity": "str"
+                },
+                "kitap": {
+                  "egress": "str",
+                  "sensitivity": "str"
+                }
+              },
+              "egress": "str",
+              "sensitivity": "str"
+            }
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "books": [
+          "str"
+        ],
+        "excluded": {
+          "code": "int",
+          "needs_context": "int"
+        },
+        "items": [
+          {
+            "acceptance": {
+              "at": "null",
+              "by": "null",
+              "kind": "str"
+            },
+            "citations": [
+              {
+                "ref": "str",
+                "status": "str"
+              }
+            ],
+            "class_key": "null",
+            "current": "bool",
+            "kind": "str",
+            "links": {
+              "about?": "int"
+            },
+            "observed_commit": "null",
+            "origin": "str",
+            "outcomes": {
+              "passed?": "int"
+            },
+            "recurrence": "int",
+            "ref": "str",
+            "role": "str",
+            "scope": "null",
+            "standing": "str",
+            "text": "str",
+            "withheld": "null",
+            "written_at": "str"
+          }
+        ],
+        "left": [],
+        "next_cursor": "null",
+        "targets": {
+          "hafiza/adc": "str"
+        },
+        "watermark": "int"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str",
+            "kutuphane/handling": {
+              "books": {
+                "hafiza": {
+                  "egress": "str",
+                  "sensitivity": "str"
+                },
+                "kitap": {
+                  "egress": "str",
+                  "sensitivity": "str"
+                }
+              },
+              "egress": "str",
+              "sensitivity": "str"
+            }
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "read_document:bad_request (schema)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool read_document: content_id: Field required; path: Field required",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool read_document: content_id: Field required; path: Field required",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "read_document:not_found": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool read_document: not found",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool read_document: not found",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "read_document:ok": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": "not json",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str",
+            "kutuphane/handling": {
+              "books": {
+                "kitap": {
+                  "egress": "str",
+                  "sensitivity": "str"
+                }
+              },
+              "egress": "str",
+              "sensitivity": "str"
+            }
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "structuredContent": {
+            "result": "str"
+          }
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": "not json",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str",
+            "kutuphane/handling": {
+              "books": {
+                "kitap": {
+                  "egress": "str",
+                  "sensitivity": "str"
+                }
+              },
+              "egress": "str",
+              "sensitivity": "str"
+            }
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str",
+          "structuredContent": {
+            "result": "str"
+          }
+        }
+      }
+    }
+  },
+  "record_outcome:bad_request (conflict)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool record_outcome: idempotency_key reused with another request",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool record_outcome: idempotency_key reused with another request",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "record_outcome:not_found": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool record_outcome: not found",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool record_outcome: not found",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "record_outcome:ok": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "origin": "str",
+        "ref": "str",
+        "result": "str",
+        "task_ref": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "origin": "str",
+        "ref": "str",
+        "result": "str",
+        "task_ref": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "record_outcome:ok (cited note)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "origin": "str",
+        "ref": "str",
+        "result": "str",
+        "task_ref": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "origin": "str",
+        "ref": "str",
+        "result": "str",
+        "task_ref": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "record_outcome:ok (passage)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "origin": "str",
+        "ref": "str",
+        "result": "str",
+        "task_ref": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "origin": "str",
+        "ref": "str",
+        "result": "str",
+        "task_ref": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "record_outcome:ok (second note)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "origin": "str",
+        "ref": "str",
+        "result": "str",
+        "task_ref": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "origin": "str",
+        "ref": "str",
+        "result": "str",
+        "task_ref": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "reopen_answer:bad_request (schema)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool reopen_answer: answer_id: Field required",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool reopen_answer: answer_id: Field required",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "reopen_answer:not_found": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool reopen_answer: not found",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool reopen_answer: not found",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "reopen_answer:ok": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "body": "str",
+        "evidence": [
+          {
+            "citation": "str",
+            "item": {
+              "ai_use": {
+                "ai_input": "str",
+                "search": "str",
+                "train": "str"
+              },
+              "applies_to": "null",
+              "confirmed_by": "null",
+              "current": "bool",
+              "entered_by": "null",
+              "holder": "str",
+              "issuer": "str",
+              "license": "str",
+              "listed": "bool",
+              "notices": [
+                "str"
+              ],
+              "origin": "str",
+              "personal_data": "str",
+              "reviewed_by": "null",
+              "scope": "str",
+              "software_agent": "null",
+              "valid_from": "null",
+              "valid_to": "null"
+            },
+            "line": "int",
+            "n": "int",
+            "quoted_records": [],
+            "record": "null",
+            "text": "str"
+          }
+        ],
+        "id": "str",
+        "question": "str",
+        "retrieval": {
+          "embedding": "str",
+          "rerank": "str",
+          "translation": "str"
+        },
+        "status": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "body": "str",
+        "evidence": [
+          {
+            "citation": "str",
+            "item": {
+              "ai_use": {
+                "ai_input": "str",
+                "search": "str",
+                "train": "str"
+              },
+              "applies_to": "null",
+              "confirmed_by": "null",
+              "current": "bool",
+              "entered_by": "null",
+              "holder": "str",
+              "issuer": "str",
+              "license": "str",
+              "listed": "bool",
+              "notices": [
+                "str"
+              ],
+              "origin": "str",
+              "personal_data": "str",
+              "reviewed_by": "null",
+              "scope": "str",
+              "software_agent": "null",
+              "valid_from": "null",
+              "valid_to": "null"
+            },
+            "line": "int",
+            "n": "int",
+            "quoted_records": [],
+            "record": "null",
+            "text": "str"
+          }
+        ],
+        "id": "str",
+        "question": "str",
+        "retrieval": {
+          "embedding": "str",
+          "rerank": "str",
+          "translation": "str"
+        },
+        "status": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "search_library:bad_request": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool search_library: acceptance: List should have at least 1 item after validation, not 0",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool search_library: acceptance: List should have at least 1 item after validation, not 0",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "search_library:ok": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "citation": "str",
+        "item": {
+          "ai_use": {
+            "ai_input": "str",
+            "search": "str",
+            "train": "str"
+          },
+          "applies_to": "null",
+          "confirmed_by": "null",
+          "current": "bool",
+          "entered_by": "null",
+          "holder": "str",
+          "issuer": "str",
+          "license": "str",
+          "listed": "bool",
+          "notices": [
+            "str"
+          ],
+          "origin": "str",
+          "personal_data": "str",
+          "reviewed_by": "null",
+          "scope": "str",
+          "software_agent": "null",
+          "valid_from": "null",
+          "valid_to": "null"
+        },
+        "line": "int",
+        "page": "null",
+        "quoted_records": [],
+        "score": "float",
+        "text": "str",
+        "truncated": "bool"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str",
+            "kutuphane/handling": {
+              "books": {
+                "kitap": {
+                  "egress": "str",
+                  "sensitivity": "str"
+                }
+              },
+              "egress": "str",
+              "sensitivity": "str"
+            },
+            "kutuphane/retrieval": {
+              "embedding": "str",
+              "rerank": "str",
+              "translation": "str"
+            }
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "structuredContent": {
+            "result": [
+              {
+                "citation": "str",
+                "item": {
+                  "ai_use": {
+                    "ai_input": "str",
+                    "search": "str",
+                    "train": "str"
+                  },
+                  "applies_to": "null",
+                  "confirmed_by": "null",
+                  "current": "bool",
+                  "entered_by": "null",
+                  "holder": "str",
+                  "issuer": "str",
+                  "license": "str",
+                  "listed": "bool",
+                  "notices": [
+                    "str"
+                  ],
+                  "origin": "str",
+                  "personal_data": "str",
+                  "reviewed_by": "null",
+                  "scope": "str",
+                  "software_agent": "null",
+                  "valid_from": "null",
+                  "valid_to": "null"
+                },
+                "line": "int",
+                "page": "null",
+                "quoted_records": [],
+                "score": "float",
+                "text": "str",
+                "truncated": "bool"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "citation": "str",
+        "item": {
+          "ai_use": {
+            "ai_input": "str",
+            "search": "str",
+            "train": "str"
+          },
+          "applies_to": "null",
+          "confirmed_by": "null",
+          "current": "bool",
+          "entered_by": "null",
+          "holder": "str",
+          "issuer": "str",
+          "license": "str",
+          "listed": "bool",
+          "notices": [
+            "str"
+          ],
+          "origin": "str",
+          "personal_data": "str",
+          "reviewed_by": "null",
+          "scope": "str",
+          "software_agent": "null",
+          "valid_from": "null",
+          "valid_to": "null"
+        },
+        "line": "int",
+        "page": "null",
+        "quoted_records": [],
+        "score": "float",
+        "text": "str",
+        "truncated": "bool"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str",
+            "kutuphane/handling": {
+              "books": {
+                "kitap": {
+                  "egress": "str",
+                  "sensitivity": "str"
+                }
+              },
+              "egress": "str",
+              "sensitivity": "str"
+            },
+            "kutuphane/retrieval": {
+              "embedding": "str",
+              "rerank": "str",
+              "translation": "str"
+            }
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str",
+          "structuredContent": {
+            "result": [
+              {
+                "citation": "str",
+                "item": {
+                  "ai_use": {
+                    "ai_input": "str",
+                    "search": "str",
+                    "train": "str"
+                  },
+                  "applies_to": "null",
+                  "confirmed_by": "null",
+                  "current": "bool",
+                  "entered_by": "null",
+                  "holder": "str",
+                  "issuer": "str",
+                  "license": "str",
+                  "listed": "bool",
+                  "notices": [
+                    "str"
+                  ],
+                  "origin": "str",
+                  "personal_data": "str",
+                  "reviewed_by": "null",
+                  "scope": "str",
+                  "software_agent": "null",
+                  "valid_from": "null",
+                  "valid_to": "null"
+                },
+                "line": "int",
+                "page": "null",
+                "quoted_records": [],
+                "score": "float",
+                "text": "str",
+                "truncated": "bool"
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "search_library:ok (empty)": {
+    "2025-11-25": {
+      "block_types": [],
+      "content_type": "text/event-stream",
+      "decoded_text": "not json",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str",
+            "kutuphane/handling": {
+              "books": {}
+            },
+            "kutuphane/retrieval": {
+              "embedding": "str",
+              "rerank": "str",
+              "translation": "str"
+            }
+          },
+          "content": [],
+          "isError": "bool",
+          "structuredContent": {
+            "result": []
+          }
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [],
+      "content_type": "application/json",
+      "decoded_text": "not json",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str",
+            "kutuphane/handling": {
+              "books": {}
+            },
+            "kutuphane/retrieval": {
+              "embedding": "str",
+              "rerank": "str",
+              "translation": "str"
+            }
+          },
+          "content": [],
+          "isError": "bool",
+          "resultType": "str",
+          "structuredContent": {
+            "result": []
+          }
+        }
+      }
+    }
+  },
+  "submit_package:bad_request": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool submit_package: package_base64 is not base64",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool submit_package: package_base64 is not base64",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "submit_package:not_found (no propose grant)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool submit_package: forbidden",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool submit_package: forbidden",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "submit_package:ok (first version)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "book": "str",
+        "content_id": "str",
+        "decided_at": "null",
+        "decided_by": "null",
+        "diff": {
+          "added": [
+            "str"
+          ],
+          "changed": [],
+          "removed": []
+        },
+        "findings": [],
+        "id": "int",
+        "issuer": "str",
+        "reasons": [],
+        "received_at": "str",
+        "sequence": "int",
+        "status": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "book": "str",
+        "content_id": "str",
+        "decided_at": "null",
+        "decided_by": "null",
+        "diff": {
+          "added": [
+            "str"
+          ],
+          "changed": [],
+          "removed": []
+        },
+        "findings": [],
+        "id": "int",
+        "issuer": "str",
+        "reasons": [],
+        "received_at": "str",
+        "sequence": "int",
+        "status": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "submit_package:ok (next version)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "book": "str",
+        "content_id": "str",
+        "decided_at": "null",
+        "decided_by": "null",
+        "diff": {
+          "added": [
+            "str"
+          ],
+          "changed": [
+            "str"
+          ],
+          "removed": [
+            "str"
+          ]
+        },
+        "findings": [
+          {
+            "kind": "str",
+            "lines": [
+              "int"
+            ],
+            "path": "str",
+            "rule": "str",
+            "sha256": "str"
+          }
+        ],
+        "id": "int",
+        "issuer": "str",
+        "reasons": [],
+        "received_at": "str",
+        "sequence": "int",
+        "status": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "book": "str",
+        "content_id": "str",
+        "decided_at": "null",
+        "decided_by": "null",
+        "diff": {
+          "added": [
+            "str"
+          ],
+          "changed": [
+            "str"
+          ],
+          "removed": [
+            "str"
+          ]
+        },
+        "findings": [
+          {
+            "kind": "str",
+            "lines": [
+              "int"
+            ],
+            "path": "str",
+            "rule": "str",
+            "sha256": "str"
+          }
+        ],
+        "id": "int",
+        "issuer": "str",
+        "reasons": [],
+        "received_at": "str",
+        "sequence": "int",
+        "status": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "submit_package:ok (rejected)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "book": "null",
+        "content_id": "null",
+        "decided_at": "null",
+        "decided_by": "null",
+        "diff": "null",
+        "findings": [],
+        "id": "int",
+        "issuer": "null",
+        "reasons": [
+          "str"
+        ],
+        "received_at": "str",
+        "sequence": "null",
+        "status": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "book": "null",
+        "content_id": "null",
+        "decided_at": "null",
+        "decided_by": "null",
+        "diff": "null",
+        "findings": [],
+        "id": "int",
+        "issuer": "null",
+        "reasons": [
+          "str"
+        ],
+        "received_at": "str",
+        "sequence": "null",
+        "status": "str"
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "verify_citations:bad_request": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool verify_citations: give 1 to 200 citations",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool verify_citations: give 1 to 200 citations",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "verify_citations:not_found (forbidden)": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Error executing tool verify_citations: forbidden",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Error executing tool verify_citations: forbidden",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "verify_citations:ok": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "decoded_text": {
+        "results": [
+          {
+            "citation": "str",
+            "moved_to": {
+              "any_of": [
+                "int",
+                "null"
+              ]
+            },
+            "reason": {
+              "any_of": [
+                "null",
+                "str"
+              ]
+            },
+            "status": "str",
+            "symbol_found_at": "null"
+          }
+        ],
+        "targets": {
+          "hafiza/adc": "str"
+        }
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "decoded_text": {
+        "results": [
+          {
+            "citation": "str",
+            "moved_to": {
+              "any_of": [
+                "int",
+                "null"
+              ]
+            },
+            "reason": {
+              "any_of": [
+                "null",
+                "str"
+              ]
+            },
+            "status": "str",
+            "symbol_found_at": "null"
+          }
+        ],
+        "targets": {
+          "hafiza/adc": "str"
+        }
+      },
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  }
+}

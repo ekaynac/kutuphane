@@ -1,0 +1,5032 @@
+{
+  "DELETE /mcp [method_not_allowed (2025-11-25)]": {
+    "allow": null,
+    "body": {
+      "error": {
+        "code": "int",
+        "message": "str"
+      },
+      "id": "null",
+      "jsonrpc": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": {
+        "code": -32600,
+        "message": "Method Not Allowed: Session termination not supported"
+      }
+    },
+    "status": 405
+  },
+  "DELETE /mcp [method_not_allowed (2026-07-28)]": {
+    "allow": "POST",
+    "body": "empty",
+    "content_type": "",
+    "status": 405
+  },
+  "DELETE /mcp [unauthorized (2025-11-25)]": {
+    "allow": null,
+    "body": {
+      "error": "str",
+      "error_description": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "invalid_token",
+      "error_description": "Authentication required"
+    },
+    "status": 401
+  },
+  "DELETE /mcp [unauthorized (2026-07-28)]": {
+    "allow": null,
+    "body": {
+      "error": "str",
+      "error_description": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "invalid_token",
+      "error_description": "Authentication required"
+    },
+    "status": 401
+  },
+  "GET /.well-known/oauth-protected-resource [ok]": {
+    "body": {
+      "authorization_servers": [
+        "str"
+      ],
+      "bearer_methods_supported": [
+        "str"
+      ],
+      "resource": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /healthz [ok]": {
+    "body": {
+      "ok": "bool"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /mcp [method_not_allowed (2026-07-28)]": {
+    "allow": "POST",
+    "body": "empty",
+    "content_type": "",
+    "status": 405
+  },
+  "GET /mcp [ok (2025-11-25)]": {
+    "allow": null,
+    "body": "stream, not read",
+    "content_type": "text/event-stream",
+    "status": 200
+  },
+  "GET /mcp [unauthorized (2025-11-25)]": {
+    "allow": null,
+    "body": {
+      "error": "str",
+      "error_description": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "invalid_token",
+      "error_description": "Authentication required"
+    },
+    "status": 401
+  },
+  "GET /mcp [unauthorized (2026-07-28)]": {
+    "allow": null,
+    "body": {
+      "error": "str",
+      "error_description": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "invalid_token",
+      "error_description": "Authentication required"
+    },
+    "status": 401
+  },
+  "GET /v1/answers/{answer_id} [not_found]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "not found"
+    },
+    "status": 404
+  },
+  "GET /v1/answers/{answer_id} [ok]": {
+    "body": {
+      "body": "str",
+      "evidence": [
+        {
+          "citation": "str",
+          "item": {
+            "ai_use": {
+              "ai_input": "str",
+              "search": "str",
+              "train": "str"
+            },
+            "applies_to": "null",
+            "confirmed_by": "null",
+            "current": "bool",
+            "entered_by": "null",
+            "holder": "str",
+            "issuer": "str",
+            "license": "str",
+            "listed": "bool",
+            "notices": [
+              "str"
+            ],
+            "origin": "str",
+            "personal_data": "str",
+            "reviewed_by": "null",
+            "scope": "str",
+            "software_agent": "null",
+            "valid_from": "null",
+            "valid_to": "null"
+          },
+          "line": "int",
+          "n": "int",
+          "quoted_records": [],
+          "record": "null",
+          "text": "str"
+        }
+      ],
+      "id": "str",
+      "question": "str",
+      "retrieval": {
+        "embedding": "str",
+        "rerank": "str",
+        "translation": "str"
+      },
+      "status": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/answers/{answer_id} [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "unauthenticated"
+    },
+    "status": 401
+  },
+  "GET /v1/books [ok (empty)]": {
+    "body": {
+      "books": []
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/books [ok]": {
+    "body": {
+      "books": [
+        {
+          "book": "str",
+          "content_id": {
+            "any_of": [
+              "null",
+              "str"
+            ]
+          },
+          "kind": "str",
+          "policy_id": "str",
+          "profile_id": "str",
+          "publication": {
+            "any_of": [
+              "null",
+              {
+                "acceptance": {
+                  "at": "str",
+                  "by": "str",
+                  "kind": "str",
+                  "legacy": "bool"
+                },
+                "channel": "str",
+                "content_id": "str",
+                "issuer_key": "null",
+                "published_at": "str",
+                "sequence": "null"
+              }
+            ]
+          },
+          "title": "str"
+        }
+      ]
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/books [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "unauthenticated"
+    },
+    "status": 401
+  },
+  "GET /v1/books/{book}/files [bad_request]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "limit must be an integer from 1 to 500"
+    },
+    "status": 400
+  },
+  "GET /v1/books/{book}/files [not_found (forbidden)]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "forbidden"
+    },
+    "status": 403
+  },
+  "GET /v1/books/{book}/files [ok (page)]": {
+    "body": {
+      "book": "str",
+      "content_id": "str",
+      "files": [
+        {
+          "item": {
+            "any_of": [
+              "null",
+              {
+                "ai_use": {
+                  "ai_input": "str",
+                  "search": "str",
+                  "train": "str"
+                },
+                "applies_to": "null",
+                "confirmed_by": "null",
+                "current": "bool",
+                "entered_by": "null",
+                "holder": "str",
+                "issuer": "str",
+                "license": "str",
+                "listed": "bool",
+                "notices": [
+                  "str"
+                ],
+                "origin": "str",
+                "personal_data": "str",
+                "reviewed_by": "null",
+                "scope": "str",
+                "software_agent": "null",
+                "valid_from": "null",
+                "valid_to": "null"
+              }
+            ]
+          },
+          "media_type": "str",
+          "passages": "int",
+          "path": "str",
+          "sha256": "str",
+          "size": "int"
+        }
+      ],
+      "next_cursor": "str",
+      "profile_id": "str",
+      "publication": {
+        "acceptance": {
+          "at": "str",
+          "by": "str",
+          "kind": "str",
+          "legacy": "bool"
+        },
+        "channel": "str",
+        "content_id": "str",
+        "issuer_key": "null",
+        "published_at": "str",
+        "sequence": "null"
+      }
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/books/{book}/files [ok]": {
+    "body": {
+      "book": "str",
+      "content_id": "str",
+      "files": [
+        {
+          "item": {
+            "any_of": [
+              "null",
+              {
+                "ai_use": {
+                  "ai_input": "str",
+                  "search": "str",
+                  "train": "str"
+                },
+                "applies_to": {
+                  "any_of": [
+                    "null",
+                    {
+                      "platform": [
+                        "str"
+                      ]
+                    }
+                  ]
+                },
+                "confirmed_by": "null",
+                "current": "bool",
+                "entered_by": "null",
+                "holder": "str",
+                "issuer": "str",
+                "license": "str",
+                "listed": "bool",
+                "notices": [
+                  "str"
+                ],
+                "origin": "str",
+                "personal_data": "str",
+                "reviewed_by": "null",
+                "scope": "str",
+                "software_agent": "null",
+                "valid_from": {
+                  "any_of": [
+                    "null",
+                    "str"
+                  ]
+                },
+                "valid_to": "null"
+              }
+            ]
+          },
+          "media_type": "str",
+          "passages": "int",
+          "path": "str",
+          "sha256": "str",
+          "size": "int"
+        }
+      ],
+      "next_cursor": "null",
+      "profile_id": "str",
+      "publication": {
+        "acceptance": {
+          "at": "str",
+          "by": "str",
+          "kind": "str",
+          "legacy": "bool"
+        },
+        "channel": "str",
+        "content_id": "str",
+        "issuer_key": "null",
+        "published_at": "str",
+        "sequence": "null"
+      }
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/books/{book}/files [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "unauthenticated"
+    },
+    "status": 401
+  },
+  "GET /v1/citation [bad_request (malformed)]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "malformed passage handle: expected <book>@ct_…/pf_…/<path>#<n>; copy it from a search_library hit"
+    },
+    "status": 400
+  },
+  "GET /v1/citation [not_found]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "not found: copy the complete citation handle from a search_library hit, including #<n>"
+    },
+    "status": 404
+  },
+  "GET /v1/citation [ok (passage with outcomes of notes that cite it)]": {
+    "body": {
+      "citation": "str",
+      "item": {
+        "ai_use": {
+          "ai_input": "str",
+          "search": "str",
+          "train": "str"
+        },
+        "applies_to": "null",
+        "confirmed_by": "null",
+        "current": "bool",
+        "entered_by": "null",
+        "holder": "str",
+        "issuer": "str",
+        "license": "str",
+        "listed": "bool",
+        "notices": [
+          "str"
+        ],
+        "origin": "str",
+        "personal_data": "str",
+        "reviewed_by": "null",
+        "scope": "str",
+        "software_agent": "null",
+        "valid_from": "null",
+        "valid_to": "null"
+      },
+      "line": "int",
+      "outcomes": {
+        "passed": "int"
+      },
+      "page": "null",
+      "publication": {
+        "acceptance": {
+          "at": "str",
+          "by": "str",
+          "kind": "str",
+          "legacy": "bool"
+        },
+        "channel": "str",
+        "content_id": "str",
+        "issuer_key": "null",
+        "published_at": "str",
+        "sequence": "null"
+      },
+      "status": "str",
+      "text": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/citation [ok]": {
+    "body": {
+      "citation": "str",
+      "item": {
+        "ai_use": {
+          "ai_input": "str",
+          "search": "str",
+          "train": "str"
+        },
+        "applies_to": "null",
+        "confirmed_by": "null",
+        "current": "bool",
+        "entered_by": "null",
+        "holder": "str",
+        "issuer": "str",
+        "license": "str",
+        "listed": "bool",
+        "notices": [
+          "str"
+        ],
+        "origin": "str",
+        "personal_data": "str",
+        "reviewed_by": "null",
+        "scope": "str",
+        "software_agent": "null",
+        "valid_from": "null",
+        "valid_to": "null"
+      },
+      "line": "int",
+      "outcomes": {
+        "passed": "int"
+      },
+      "page": "null",
+      "publication": {
+        "acceptance": {
+          "at": "str",
+          "by": "str",
+          "kind": "str",
+          "legacy": "bool"
+        },
+        "channel": "str",
+        "content_id": "str",
+        "issuer_key": "null",
+        "published_at": "str",
+        "sequence": "null"
+      },
+      "status": "str",
+      "text": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/citation [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "unauthenticated"
+    },
+    "status": 401
+  },
+  "GET /v1/files/{book}/{content_id}/{path:path} [not_found]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "not found"
+    },
+    "status": 404
+  },
+  "GET /v1/files/{book}/{content_id}/{path:path} [ok]": {
+    "body": "non-json",
+    "content_type": "text/markdown",
+    "status": 200
+  },
+  "GET /v1/files/{book}/{content_id}/{path:path} [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "unauthenticated"
+    },
+    "status": 401
+  },
+  "GET /v1/health [ok]": {
+    "body": {
+      "chat": "bool",
+      "db": "bool",
+      "embedding": "null",
+      "llmdap": "bool",
+      "ok": "bool",
+      "rerank": "null"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/health [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "unauthenticated"
+    },
+    "status": 401
+  },
+  "GET /v1/jobs/{job_id} [not_found]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "not found"
+    },
+    "status": 404
+  },
+  "GET /v1/jobs/{job_id} [ok]": {
+    "body": {
+      "created_at": "str",
+      "error": "null",
+      "finished_at": "str",
+      "started_at": "str",
+      "status": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/jobs/{job_id} [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "unauthenticated"
+    },
+    "status": 401
+  },
+  "GET /v1/jobs/{job_id}/result [not_found]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "not found"
+    },
+    "status": 404
+  },
+  "GET /v1/jobs/{job_id}/result [ok]": {
+    "body": {
+      "body": "str",
+      "evidence": [
+        {
+          "citation": "str",
+          "item": {
+            "ai_use": {
+              "ai_input": "str",
+              "search": "str",
+              "train": "str"
+            },
+            "applies_to": "null",
+            "confirmed_by": "null",
+            "current": "bool",
+            "entered_by": "null",
+            "holder": "str",
+            "issuer": "str",
+            "license": "str",
+            "listed": "bool",
+            "notices": [
+              "str"
+            ],
+            "origin": "str",
+            "personal_data": "str",
+            "reviewed_by": "null",
+            "scope": "str",
+            "software_agent": "null",
+            "valid_from": "null",
+            "valid_to": "null"
+          },
+          "line": "int",
+          "n": "int",
+          "quoted_records": [],
+          "record": "null",
+          "text": "str"
+        }
+      ],
+      "id": "str",
+      "question": "str",
+      "retrieval": {
+        "embedding": "str",
+        "rerank": "str",
+        "translation": "str"
+      },
+      "status": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/jobs/{job_id}/result [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "unauthenticated"
+    },
+    "status": 401
+  },
+  "GET /v1/notes [bad_request]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "order must be one of newest, oldest, relevance"
+    },
+    "status": 400
+  },
+  "GET /v1/notes [ok (with a code context)]": {
+    "body": {
+      "books": [
+        "str"
+      ],
+      "excluded": {
+        "code": "int",
+        "needs_context": "int"
+      },
+      "items": [
+        {
+          "acceptance": {
+            "at": "null",
+            "by": "null",
+            "kind": "str"
+          },
+          "citations": [
+            {
+              "ref": "str",
+              "status": "str"
+            }
+          ],
+          "class_key": "null",
+          "current": "bool",
+          "kind": "str",
+          "links": {
+            "about?": "int"
+          },
+          "observed_commit": "null",
+          "origin": "str",
+          "outcomes": {
+            "passed?": "int"
+          },
+          "recurrence": "int",
+          "ref": "str",
+          "role": "str",
+          "scope": "null",
+          "standing": "str",
+          "text": "str",
+          "withheld": "null",
+          "written_at": "str"
+        }
+      ],
+      "left": [],
+      "next_cursor": "null",
+      "targets": {
+        "hafiza/adc": "str"
+      },
+      "watermark": "int"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/notes [ok]": {
+    "body": {
+      "books": [
+        "str"
+      ],
+      "excluded": {
+        "code": "int",
+        "needs_context": "int"
+      },
+      "items": [
+        {
+          "acceptance": {
+            "at": "null",
+            "by": "null",
+            "kind": "str"
+          },
+          "citations": [
+            {
+              "ref": "str",
+              "status": "str"
+            }
+          ],
+          "class_key": "null",
+          "current": "bool",
+          "kind": "str",
+          "links": {
+            "about?": "int"
+          },
+          "observed_commit": "null",
+          "origin": "str",
+          "outcomes": {
+            "passed?": "int"
+          },
+          "recurrence": "int",
+          "ref": "str",
+          "role": "str",
+          "scope": "null",
+          "standing": "str",
+          "text": "str",
+          "withheld": "null",
+          "written_at": "str"
+        }
+      ],
+      "left": [],
+      "next_cursor": "null",
+      "targets": {},
+      "watermark": "int"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/notes [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "unauthenticated"
+    },
+    "status": 401
+  },
+  "GET /v1/notes/{book}/{id}/confirmation [bad_request (malformed id)]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "malformed note reference (book@nt_<64 hex>)"
+    },
+    "status": 400
+  },
+  "GET /v1/notes/{book}/{id}/confirmation [not_found (forbidden)]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "forbidden"
+    },
+    "status": 403
+  },
+  "GET /v1/notes/{book}/{id}/confirmation [ok]": {
+    "body": {
+      "confirmation": {
+        "state": "str"
+      },
+      "origin": "str",
+      "ref": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/notes/{book}/{id}/confirmation [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "unauthenticated"
+    },
+    "status": 401
+  },
+  "GET /v1/notes/{book}/{id}/neighbours [bad_request (malformed id)]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "malformed passage handle: expected <book>@ct_…/pf_…/<path>#<n>; copy it from a search_library hit"
+    },
+    "status": 400
+  },
+  "GET /v1/notes/{book}/{id}/neighbours [not_found]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "not found"
+    },
+    "status": 404
+  },
+  "GET /v1/notes/{book}/{id}/neighbours [ok (with a code context)]": {
+    "body": {
+      "edges": [
+        {
+          "dst": "str",
+          "src": "str",
+          "type": "str"
+        }
+      ],
+      "nodes": [
+        {
+          "acceptance": {
+            "at": "null",
+            "by": "null",
+            "kind": "str"
+          },
+          "citations": [
+            {
+              "ref": "str",
+              "status": "str"
+            }
+          ],
+          "class_key": "null",
+          "current": "bool",
+          "kind": "str",
+          "links": {
+            "about": "int"
+          },
+          "observed_commit": "null",
+          "origin": "str",
+          "outcomes": {
+            "passed": "int"
+          },
+          "recurrence": "int",
+          "ref": "str",
+          "role": "str",
+          "scope": "null",
+          "standing": "str",
+          "text": "str",
+          "withheld": "null",
+          "written_at": "str"
+        }
+      ],
+      "root": {
+        "acceptance": {
+          "at": "null",
+          "by": "null",
+          "kind": "str"
+        },
+        "citations": [
+          {
+            "ref": "str",
+            "status": "str"
+          }
+        ],
+        "class_key": "null",
+        "current": "bool",
+        "kind": "str",
+        "links": {
+          "about": "int"
+        },
+        "observed_commit": "null",
+        "origin": "str",
+        "outcomes": {
+          "passed": "int"
+        },
+        "recurrence": "int",
+        "ref": "str",
+        "role": "str",
+        "scope": "null",
+        "standing": "str",
+        "text": "str",
+        "withheld": "null",
+        "written_at": "str"
+      },
+      "targets": {
+        "hafiza/adc": "str"
+      },
+      "truncated": "bool",
+      "watermark": "int"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/notes/{book}/{id}/neighbours [ok]": {
+    "body": {
+      "edges": [
+        {
+          "dst": "str",
+          "src": "str",
+          "type": "str"
+        }
+      ],
+      "nodes": [
+        {
+          "acceptance": {
+            "at": "null",
+            "by": "null",
+            "kind": "str"
+          },
+          "citations": [
+            {
+              "ref": "str",
+              "status": "str"
+            }
+          ],
+          "class_key": "null",
+          "current": "bool",
+          "kind": "str",
+          "links": {
+            "about": "int"
+          },
+          "observed_commit": "null",
+          "origin": "str",
+          "outcomes": {
+            "passed": "int"
+          },
+          "recurrence": "int",
+          "ref": "str",
+          "role": "str",
+          "scope": "null",
+          "standing": "str",
+          "text": "str",
+          "withheld": "null",
+          "written_at": "str"
+        }
+      ],
+      "root": {
+        "acceptance": {
+          "at": "null",
+          "by": "null",
+          "kind": "str"
+        },
+        "citations": [
+          {
+            "ref": "str",
+            "status": "str"
+          }
+        ],
+        "class_key": "null",
+        "current": "bool",
+        "kind": "str",
+        "links": {
+          "about": "int"
+        },
+        "observed_commit": "null",
+        "origin": "str",
+        "outcomes": {
+          "passed": "int"
+        },
+        "recurrence": "int",
+        "ref": "str",
+        "role": "str",
+        "scope": "null",
+        "standing": "str",
+        "text": "str",
+        "withheld": "null",
+        "written_at": "str"
+      },
+      "targets": {},
+      "truncated": "bool",
+      "watermark": "int"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/notes/{book}/{id}/neighbours [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "unauthenticated"
+    },
+    "status": 401
+  },
+  "GET /v1/packages/{import_id} [bad_request (not a number)]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "not found"
+    },
+    "status": 404
+  },
+  "GET /v1/packages/{import_id} [not_found]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "not found"
+    },
+    "status": 404
+  },
+  "GET /v1/packages/{import_id} [ok (next version)]": {
+    "body": {
+      "book": "str",
+      "content_id": "str",
+      "decided_at": "null",
+      "decided_by": "null",
+      "diff": {
+        "added": [
+          "str"
+        ],
+        "changed": [
+          "str"
+        ],
+        "removed": [
+          "str"
+        ]
+      },
+      "findings": [
+        {
+          "kind": "str",
+          "lines": [
+            "int"
+          ],
+          "path": "str",
+          "rule": "str",
+          "sha256": "str"
+        }
+      ],
+      "id": "int",
+      "issuer": "str",
+      "reasons": [],
+      "received_at": "str",
+      "sequence": "int",
+      "status": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/packages/{import_id} [ok (rejected)]": {
+    "body": {
+      "book": "null",
+      "content_id": "null",
+      "decided_at": "null",
+      "decided_by": "null",
+      "diff": "null",
+      "findings": [],
+      "id": "int",
+      "issuer": "null",
+      "reasons": [
+        "str"
+      ],
+      "received_at": "str",
+      "sequence": "null",
+      "status": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/packages/{import_id} [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "unauthenticated"
+    },
+    "status": 401
+  },
+  "GET /v1/search [bad_request]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "current_only must be true or false"
+    },
+    "status": 400
+  },
+  "GET /v1/search [ok (empty: no match)]": {
+    "body": {
+      "correlation_id": "str",
+      "results": [],
+      "retrieval": {
+        "embedding": "str",
+        "rerank": "str",
+        "translation": "str"
+      }
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/search [ok (empty: no right)]": {
+    "body": {
+      "correlation_id": "str",
+      "results": [],
+      "retrieval": {
+        "embedding": "str",
+        "rerank": "str",
+        "translation": "str"
+      }
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/search [ok]": {
+    "body": {
+      "correlation_id": "str",
+      "results": [
+        {
+          "citation": "str",
+          "item": {
+            "ai_use": {
+              "ai_input": "str",
+              "search": "str",
+              "train": "str"
+            },
+            "applies_to": "null",
+            "confirmed_by": "null",
+            "current": "bool",
+            "entered_by": "null",
+            "holder": "str",
+            "issuer": "str",
+            "license": "str",
+            "listed": "bool",
+            "notices": [
+              "str"
+            ],
+            "origin": "str",
+            "personal_data": "str",
+            "reviewed_by": "null",
+            "scope": "str",
+            "software_agent": "null",
+            "valid_from": "null",
+            "valid_to": "null"
+          },
+          "line": "int",
+          "page": "null",
+          "quoted_records": [],
+          "score": "float",
+          "text": "str"
+        }
+      ],
+      "retrieval": {
+        "embedding": "str",
+        "rerank": "str",
+        "translation": "str"
+      }
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/search [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "unauthenticated"
+    },
+    "status": 401
+  },
+  "GET /v1/whoami [ok (delegated)]": {
+    "body": {
+      "on_behalf_of": "str",
+      "principal": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/whoami [ok]": {
+    "body": {
+      "on_behalf_of": "null",
+      "principal": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/whoami [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "unauthenticated"
+    },
+    "status": 401
+  },
+  "HEAD /.well-known/oauth-protected-resource [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /healthz [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /mcp [method_not_allowed (2025-11-25)]": {
+    "allow": "GET, POST, DELETE",
+    "body": "empty",
+    "content_type": "application/json",
+    "status": 405
+  },
+  "HEAD /mcp [method_not_allowed (2026-07-28)]": {
+    "allow": "POST",
+    "body": "empty",
+    "content_type": "",
+    "status": 405
+  },
+  "HEAD /mcp [unauthorized (2025-11-25)]": {
+    "allow": null,
+    "body": "empty",
+    "content_type": "application/json",
+    "status": 401
+  },
+  "HEAD /mcp [unauthorized (2026-07-28)]": {
+    "allow": null,
+    "body": "empty",
+    "content_type": "application/json",
+    "status": 401
+  },
+  "HEAD /v1/answers/{answer_id} [head_error:not_found]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 404
+  },
+  "HEAD /v1/answers/{answer_id} [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/books [head_error:unauthorized]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 401
+  },
+  "HEAD /v1/books [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/books/{book}/files [head_error:bad_request]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 400
+  },
+  "HEAD /v1/books/{book}/files [head_error:not_found (forbidden)]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 403
+  },
+  "HEAD /v1/books/{book}/files [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/citation [head_error:not_found]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 404
+  },
+  "HEAD /v1/citation [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/files/{book}/{content_id}/{path:path} [head_error:not_found]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 404
+  },
+  "HEAD /v1/files/{book}/{content_id}/{path:path} [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "text/markdown",
+    "status": 200
+  },
+  "HEAD /v1/health [head_error:unauthorized]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 401
+  },
+  "HEAD /v1/health [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/jobs/{job_id} [head_error:not_found]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 404
+  },
+  "HEAD /v1/jobs/{job_id} [head_error:unauthorized]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 401
+  },
+  "HEAD /v1/jobs/{job_id} [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/jobs/{job_id}/result [head_error:not_found]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 404
+  },
+  "HEAD /v1/jobs/{job_id}/result [head_error:unauthorized]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 401
+  },
+  "HEAD /v1/jobs/{job_id}/result [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/notes [head_error:bad_request]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 400
+  },
+  "HEAD /v1/notes [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/notes/{book}/{id}/confirmation [head_error:not_found (forbidden)]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 403
+  },
+  "HEAD /v1/notes/{book}/{id}/confirmation [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/notes/{book}/{id}/neighbours [head_error:not_found]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 404
+  },
+  "HEAD /v1/notes/{book}/{id}/neighbours [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/packages/{import_id} [head_error:not_found]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 404
+  },
+  "HEAD /v1/packages/{import_id} [head_ok (next version)]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/search [head_error:bad_request]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 400
+  },
+  "HEAD /v1/search [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "HEAD /v1/whoami [head_error:unauthorized]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 401
+  },
+  "HEAD /v1/whoami [head_ok]": {
+    "body": "empty",
+    "body_empty": true,
+    "content_type": "application/json",
+    "status": 200
+  },
+  "MOUNT / [bad_request (arguments not an object)]": {
+    "2025-11-25": {
+      "content_type": "text/event-stream",
+      "http_status": 200,
+      "message": {
+        "error": {
+          "code": "int",
+          "data": "str",
+          "message": "str"
+        },
+        "id": "int",
+        "jsonrpc": "str"
+      },
+      "rpc_error": {
+        "code": -32602,
+        "data": "",
+        "message": "Invalid request parameters"
+      }
+    },
+    "2026-07-28": {
+      "content_type": "application/json",
+      "http_status": 400,
+      "message": {
+        "error": {
+          "code": "int",
+          "data": "str",
+          "message": "str"
+        },
+        "id": "int",
+        "jsonrpc": "str"
+      },
+      "rpc_error": {
+        "code": -32602,
+        "data": "",
+        "message": "Invalid request parameters"
+      }
+    }
+  },
+  "MOUNT / [bad_request (no tool name)]": {
+    "2025-11-25": {
+      "content_type": "text/event-stream",
+      "http_status": 200,
+      "message": {
+        "error": {
+          "code": "int",
+          "data": "str",
+          "message": "str"
+        },
+        "id": "int",
+        "jsonrpc": "str"
+      },
+      "rpc_error": {
+        "code": -32602,
+        "data": "",
+        "message": "Invalid request parameters"
+      }
+    },
+    "2026-07-28": {
+      "content_type": "application/json",
+      "http_status": 400,
+      "message": {
+        "error": {
+          "code": "int",
+          "data": "str",
+          "message": "str"
+        },
+        "id": "int",
+        "jsonrpc": "str"
+      },
+      "rpc_error": {
+        "code": -32602,
+        "data": "",
+        "message": "Invalid request parameters"
+      }
+    }
+  },
+  "MOUNT / [bad_request (not json)]": {
+    "body": {
+      "error": {
+        "code": "int",
+        "message": "str"
+      },
+      "id": "null",
+      "jsonrpc": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": {
+        "code": -32700,
+        "message": "Parse error: EOF while parsing an object at line 1 column 1"
+      }
+    },
+    "status": 400
+  },
+  "MOUNT / [not_found (unknown method)]": {
+    "2025-11-25": {
+      "content_type": "text/event-stream",
+      "http_status": 200,
+      "message": {
+        "error": {
+          "code": "int",
+          "data": "str",
+          "message": "str"
+        },
+        "id": "int",
+        "jsonrpc": "str"
+      },
+      "rpc_error": {
+        "code": -32601,
+        "data": "no/such/method",
+        "message": "Method not found"
+      }
+    },
+    "2026-07-28": {
+      "content_type": "application/json",
+      "http_status": 404,
+      "message": {
+        "error": {
+          "code": "int",
+          "data": "str",
+          "message": "str"
+        },
+        "id": "int",
+        "jsonrpc": "str"
+      },
+      "rpc_error": {
+        "code": -32601,
+        "data": "no/such/method",
+        "message": "Method not found"
+      }
+    }
+  },
+  "MOUNT / [not_found (unknown tool)]": {
+    "2025-11-25": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "text/event-stream",
+      "error_text": "Unknown tool: no_such_tool",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool"
+        }
+      }
+    },
+    "2026-07-28": {
+      "block_types": [
+        "text"
+      ],
+      "content_type": "application/json",
+      "error_text": "Unknown tool: no_such_tool",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            },
+            "kutuphane/correlation-id": "str"
+          },
+          "content": [
+            {
+              "text": "str",
+              "type": "str"
+            }
+          ],
+          "isError": "bool",
+          "resultType": "str"
+        }
+      }
+    }
+  },
+  "MOUNT / [ok (server/discover)]": {
+    "2026-07-28": {
+      "content_type": "application/json",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            }
+          },
+          "cacheScope": "str",
+          "capabilities": {
+            "extensions": {
+              "io.modelcontextprotocol/oauth-client-credentials": {},
+              "io.modelcontextprotocol/skills": {}
+            },
+            "prompts": {
+              "listChanged": "bool"
+            },
+            "resources": {
+              "listChanged": "bool",
+              "subscribe": "bool"
+            },
+            "tools": {
+              "listChanged": "bool"
+            }
+          },
+          "resultType": "str",
+          "supportedVersions": [
+            "str"
+          ],
+          "ttlMs": "int"
+        }
+      }
+    }
+  },
+  "MOUNT / [ok (tools/list)]": {
+    "2025-11-25": {
+      "content_type": "text/event-stream",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "tools": "str"
+        }
+      },
+      "tools": [
+        {
+          "description": "Search the books you may read now (needs read; agents also need activate for instruction passages).\n        Results carry citation handles for open_citation. Optional filters narrow the evidence before ranking:\n        `book` (slugs), `path` (prefix, e.g. \"data/\"), `origin` (kstd origins: human, assisted, model, tool, unknown),\n        `acceptance` (how the book's current version was accepted: curator_passkey, operator_cli, consumer_attested, policy,\n        none; notes are not filtered), `current_only` (kstd validity includes now), `context` ({platform, version}, e.g. {\"platform\": \"vcenter\",\n        \"version\": \"7.0.3\"}: a file whose kstd applies_to the context contradicts is left out; `item.scope` says\n        unbounded, match or needs_context). `max_chars` (80-4800) makes each text a snippet around the\n        match with `truncated`; open_citation gives the full passage. Use it in agent loops. `_meta`\n        \"kutuphane/retrieval\" says which model stages ran (embedding, translation, rerank: ok, failed, skipped).",
+          "inputSchema": {
+            "properties": {
+              "acceptance": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Acceptance"
+              },
+              "book": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Book"
+              },
+              "context": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Context"
+              },
+              "current_only": {
+                "default": false,
+                "title": "Current Only",
+                "type": "boolean"
+              },
+              "k": {
+                "default": 8,
+                "title": "K",
+                "type": "integer"
+              },
+              "max_chars": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Max Chars"
+              },
+              "origin": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Origin"
+              },
+              "path": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Path"
+              },
+              "query": {
+                "title": "Query",
+                "type": "string"
+              }
+            },
+            "required": [
+              "query"
+            ],
+            "title": "search_libraryArguments",
+            "type": "object"
+          },
+          "name": "search_library",
+          "outputSchema": {
+            "properties": {
+              "result": {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "title": "Result",
+                "type": "array"
+              }
+            },
+            "required": [
+              "result"
+            ],
+            "title": "search_libraryOutput",
+            "type": "object"
+          }
+        },
+        {
+          "description": "Open a citation handle: the exact passage of that version, if you may read it now (needs read on the\n        book; agents also need activate for an instruction passage). A note reference (book@nt_…) gives the note,\n        with `current` in the optional context (repo, branch, path, commit, platform, version).",
+          "inputSchema": {
+            "properties": {
+              "branch": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Branch"
+              },
+              "commit": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Commit"
+              },
+              "handle": {
+                "title": "Handle",
+                "type": "string"
+              },
+              "path": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Path"
+              },
+              "platform": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Platform"
+              },
+              "repo": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Repo"
+              },
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Version"
+              }
+            },
+            "required": [
+              "handle"
+            ],
+            "title": "open_citationArguments",
+            "type": "object"
+          },
+          "name": "open_citation"
+        },
+        {
+          "description": "Answer from the library with [n] citations, or status not_in_library (needs read on the books it\n            uses). The optional filters are those of search_library. With `background: true` it returns {job_id,\n            status: queued} at once: poll job_status, then job_result. An `idempotency_key` (8-128 characters) makes\n            a retried submission return the same job. `retrieval` says which model stages of the search ran\n            (embedding, translation, rerank: ok, failed, skipped).",
+          "inputSchema": {
+            "properties": {
+              "acceptance": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Acceptance"
+              },
+              "background": {
+                "default": false,
+                "title": "Background",
+                "type": "boolean"
+              },
+              "book": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Book"
+              },
+              "context": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Context"
+              },
+              "current_only": {
+                "default": false,
+                "title": "Current Only",
+                "type": "boolean"
+              },
+              "idempotency_key": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Idempotency Key"
+              },
+              "origin": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Origin"
+              },
+              "path": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Path"
+              },
+              "question": {
+                "title": "Question",
+                "type": "string"
+              }
+            },
+            "required": [
+              "question"
+            ],
+            "title": "ask_libraryArguments",
+            "type": "object"
+          },
+          "name": "ask_library"
+        },
+        {
+          "description": "Show your stored answer and its evidence again (needs read on its books now; no model call).",
+          "inputSchema": {
+            "properties": {
+              "answer_id": {
+                "title": "Answer Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "answer_id"
+            ],
+            "title": "reopen_answerArguments",
+            "type": "object"
+          },
+          "name": "reopen_answer"
+        },
+        {
+          "description": "Read a text document of a specific version (needs read on the book; agent instructions need activate).",
+          "inputSchema": {
+            "properties": {
+              "book": {
+                "title": "Book",
+                "type": "string"
+              },
+              "content_id": {
+                "title": "Content Id",
+                "type": "string"
+              },
+              "path": {
+                "title": "Path",
+                "type": "string"
+              }
+            },
+            "required": [
+              "book",
+              "content_id",
+              "path"
+            ],
+            "title": "read_documentArguments",
+            "type": "object"
+          },
+          "name": "read_document",
+          "outputSchema": {
+            "properties": {
+              "result": {
+                "title": "Result",
+                "type": "string"
+              }
+            },
+            "required": [
+              "result"
+            ],
+            "title": "read_documentOutput",
+            "type": "object"
+          }
+        },
+        {
+          "description": "The books and journals you may read now (needs read; a book you may not read is not named): kind (book\n        or journal), the current content_id and profile_id, and its publication (acceptance: kind, by, at,\n        legacy; the channel ingest or import; for a package the issuer key and the sequence).",
+          "inputSchema": {
+            "properties": {},
+            "title": "list_booksArguments",
+            "type": "object"
+          },
+          "name": "list_books",
+          "outputSchema": {
+            "properties": {
+              "result": {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "title": "Result",
+                "type": "array"
+              }
+            },
+            "required": [
+              "result"
+            ],
+            "title": "list_booksOutput",
+            "type": "object"
+          }
+        },
+        {
+          "description": "The files of a book's current version, a page at a time (needs read on the book): path, digest, size,\n        passage count and the kstd item (license, ai_use, personal_data, origin, validity, applies_to). Pass\n        `next_cursor` as `cursor` for the next page; read_document reads a text file.",
+          "inputSchema": {
+            "properties": {
+              "book": {
+                "title": "Book",
+                "type": "string"
+              },
+              "cursor": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Cursor"
+              },
+              "limit": {
+                "default": 100,
+                "title": "Limit",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "book"
+            ],
+            "title": "list_filesArguments",
+            "type": "object"
+          },
+          "name": "list_files"
+        },
+        {
+          "description": "The state of your background ask_library job (no grant; your own jobs only): queued, running,\n            succeeded, failed or cancelled.",
+          "inputSchema": {
+            "properties": {
+              "job_id": {
+                "title": "Job Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "job_id"
+            ],
+            "title": "job_statusArguments",
+            "type": "object"
+          },
+          "name": "job_status"
+        },
+        {
+          "description": "The answer of your succeeded job, as reopen_answer shows it (needs read on its books now).",
+          "inputSchema": {
+            "properties": {
+              "job_id": {
+                "title": "Job Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "job_id"
+            ],
+            "title": "job_resultArguments",
+            "type": "object"
+          },
+          "name": "job_result"
+        },
+        {
+          "description": "Cancel your background job (no grant; your own jobs only): a queued job stops at once; a running one\n            before its model call or its result.",
+          "inputSchema": {
+            "properties": {
+              "job_id": {
+                "title": "Job Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "job_id"
+            ],
+            "title": "job_cancelArguments",
+            "type": "object"
+          },
+          "name": "job_cancel"
+        },
+        {
+          "description": "Write a note into a journal (needs propose). kind: finding, decision_proposal, dead_end, convention,\n        lesson, test_result. citations: passage handles or code citations repo@commit:path:start-end[#symbol].\n        links: [{type, ref}] (derived_from, supersedes, same_as, contradicts, about, fixed_by, violates,\n        decided_by) to older notes (book@nt_…) or passages. decision (decision_proposal only): {options: the 2..20\n        options offered, in order; choice: the one chosen}. The note starts pending; only a curator approves it.\n        The same bytes again are the same note (recurrence + 1). Give an idempotency_key to retry safely.\n        applies_to: the platforms and the version range (e.g. \">=7,<8\") the note holds for; a reader gives its\n        platform and version in the query context.",
+          "inputSchema": {
+            "$defs": {
+              "AppliesTo": {
+                "properties": {
+                  "platform": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "title": "Platform",
+                    "type": "array"
+                  },
+                  "version": {
+                    "title": "Version",
+                    "type": "string"
+                  }
+                },
+                "title": "AppliesTo",
+                "type": "object"
+              },
+              "Decision": {
+                "properties": {
+                  "choice": {
+                    "title": "Choice",
+                    "type": "string"
+                  },
+                  "options": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "title": "Options",
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "options",
+                  "choice"
+                ],
+                "title": "Decision",
+                "type": "object"
+              },
+              "Link": {
+                "properties": {
+                  "ref": {
+                    "title": "Ref",
+                    "type": "string"
+                  },
+                  "type": {
+                    "title": "Type",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "ref"
+                ],
+                "title": "Link",
+                "type": "object"
+              },
+              "Scope": {
+                "properties": {
+                  "branch": {
+                    "title": "Branch",
+                    "type": "string"
+                  },
+                  "paths": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "title": "Paths",
+                    "type": "array"
+                  },
+                  "repo": {
+                    "title": "Repo",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "repo"
+                ],
+                "title": "Scope",
+                "type": "object"
+              }
+            },
+            "properties": {
+              "applies_to": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/AppliesTo"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "book": {
+                "title": "Book",
+                "type": "string"
+              },
+              "citations": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "title": "Citations",
+                "type": "array"
+              },
+              "class_key": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Class Key"
+              },
+              "commit": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Commit"
+              },
+              "decision": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Decision"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "idempotency_key": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Idempotency Key"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              },
+              "links": {
+                "default": [],
+                "items": {
+                  "$ref": "#/$defs/Link"
+                },
+                "title": "Links",
+                "type": "array"
+              },
+              "origin": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Origin"
+              },
+              "scope": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Scope"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "text": {
+                "title": "Text",
+                "type": "string"
+              }
+            },
+            "required": [
+              "book",
+              "kind",
+              "text"
+            ],
+            "title": "propose_noteArguments",
+            "type": "object"
+          },
+          "name": "propose_note"
+        },
+        {
+          "description": "Link a note (src, book@nt_…; needs propose on its book) to a note or passage (dst; needs read):\n        same_as (same book), contradicts, about, fixed_by, violates, decided_by. The same link again is kept once.",
+          "inputSchema": {
+            "properties": {
+              "dst": {
+                "title": "Dst",
+                "type": "string"
+              },
+              "src": {
+                "title": "Src",
+                "type": "string"
+              },
+              "type": {
+                "title": "Type",
+                "type": "string"
+              }
+            },
+            "required": [
+              "src",
+              "type",
+              "dst"
+            ],
+            "title": "link_notesArguments",
+            "type": "object"
+          },
+          "name": "link_notes"
+        },
+        {
+          "description": "Check code citations (`repo@commit:path:start-end[#symbol]`) of a journal's repositories against `at`\n        (a branch name or a full commit id): verified, stale (with moved_to), missing, or unverifiable with a\n        reason. No code text is returned. Needs read on the book.",
+          "inputSchema": {
+            "properties": {
+              "at": {
+                "title": "At",
+                "type": "string"
+              },
+              "book": {
+                "title": "Book",
+                "type": "string"
+              },
+              "citations": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Citations",
+                "type": "array"
+              }
+            },
+            "required": [
+              "book",
+              "citations",
+              "at"
+            ],
+            "title": "verify_citationsArguments",
+            "type": "object"
+          },
+          "name": "verify_citations"
+        },
+        {
+          "description": "List agent notes in the journals you may read (needs read on each journal): fast SQL filters, no model\n        call. `sets`: current (approved, in your context), open (pending, not accepted), history. Context: repo,\n        branch, path (or `paths`: up to 20, each item names the paths it matches), commit, platform and version\n        (a note with `applies_to` needs them, as files do). `refs` (up to 50 note\n        references): only these notes, each with `standing` and `standing_seq`. Use `since` with the last watermark to\n        get changes and `left` tombstones; `cursor` for the next page. `min_passed` (0..100): only notes with at least\n        that many `passed` outcomes; `exclude_failed`: no note whose latest outcome is failed or reverted.",
+          "inputSchema": {
+            "properties": {
+              "as_of": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "As Of"
+              },
+              "book": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Book"
+              },
+              "branch": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Branch"
+              },
+              "budget_tokens": {
+                "default": 2000,
+                "title": "Budget Tokens",
+                "type": "integer"
+              },
+              "class_key": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Class Key"
+              },
+              "collapse": {
+                "default": false,
+                "title": "Collapse",
+                "type": "boolean"
+              },
+              "commit": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Commit"
+              },
+              "commits": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Commits"
+              },
+              "cursor": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Cursor"
+              },
+              "exclude_failed": {
+                "default": false,
+                "title": "Exclude Failed",
+                "type": "boolean"
+              },
+              "include_unverified": {
+                "default": false,
+                "title": "Include Unverified",
+                "type": "boolean"
+              },
+              "kind": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Kind"
+              },
+              "max_bytes": {
+                "default": 32768,
+                "title": "Max Bytes",
+                "type": "integer"
+              },
+              "min_passed": {
+                "default": 0,
+                "title": "Min Passed",
+                "type": "integer"
+              },
+              "order": {
+                "default": "newest",
+                "title": "Order",
+                "type": "string"
+              },
+              "origin": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Origin"
+              },
+              "path": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Path"
+              },
+              "paths": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Paths"
+              },
+              "platform": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Platform"
+              },
+              "refs": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Refs"
+              },
+              "repo": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Repo"
+              },
+              "role": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Role"
+              },
+              "sets": {
+                "default": [
+                  "current"
+                ],
+                "items": {
+                  "type": "string"
+                },
+                "title": "Sets",
+                "type": "array"
+              },
+              "since": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Since"
+              },
+              "text": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Text"
+              },
+              "unfixed": {
+                "default": false,
+                "title": "Unfixed",
+                "type": "boolean"
+              },
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Version"
+              },
+              "written_after": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Written After"
+              },
+              "written_before": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Written Before"
+              }
+            },
+            "title": "query_notesArguments",
+            "type": "object"
+          },
+          "name": "query_notes"
+        },
+        {
+          "description": "The notes linked to a note reference or a passage handle (depth 1 or 2), only those you may read (needs\n        read on their journals) and that are in `sets` in your context (repo, branch, path, commit, platform,\n        version).",
+          "inputSchema": {
+            "properties": {
+              "as_of": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "As Of"
+              },
+              "branch": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Branch"
+              },
+              "budget_tokens": {
+                "default": 2000,
+                "title": "Budget Tokens",
+                "type": "integer"
+              },
+              "commit": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Commit"
+              },
+              "depth": {
+                "default": 1,
+                "title": "Depth",
+                "type": "integer"
+              },
+              "direction": {
+                "default": "both",
+                "title": "Direction",
+                "type": "string"
+              },
+              "max_bytes": {
+                "default": 32768,
+                "title": "Max Bytes",
+                "type": "integer"
+              },
+              "max_nodes": {
+                "default": 50,
+                "title": "Max Nodes",
+                "type": "integer"
+              },
+              "path": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Path"
+              },
+              "platform": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Platform"
+              },
+              "ref": {
+                "title": "Ref",
+                "type": "string"
+              },
+              "repo": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Repo"
+              },
+              "sets": {
+                "default": [
+                  "current"
+                ],
+                "items": {
+                  "type": "string"
+                },
+                "title": "Sets",
+                "type": "array"
+              },
+              "types": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Types"
+              },
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Version"
+              }
+            },
+            "required": [
+              "ref"
+            ],
+            "title": "neighboursArguments",
+            "type": "object"
+          },
+          "name": "neighbours"
+        },
+        {
+          "description": "Record how an item worked in a task (needs propose and read on its book). ref: a note (book@nt_…) or a\n        passage handle; both name one exact version. task_ref: your task or run id. result: passed, failed,\n        reverted or reopened. Outcomes are counts on the item; they never change its Standing. A retry with the\n        same idempotency_key returns the first receipt.",
+          "inputSchema": {
+            "properties": {
+              "idempotency_key": {
+                "title": "Idempotency Key",
+                "type": "string"
+              },
+              "ref": {
+                "title": "Ref",
+                "type": "string"
+              },
+              "result": {
+                "title": "Result",
+                "type": "string"
+              },
+              "task_ref": {
+                "title": "Task Ref",
+                "type": "string"
+              }
+            },
+            "required": [
+              "ref",
+              "task_ref",
+              "result",
+              "idempotency_key"
+            ],
+            "title": "record_outcomeArguments",
+            "type": "object"
+          },
+          "name": "record_outcome"
+        },
+        {
+          "description": "Ask the person to confirm whose words a note holds (D70 R3; needs read on the note's book). Only the\n        person can confirm, in curator web with a passkey; this tool never confirms. Returns {ref, origin,\n        confirmation: {state: open, confirmed, expired or none, url?, expires_at?, claim?, entered_by?,\n        confirmed_by?}}. Show the url to the person.",
+          "inputSchema": {
+            "properties": {
+              "ref": {
+                "title": "Ref",
+                "type": "string"
+              }
+            },
+            "required": [
+              "ref"
+            ],
+            "title": "confirm_originArguments",
+            "type": "object"
+          },
+          "name": "confirm_origin"
+        },
+        {
+          "description": "Submit a signed Kütüphane package (base64 of the tar that `kutuphane export` writes; needs propose on the\n        book that its manifest names). The same checks as `kutuphane receive` run: a trusted, unrevoked key, the\n        signature, every digest, a newer sequence. Nothing is published: a person approves it with\n        `kutuphane approve-import`. Returns the import status: received, findings, approved or refused.",
+          "inputSchema": {
+            "properties": {
+              "package_base64": {
+                "title": "Package Base64",
+                "type": "string"
+              }
+            },
+            "required": [
+              "package_base64"
+            ],
+            "title": "submit_packageArguments",
+            "type": "object"
+          },
+          "name": "submit_package"
+        },
+        {
+          "description": "The status of a package that you submitted (no grant; your own submissions only): received, findings (a person reads them before approval),\n        approved (published) or refused (with the reasons).",
+          "inputSchema": {
+            "properties": {
+              "import_id": {
+                "title": "Import Id",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "import_id"
+            ],
+            "title": "package_statusArguments",
+            "type": "object"
+          },
+          "name": "package_status"
+        }
+      ]
+    },
+    "2026-07-28": {
+      "content_type": "application/json",
+      "http_status": 200,
+      "message": {
+        "id": "int",
+        "jsonrpc": "str",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "str",
+              "version": "str"
+            }
+          },
+          "cacheScope": "str",
+          "resultType": "str",
+          "tools": "str",
+          "ttlMs": "int"
+        }
+      },
+      "tools": [
+        {
+          "description": "Search the books you may read now (needs read; agents also need activate for instruction passages).\n        Results carry citation handles for open_citation. Optional filters narrow the evidence before ranking:\n        `book` (slugs), `path` (prefix, e.g. \"data/\"), `origin` (kstd origins: human, assisted, model, tool, unknown),\n        `acceptance` (how the book's current version was accepted: curator_passkey, operator_cli, consumer_attested, policy,\n        none; notes are not filtered), `current_only` (kstd validity includes now), `context` ({platform, version}, e.g. {\"platform\": \"vcenter\",\n        \"version\": \"7.0.3\"}: a file whose kstd applies_to the context contradicts is left out; `item.scope` says\n        unbounded, match or needs_context). `max_chars` (80-4800) makes each text a snippet around the\n        match with `truncated`; open_citation gives the full passage. Use it in agent loops. `_meta`\n        \"kutuphane/retrieval\" says which model stages ran (embedding, translation, rerank: ok, failed, skipped).",
+          "inputSchema": {
+            "properties": {
+              "acceptance": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Acceptance"
+              },
+              "book": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Book"
+              },
+              "context": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Context"
+              },
+              "current_only": {
+                "default": false,
+                "title": "Current Only",
+                "type": "boolean"
+              },
+              "k": {
+                "default": 8,
+                "title": "K",
+                "type": "integer"
+              },
+              "max_chars": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Max Chars"
+              },
+              "origin": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Origin"
+              },
+              "path": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Path"
+              },
+              "query": {
+                "title": "Query",
+                "type": "string"
+              }
+            },
+            "required": [
+              "query"
+            ],
+            "title": "search_libraryArguments",
+            "type": "object"
+          },
+          "name": "search_library",
+          "outputSchema": {
+            "properties": {
+              "result": {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "title": "Result",
+                "type": "array"
+              }
+            },
+            "required": [
+              "result"
+            ],
+            "title": "search_libraryOutput",
+            "type": "object"
+          }
+        },
+        {
+          "description": "Open a citation handle: the exact passage of that version, if you may read it now (needs read on the\n        book; agents also need activate for an instruction passage). A note reference (book@nt_…) gives the note,\n        with `current` in the optional context (repo, branch, path, commit, platform, version).",
+          "inputSchema": {
+            "properties": {
+              "branch": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Branch"
+              },
+              "commit": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Commit"
+              },
+              "handle": {
+                "title": "Handle",
+                "type": "string"
+              },
+              "path": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Path"
+              },
+              "platform": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Platform"
+              },
+              "repo": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Repo"
+              },
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Version"
+              }
+            },
+            "required": [
+              "handle"
+            ],
+            "title": "open_citationArguments",
+            "type": "object"
+          },
+          "name": "open_citation"
+        },
+        {
+          "description": "Answer from the library with [n] citations, or status not_in_library (needs read on the books it\n            uses). The optional filters are those of search_library. With `background: true` it returns {job_id,\n            status: queued} at once: poll job_status, then job_result. An `idempotency_key` (8-128 characters) makes\n            a retried submission return the same job. `retrieval` says which model stages of the search ran\n            (embedding, translation, rerank: ok, failed, skipped).",
+          "inputSchema": {
+            "properties": {
+              "acceptance": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Acceptance"
+              },
+              "background": {
+                "default": false,
+                "title": "Background",
+                "type": "boolean"
+              },
+              "book": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Book"
+              },
+              "context": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Context"
+              },
+              "current_only": {
+                "default": false,
+                "title": "Current Only",
+                "type": "boolean"
+              },
+              "idempotency_key": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Idempotency Key"
+              },
+              "origin": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Origin"
+              },
+              "path": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Path"
+              },
+              "question": {
+                "title": "Question",
+                "type": "string"
+              }
+            },
+            "required": [
+              "question"
+            ],
+            "title": "ask_libraryArguments",
+            "type": "object"
+          },
+          "name": "ask_library"
+        },
+        {
+          "description": "Show your stored answer and its evidence again (needs read on its books now; no model call).",
+          "inputSchema": {
+            "properties": {
+              "answer_id": {
+                "title": "Answer Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "answer_id"
+            ],
+            "title": "reopen_answerArguments",
+            "type": "object"
+          },
+          "name": "reopen_answer"
+        },
+        {
+          "description": "Read a text document of a specific version (needs read on the book; agent instructions need activate).",
+          "inputSchema": {
+            "properties": {
+              "book": {
+                "title": "Book",
+                "type": "string"
+              },
+              "content_id": {
+                "title": "Content Id",
+                "type": "string"
+              },
+              "path": {
+                "title": "Path",
+                "type": "string"
+              }
+            },
+            "required": [
+              "book",
+              "content_id",
+              "path"
+            ],
+            "title": "read_documentArguments",
+            "type": "object"
+          },
+          "name": "read_document",
+          "outputSchema": {
+            "properties": {
+              "result": {
+                "title": "Result",
+                "type": "string"
+              }
+            },
+            "required": [
+              "result"
+            ],
+            "title": "read_documentOutput",
+            "type": "object"
+          }
+        },
+        {
+          "description": "The books and journals you may read now (needs read; a book you may not read is not named): kind (book\n        or journal), the current content_id and profile_id, and its publication (acceptance: kind, by, at,\n        legacy; the channel ingest or import; for a package the issuer key and the sequence).",
+          "inputSchema": {
+            "properties": {},
+            "title": "list_booksArguments",
+            "type": "object"
+          },
+          "name": "list_books",
+          "outputSchema": {
+            "properties": {
+              "result": {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "title": "Result",
+                "type": "array"
+              }
+            },
+            "required": [
+              "result"
+            ],
+            "title": "list_booksOutput",
+            "type": "object"
+          }
+        },
+        {
+          "description": "The files of a book's current version, a page at a time (needs read on the book): path, digest, size,\n        passage count and the kstd item (license, ai_use, personal_data, origin, validity, applies_to). Pass\n        `next_cursor` as `cursor` for the next page; read_document reads a text file.",
+          "inputSchema": {
+            "properties": {
+              "book": {
+                "title": "Book",
+                "type": "string"
+              },
+              "cursor": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Cursor"
+              },
+              "limit": {
+                "default": 100,
+                "title": "Limit",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "book"
+            ],
+            "title": "list_filesArguments",
+            "type": "object"
+          },
+          "name": "list_files"
+        },
+        {
+          "description": "The state of your background ask_library job (no grant; your own jobs only): queued, running,\n            succeeded, failed or cancelled.",
+          "inputSchema": {
+            "properties": {
+              "job_id": {
+                "title": "Job Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "job_id"
+            ],
+            "title": "job_statusArguments",
+            "type": "object"
+          },
+          "name": "job_status"
+        },
+        {
+          "description": "The answer of your succeeded job, as reopen_answer shows it (needs read on its books now).",
+          "inputSchema": {
+            "properties": {
+              "job_id": {
+                "title": "Job Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "job_id"
+            ],
+            "title": "job_resultArguments",
+            "type": "object"
+          },
+          "name": "job_result"
+        },
+        {
+          "description": "Cancel your background job (no grant; your own jobs only): a queued job stops at once; a running one\n            before its model call or its result.",
+          "inputSchema": {
+            "properties": {
+              "job_id": {
+                "title": "Job Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "job_id"
+            ],
+            "title": "job_cancelArguments",
+            "type": "object"
+          },
+          "name": "job_cancel"
+        },
+        {
+          "description": "Write a note into a journal (needs propose). kind: finding, decision_proposal, dead_end, convention,\n        lesson, test_result. citations: passage handles or code citations repo@commit:path:start-end[#symbol].\n        links: [{type, ref}] (derived_from, supersedes, same_as, contradicts, about, fixed_by, violates,\n        decided_by) to older notes (book@nt_…) or passages. decision (decision_proposal only): {options: the 2..20\n        options offered, in order; choice: the one chosen}. The note starts pending; only a curator approves it.\n        The same bytes again are the same note (recurrence + 1). Give an idempotency_key to retry safely.\n        applies_to: the platforms and the version range (e.g. \">=7,<8\") the note holds for; a reader gives its\n        platform and version in the query context.",
+          "inputSchema": {
+            "$defs": {
+              "AppliesTo": {
+                "properties": {
+                  "platform": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "title": "Platform",
+                    "type": "array"
+                  },
+                  "version": {
+                    "title": "Version",
+                    "type": "string"
+                  }
+                },
+                "title": "AppliesTo",
+                "type": "object"
+              },
+              "Decision": {
+                "properties": {
+                  "choice": {
+                    "title": "Choice",
+                    "type": "string"
+                  },
+                  "options": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "title": "Options",
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "options",
+                  "choice"
+                ],
+                "title": "Decision",
+                "type": "object"
+              },
+              "Link": {
+                "properties": {
+                  "ref": {
+                    "title": "Ref",
+                    "type": "string"
+                  },
+                  "type": {
+                    "title": "Type",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "ref"
+                ],
+                "title": "Link",
+                "type": "object"
+              },
+              "Scope": {
+                "properties": {
+                  "branch": {
+                    "title": "Branch",
+                    "type": "string"
+                  },
+                  "paths": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "title": "Paths",
+                    "type": "array"
+                  },
+                  "repo": {
+                    "title": "Repo",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "repo"
+                ],
+                "title": "Scope",
+                "type": "object"
+              }
+            },
+            "properties": {
+              "applies_to": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/AppliesTo"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "book": {
+                "title": "Book",
+                "type": "string"
+              },
+              "citations": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "title": "Citations",
+                "type": "array"
+              },
+              "class_key": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Class Key"
+              },
+              "commit": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Commit"
+              },
+              "decision": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Decision"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "idempotency_key": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Idempotency Key"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              },
+              "links": {
+                "default": [],
+                "items": {
+                  "$ref": "#/$defs/Link"
+                },
+                "title": "Links",
+                "type": "array"
+              },
+              "origin": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Origin"
+              },
+              "scope": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Scope"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "text": {
+                "title": "Text",
+                "type": "string"
+              }
+            },
+            "required": [
+              "book",
+              "kind",
+              "text"
+            ],
+            "title": "propose_noteArguments",
+            "type": "object"
+          },
+          "name": "propose_note"
+        },
+        {
+          "description": "Link a note (src, book@nt_…; needs propose on its book) to a note or passage (dst; needs read):\n        same_as (same book), contradicts, about, fixed_by, violates, decided_by. The same link again is kept once.",
+          "inputSchema": {
+            "properties": {
+              "dst": {
+                "title": "Dst",
+                "type": "string"
+              },
+              "src": {
+                "title": "Src",
+                "type": "string"
+              },
+              "type": {
+                "title": "Type",
+                "type": "string"
+              }
+            },
+            "required": [
+              "src",
+              "type",
+              "dst"
+            ],
+            "title": "link_notesArguments",
+            "type": "object"
+          },
+          "name": "link_notes"
+        },
+        {
+          "description": "Check code citations (`repo@commit:path:start-end[#symbol]`) of a journal's repositories against `at`\n        (a branch name or a full commit id): verified, stale (with moved_to), missing, or unverifiable with a\n        reason. No code text is returned. Needs read on the book.",
+          "inputSchema": {
+            "properties": {
+              "at": {
+                "title": "At",
+                "type": "string"
+              },
+              "book": {
+                "title": "Book",
+                "type": "string"
+              },
+              "citations": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Citations",
+                "type": "array"
+              }
+            },
+            "required": [
+              "book",
+              "citations",
+              "at"
+            ],
+            "title": "verify_citationsArguments",
+            "type": "object"
+          },
+          "name": "verify_citations"
+        },
+        {
+          "description": "List agent notes in the journals you may read (needs read on each journal): fast SQL filters, no model\n        call. `sets`: current (approved, in your context), open (pending, not accepted), history. Context: repo,\n        branch, path (or `paths`: up to 20, each item names the paths it matches), commit, platform and version\n        (a note with `applies_to` needs them, as files do). `refs` (up to 50 note\n        references): only these notes, each with `standing` and `standing_seq`. Use `since` with the last watermark to\n        get changes and `left` tombstones; `cursor` for the next page. `min_passed` (0..100): only notes with at least\n        that many `passed` outcomes; `exclude_failed`: no note whose latest outcome is failed or reverted.",
+          "inputSchema": {
+            "properties": {
+              "as_of": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "As Of"
+              },
+              "book": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Book"
+              },
+              "branch": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Branch"
+              },
+              "budget_tokens": {
+                "default": 2000,
+                "title": "Budget Tokens",
+                "type": "integer"
+              },
+              "class_key": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Class Key"
+              },
+              "collapse": {
+                "default": false,
+                "title": "Collapse",
+                "type": "boolean"
+              },
+              "commit": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Commit"
+              },
+              "commits": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Commits"
+              },
+              "cursor": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Cursor"
+              },
+              "exclude_failed": {
+                "default": false,
+                "title": "Exclude Failed",
+                "type": "boolean"
+              },
+              "include_unverified": {
+                "default": false,
+                "title": "Include Unverified",
+                "type": "boolean"
+              },
+              "kind": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Kind"
+              },
+              "max_bytes": {
+                "default": 32768,
+                "title": "Max Bytes",
+                "type": "integer"
+              },
+              "min_passed": {
+                "default": 0,
+                "title": "Min Passed",
+                "type": "integer"
+              },
+              "order": {
+                "default": "newest",
+                "title": "Order",
+                "type": "string"
+              },
+              "origin": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Origin"
+              },
+              "path": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Path"
+              },
+              "paths": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Paths"
+              },
+              "platform": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Platform"
+              },
+              "refs": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Refs"
+              },
+              "repo": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Repo"
+              },
+              "role": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Role"
+              },
+              "sets": {
+                "default": [
+                  "current"
+                ],
+                "items": {
+                  "type": "string"
+                },
+                "title": "Sets",
+                "type": "array"
+              },
+              "since": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Since"
+              },
+              "text": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Text"
+              },
+              "unfixed": {
+                "default": false,
+                "title": "Unfixed",
+                "type": "boolean"
+              },
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Version"
+              },
+              "written_after": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Written After"
+              },
+              "written_before": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Written Before"
+              }
+            },
+            "title": "query_notesArguments",
+            "type": "object"
+          },
+          "name": "query_notes"
+        },
+        {
+          "description": "The notes linked to a note reference or a passage handle (depth 1 or 2), only those you may read (needs\n        read on their journals) and that are in `sets` in your context (repo, branch, path, commit, platform,\n        version).",
+          "inputSchema": {
+            "properties": {
+              "as_of": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "As Of"
+              },
+              "branch": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Branch"
+              },
+              "budget_tokens": {
+                "default": 2000,
+                "title": "Budget Tokens",
+                "type": "integer"
+              },
+              "commit": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Commit"
+              },
+              "depth": {
+                "default": 1,
+                "title": "Depth",
+                "type": "integer"
+              },
+              "direction": {
+                "default": "both",
+                "title": "Direction",
+                "type": "string"
+              },
+              "max_bytes": {
+                "default": 32768,
+                "title": "Max Bytes",
+                "type": "integer"
+              },
+              "max_nodes": {
+                "default": 50,
+                "title": "Max Nodes",
+                "type": "integer"
+              },
+              "path": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Path"
+              },
+              "platform": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Platform"
+              },
+              "ref": {
+                "title": "Ref",
+                "type": "string"
+              },
+              "repo": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Repo"
+              },
+              "sets": {
+                "default": [
+                  "current"
+                ],
+                "items": {
+                  "type": "string"
+                },
+                "title": "Sets",
+                "type": "array"
+              },
+              "types": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Types"
+              },
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Version"
+              }
+            },
+            "required": [
+              "ref"
+            ],
+            "title": "neighboursArguments",
+            "type": "object"
+          },
+          "name": "neighbours"
+        },
+        {
+          "description": "Record how an item worked in a task (needs propose and read on its book). ref: a note (book@nt_…) or a\n        passage handle; both name one exact version. task_ref: your task or run id. result: passed, failed,\n        reverted or reopened. Outcomes are counts on the item; they never change its Standing. A retry with the\n        same idempotency_key returns the first receipt.",
+          "inputSchema": {
+            "properties": {
+              "idempotency_key": {
+                "title": "Idempotency Key",
+                "type": "string"
+              },
+              "ref": {
+                "title": "Ref",
+                "type": "string"
+              },
+              "result": {
+                "title": "Result",
+                "type": "string"
+              },
+              "task_ref": {
+                "title": "Task Ref",
+                "type": "string"
+              }
+            },
+            "required": [
+              "ref",
+              "task_ref",
+              "result",
+              "idempotency_key"
+            ],
+            "title": "record_outcomeArguments",
+            "type": "object"
+          },
+          "name": "record_outcome"
+        },
+        {
+          "description": "Ask the person to confirm whose words a note holds (D70 R3; needs read on the note's book). Only the\n        person can confirm, in curator web with a passkey; this tool never confirms. Returns {ref, origin,\n        confirmation: {state: open, confirmed, expired or none, url?, expires_at?, claim?, entered_by?,\n        confirmed_by?}}. Show the url to the person.",
+          "inputSchema": {
+            "properties": {
+              "ref": {
+                "title": "Ref",
+                "type": "string"
+              }
+            },
+            "required": [
+              "ref"
+            ],
+            "title": "confirm_originArguments",
+            "type": "object"
+          },
+          "name": "confirm_origin"
+        },
+        {
+          "description": "Submit a signed Kütüphane package (base64 of the tar that `kutuphane export` writes; needs propose on the\n        book that its manifest names). The same checks as `kutuphane receive` run: a trusted, unrevoked key, the\n        signature, every digest, a newer sequence. Nothing is published: a person approves it with\n        `kutuphane approve-import`. Returns the import status: received, findings, approved or refused.",
+          "inputSchema": {
+            "properties": {
+              "package_base64": {
+                "title": "Package Base64",
+                "type": "string"
+              }
+            },
+            "required": [
+              "package_base64"
+            ],
+            "title": "submit_packageArguments",
+            "type": "object"
+          },
+          "name": "submit_package"
+        },
+        {
+          "description": "The status of a package that you submitted (no grant; your own submissions only): received, findings (a person reads them before approval),\n        approved (published) or refused (with the reasons).",
+          "inputSchema": {
+            "properties": {
+              "import_id": {
+                "title": "Import Id",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "import_id"
+            ],
+            "title": "package_statusArguments",
+            "type": "object"
+          },
+          "name": "package_status"
+        }
+      ]
+    }
+  },
+  "MOUNT / [unauthorized]": {
+    "body": {
+      "error": "str",
+      "error_description": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "invalid_token",
+      "error_description": "Authentication required"
+    },
+    "status": 401
+  },
+  "OPTIONS /.well-known/oauth-protected-resource [ok]": {
+    "body": {
+      "authorization_servers": [
+        "str"
+      ],
+      "bearer_methods_supported": [
+        "str"
+      ],
+      "resource": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "OPTIONS /mcp [method_not_allowed (2025-11-25)]": {
+    "allow": "GET, POST, DELETE",
+    "body": {
+      "error": {
+        "code": "int",
+        "message": "str"
+      },
+      "id": "null",
+      "jsonrpc": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": {
+        "code": -32600,
+        "message": "Method Not Allowed"
+      }
+    },
+    "status": 405
+  },
+  "OPTIONS /mcp [method_not_allowed (2026-07-28)]": {
+    "allow": "POST",
+    "body": "empty",
+    "content_type": "",
+    "status": 405
+  },
+  "OPTIONS /mcp [unauthorized (2025-11-25)]": {
+    "allow": null,
+    "body": {
+      "error": "str",
+      "error_description": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "invalid_token",
+      "error_description": "Authentication required"
+    },
+    "status": 401
+  },
+  "OPTIONS /mcp [unauthorized (2026-07-28)]": {
+    "allow": null,
+    "body": {
+      "error": "str",
+      "error_description": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "invalid_token",
+      "error_description": "Authentication required"
+    },
+    "status": 401
+  },
+  "PATCH /mcp [method_not_allowed (2025-11-25)]": {
+    "allow": "GET, POST, DELETE",
+    "body": {
+      "error": {
+        "code": "int",
+        "message": "str"
+      },
+      "id": "null",
+      "jsonrpc": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": {
+        "code": -32600,
+        "message": "Method Not Allowed"
+      }
+    },
+    "status": 405
+  },
+  "PATCH /mcp [method_not_allowed (2026-07-28)]": {
+    "allow": "POST",
+    "body": "empty",
+    "content_type": "",
+    "status": 405
+  },
+  "PATCH /mcp [unauthorized (2025-11-25)]": {
+    "allow": null,
+    "body": {
+      "error": "str",
+      "error_description": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "invalid_token",
+      "error_description": "Authentication required"
+    },
+    "status": 401
+  },
+  "PATCH /mcp [unauthorized (2026-07-28)]": {
+    "allow": null,
+    "body": {
+      "error": "str",
+      "error_description": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "invalid_token",
+      "error_description": "Authentication required"
+    },
+    "status": 401
+  },
+  "POST /v1/ask [bad_request]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "JSON body required"
+    },
+    "status": 400
+  },
+  "POST /v1/ask [ok (empty)]": {
+    "body": {
+      "body": "null",
+      "citations": [],
+      "correlation_id": "str",
+      "id": "str",
+      "retrieval": {
+        "embedding": "str",
+        "rerank": "str",
+        "translation": "str"
+      },
+      "status": "str",
+      "withheld": "int"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "POST /v1/ask [ok (queued)]": {
+    "body": {
+      "correlation_id": "str",
+      "job_id": "str",
+      "status": "str"
+    },
+    "content_type": "application/json",
+    "status": 202
+  },
+  "POST /v1/ask [ok]": {
+    "body": {
+      "body": "str",
+      "citations": [
+        {
+          "book": "str",
+          "content_id": "str",
+          "item": {
+            "ai_use": {
+              "ai_input": "str",
+              "search": "str",
+              "train": "str"
+            },
+            "applies_to": "null",
+            "confirmed_by": "null",
+            "current": "bool",
+            "entered_by": "null",
+            "holder": "str",
+            "issuer": "str",
+            "license": "str",
+            "listed": "bool",
+            "notices": [
+              "str"
+            ],
+            "origin": "str",
+            "personal_data": "str",
+            "reviewed_by": "null",
+            "scope": "str",
+            "software_agent": "null",
+            "valid_from": "null",
+            "valid_to": "null"
+          },
+          "line": "int",
+          "n": "int",
+          "ordinal": "int",
+          "path": "str",
+          "profile_id": "str",
+          "quoted_records": [],
+          "record": "null"
+        }
+      ],
+      "correlation_id": "str",
+      "id": "str",
+      "retrieval": {
+        "embedding": "str",
+        "rerank": "str",
+        "translation": "str"
+      },
+      "status": "str",
+      "withheld": "int"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "POST /v1/ask [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "unauthenticated"
+    },
+    "status": 401
+  },
+  "POST /v1/citations/verify [bad_request]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "give 1 to 200 citations"
+    },
+    "status": 400
+  },
+  "POST /v1/citations/verify [not_found (forbidden)]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "forbidden"
+    },
+    "status": 403
+  },
+  "POST /v1/citations/verify [ok]": {
+    "body": {
+      "results": [
+        {
+          "citation": "str",
+          "moved_to": {
+            "any_of": [
+              "int",
+              "null"
+            ]
+          },
+          "reason": {
+            "any_of": [
+              "null",
+              "str"
+            ]
+          },
+          "status": "str",
+          "symbol_found_at": "null"
+        }
+      ],
+      "targets": {
+        "hafiza/adc": "str"
+      }
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "POST /v1/citations/verify [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "unauthenticated"
+    },
+    "status": 401
+  },
+  "POST /v1/jobs/{job_id}/cancel [not_found]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "not found"
+    },
+    "status": 404
+  },
+  "POST /v1/jobs/{job_id}/cancel [ok]": {
+    "body": {
+      "created_at": "str",
+      "error": "null",
+      "finished_at": "str",
+      "started_at": "str",
+      "status": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "POST /v1/jobs/{job_id}/cancel [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "unauthenticated"
+    },
+    "status": 401
+  },
+  "POST /v1/notes [bad_request]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "JSON body required"
+    },
+    "status": 400
+  },
+  "POST /v1/notes [not_found (forbidden)]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "forbidden"
+    },
+    "status": 403
+  },
+  "POST /v1/notes [ok (created)]": {
+    "body": {
+      "candidates": [],
+      "class_count": "int",
+      "guard_due": "bool",
+      "origin": "str",
+      "origin_notice": "null",
+      "recurrence": "int",
+      "ref": "str",
+      "standing": "str",
+      "status": "str",
+      "vector": "str"
+    },
+    "content_type": "application/json",
+    "status": 201
+  },
+  "POST /v1/notes [ok (retried)]": {
+    "body": {
+      "candidates": [],
+      "class_count": "int",
+      "guard_due": "bool",
+      "origin": "str",
+      "origin_notice": "null",
+      "recurrence": "int",
+      "ref": "str",
+      "standing": "str",
+      "status": "str",
+      "vector": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "POST /v1/notes [ok (with a citation)]": {
+    "body": {
+      "candidates": [],
+      "class_count": "int",
+      "guard_due": "bool",
+      "origin": "str",
+      "origin_notice": "null",
+      "recurrence": "int",
+      "ref": "str",
+      "standing": "str",
+      "status": "str",
+      "vector": "str"
+    },
+    "content_type": "application/json",
+    "status": 201
+  },
+  "POST /v1/notes [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "unauthenticated"
+    },
+    "status": 401
+  },
+  "POST /v1/notes/links [bad_request]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "JSON body required"
+    },
+    "status": 400
+  },
+  "POST /v1/notes/links [not_found]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "not found"
+    },
+    "status": 404
+  },
+  "POST /v1/notes/links [ok (created)]": {
+    "body": {
+      "dst": "str",
+      "src": "str",
+      "status": "str",
+      "type": "str"
+    },
+    "content_type": "application/json",
+    "status": 201
+  },
+  "POST /v1/notes/links [ok (retried)]": {
+    "body": {
+      "dst": "str",
+      "src": "str",
+      "status": "str",
+      "type": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "POST /v1/notes/links [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "unauthenticated"
+    },
+    "status": 401
+  },
+  "POST /v1/outcomes [bad_request (conflict)]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "idempotency_key reused with another request"
+    },
+    "status": 409
+  },
+  "POST /v1/outcomes [bad_request]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "idempotency_key must be a string"
+    },
+    "status": 400
+  },
+  "POST /v1/outcomes [not_found]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "not found"
+    },
+    "status": 404
+  },
+  "POST /v1/outcomes [ok (created note)]": {
+    "body": {
+      "origin": "str",
+      "ref": "str",
+      "result": "str",
+      "task_ref": "str"
+    },
+    "content_type": "application/json",
+    "status": 201
+  },
+  "POST /v1/outcomes [ok (passage)]": {
+    "body": {
+      "origin": "str",
+      "ref": "str",
+      "result": "str",
+      "task_ref": "str"
+    },
+    "content_type": "application/json",
+    "status": 201
+  },
+  "POST /v1/outcomes [ok (second note)]": {
+    "body": {
+      "origin": "str",
+      "ref": "str",
+      "result": "str",
+      "task_ref": "str"
+    },
+    "content_type": "application/json",
+    "status": 201
+  },
+  "POST /v1/outcomes [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "unauthenticated"
+    },
+    "status": 401
+  },
+  "POST /v1/packages [bad_request]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "not a readable package: not a valid package: truncated header"
+    },
+    "status": 400
+  },
+  "POST /v1/packages [not_found (forbidden)]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "forbidden"
+    },
+    "status": 403
+  },
+  "POST /v1/packages [ok (next version)]": {
+    "body": {
+      "book": "str",
+      "content_id": "str",
+      "decided_at": "null",
+      "decided_by": "null",
+      "diff": {
+        "added": [
+          "str"
+        ],
+        "changed": [
+          "str"
+        ],
+        "removed": [
+          "str"
+        ]
+      },
+      "findings": [
+        {
+          "kind": "str",
+          "lines": [
+            "int"
+          ],
+          "path": "str",
+          "rule": "str",
+          "sha256": "str"
+        }
+      ],
+      "id": "int",
+      "issuer": "str",
+      "reasons": [],
+      "received_at": "str",
+      "sequence": "int",
+      "status": "str"
+    },
+    "content_type": "application/json",
+    "status": 201
+  },
+  "POST /v1/packages [ok (rejected)]": {
+    "body": {
+      "book": "null",
+      "content_id": "null",
+      "decided_at": "null",
+      "decided_by": "null",
+      "diff": "null",
+      "findings": [],
+      "id": "int",
+      "issuer": "null",
+      "reasons": [
+        "str"
+      ],
+      "received_at": "str",
+      "sequence": "null",
+      "status": "str"
+    },
+    "content_type": "application/json",
+    "status": 201
+  },
+  "POST /v1/packages [ok (retried)]": {
+    "body": {
+      "book": "null",
+      "content_id": "null",
+      "decided_at": "null",
+      "decided_by": "null",
+      "diff": "null",
+      "findings": [],
+      "id": "int",
+      "issuer": "null",
+      "reasons": [
+        "str"
+      ],
+      "received_at": "str",
+      "sequence": "null",
+      "status": "str"
+    },
+    "content_type": "application/json",
+    "status": 201
+  },
+  "POST /v1/packages [unauthorized]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "unauthenticated"
+    },
+    "status": 401
+  },
+  "PUT /mcp [method_not_allowed (2025-11-25)]": {
+    "allow": "GET, POST, DELETE",
+    "body": {
+      "error": {
+        "code": "int",
+        "message": "str"
+      },
+      "id": "null",
+      "jsonrpc": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": {
+        "code": -32600,
+        "message": "Method Not Allowed"
+      }
+    },
+    "status": 405
+  },
+  "PUT /mcp [method_not_allowed (2026-07-28)]": {
+    "allow": "POST",
+    "body": "empty",
+    "content_type": "",
+    "status": 405
+  },
+  "PUT /mcp [unauthorized (2025-11-25)]": {
+    "allow": null,
+    "body": {
+      "error": "str",
+      "error_description": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "invalid_token",
+      "error_description": "Authentication required"
+    },
+    "status": 401
+  },
+  "PUT /mcp [unauthorized (2026-07-28)]": {
+    "allow": null,
+    "body": {
+      "error": "str",
+      "error_description": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "invalid_token",
+      "error_description": "Authentication required"
+    },
+    "status": 401
+  }
+}
