@@ -1,0 +1,56 @@
+# Scratch stack of deploy/llmdap_contract_ci.sh (the LLMDAP contract runner, #243). Own project `kutuphane-contract`,
+# never `kutuphane`; no host port; no volume that outlives the run. The script creates the network, because the
+# caller attaches its LLMDAP bridge to it (alias `llmdap`). Do not start this file by hand.
+name: kutuphane-contract
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.0-pg17
+    environment:
+      POSTGRES_DB: contract
+      POSTGRES_USER: kutuphane
+      POSTGRES_PASSWORD: ${CONTRACT_DB_PASSWORD:?set by deploy/llmdap_contract_ci.sh}
+    tmpfs: [/var/lib/postgresql/data]
+    networks: [contract]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kutuphane -d contract"]
+      interval: 2s
+      retries: 30
+
+  model-stub:
+    image: python:3.12-slim
+    command: ["python", "-I", "/srv/model_stub.py"]
+    read_only: true
+    cap_drop: [ALL]
+    volumes:
+      - ../model_stub.py:/srv/model_stub.py:ro
+    networks: [contract]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8000), 5).close()"]
+      interval: 2s
+      retries: 30
+
+  contract:
+    profiles: [run]
+    image: ${CONTRACT_IMAGE:?set by deploy/llmdap_contract_ci.sh}
+    # The script is bind-mounted from this checkout, so the pinned SHA of the repository decides what runs.
+    entrypoint: ["python", "-I", "/contract/llmdap_contract.py"]
+    command: []
+    environment:
+      KUTUPHANE_DSN: postgresql://kutuphane:${CONTRACT_DB_PASSWORD:-}@postgres:5432/contract
+      KUTUPHANE_LLMDAP_URL:
+      KUTUPHANE_LLMDAP_KEY:
+      LLMDAP_GATEWAY_TRUST_SECRET:   # optional: the gateway's real shared secret, for the shared-secret check
+    volumes:
+      - ../llmdap_contract.py:/contract/llmdap_contract.py:ro
+      - ./book:/contract/book:ro
+      - ${CONTRACT_IO_DIR:?set by deploy/llmdap_contract_ci.sh}:/io
+    networks: [contract]
+    depends_on:
+      postgres: {condition: service_healthy}
+      model-stub: {condition: service_healthy}
+
+networks:
+  contract:
+    external: true
+    name: kutuphane-contract

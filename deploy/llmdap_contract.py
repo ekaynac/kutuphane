@@ -73,7 +73,7 @@ def main() -> int:
         check("index through the embeddings route", count > 0, f"{count} vectors")
 
         actor = Actor(AGENT, on_behalf_of=USER)
-        vector = vectors.query_vector(conn, emb, actor, QUESTION)
+        vector, _outcome = vectors.query_vector(conn, emb, actor, QUESTION)  # (vector, stage outcome) since #136
         hits = search.search(conn, actor, QUESTION, k=3, vector=vector)
         check("hybrid search with a query vector", vector is not None and hits)
         if rr:

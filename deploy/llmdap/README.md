@@ -86,3 +86,48 @@ python -I deploy/llmdap_contract.py <okf dir> --chat chat stub-chat --embed emb 
 # local models: --chat chat nvidia/Qwen3.8-Flash-Next-NVFP4 --embed emb BAAI/bge-m3 --rerank rerank BAAI/bge-reranker-v2-m3
 #   (GPU reranker: --rerank rerank-gpu BAAI/bge-reranker-v2-m3)
 ```
+
+## Contract runner for LLMDAP's CI (#243)
+
+`deploy/llmdap_contract_ci.sh` runs the contract above in one command. It needs only Docker on the host; it brings its
+own Postgres, model stub and book. LLMDAP's release CI runs it from this repository at a pinned commit.
+
+```sh
+KUTUPHANE_LLMDAP_URL=http://llmdap:8787 KUTUPHANE_LLMDAP_KEY=<token of subject svc-kutuphane> \
+KUTUPHANE_VERSION=<release tag> \
+  deploy/llmdap_contract_ci.sh --audit-export "docker exec <bridge> llmdap-audit-export --path /var/lib/llmdap/audit/audit.log" \
+  [--image <kutuphane image>] [--keep]
+```
+
+| Input | Meaning |
+|---|---|
+| `KUTUPHANE_LLMDAP_URL` | the bridge, as seen from the runner's containers (`http://llmdap:8787`) |
+| `KUTUPHANE_LLMDAP_KEY` | the token of subject `svc-kutuphane` |
+| `--audit-export "<cmd>"` | a command of the host that prints the verified LLMDAP chain as JSONL; the runner runs it after the calls. Exit non-zero fails the check. For a long chain see `LLMDAP_AUDIT_MAX_SCAN_BYTES` in the LLMDAP docs. |
+| `--image` | the Kütüphane image that runs the contract. Default `ghcr.io/ekaynac/kutuphane:${KUTUPHANE_VERSION}`. A local build is allowed. |
+| `--keep` | do not tear down (debugging) |
+| `LLMDAP_GATEWAY_TRUST_SECRET` | optional: the gateway's real shared secret, for the shared-secret check |
+
+What it does:
+
+1. Creates the internal Docker network `kutuphane-contract` and the compose project `kutuphane-contract`
+   (`deploy/contract/compose.yaml`; never the project `kutuphane`): scratch `pgvector/pgvector:0.8.0-pg17` (no host
+   port, no volume) and `model-stub` (`deploy/model_stub.py`, port 8000).
+2. Waits up to 60 s for the bridge. The caller attaches its bridge container to the network with the alias `llmdap`,
+   before or after the start: `docker network connect --alias llmdap kutuphane-contract <bridge>`.
+3. Runs `deploy/llmdap_contract.py` in the Kütüphane image against the book `deploy/contract/book`, with
+   `--chat chat stub-chat --embed emb stub-embed --rerank rerank stub-rerank`.
+4. Prints one line per check on stdout (`PASS`/`FAIL`, then a JSON summary line). Exit 0 only if all checks pass;
+   2 for a wrong call or a bridge that does not answer.
+5. Always removes the project, its volumes and the network (it detaches the bridge first), unless `--keep`.
+
+The bridge routes are fixed (the same as `config/routes.json`):
+
+| Route | `baseUrl` | `pinnedModel` | Surface |
+|---|---|---|---|
+| `chat` | `http://model-stub:8000` | `stub-chat` | chat |
+| `emb` | `http://model-stub:8000` | `stub-embed` | `embeddings` |
+| `rerank` | `http://model-stub:8000` | `stub-rerank` | `rerank` |
+
+`GATEWAY_ALLOWED_HOSTS` must include `llmdap`, and the subject `svc-kutuphane` needs `llm:invoke` on the three routes.
+A change to the inputs, the network name, the route table or the exit codes is announced on issue #243 before it merges.
