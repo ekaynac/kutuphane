@@ -22,7 +22,7 @@ Publication facts (#160, migration 045): each publication records who stood behi
 (`ingest`, or `import` with its package_import row: the issuer key and the sequence). `publications` reads them for
 the book list, the file list and citations; a publication from before migration 045 shows them as null.
 D85 (migration 051): each also records `acceptance`, how it was accepted (`operator_cli`, or `consumer_attested` under
-a use policy, migration 052; `none` for the internal
+a use policy, migration 052, or `policy` under an unattended one, 054; `none` for the internal
 path without `approved_by`), shown as `acceptance: {kind, by, at, legacy}`; `legacy` marks rows from before 051."""
 from dataclasses import dataclass, field
 
@@ -114,9 +114,11 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
     test callers: it checks nothing and records acceptance `none`; no CLI, HTTP or MCP path calls it so.
     `use_policy` (D85 S2; only `usepolicy.admit` gives it): the use policy of that id admits the package; then
     `approved_by` is the attester of the package, who needs no `curate` (the curator who set the policy had it), and
-    the acceptance is `consumer_attested`. `act` (D85 S3; only `packages.approve` with a signed item gives it): the
+    the acceptance is `consumer_attested`. An unattended use policy (#235) gives `approved_by` = `policy:<id>`, no
+    `curate` check (no person), and the acceptance `policy`. `act` (D85 S3; only `packages.approve` with a signed item gives it): the
     `package` act of the signer `approved_by`, who needs `curate` now; the acceptance is `curator_passkey`."""
-    if approved_by is not None and not authz.PRINCIPAL.match(approved_by):
+    unattended = use_policy is not None and approved_by == f"policy:{use_policy}"  # #235: no person, kind `policy`
+    if approved_by is not None and not unattended and not authz.PRINCIPAL.match(approved_by):
         raise ValueError(f"approved_by must be a principal such as user:<name>, not {approved_by!r}")
     if use_policy is not None and (approved_by is None or package_import is None):
         raise ValueError("a use policy admits an imported package with an attester")
@@ -125,7 +127,8 @@ def publish(conn, *, book: str, title: str, files: list[SourceFile], policy: dic
     if approved_by is not None and use_policy is None:
         require_curate(conn, approved_by, book)
     acceptance = ("none" if approved_by is None else "curator_passkey" if act is not None
-                  else "operator_cli" if use_policy is None else "consumer_attested")
+                  else "operator_cli" if use_policy is None
+                  else "policy" if unattended else "consumer_attested")
     channel = None if approved_by is None else "import" if package_import is not None else "ingest"
     if len({f.path for f in files}) != len(files):
         raise ValueError("duplicate file paths: the content id would not cover every stored file")
