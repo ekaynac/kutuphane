@@ -1,0 +1,2463 @@
+{
+  "with_model_gateway": [
+    {
+      "description": "Search the books you may read now (needs read; agents also need activate for instruction passages).\n        Results carry citation handles for open_citation. Optional filters narrow the evidence before ranking:\n        `book` (slugs), `path` (prefix, e.g. \"data/\"), `origin` (kstd origins: human, assisted, model, tool, unknown),\n        `acceptance` (how the book's current version was accepted: curator_passkey, operator_cli, consumer_attested, policy,\n        none; notes are not filtered), `current_only` (kstd validity includes now), `context` ({platform, version}, e.g. {\"platform\": \"vcenter\",\n        \"version\": \"7.0.3\"}: a file whose kstd applies_to the context contradicts is left out; `item.scope` says\n        unbounded, match or needs_context). `max_chars` (80-4800) makes each text a snippet around the\n        match with `truncated`; open_citation gives the full passage. Use it in agent loops. `_meta`\n        \"kutuphane/retrieval\" says which model stages ran (embedding, translation, rerank: ok, failed, skipped).",
+      "input_schema": {
+        "properties": {
+          "acceptance": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Acceptance"
+          },
+          "book": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Book"
+          },
+          "context": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Context"
+          },
+          "current_only": {
+            "default": false,
+            "title": "Current Only",
+            "type": "boolean"
+          },
+          "k": {
+            "default": 8,
+            "title": "K",
+            "type": "integer"
+          },
+          "max_chars": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max Chars"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origin"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Path"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "search_libraryArguments",
+        "type": "object"
+      },
+      "name": "search_library",
+      "output_schema": {
+        "properties": {
+          "result": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Result",
+            "type": "array"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "search_libraryOutput",
+        "type": "object"
+      }
+    },
+    {
+      "description": "Open a citation handle: the exact passage of that version, if you may read it now (needs read on the\n        book; agents also need activate for an instruction passage). A note reference (book@nt_…) gives the note,\n        with `current` in the optional context (repo, branch, path, commit, platform, version).",
+      "input_schema": {
+        "properties": {
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Branch"
+          },
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Commit"
+          },
+          "handle": {
+            "title": "Handle",
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Path"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Platform"
+          },
+          "repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Repo"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Version"
+          }
+        },
+        "required": [
+          "handle"
+        ],
+        "title": "open_citationArguments",
+        "type": "object"
+      },
+      "name": "open_citation"
+    },
+    {
+      "description": "Answer from the library with [n] citations, or status not_in_library (needs read on the books it\n            uses). The optional filters are those of search_library. With `background: true` it returns {job_id,\n            status: queued} at once: poll job_status, then job_result. An `idempotency_key` (8-128 characters) makes\n            a retried submission return the same job. `retrieval` says which model stages of the search ran\n            (embedding, translation, rerank: ok, failed, skipped).",
+      "input_schema": {
+        "properties": {
+          "acceptance": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Acceptance"
+          },
+          "background": {
+            "default": false,
+            "title": "Background",
+            "type": "boolean"
+          },
+          "book": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Book"
+          },
+          "context": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Context"
+          },
+          "current_only": {
+            "default": false,
+            "title": "Current Only",
+            "type": "boolean"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Idempotency Key"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origin"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Path"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "title": "ask_libraryArguments",
+        "type": "object"
+      },
+      "name": "ask_library"
+    },
+    {
+      "description": "Show your stored answer and its evidence again (needs read on its books now; no model call).",
+      "input_schema": {
+        "properties": {
+          "answer_id": {
+            "title": "Answer Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "answer_id"
+        ],
+        "title": "reopen_answerArguments",
+        "type": "object"
+      },
+      "name": "reopen_answer"
+    },
+    {
+      "description": "Read a text document of a specific version (needs read on the book; agent instructions need activate).",
+      "input_schema": {
+        "properties": {
+          "book": {
+            "title": "Book",
+            "type": "string"
+          },
+          "content_id": {
+            "title": "Content Id",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "book",
+          "content_id",
+          "path"
+        ],
+        "title": "read_documentArguments",
+        "type": "object"
+      },
+      "name": "read_document",
+      "output_schema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "read_documentOutput",
+        "type": "object"
+      }
+    },
+    {
+      "description": "The books and journals you may read now (needs read; a book you may not read is not named): kind (book\n        or journal), the current content_id and profile_id, and its publication (acceptance: kind, by, at,\n        legacy; the channel ingest or import; for a package the issuer key and the sequence).",
+      "input_schema": {
+        "properties": {},
+        "title": "list_booksArguments",
+        "type": "object"
+      },
+      "name": "list_books",
+      "output_schema": {
+        "properties": {
+          "result": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Result",
+            "type": "array"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "list_booksOutput",
+        "type": "object"
+      }
+    },
+    {
+      "description": "The files of a book's current version, a page at a time (needs read on the book): path, digest, size,\n        passage count and the kstd item (license, ai_use, personal_data, origin, validity, applies_to). Pass\n        `next_cursor` as `cursor` for the next page; read_document reads a text file.",
+      "input_schema": {
+        "properties": {
+          "book": {
+            "title": "Book",
+            "type": "string"
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cursor"
+          },
+          "limit": {
+            "default": 100,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "book"
+        ],
+        "title": "list_filesArguments",
+        "type": "object"
+      },
+      "name": "list_files"
+    },
+    {
+      "description": "The state of your background ask_library job (no grant; your own jobs only): queued, running,\n            succeeded, failed or cancelled.",
+      "input_schema": {
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "job_statusArguments",
+        "type": "object"
+      },
+      "name": "job_status"
+    },
+    {
+      "description": "The answer of your succeeded job, as reopen_answer shows it (needs read on its books now).",
+      "input_schema": {
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "job_resultArguments",
+        "type": "object"
+      },
+      "name": "job_result"
+    },
+    {
+      "description": "Cancel your background job (no grant; your own jobs only): a queued job stops at once; a running one\n            before its model call or its result.",
+      "input_schema": {
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "job_cancelArguments",
+        "type": "object"
+      },
+      "name": "job_cancel"
+    },
+    {
+      "description": "Write a note into a journal (needs propose). kind: finding, decision_proposal, dead_end, convention,\n        lesson, test_result. citations: passage handles or code citations repo@commit:path:start-end[#symbol].\n        links: [{type, ref}] (derived_from, supersedes, same_as, contradicts, about, fixed_by, violates,\n        decided_by) to older notes (book@nt_…) or passages. decision (decision_proposal only): {options: the 2..20\n        options offered, in order; choice: the one chosen}. The note starts pending; only a curator approves it.\n        The same bytes again are the same note (recurrence + 1). Give an idempotency_key to retry safely.\n        applies_to: the platforms and the version range (e.g. \">=7,<8\") the note holds for; a reader gives its\n        platform and version in the query context.",
+      "input_schema": {
+        "$defs": {
+          "AppliesTo": {
+            "properties": {
+              "platform": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Platform",
+                "type": "array"
+              },
+              "version": {
+                "title": "Version",
+                "type": "string"
+              }
+            },
+            "title": "AppliesTo",
+            "type": "object"
+          },
+          "Decision": {
+            "properties": {
+              "choice": {
+                "title": "Choice",
+                "type": "string"
+              },
+              "options": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Options",
+                "type": "array"
+              }
+            },
+            "required": [
+              "options",
+              "choice"
+            ],
+            "title": "Decision",
+            "type": "object"
+          },
+          "Link": {
+            "properties": {
+              "ref": {
+                "title": "Ref",
+                "type": "string"
+              },
+              "type": {
+                "title": "Type",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "ref"
+            ],
+            "title": "Link",
+            "type": "object"
+          },
+          "Scope": {
+            "properties": {
+              "branch": {
+                "title": "Branch",
+                "type": "string"
+              },
+              "paths": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Paths",
+                "type": "array"
+              },
+              "repo": {
+                "title": "Repo",
+                "type": "string"
+              }
+            },
+            "required": [
+              "repo"
+            ],
+            "title": "Scope",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "applies_to": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AppliesTo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "book": {
+            "title": "Book",
+            "type": "string"
+          },
+          "citations": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "class_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Class Key"
+          },
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Commit"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Decision"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Idempotency Key"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "links": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/Link"
+            },
+            "title": "Links",
+            "type": "array"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origin"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Scope"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "book",
+          "kind",
+          "text"
+        ],
+        "title": "propose_noteArguments",
+        "type": "object"
+      },
+      "name": "propose_note"
+    },
+    {
+      "description": "Link a note (src, book@nt_…; needs propose on its book) to a note or passage (dst; needs read):\n        same_as (same book), contradicts, about, fixed_by, violates, decided_by. The same link again is kept once.",
+      "input_schema": {
+        "properties": {
+          "dst": {
+            "title": "Dst",
+            "type": "string"
+          },
+          "src": {
+            "title": "Src",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "src",
+          "type",
+          "dst"
+        ],
+        "title": "link_notesArguments",
+        "type": "object"
+      },
+      "name": "link_notes"
+    },
+    {
+      "description": "Check code citations (`repo@commit:path:start-end[#symbol]`) of a journal's repositories against `at`\n        (a branch name or a full commit id): verified, stale (with moved_to), missing, or unverifiable with a\n        reason. No code text is returned. Needs read on the book.",
+      "input_schema": {
+        "properties": {
+          "at": {
+            "title": "At",
+            "type": "string"
+          },
+          "book": {
+            "title": "Book",
+            "type": "string"
+          },
+          "citations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Citations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "book",
+          "citations",
+          "at"
+        ],
+        "title": "verify_citationsArguments",
+        "type": "object"
+      },
+      "name": "verify_citations"
+    },
+    {
+      "description": "List agent notes in the journals you may read (needs read on each journal): fast SQL filters, no model\n        call. `sets`: current (approved, in your context), open (pending, not accepted), history. Context: repo,\n        branch, path (or `paths`: up to 20, each item names the paths it matches), commit, platform and version\n        (a note with `applies_to` needs them, as files do). `refs` (up to 50 note\n        references): only these notes, each with `standing` and `standing_seq`. Use `since` with the last watermark to\n        get changes and `left` tombstones; `cursor` for the next page. `min_passed` (0..100): only notes with at least\n        that many `passed` outcomes; `exclude_failed`: no note whose latest outcome is failed or reverted.",
+      "input_schema": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "As Of"
+          },
+          "book": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Book"
+          },
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Branch"
+          },
+          "budget_tokens": {
+            "default": 2000,
+            "title": "Budget Tokens",
+            "type": "integer"
+          },
+          "class_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Class Key"
+          },
+          "collapse": {
+            "default": false,
+            "title": "Collapse",
+            "type": "boolean"
+          },
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Commit"
+          },
+          "commits": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Commits"
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cursor"
+          },
+          "exclude_failed": {
+            "default": false,
+            "title": "Exclude Failed",
+            "type": "boolean"
+          },
+          "include_unverified": {
+            "default": false,
+            "title": "Include Unverified",
+            "type": "boolean"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Kind"
+          },
+          "max_bytes": {
+            "default": 32768,
+            "title": "Max Bytes",
+            "type": "integer"
+          },
+          "min_passed": {
+            "default": 0,
+            "title": "Min Passed",
+            "type": "integer"
+          },
+          "order": {
+            "default": "newest",
+            "title": "Order",
+            "type": "string"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origin"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Path"
+          },
+          "paths": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Paths"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Platform"
+          },
+          "refs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Refs"
+          },
+          "repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Repo"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Role"
+          },
+          "sets": {
+            "default": [
+              "current"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Sets",
+            "type": "array"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Since"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Text"
+          },
+          "unfixed": {
+            "default": false,
+            "title": "Unfixed",
+            "type": "boolean"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Version"
+          },
+          "written_after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Written After"
+          },
+          "written_before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Written Before"
+          }
+        },
+        "title": "query_notesArguments",
+        "type": "object"
+      },
+      "name": "query_notes"
+    },
+    {
+      "description": "The notes linked to a note reference or a passage handle (depth 1 or 2), only those you may read (needs\n        read on their journals) and that are in `sets` in your context (repo, branch, path, commit, platform,\n        version).",
+      "input_schema": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "As Of"
+          },
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Branch"
+          },
+          "budget_tokens": {
+            "default": 2000,
+            "title": "Budget Tokens",
+            "type": "integer"
+          },
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Commit"
+          },
+          "depth": {
+            "default": 1,
+            "title": "Depth",
+            "type": "integer"
+          },
+          "direction": {
+            "default": "both",
+            "title": "Direction",
+            "type": "string"
+          },
+          "max_bytes": {
+            "default": 32768,
+            "title": "Max Bytes",
+            "type": "integer"
+          },
+          "max_nodes": {
+            "default": 50,
+            "title": "Max Nodes",
+            "type": "integer"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Path"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Platform"
+          },
+          "ref": {
+            "title": "Ref",
+            "type": "string"
+          },
+          "repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Repo"
+          },
+          "sets": {
+            "default": [
+              "current"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Sets",
+            "type": "array"
+          },
+          "types": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Types"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Version"
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "title": "neighboursArguments",
+        "type": "object"
+      },
+      "name": "neighbours"
+    },
+    {
+      "description": "Record how an item worked in a task (needs propose and read on its book). ref: a note (book@nt_…) or a\n        passage handle; both name one exact version. task_ref: your task or run id. result: passed, failed,\n        reverted or reopened. Outcomes are counts on the item; they never change its Standing. A retry with the\n        same idempotency_key returns the first receipt.",
+      "input_schema": {
+        "properties": {
+          "idempotency_key": {
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "ref": {
+            "title": "Ref",
+            "type": "string"
+          },
+          "result": {
+            "title": "Result",
+            "type": "string"
+          },
+          "task_ref": {
+            "title": "Task Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref",
+          "task_ref",
+          "result",
+          "idempotency_key"
+        ],
+        "title": "record_outcomeArguments",
+        "type": "object"
+      },
+      "name": "record_outcome"
+    },
+    {
+      "description": "Ask the person to confirm whose words a note holds (D70 R3; needs read on the note's book). Only the\n        person can confirm, in curator web with a passkey; this tool never confirms. Returns {ref, origin,\n        confirmation: {state: open, confirmed, expired or none, url?, expires_at?, claim?, entered_by?,\n        confirmed_by?}}. Show the url to the person.",
+      "input_schema": {
+        "properties": {
+          "ref": {
+            "title": "Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "title": "confirm_originArguments",
+        "type": "object"
+      },
+      "name": "confirm_origin"
+    },
+    {
+      "description": "Submit a signed Kütüphane package (base64 of the tar that `kutuphane export` writes; needs propose on the\n        book that its manifest names). The same checks as `kutuphane receive` run: a trusted, unrevoked key, the\n        signature, every digest, a newer sequence. Nothing is published: a person approves it with\n        `kutuphane approve-import`. Returns the import status: received, findings, approved or refused.",
+      "input_schema": {
+        "properties": {
+          "package_base64": {
+            "title": "Package Base64",
+            "type": "string"
+          }
+        },
+        "required": [
+          "package_base64"
+        ],
+        "title": "submit_packageArguments",
+        "type": "object"
+      },
+      "name": "submit_package"
+    },
+    {
+      "description": "The status of a package that you submitted (no grant; your own submissions only): received, findings (a person reads them before approval),\n        approved (published) or refused (with the reasons).",
+      "input_schema": {
+        "properties": {
+          "import_id": {
+            "title": "Import Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "import_id"
+        ],
+        "title": "package_statusArguments",
+        "type": "object"
+      },
+      "name": "package_status"
+    }
+  ],
+  "without_model_gateway": [
+    {
+      "description": "Search the books you may read now (needs read; agents also need activate for instruction passages).\n        Results carry citation handles for open_citation. Optional filters narrow the evidence before ranking:\n        `book` (slugs), `path` (prefix, e.g. \"data/\"), `origin` (kstd origins: human, assisted, model, tool, unknown),\n        `acceptance` (how the book's current version was accepted: curator_passkey, operator_cli, consumer_attested, policy,\n        none; notes are not filtered), `current_only` (kstd validity includes now), `context` ({platform, version}, e.g. {\"platform\": \"vcenter\",\n        \"version\": \"7.0.3\"}: a file whose kstd applies_to the context contradicts is left out; `item.scope` says\n        unbounded, match or needs_context). `max_chars` (80-4800) makes each text a snippet around the\n        match with `truncated`; open_citation gives the full passage. Use it in agent loops. `_meta`\n        \"kutuphane/retrieval\" says which model stages ran (embedding, translation, rerank: ok, failed, skipped).",
+      "input_schema": {
+        "properties": {
+          "acceptance": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Acceptance"
+          },
+          "book": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Book"
+          },
+          "context": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Context"
+          },
+          "current_only": {
+            "default": false,
+            "title": "Current Only",
+            "type": "boolean"
+          },
+          "k": {
+            "default": 8,
+            "title": "K",
+            "type": "integer"
+          },
+          "max_chars": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max Chars"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origin"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Path"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "search_libraryArguments",
+        "type": "object"
+      },
+      "name": "search_library",
+      "output_schema": {
+        "properties": {
+          "result": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Result",
+            "type": "array"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "search_libraryOutput",
+        "type": "object"
+      }
+    },
+    {
+      "description": "Open a citation handle: the exact passage of that version, if you may read it now (needs read on the\n        book; agents also need activate for an instruction passage). A note reference (book@nt_…) gives the note,\n        with `current` in the optional context (repo, branch, path, commit, platform, version).",
+      "input_schema": {
+        "properties": {
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Branch"
+          },
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Commit"
+          },
+          "handle": {
+            "title": "Handle",
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Path"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Platform"
+          },
+          "repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Repo"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Version"
+          }
+        },
+        "required": [
+          "handle"
+        ],
+        "title": "open_citationArguments",
+        "type": "object"
+      },
+      "name": "open_citation"
+    },
+    {
+      "description": "Show your stored answer and its evidence again (needs read on its books now; no model call).",
+      "input_schema": {
+        "properties": {
+          "answer_id": {
+            "title": "Answer Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "answer_id"
+        ],
+        "title": "reopen_answerArguments",
+        "type": "object"
+      },
+      "name": "reopen_answer"
+    },
+    {
+      "description": "Read a text document of a specific version (needs read on the book; agent instructions need activate).",
+      "input_schema": {
+        "properties": {
+          "book": {
+            "title": "Book",
+            "type": "string"
+          },
+          "content_id": {
+            "title": "Content Id",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "book",
+          "content_id",
+          "path"
+        ],
+        "title": "read_documentArguments",
+        "type": "object"
+      },
+      "name": "read_document",
+      "output_schema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "read_documentOutput",
+        "type": "object"
+      }
+    },
+    {
+      "description": "The books and journals you may read now (needs read; a book you may not read is not named): kind (book\n        or journal), the current content_id and profile_id, and its publication (acceptance: kind, by, at,\n        legacy; the channel ingest or import; for a package the issuer key and the sequence).",
+      "input_schema": {
+        "properties": {},
+        "title": "list_booksArguments",
+        "type": "object"
+      },
+      "name": "list_books",
+      "output_schema": {
+        "properties": {
+          "result": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Result",
+            "type": "array"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "list_booksOutput",
+        "type": "object"
+      }
+    },
+    {
+      "description": "The files of a book's current version, a page at a time (needs read on the book): path, digest, size,\n        passage count and the kstd item (license, ai_use, personal_data, origin, validity, applies_to). Pass\n        `next_cursor` as `cursor` for the next page; read_document reads a text file.",
+      "input_schema": {
+        "properties": {
+          "book": {
+            "title": "Book",
+            "type": "string"
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cursor"
+          },
+          "limit": {
+            "default": 100,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "book"
+        ],
+        "title": "list_filesArguments",
+        "type": "object"
+      },
+      "name": "list_files"
+    },
+    {
+      "description": "Write a note into a journal (needs propose). kind: finding, decision_proposal, dead_end, convention,\n        lesson, test_result. citations: passage handles or code citations repo@commit:path:start-end[#symbol].\n        links: [{type, ref}] (derived_from, supersedes, same_as, contradicts, about, fixed_by, violates,\n        decided_by) to older notes (book@nt_…) or passages. decision (decision_proposal only): {options: the 2..20\n        options offered, in order; choice: the one chosen}. The note starts pending; only a curator approves it.\n        The same bytes again are the same note (recurrence + 1). Give an idempotency_key to retry safely.\n        applies_to: the platforms and the version range (e.g. \">=7,<8\") the note holds for; a reader gives its\n        platform and version in the query context.",
+      "input_schema": {
+        "$defs": {
+          "AppliesTo": {
+            "properties": {
+              "platform": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Platform",
+                "type": "array"
+              },
+              "version": {
+                "title": "Version",
+                "type": "string"
+              }
+            },
+            "title": "AppliesTo",
+            "type": "object"
+          },
+          "Decision": {
+            "properties": {
+              "choice": {
+                "title": "Choice",
+                "type": "string"
+              },
+              "options": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Options",
+                "type": "array"
+              }
+            },
+            "required": [
+              "options",
+              "choice"
+            ],
+            "title": "Decision",
+            "type": "object"
+          },
+          "Link": {
+            "properties": {
+              "ref": {
+                "title": "Ref",
+                "type": "string"
+              },
+              "type": {
+                "title": "Type",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "ref"
+            ],
+            "title": "Link",
+            "type": "object"
+          },
+          "Scope": {
+            "properties": {
+              "branch": {
+                "title": "Branch",
+                "type": "string"
+              },
+              "paths": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Paths",
+                "type": "array"
+              },
+              "repo": {
+                "title": "Repo",
+                "type": "string"
+              }
+            },
+            "required": [
+              "repo"
+            ],
+            "title": "Scope",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "applies_to": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AppliesTo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "book": {
+            "title": "Book",
+            "type": "string"
+          },
+          "citations": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "class_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Class Key"
+          },
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Commit"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Decision"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Idempotency Key"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "links": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/Link"
+            },
+            "title": "Links",
+            "type": "array"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origin"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Scope"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "book",
+          "kind",
+          "text"
+        ],
+        "title": "propose_noteArguments",
+        "type": "object"
+      },
+      "name": "propose_note"
+    },
+    {
+      "description": "Link a note (src, book@nt_…; needs propose on its book) to a note or passage (dst; needs read):\n        same_as (same book), contradicts, about, fixed_by, violates, decided_by. The same link again is kept once.",
+      "input_schema": {
+        "properties": {
+          "dst": {
+            "title": "Dst",
+            "type": "string"
+          },
+          "src": {
+            "title": "Src",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "src",
+          "type",
+          "dst"
+        ],
+        "title": "link_notesArguments",
+        "type": "object"
+      },
+      "name": "link_notes"
+    },
+    {
+      "description": "Check code citations (`repo@commit:path:start-end[#symbol]`) of a journal's repositories against `at`\n        (a branch name or a full commit id): verified, stale (with moved_to), missing, or unverifiable with a\n        reason. No code text is returned. Needs read on the book.",
+      "input_schema": {
+        "properties": {
+          "at": {
+            "title": "At",
+            "type": "string"
+          },
+          "book": {
+            "title": "Book",
+            "type": "string"
+          },
+          "citations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Citations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "book",
+          "citations",
+          "at"
+        ],
+        "title": "verify_citationsArguments",
+        "type": "object"
+      },
+      "name": "verify_citations"
+    },
+    {
+      "description": "List agent notes in the journals you may read (needs read on each journal): fast SQL filters, no model\n        call. `sets`: current (approved, in your context), open (pending, not accepted), history. Context: repo,\n        branch, path (or `paths`: up to 20, each item names the paths it matches), commit, platform and version\n        (a note with `applies_to` needs them, as files do). `refs` (up to 50 note\n        references): only these notes, each with `standing` and `standing_seq`. Use `since` with the last watermark to\n        get changes and `left` tombstones; `cursor` for the next page. `min_passed` (0..100): only notes with at least\n        that many `passed` outcomes; `exclude_failed`: no note whose latest outcome is failed or reverted.",
+      "input_schema": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "As Of"
+          },
+          "book": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Book"
+          },
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Branch"
+          },
+          "budget_tokens": {
+            "default": 2000,
+            "title": "Budget Tokens",
+            "type": "integer"
+          },
+          "class_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Class Key"
+          },
+          "collapse": {
+            "default": false,
+            "title": "Collapse",
+            "type": "boolean"
+          },
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Commit"
+          },
+          "commits": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Commits"
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cursor"
+          },
+          "exclude_failed": {
+            "default": false,
+            "title": "Exclude Failed",
+            "type": "boolean"
+          },
+          "include_unverified": {
+            "default": false,
+            "title": "Include Unverified",
+            "type": "boolean"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Kind"
+          },
+          "max_bytes": {
+            "default": 32768,
+            "title": "Max Bytes",
+            "type": "integer"
+          },
+          "min_passed": {
+            "default": 0,
+            "title": "Min Passed",
+            "type": "integer"
+          },
+          "order": {
+            "default": "newest",
+            "title": "Order",
+            "type": "string"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origin"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Path"
+          },
+          "paths": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Paths"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Platform"
+          },
+          "refs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Refs"
+          },
+          "repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Repo"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Role"
+          },
+          "sets": {
+            "default": [
+              "current"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Sets",
+            "type": "array"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Since"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Text"
+          },
+          "unfixed": {
+            "default": false,
+            "title": "Unfixed",
+            "type": "boolean"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Version"
+          },
+          "written_after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Written After"
+          },
+          "written_before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Written Before"
+          }
+        },
+        "title": "query_notesArguments",
+        "type": "object"
+      },
+      "name": "query_notes"
+    },
+    {
+      "description": "The notes linked to a note reference or a passage handle (depth 1 or 2), only those you may read (needs\n        read on their journals) and that are in `sets` in your context (repo, branch, path, commit, platform,\n        version).",
+      "input_schema": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "As Of"
+          },
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Branch"
+          },
+          "budget_tokens": {
+            "default": 2000,
+            "title": "Budget Tokens",
+            "type": "integer"
+          },
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Commit"
+          },
+          "depth": {
+            "default": 1,
+            "title": "Depth",
+            "type": "integer"
+          },
+          "direction": {
+            "default": "both",
+            "title": "Direction",
+            "type": "string"
+          },
+          "max_bytes": {
+            "default": 32768,
+            "title": "Max Bytes",
+            "type": "integer"
+          },
+          "max_nodes": {
+            "default": 50,
+            "title": "Max Nodes",
+            "type": "integer"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Path"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Platform"
+          },
+          "ref": {
+            "title": "Ref",
+            "type": "string"
+          },
+          "repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Repo"
+          },
+          "sets": {
+            "default": [
+              "current"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Sets",
+            "type": "array"
+          },
+          "types": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Types"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Version"
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "title": "neighboursArguments",
+        "type": "object"
+      },
+      "name": "neighbours"
+    },
+    {
+      "description": "Record how an item worked in a task (needs propose and read on its book). ref: a note (book@nt_…) or a\n        passage handle; both name one exact version. task_ref: your task or run id. result: passed, failed,\n        reverted or reopened. Outcomes are counts on the item; they never change its Standing. A retry with the\n        same idempotency_key returns the first receipt.",
+      "input_schema": {
+        "properties": {
+          "idempotency_key": {
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "ref": {
+            "title": "Ref",
+            "type": "string"
+          },
+          "result": {
+            "title": "Result",
+            "type": "string"
+          },
+          "task_ref": {
+            "title": "Task Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref",
+          "task_ref",
+          "result",
+          "idempotency_key"
+        ],
+        "title": "record_outcomeArguments",
+        "type": "object"
+      },
+      "name": "record_outcome"
+    },
+    {
+      "description": "Ask the person to confirm whose words a note holds (D70 R3; needs read on the note's book). Only the\n        person can confirm, in curator web with a passkey; this tool never confirms. Returns {ref, origin,\n        confirmation: {state: open, confirmed, expired or none, url?, expires_at?, claim?, entered_by?,\n        confirmed_by?}}. Show the url to the person.",
+      "input_schema": {
+        "properties": {
+          "ref": {
+            "title": "Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "title": "confirm_originArguments",
+        "type": "object"
+      },
+      "name": "confirm_origin"
+    },
+    {
+      "description": "Submit a signed Kütüphane package (base64 of the tar that `kutuphane export` writes; needs propose on the\n        book that its manifest names). The same checks as `kutuphane receive` run: a trusted, unrevoked key, the\n        signature, every digest, a newer sequence. Nothing is published: a person approves it with\n        `kutuphane approve-import`. Returns the import status: received, findings, approved or refused.",
+      "input_schema": {
+        "properties": {
+          "package_base64": {
+            "title": "Package Base64",
+            "type": "string"
+          }
+        },
+        "required": [
+          "package_base64"
+        ],
+        "title": "submit_packageArguments",
+        "type": "object"
+      },
+      "name": "submit_package"
+    },
+    {
+      "description": "The status of a package that you submitted (no grant; your own submissions only): received, findings (a person reads them before approval),\n        approved (published) or refused (with the reasons).",
+      "input_schema": {
+        "properties": {
+          "import_id": {
+            "title": "Import Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "import_id"
+        ],
+        "title": "package_statusArguments",
+        "type": "object"
+      },
+      "name": "package_status"
+    }
+  ]
+}

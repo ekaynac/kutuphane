@@ -1,0 +1,138 @@
+[
+  {
+    "mount": true,
+    "path": "/"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/healthz"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/v1/answers/{answer_id}"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/v1/ask"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/v1/books"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/v1/books/{book}/files"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/v1/citation"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/v1/citations/verify"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/v1/files/{book}/{content_id}/{path:path}"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/v1/health"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/v1/jobs/{job_id}"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/v1/jobs/{job_id}/cancel"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/v1/jobs/{job_id}/result"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/v1/notes"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/v1/notes"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/v1/notes/links"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/v1/notes/{book}/{id}/confirmation"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/v1/notes/{book}/{id}/neighbours"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/v1/outcomes"
+  },
+  {
+    "methods": [
+      "POST"
+    ],
+    "path": "/v1/packages"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/v1/packages/{import_id}"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/v1/search"
+  },
+  {
+    "methods": [
+      "GET"
+    ],
+    "path": "/v1/whoami"
+  }
+]
