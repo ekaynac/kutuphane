@@ -27,7 +27,7 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     env:
-      KUTUPHANE_TEST_DSN: postgresql://kutuphane:kutuphane@127.0.0.1:5432/kutuphane_test
+      KUTUPHANE_TEST_DSN: postgresql://kutuphane:kutuphane@localhost:5432/kutuphane_test
       PGPASSWORD: kutuphane
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -42,7 +42,7 @@ jobs:
         run: python -m venv .venv && .venv/bin/pip install -e '.[dev]'
       - name: Create the extensions
         run: |
-          psql -h 127.0.0.1 -U kutuphane -d kutuphane_test -c "CREATE EXTENSION IF NOT EXISTS vector" \
+          psql -h localhost -U kutuphane -d kutuphane_test -c "CREATE EXTENSION IF NOT EXISTS vector" \
             -c "CREATE EXTENSION IF NOT EXISTS pgcrypto"
       # The contract snapshot (tests/contract) runs here too: it fails when a tool, a route or an error text changes.
       - name: Core tests

@@ -1,0 +1,983 @@
+{
+  "GET /healthz [ok]": {
+    "body": {
+      "ok": "bool"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/answers/{answer_id} [found]": {
+    "body": {
+      "body": "str",
+      "evidence": [
+        {
+          "citation": "str",
+          "item": {
+            "ai_use": {
+              "ai_input": "str",
+              "search": "str",
+              "train": "str"
+            },
+            "applies_to": "null",
+            "confirmed_by": "null",
+            "current": "bool",
+            "entered_by": "null",
+            "holder": "str",
+            "issuer": "str",
+            "license": "str",
+            "listed": "bool",
+            "notices": [],
+            "origin": "str",
+            "personal_data": "str",
+            "reviewed_by": "null",
+            "scope": "str",
+            "software_agent": "null",
+            "valid_from": "null",
+            "valid_to": "null"
+          },
+          "line": "int",
+          "n": "int",
+          "quoted_records": [],
+          "record": "null",
+          "text": "str"
+        }
+      ],
+      "id": "str",
+      "question": "str",
+      "retrieval": {
+        "embedding": "str",
+        "rerank": "str",
+        "translation": "str"
+      },
+      "status": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/answers/{answer_id} [no token]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "GET /v1/answers/{answer_id} [not found]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 404
+  },
+  "GET /v1/books [found]": {
+    "body": {
+      "books": [
+        {
+          "book": "str",
+          "content_id": {
+            "any_of": [
+              "null",
+              "str"
+            ]
+          },
+          "kind": "str",
+          "policy_id": "str",
+          "profile_id": "str",
+          "publication": {
+            "any_of": [
+              "null",
+              {
+                "acceptance": {
+                  "at": "str",
+                  "by": "str",
+                  "kind": "str",
+                  "legacy": "bool"
+                },
+                "channel": "str",
+                "content_id": "str",
+                "issuer_key": "null",
+                "published_at": "str",
+                "sequence": "null"
+              }
+            ]
+          },
+          "title": "str"
+        }
+      ]
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/books [no token]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "GET /v1/books [stranger]": {
+    "body": {
+      "books": []
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/books/{book}/files [bad request]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 400
+  },
+  "GET /v1/books/{book}/files [forbidden]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 403
+  },
+  "GET /v1/books/{book}/files [found]": {
+    "body": {
+      "book": "str",
+      "content_id": "str",
+      "files": [
+        {
+          "item": {
+            "any_of": [
+              "null",
+              {
+                "ai_use": {
+                  "ai_input": "str",
+                  "search": "str",
+                  "train": "str"
+                },
+                "applies_to": "null",
+                "confirmed_by": "null",
+                "current": "bool",
+                "entered_by": "null",
+                "holder": "str",
+                "issuer": "str",
+                "license": "str",
+                "listed": "bool",
+                "notices": [],
+                "origin": "str",
+                "personal_data": "str",
+                "reviewed_by": "null",
+                "scope": "str",
+                "software_agent": "null",
+                "valid_from": "null",
+                "valid_to": "null"
+              }
+            ]
+          },
+          "media_type": "str",
+          "passages": "int",
+          "path": "str",
+          "sha256": "str",
+          "size": "int"
+        }
+      ],
+      "next_cursor": "str",
+      "profile_id": "str",
+      "publication": {
+        "acceptance": {
+          "at": "str",
+          "by": "str",
+          "kind": "str",
+          "legacy": "bool"
+        },
+        "channel": "str",
+        "content_id": "str",
+        "issuer_key": "null",
+        "published_at": "str",
+        "sequence": "null"
+      }
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/books/{book}/files [no token]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "GET /v1/citation [malformed]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 400
+  },
+  "GET /v1/citation [no token]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "GET /v1/citation [not found]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 404
+  },
+  "GET /v1/citation [passage]": {
+    "body": {
+      "citation": "str",
+      "item": {
+        "ai_use": {
+          "ai_input": "str",
+          "search": "str",
+          "train": "str"
+        },
+        "applies_to": "null",
+        "confirmed_by": "null",
+        "current": "bool",
+        "entered_by": "null",
+        "holder": "str",
+        "issuer": "str",
+        "license": "str",
+        "listed": "bool",
+        "notices": [],
+        "origin": "str",
+        "personal_data": "str",
+        "reviewed_by": "null",
+        "scope": "str",
+        "software_agent": "null",
+        "valid_from": "null",
+        "valid_to": "null"
+      },
+      "line": "int",
+      "outcomes": {},
+      "page": "null",
+      "publication": {
+        "acceptance": {
+          "at": "str",
+          "by": "str",
+          "kind": "str",
+          "legacy": "bool"
+        },
+        "channel": "str",
+        "content_id": "str",
+        "issuer_key": "null",
+        "published_at": "str",
+        "sequence": "null"
+      },
+      "status": "str",
+      "text": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/files/{book}/{content_id}/{path:path} [found]": {
+    "body": "non-json",
+    "content_type": "text/markdown",
+    "status": 200
+  },
+  "GET /v1/files/{book}/{content_id}/{path:path} [no token]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "GET /v1/files/{book}/{content_id}/{path:path} [not found]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 404
+  },
+  "GET /v1/health [no token]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "GET /v1/health [ok]": {
+    "body": {
+      "chat": "bool",
+      "db": "bool",
+      "embedding": "null",
+      "llmdap": "bool",
+      "ok": "bool",
+      "rerank": "null"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/jobs/{job_id} [found]": {
+    "body": {
+      "created_at": "str",
+      "error": "null",
+      "finished_at": "str",
+      "started_at": "str",
+      "status": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/jobs/{job_id} [no token]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "GET /v1/jobs/{job_id} [not found]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 404
+  },
+  "GET /v1/jobs/{job_id}/result [found]": {
+    "body": {
+      "body": "str",
+      "evidence": [
+        {
+          "citation": "str",
+          "item": {
+            "ai_use": {
+              "ai_input": "str",
+              "search": "str",
+              "train": "str"
+            },
+            "applies_to": "null",
+            "confirmed_by": "null",
+            "current": "bool",
+            "entered_by": "null",
+            "holder": "str",
+            "issuer": "str",
+            "license": "str",
+            "listed": "bool",
+            "notices": [],
+            "origin": "str",
+            "personal_data": "str",
+            "reviewed_by": "null",
+            "scope": "str",
+            "software_agent": "null",
+            "valid_from": "null",
+            "valid_to": "null"
+          },
+          "line": "int",
+          "n": "int",
+          "quoted_records": [],
+          "record": "null",
+          "text": "str"
+        }
+      ],
+      "id": "str",
+      "question": "str",
+      "retrieval": {
+        "embedding": "str",
+        "rerank": "str",
+        "translation": "str"
+      },
+      "status": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/jobs/{job_id}/result [no token]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "GET /v1/jobs/{job_id}/result [not found]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 404
+  },
+  "GET /v1/notes [bad request]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 400
+  },
+  "GET /v1/notes [found]": {
+    "body": {
+      "books": [
+        "str"
+      ],
+      "excluded": {
+        "code": "int",
+        "needs_context": "int"
+      },
+      "items": [
+        {
+          "acceptance": {
+            "at": "null",
+            "by": "null",
+            "kind": "str"
+          },
+          "citations": [],
+          "class_key": "null",
+          "current": "bool",
+          "kind": "str",
+          "links": {
+            "about?": "int"
+          },
+          "observed_commit": "null",
+          "origin": "str",
+          "outcomes": {
+            "passed?": "int"
+          },
+          "recurrence": "int",
+          "ref": "str",
+          "role": "str",
+          "scope": "null",
+          "standing": "str",
+          "text": "str",
+          "withheld": "null",
+          "written_at": "str"
+        }
+      ],
+      "left": [],
+      "next_cursor": "null",
+      "targets": {},
+      "watermark": "int"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/notes [no token]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "GET /v1/notes/{book}/{id}/confirmation [forbidden]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 403
+  },
+  "GET /v1/notes/{book}/{id}/confirmation [found]": {
+    "body": {
+      "confirmation": {
+        "state": "str"
+      },
+      "origin": "str",
+      "ref": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/notes/{book}/{id}/confirmation [no token]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "GET /v1/notes/{book}/{id}/neighbours [found]": {
+    "body": {
+      "edges": [],
+      "nodes": [],
+      "root": {
+        "acceptance": {
+          "at": "null",
+          "by": "null",
+          "kind": "str"
+        },
+        "citations": [],
+        "class_key": "null",
+        "current": "bool",
+        "kind": "str",
+        "links": {
+          "about": "int"
+        },
+        "observed_commit": "null",
+        "origin": "str",
+        "outcomes": {},
+        "recurrence": "int",
+        "ref": "str",
+        "role": "str",
+        "scope": "null",
+        "standing": "str",
+        "text": "str",
+        "withheld": "null",
+        "written_at": "str"
+      },
+      "targets": {},
+      "truncated": "bool",
+      "watermark": "int"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/notes/{book}/{id}/neighbours [no token]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "GET /v1/notes/{book}/{id}/neighbours [not found]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 404
+  },
+  "GET /v1/packages/{import_id} [found]": {
+    "body": {
+      "book": "str",
+      "content_id": "str",
+      "decided_at": "null",
+      "decided_by": "null",
+      "diff": {
+        "added": [
+          "str"
+        ],
+        "changed": [],
+        "removed": []
+      },
+      "findings": [],
+      "id": "int",
+      "issuer": "str",
+      "reasons": [],
+      "received_at": "str",
+      "sequence": "int",
+      "status": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/packages/{import_id} [no token]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "GET /v1/packages/{import_id} [not found]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 404
+  },
+  "GET /v1/search [bad request]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 400
+  },
+  "GET /v1/search [empty]": {
+    "body": {
+      "correlation_id": "str",
+      "results": [],
+      "retrieval": {
+        "embedding": "str",
+        "rerank": "str",
+        "translation": "str"
+      }
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/search [found]": {
+    "body": {
+      "correlation_id": "str",
+      "results": [
+        {
+          "citation": "str",
+          "item": {
+            "ai_use": {
+              "ai_input": "str",
+              "search": "str",
+              "train": "str"
+            },
+            "applies_to": "null",
+            "confirmed_by": "null",
+            "current": "bool",
+            "entered_by": "null",
+            "holder": "str",
+            "issuer": "str",
+            "license": "str",
+            "listed": "bool",
+            "notices": [],
+            "origin": "str",
+            "personal_data": "str",
+            "reviewed_by": "null",
+            "scope": "str",
+            "software_agent": "null",
+            "valid_from": "null",
+            "valid_to": "null"
+          },
+          "line": "int",
+          "page": "null",
+          "quoted_records": [],
+          "score": "float",
+          "text": "str"
+        }
+      ],
+      "retrieval": {
+        "embedding": "str",
+        "rerank": "str",
+        "translation": "str"
+      }
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/search [no token]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "GET /v1/search [stranger]": {
+    "body": {
+      "correlation_id": "str",
+      "results": [],
+      "retrieval": {
+        "embedding": "str",
+        "rerank": "str",
+        "translation": "str"
+      }
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/whoami [delegated]": {
+    "body": {
+      "on_behalf_of": "str",
+      "principal": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "GET /v1/whoami [no token]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "GET /v1/whoami [ok]": {
+    "body": {
+      "on_behalf_of": "null",
+      "principal": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "POST /v1/ask [answered]": {
+    "body": {
+      "body": "str",
+      "citations": [
+        {
+          "book": "str",
+          "content_id": "str",
+          "item": {
+            "ai_use": {
+              "ai_input": "str",
+              "search": "str",
+              "train": "str"
+            },
+            "applies_to": "null",
+            "confirmed_by": "null",
+            "current": "bool",
+            "entered_by": "null",
+            "holder": "str",
+            "issuer": "str",
+            "license": "str",
+            "listed": "bool",
+            "notices": [],
+            "origin": "str",
+            "personal_data": "str",
+            "reviewed_by": "null",
+            "scope": "str",
+            "software_agent": "null",
+            "valid_from": "null",
+            "valid_to": "null"
+          },
+          "line": "int",
+          "n": "int",
+          "ordinal": "int",
+          "path": "str",
+          "profile_id": "str",
+          "quoted_records": [],
+          "record": "null"
+        }
+      ],
+      "correlation_id": "str",
+      "id": "str",
+      "retrieval": {
+        "embedding": "str",
+        "rerank": "str",
+        "translation": "str"
+      },
+      "status": "str",
+      "withheld": "int"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "POST /v1/ask [bad request]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 400
+  },
+  "POST /v1/ask [no token]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "POST /v1/ask [not in library]": {
+    "body": {
+      "body": "null",
+      "citations": [],
+      "correlation_id": "str",
+      "id": "str",
+      "retrieval": {
+        "embedding": "str",
+        "rerank": "str",
+        "translation": "str"
+      },
+      "status": "str",
+      "withheld": "int"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "POST /v1/ask [queued]": {
+    "body": {
+      "correlation_id": "str",
+      "job_id": "str",
+      "status": "str"
+    },
+    "content_type": "application/json",
+    "status": 202
+  },
+  "POST /v1/citations/verify [bad request]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 400
+  },
+  "POST /v1/citations/verify [no token]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "POST /v1/citations/verify [not checked]": {
+    "body": {
+      "results": [
+        {
+          "citation": "str",
+          "moved_to": "null",
+          "reason": "null",
+          "status": "str",
+          "symbol_found_at": "null"
+        }
+      ],
+      "targets": {}
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "POST /v1/jobs/{job_id}/cancel [found]": {
+    "body": {
+      "created_at": "str",
+      "error": "null",
+      "finished_at": "str",
+      "started_at": "str",
+      "status": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "POST /v1/jobs/{job_id}/cancel [no token]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "POST /v1/jobs/{job_id}/cancel [not found]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 404
+  },
+  "POST /v1/notes [bad request]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 400
+  },
+  "POST /v1/notes [created]": {
+    "body": {
+      "candidates": [],
+      "class_count": "int",
+      "guard_due": "bool",
+      "origin": "str",
+      "origin_notice": "null",
+      "recurrence": "int",
+      "ref": "str",
+      "standing": "str",
+      "status": "str",
+      "vector": "str"
+    },
+    "content_type": "application/json",
+    "status": 201
+  },
+  "POST /v1/notes [forbidden]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 403
+  },
+  "POST /v1/notes [no token]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "POST /v1/notes [retried]": {
+    "body": {
+      "candidates": [],
+      "class_count": "int",
+      "guard_due": "bool",
+      "origin": "str",
+      "origin_notice": "null",
+      "recurrence": "int",
+      "ref": "str",
+      "standing": "str",
+      "status": "str",
+      "vector": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "POST /v1/notes/links [bad request]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 400
+  },
+  "POST /v1/notes/links [created]": {
+    "body": {
+      "dst": "str",
+      "src": "str",
+      "status": "str",
+      "type": "str"
+    },
+    "content_type": "application/json",
+    "status": 201
+  },
+  "POST /v1/notes/links [no token]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "POST /v1/notes/links [retried]": {
+    "body": {
+      "dst": "str",
+      "src": "str",
+      "status": "str",
+      "type": "str"
+    },
+    "content_type": "application/json",
+    "status": 200
+  },
+  "POST /v1/outcomes [bad request]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 400
+  },
+  "POST /v1/outcomes [conflict]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 409
+  },
+  "POST /v1/outcomes [no token]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "POST /v1/outcomes [recorded]": {
+    "body": {
+      "origin": "str",
+      "ref": "str",
+      "result": "str",
+      "task_ref": "str"
+    },
+    "content_type": "application/json",
+    "status": 201
+  },
+  "POST /v1/packages [bad request]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 400
+  },
+  "POST /v1/packages [no token]": {
+    "body": {
+      "error": "str"
+    },
+    "content_type": "application/json",
+    "status": 401
+  },
+  "POST /v1/packages [received]": {
+    "body": {
+      "book": "str",
+      "content_id": "str",
+      "decided_at": "null",
+      "decided_by": "null",
+      "diff": {
+        "added": [
+          "str"
+        ],
+        "changed": [],
+        "removed": []
+      },
+      "findings": [],
+      "id": "int",
+      "issuer": "str",
+      "reasons": [],
+      "received_at": "str",
+      "sequence": "int",
+      "status": "str"
+    },
+    "content_type": "application/json",
+    "status": 201
+  }
+}

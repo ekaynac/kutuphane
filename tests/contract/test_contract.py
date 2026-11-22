@@ -1,7 +1,10 @@
-# CONTRACT SNAPSHOT (#242). This test fails when the MCP tools, the HTTP routes or the error texts that consumers
-# depend on change. Changing tests/contract/*.json (`python -m tests.contract.snapshot --write`) does NOT authorise
-# the change: a PR that changes them needs the approval a contract change needs (SCOPE.md: Enes).
+# CONTRACT SNAPSHOT (#242). This test fails when the MCP tools, the HTTP routes, the error texts or the shape of the
+# results that consumers depend on change. Changing tests/contract/*.json does NOT authorise the change: a PR that
+# changes them needs the approval a contract change needs (SCOPE.md: Enes).
+# The result files are built from a fixture in a real database: set KUTUPHANE_TEST_DSN (a `_test` database; it is
+# reset). To regenerate: `python -m tests.contract.snapshot --write` with the same variable set.
 import json
+import os
 
 import pytest
 
@@ -12,12 +15,28 @@ MESSAGE = ("a contract changed: update tests/contract/*.json only with the appro
 
 
 @pytest.fixture(scope="module")
-def built():
-    return snapshot.build()
+def static():
+    return snapshot.build_static()
+
+
+@pytest.fixture(scope="module")
+def results():
+    dsn = os.environ.get(snapshot.DSN_ENV)
+    if not dsn:
+        pytest.skip(f"{snapshot.DSN_ENV} not set")
+    return snapshot.build_results(dsn)
+
+
+def check(name, built):
+    stored = json.loads((snapshot.HERE / name).read_text(encoding="utf-8"))
+    assert json.loads(snapshot.dump(built[name])) == stored, f"{name}: {MESSAGE}"
 
 
 @pytest.mark.parametrize("name", ["tools.json", "http.json", "errors.json"])
-def test_the_contract_is_unchanged(built, name):
-    stored = json.loads((snapshot.HERE / name).read_text(encoding="utf-8"))
-    current = json.loads(snapshot.dump(built[name]))
-    assert current == stored, f"{name}: {MESSAGE}"
+def test_the_listed_contract_is_unchanged(static, name):
+    check(name, static)
+
+
+@pytest.mark.parametrize("name", snapshot.RESULTS)
+def test_the_shape_of_the_results_is_unchanged(results, name):
+    check(name, results)

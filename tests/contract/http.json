@@ -5,13 +5,15 @@
   },
   {
     "methods": [
-      "GET"
+      "GET",
+      "HEAD"
     ],
     "path": "/healthz"
   },
   {
     "methods": [
-      "GET"
+      "GET",
+      "HEAD"
     ],
     "path": "/v1/answers/{answer_id}"
   },
@@ -23,19 +25,22 @@
   },
   {
     "methods": [
-      "GET"
+      "GET",
+      "HEAD"
     ],
     "path": "/v1/books"
   },
   {
     "methods": [
-      "GET"
+      "GET",
+      "HEAD"
     ],
     "path": "/v1/books/{book}/files"
   },
   {
     "methods": [
-      "GET"
+      "GET",
+      "HEAD"
     ],
     "path": "/v1/citation"
   },
@@ -47,19 +52,22 @@
   },
   {
     "methods": [
-      "GET"
+      "GET",
+      "HEAD"
     ],
     "path": "/v1/files/{book}/{content_id}/{path:path}"
   },
   {
     "methods": [
-      "GET"
+      "GET",
+      "HEAD"
     ],
     "path": "/v1/health"
   },
   {
     "methods": [
-      "GET"
+      "GET",
+      "HEAD"
     ],
     "path": "/v1/jobs/{job_id}"
   },
@@ -71,13 +79,15 @@
   },
   {
     "methods": [
-      "GET"
+      "GET",
+      "HEAD"
     ],
     "path": "/v1/jobs/{job_id}/result"
   },
   {
     "methods": [
-      "GET"
+      "GET",
+      "HEAD"
     ],
     "path": "/v1/notes"
   },
@@ -95,13 +105,15 @@
   },
   {
     "methods": [
-      "GET"
+      "GET",
+      "HEAD"
     ],
     "path": "/v1/notes/{book}/{id}/confirmation"
   },
   {
     "methods": [
-      "GET"
+      "GET",
+      "HEAD"
     ],
     "path": "/v1/notes/{book}/{id}/neighbours"
   },
@@ -119,19 +131,22 @@
   },
   {
     "methods": [
-      "GET"
+      "GET",
+      "HEAD"
     ],
     "path": "/v1/packages/{import_id}"
   },
   {
     "methods": [
-      "GET"
+      "GET",
+      "HEAD"
     ],
     "path": "/v1/search"
   },
   {
     "methods": [
-      "GET"
+      "GET",
+      "HEAD"
     ],
     "path": "/v1/whoami"
   }

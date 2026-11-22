@@ -1,20 +1,24 @@
-"""Builds the snapshot of the contracts a consumer depends on (#242): MCP tools, HTTP routes, error texts.
+"""Builds the snapshot of the contracts a consumer depends on (#242): MCP tools, HTTP routes, error texts, and the
+shape of real results.
 
-`python -m tests.contract.snapshot` prints it; `--write` rewrites tests/contract/*.json.
+`python -m tests.contract.snapshot` prints it; `--write` rewrites tests/contract/*.json. Both need
+KUTUPHANE_TEST_DSN (a database whose name ends in `_test`: it is RESET, as the `conn` fixture does).
 Writing the files does not authorise a contract change (see test_contract.py).
 
-What is covered (nothing here needs a database):
 - tools.json: for every MCP tool: name, description, input schema, output schema (when declared). Two builds: the
   full one (with a model gateway: `ask_library` and the job tools) and the one without.
-- http.json: every HTTP route: path and methods. Starlette has no OpenAPI document and the handlers declare no
-  response models, so there is no response schema to record; the route table is the contract that exists.
+- http.json: every HTTP route: path and all its methods (HEAD included).
 - errors.json: the HTTP status and text of every expected error class, the named error constants, and every message
   literal in a `raise` of the modules the API and the tools run (the text a caller can read).
+- results_mcp.json, results_http.json: the shape (keys and types, no values) of what every tool and route returns
+  for a found, a not-found or refused, and a bad request case, from the controlled fixture of scenario.py. HTTP also
+  keeps status and content type.
 """
 import argparse
 import ast
 import asyncio
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -60,7 +64,7 @@ def routes(verifier: Verifier) -> list[dict]:
     out = []
     for r in app.routes:
         if isinstance(r, Route):
-            out.append({"path": r.path, "methods": sorted(r.methods - {"HEAD"}) if r.methods else []})
+            out.append({"path": r.path, "methods": sorted(r.methods) if r.methods else []})
         elif isinstance(r, Mount):
             out.append({"path": r.path or "/", "mount": True})
     return sorted(out, key=lambda r: (r["path"], r.get("methods", [])))
@@ -91,12 +95,22 @@ def errors() -> dict:
     }
 
 
-def build() -> dict[str, object]:
+DSN_ENV = "KUTUPHANE_TEST_DSN"
+RESULTS = ("results_mcp.json", "results_http.json")
+
+
+def build_static() -> dict[str, object]:
+    """The files that need no database."""
     with tempfile.TemporaryDirectory() as tmp:
         verifier = _verifier(Path(tmp))
         return {"tools.json": {"with_model_gateway": tools(verifier, answering=True),
                                "without_model_gateway": tools(verifier, answering=False)},
                 "http.json": routes(verifier), "errors.json": errors()}
+
+
+def build_results(dsn: str) -> dict[str, object]:
+    from . import scenario
+    return {f"{name}.json": value for name, value in scenario.collect(dsn).items()}
 
 
 def dump(value) -> str:
@@ -107,7 +121,10 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--write", action="store_true", help="rewrite tests/contract/*.json (needs contract approval)")
     args = ap.parse_args(argv)
-    built = build()
+    dsn = os.environ.get(DSN_ENV)
+    if not dsn:
+        sys.exit(f"{DSN_ENV} is not set (a database whose name ends in _test; it is reset)")
+    built = {**build_static(), **build_results(dsn)}
     for name, value in built.items():
         if args.write:
             (HERE / name).write_text(dump(value), encoding="utf-8")
