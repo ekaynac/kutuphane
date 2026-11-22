@@ -11,6 +11,7 @@ For the terms, read [concepts.md](concepts.md).
 ### The public install is the light install; LLMDAP only under an agreement (#236)
 
 - Docs: the light install (`compose.yaml`) is the public install and makes no model call. The full stack's LLMDAP bridge is a proprietary component, delivered as a signed release tarball under an LLMDAP agreement; the docs no longer say "build it from the LLMDAP repo" ([install.md](install.md), `deploy/llmdap/README.md`). No setting, image, service or code changes.
+- Design and research: D88 in `docs/01`: the standalone compose will run the embedder, Kütüphane may call models through a direct OpenAI-compatible provider as well as LLMDAP, and the answer model stays external. The work is #242.
 
 ### open_citation errors name the handle form (#232)
 
