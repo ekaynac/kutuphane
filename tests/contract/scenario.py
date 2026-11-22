@@ -33,6 +33,7 @@ from test_identity import AUD, ISS, token  # noqa: E402
 from test_kstd import write_manifest  # noqa: E402
 from test_server import LEGACY, MCP_HEADERS, MODERN, _message, mcp_rpc  # noqa: E402
 
+from .helpers import dsn_with_schema, stream_answer  # noqa: E402
 from .matrix import ERAS as matrix_eras  # noqa: E402
 from .matrix import kind_of, label  # noqa: E402
 
@@ -146,7 +147,7 @@ def reset(dsn: str) -> None:
             conn.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
             conn.execute(f"CREATE SCHEMA {schema}")
     for schema in (B_SCHEMA, S_SCHEMA):
-        with db.connect(dsn + f"?options=-csearch_path%3D{schema},public") as conn:
+        with db.connect(dsn_with_schema(dsn, schema)) as conn:
             db.migrate(conn)
 
 
@@ -156,7 +157,7 @@ class Context:
 
     def __init__(self, dsn, work, keys, verifier, fake):
         self.dsn, self.work = dsn, work
-        self.b_dsn, self.s_dsn = (dsn + f"?options=-csearch_path%3D{schema},public" for schema in (B_SCHEMA, S_SCHEMA))
+        self.b_dsn, self.s_dsn = (dsn_with_schema(dsn, schema) for schema in (B_SCHEMA, S_SCHEMA))
         self.keys, self.verifier, self.fake = keys, verifier, fake
         self.book_dir = work / "okf-kitap"
         self.signer = signing.generate(work / "issuer.key")
@@ -481,18 +482,18 @@ def mcp_results(ctx: Context) -> tuple[dict, dict]:
 
 def _answer(client, method, headers) -> dict:
     """What `method /mcp` answers: status, content type, Allow, and the body by value (a stream is not read)."""
-    with client.stream(method, "/mcp", headers=headers) as r:
-        out = {"status": r.status_code, "content_type": _content_type(r), "allow": r.headers.get("allow")}
-        if r.status_code < 400 and out["content_type"] == "text/event-stream":
-            return {**out, "body": "stream, not read"}
-        r.read()
-        if not r.content:
-            return {**out, "body": "empty"}
-        try:
-            body = r.json()
-        except ValueError:
-            return {**out, "body_text": _normalised(r.text)}
-        return {**out, "body": shape(body), **({"error_text": error_values(body)} if error_values(body) else {})}
+    got = stream_answer(client, method, "/mcp", headers)  # bounded: an open event stream cannot hang the run
+    out = {"status": got["status"], "content_type": got["headers"].get("content-type", "").split(";")[0],
+           "allow": got["headers"].get("allow")}
+    if got["body"] is None:
+        return {**out, "body": "stream, not read"}
+    if not got["body"]:
+        return {**out, "body": "empty"}
+    try:
+        body = json.loads(got["body"])
+    except ValueError:
+        return {**out, "body_text": _normalised(got["body"].decode("utf-8", "replace"))}
+    return {**out, "body": shape(body), **({"error_text": error_values(body)} if error_values(body) else {})}
 
 
 def _methods(client, cases, agent):

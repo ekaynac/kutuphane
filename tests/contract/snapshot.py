@@ -39,6 +39,7 @@ from kutuphane import server
 from kutuphane.identity import Verifier
 
 from . import matrix
+from .helpers import stream_answer
 
 HERE = Path(__file__).parent
 SRC = Path(server.__file__).parent
@@ -69,27 +70,36 @@ def tools(verifier: Verifier, *, answering: bool) -> list[dict]:
 PROBE_METHODS = ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
 
 
+def token_for(key) -> str:
+    now = int(time.time())
+    return jwt.encode({"iss": ISSUER, "aud": AUDIENCE, "sub": "probe", "iat": now, "exp": now + 300}, key,
+                      algorithm="RS256", headers={"kid": "k1"})
+
+
+def bare_app(verifier: Verifier):
+    """The app without a database or a model gateway: enough for what the routes and the MCP endpoint answer."""
+    return server.create_app(dsn="postgresql://contract.invalid/none", verifier=verifier, bridge=None, model=None,
+                             public_url=PUBLIC_URL)
+
+
 def probe_mcp(app, key) -> dict[str, dict[str, dict]]:
     """How the MCP endpoint answers each method, with a valid token, in each protocol era: {method: {era: {status,
     content type, Allow}}}. A route table cannot say it: the endpoint is an ASGI app that decides by method."""
-    now = int(time.time())
-    token = jwt.encode({"iss": ISSUER, "aud": AUDIENCE, "sub": "probe", "iat": now, "exp": now + 300}, key,
-                       algorithm="RS256", headers={"kid": "k1"})
+    token = token_for(key)
     answers: dict[str, dict[str, dict]] = {m: {} for m in PROBE_METHODS}
     with TestClient(app, base_url=PUBLIC_URL) as client:
         for method in PROBE_METHODS:
             for era in matrix.ERAS:
                 headers = {"Authorization": f"Bearer {token}", "MCP-Protocol-Version": era,
                            "Accept": "application/json, text/event-stream"}
-                with client.stream(method, "/mcp", headers=headers) as r:  # the headers only: a GET may be a stream
-                    answers[method][era] = {"status": r.status_code, "allow": r.headers.get("allow"),
-                                            "content_type": r.headers.get("content-type", "").split(";")[0] or None}
+                got = stream_answer(client, method, "/mcp", headers)  # the headers only: a GET may be a stream
+                answers[method][era] = {"status": got["status"], "allow": got["headers"].get("allow"),
+                                        "content_type": got["headers"].get("content-type", "").split(";")[0] or None}
     return answers
 
 
 def routes(verifier: Verifier, key) -> list[dict]:
-    app = server.create_app(dsn="postgresql://contract.invalid/none", verifier=verifier, bridge=None, model=None,
-                            public_url=PUBLIC_URL)
+    app = bare_app(verifier)
     out = []
     for r in app.routes:
         if isinstance(r, Route):
