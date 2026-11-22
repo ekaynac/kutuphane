@@ -153,13 +153,16 @@ the call stays on the internal network `models` and is a `model_call` row with r
 - Needs about 1 GB of memory when idle and up to 4 GB while it works (limit `KUTUPHANE_EMBEDDER_MEMORY`, default `6g`);
   `KUTUPHANE_EMBEDDER_THREADS` (default `4`) CPU cores. It serves one request at a time (G18): a large `index` makes
   searches wait.
-- **No model server** (the old light behaviour: full text search only): set `KUTUPHANE_EMBED_PROVIDER=llmdap` and
-  `KUTUPHANE_RERANK_PROVIDER=llmdap` in `.env` and start with
-  `docker compose up -d --wait --scale embedder=0 --scale models-fetch=0` (give the same `--scale` options at every
-  `up`; the `models` volume stays). Without LLMDAP settings, Core then calls no model and `/v1/health` shows
-  `embedding` and `rerank` `null`.
-- **Another embedder**: set `…_OPENAI_URL`, `…_KEY`, `…_CLASS` and the model of the stage, and scale the service to 0
-  as above. A cloud endpoint needs `https` and a network path for Core. Vectors of another model need `kutuphane index` again.
+- **No model server** (the old light behaviour: full text search only): add the override file
+  `compose.nomodels.yaml` to every command: `docker compose -f compose.yaml -f compose.nomodels.yaml up -d --wait`
+  (also `down`, `ps`, `logs`; or `COMPOSE_FILE=compose.yaml:compose.nomodels.yaml` in `.env`). Core no longer waits
+  for the embedder, `embedder` and `models-fetch` do not start (nothing is downloaded), and both stages use the
+  provider `llmdap` with no LLMDAP settings: Core calls no model, and `/v1/health` shows `embedding` and `rerank`
+  `null`. On an install that ran the embedder, the same `up` leaves the old containers running: stop them once with
+  `docker compose -f compose.yaml -f compose.nomodels.yaml stop embedder` (then `rm -f embedder models-fetch`). The `models` volume stays.
+- **Another embedder**: use the same override and set `KUTUPHANE_EMBED_PROVIDER=openai` (and the rerank twin) with
+  `…_OPENAI_URL`, `…_KEY`, `…_CLASS` and the model of the stage in `.env`. A cloud endpoint needs `https` and a network
+  path for Core. Vectors of another model need `kutuphane index` again.
 - **Answers**: the answer model is not set. Name an OpenAI-compatible server (hosted, or a local vLLM) in `.env`:
   `KUTUPHANE_ANSWER_PROVIDER=openai`, `KUTUPHANE_ANSWER_OPENAI_URL`, `KUTUPHANE_ANSWER_OPENAI_KEY` (a real secret, only
   in `.env`), `KUTUPHANE_ANSWER_OPENAI_CLASS` (`local` or `cloud`) and `KUTUPHANE_ANSWER_MODEL`. Core needs a network
