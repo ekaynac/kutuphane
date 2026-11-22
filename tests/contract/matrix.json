@@ -7,6 +7,11 @@
     "quoted_records": "needs a data-scanned record file (quotes.py) in the book; the fixture book has none"
   },
   "http": {
+    "DELETE /mcp": {
+      "method_not_allowed": "run",
+      "ok": "not served: 405",
+      "unauthorized": "run"
+    },
     "GET /.well-known/oauth-protected-resource": {
       "bad_request": "public: needs no token and has nothing to refuse",
       "head_error": "public: needs no token and has nothing to refuse",
@@ -22,6 +27,11 @@
       "not_found": "public: needs no token and has nothing to refuse",
       "ok": "run",
       "unauthorized": "public: needs no token and has nothing to refuse"
+    },
+    "GET /mcp": {
+      "method_not_allowed": "run",
+      "ok": "run",
+      "unauthorized": "run"
     },
     "GET /v1/answers/{answer_id}": {
       "bad_request": "the id is an opaque path part: any unknown value is a not found",
@@ -135,6 +145,11 @@
       "ok": "run",
       "unauthorized": "run"
     },
+    "HEAD /mcp": {
+      "method_not_allowed": "run",
+      "ok": "not served: 405",
+      "unauthorized": "run"
+    },
     "MOUNT /": {
       "bad_request": "run",
       "not_found": "run",
@@ -146,6 +161,22 @@
       "not_found": "public: needs no token and has nothing to refuse",
       "ok": "run",
       "unauthorized": "public: needs no token and has nothing to refuse"
+    },
+    "OPTIONS /mcp": {
+      "method_not_allowed": "run",
+      "ok": "not served: 405",
+      "unauthorized": "run"
+    },
+    "PATCH /mcp": {
+      "method_not_allowed": "run",
+      "ok": "not served: 405",
+      "unauthorized": "run"
+    },
+    "POST /mcp": {
+      "bad_request": "the JSON-RPC calls are the cases of MOUNT /",
+      "not_found": "the JSON-RPC calls are the cases of MOUNT /",
+      "ok": "the JSON-RPC calls are the cases of MOUNT /",
+      "unauthorized": "the JSON-RPC calls are the cases of MOUNT /"
     },
     "POST /v1/ask": {
       "bad_request": "run",
@@ -187,6 +218,11 @@
       "bad_request": "run",
       "not_found": "run",
       "ok": "run",
+      "unauthorized": "run"
+    },
+    "PUT /mcp": {
+      "method_not_allowed": "run",
+      "ok": "not served: 405",
       "unauthorized": "run"
     }
   },

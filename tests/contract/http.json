@@ -20,8 +20,97 @@
     "path": "/healthz"
   },
   {
+    "answers": {
+      "DELETE": {
+        "2025-11-25": {
+          "allow": null,
+          "content_type": "application/json",
+          "status": 405
+        },
+        "2026-07-28": {
+          "allow": "POST",
+          "content_type": null,
+          "status": 405
+        }
+      },
+      "GET": {
+        "2025-11-25": {
+          "allow": null,
+          "content_type": "text/event-stream",
+          "status": 200
+        },
+        "2026-07-28": {
+          "allow": "POST",
+          "content_type": null,
+          "status": 405
+        }
+      },
+      "HEAD": {
+        "2025-11-25": {
+          "allow": "GET, POST, DELETE",
+          "content_type": "application/json",
+          "status": 405
+        },
+        "2026-07-28": {
+          "allow": "POST",
+          "content_type": null,
+          "status": 405
+        }
+      },
+      "OPTIONS": {
+        "2025-11-25": {
+          "allow": "GET, POST, DELETE",
+          "content_type": "application/json",
+          "status": 405
+        },
+        "2026-07-28": {
+          "allow": "POST",
+          "content_type": null,
+          "status": 405
+        }
+      },
+      "PATCH": {
+        "2025-11-25": {
+          "allow": "GET, POST, DELETE",
+          "content_type": "application/json",
+          "status": 405
+        },
+        "2026-07-28": {
+          "allow": "POST",
+          "content_type": null,
+          "status": 405
+        }
+      },
+      "POST": {
+        "2025-11-25": {
+          "allow": null,
+          "content_type": null,
+          "status": 400
+        },
+        "2026-07-28": {
+          "allow": null,
+          "content_type": null,
+          "status": 400
+        }
+      },
+      "PUT": {
+        "2025-11-25": {
+          "allow": "GET, POST, DELETE",
+          "content_type": "application/json",
+          "status": 405
+        },
+        "2026-07-28": {
+          "allow": "POST",
+          "content_type": null,
+          "status": 405
+        }
+      }
+    },
     "inside": "/",
-    "methods": [],
+    "methods": [
+      "GET",
+      "POST"
+    ],
     "path": "/mcp"
   },
   {

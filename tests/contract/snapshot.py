@@ -27,11 +27,13 @@ import json
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import jwt
 from cryptography.hazmat.primitives.asymmetric import rsa
 from starlette.routing import Mount, Route
+from starlette.testclient import TestClient
 
 from kutuphane import server
 from kutuphane.identity import Verifier
@@ -45,12 +47,12 @@ ISSUER, AUDIENCE, PUBLIC_URL = "https://idp.contract.test/", "kutuphane", "https
 NOT_API = {"cli.py", "curatorweb.py", "passkey.py", "devauth.py", "__init__.py"}
 
 
-def _verifier(tmp: Path) -> Verifier:
+def _verifier(tmp: Path) -> tuple[Verifier, object]:
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     jwk = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(key.public_key()))
     path = tmp / "jwks.json"
     path.write_text(json.dumps({"keys": [{**jwk, "kid": "k1", "use": "sig", "alg": "RS256"}]}))
-    return Verifier.from_files(ISSUER, AUDIENCE, path)
+    return Verifier.from_files(ISSUER, AUDIENCE, path), key
 
 
 def tools(verifier: Verifier, *, answering: bool) -> list[dict]:
@@ -64,7 +66,28 @@ def tools(verifier: Verifier, *, answering: bool) -> list[dict]:
     return out
 
 
-def routes(verifier: Verifier) -> list[dict]:
+PROBE_METHODS = ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+
+
+def probe_mcp(app, key) -> dict[str, dict[str, dict]]:
+    """How the MCP endpoint answers each method, with a valid token, in each protocol era: {method: {era: {status,
+    content type, Allow}}}. A route table cannot say it: the endpoint is an ASGI app that decides by method."""
+    now = int(time.time())
+    token = jwt.encode({"iss": ISSUER, "aud": AUDIENCE, "sub": "probe", "iat": now, "exp": now + 300}, key,
+                       algorithm="RS256", headers={"kid": "k1"})
+    answers: dict[str, dict[str, dict]] = {m: {} for m in PROBE_METHODS}
+    with TestClient(app, base_url=PUBLIC_URL) as client:
+        for method in PROBE_METHODS:
+            for era in matrix.ERAS:
+                headers = {"Authorization": f"Bearer {token}", "MCP-Protocol-Version": era,
+                           "Accept": "application/json, text/event-stream"}
+                with client.stream(method, "/mcp", headers=headers) as r:  # the headers only: a GET may be a stream
+                    answers[method][era] = {"status": r.status_code, "allow": r.headers.get("allow"),
+                                            "content_type": r.headers.get("content-type", "").split(";")[0] or None}
+    return answers
+
+
+def routes(verifier: Verifier, key) -> list[dict]:
     app = server.create_app(dsn="postgresql://contract.invalid/none", verifier=verifier, bridge=None, model=None,
                             public_url=PUBLIC_URL)
     out = []
@@ -74,8 +97,14 @@ def routes(verifier: Verifier) -> list[dict]:
         elif isinstance(r, Mount):
             out.append({"path": r.path or "/", "mount": True})
             for inner in getattr(r.app, "routes", []):  # the routes the mount serves: /mcp, the metadata
-                out.append({"path": (r.path or "") + inner.path, "inside": r.path or "/",
-                            "methods": sorted(inner.methods) if getattr(inner, "methods", None) else []})
+                entry = {"path": (r.path or "") + inner.path, "inside": r.path or "/",
+                         "methods": sorted(inner.methods) if getattr(inner, "methods", None) else []}
+                if not entry["methods"]:  # an ASGI endpoint: ask it which methods it serves
+                    answers = probe_mcp(app, key)
+                    entry["answers"] = answers
+                    entry["methods"] = sorted(m for m, eras in answers.items()
+                                              if any(a["status"] not in (404, 405) for a in eras.values()))
+                out.append(entry)
     return sorted(out, key=lambda r: (r["path"], r.get("methods", [])))
 
 
@@ -135,9 +164,9 @@ RESULTS = ("results_mcp.json", "results_http.json")
 def build_static() -> dict[str, object]:
     """The files that need no database."""
     with tempfile.TemporaryDirectory() as tmp:
-        verifier = _verifier(Path(tmp))
+        verifier, key = _verifier(Path(tmp))
         return {"tools.json": {"without_model_gateway": tools(verifier, answering=False)},
-                "http.json": routes(verifier), "errors.json": errors(), "matrix.json": matrix.snapshot()}
+                "http.json": routes(verifier, key), "errors.json": errors(), "matrix.json": matrix.snapshot()}
 
 
 def build_results(dsn: str) -> dict[str, object]:

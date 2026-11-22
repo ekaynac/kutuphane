@@ -1,4 +1,55 @@
 {
+  "DELETE /mcp [method_not_allowed (2025-11-25)]": {
+    "allow": null,
+    "body": {
+      "error": {
+        "code": "int",
+        "message": "str"
+      },
+      "id": "null",
+      "jsonrpc": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": {
+        "code": -32600,
+        "message": "Method Not Allowed: Session termination not supported"
+      }
+    },
+    "status": 405
+  },
+  "DELETE /mcp [method_not_allowed (2026-07-28)]": {
+    "allow": "POST",
+    "body": "empty",
+    "content_type": "",
+    "status": 405
+  },
+  "DELETE /mcp [unauthorized (2025-11-25)]": {
+    "allow": null,
+    "body": {
+      "error": "str",
+      "error_description": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "invalid_token",
+      "error_description": "Authentication required"
+    },
+    "status": 401
+  },
+  "DELETE /mcp [unauthorized (2026-07-28)]": {
+    "allow": null,
+    "body": {
+      "error": "str",
+      "error_description": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "invalid_token",
+      "error_description": "Authentication required"
+    },
+    "status": 401
+  },
   "GET /.well-known/oauth-protected-resource [ok]": {
     "body": {
       "authorization_servers": [
@@ -18,6 +69,44 @@
     },
     "content_type": "application/json",
     "status": 200
+  },
+  "GET /mcp [method_not_allowed (2026-07-28)]": {
+    "allow": "POST",
+    "body": "empty",
+    "content_type": "",
+    "status": 405
+  },
+  "GET /mcp [ok (2025-11-25)]": {
+    "allow": null,
+    "body": "stream, not read",
+    "content_type": "text/event-stream",
+    "status": 200
+  },
+  "GET /mcp [unauthorized (2025-11-25)]": {
+    "allow": null,
+    "body": {
+      "error": "str",
+      "error_description": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "invalid_token",
+      "error_description": "Authentication required"
+    },
+    "status": 401
+  },
+  "GET /mcp [unauthorized (2026-07-28)]": {
+    "allow": null,
+    "body": {
+      "error": "str",
+      "error_description": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "invalid_token",
+      "error_description": "Authentication required"
+    },
+    "status": 401
   },
   "GET /v1/answers/{answer_id} [not_found]": {
     "body": {
@@ -1175,6 +1264,30 @@
     "content_type": "application/json",
     "status": 200
   },
+  "HEAD /mcp [method_not_allowed (2025-11-25)]": {
+    "allow": "GET, POST, DELETE",
+    "body": "empty",
+    "content_type": "application/json",
+    "status": 405
+  },
+  "HEAD /mcp [method_not_allowed (2026-07-28)]": {
+    "allow": "POST",
+    "body": "empty",
+    "content_type": "",
+    "status": 405
+  },
+  "HEAD /mcp [unauthorized (2025-11-25)]": {
+    "allow": null,
+    "body": "empty",
+    "content_type": "application/json",
+    "status": 401
+  },
+  "HEAD /mcp [unauthorized (2026-07-28)]": {
+    "allow": null,
+    "body": "empty",
+    "content_type": "application/json",
+    "status": 401
+  },
   "HEAD /v1/answers/{answer_id} [head_error:not_found]": {
     "body": "empty",
     "body_empty": true,
@@ -1361,7 +1474,7 @@
     "content_type": "application/json",
     "status": 200
   },
-  "MOUNT / [bad_request (no tool name)]": {
+  "MOUNT / [bad_request (arguments not an object)]": {
     "2025-11-25": {
       "content_type": "text/event-stream",
       "http_status": 200,
@@ -1376,6 +1489,7 @@
       },
       "rpc_error": {
         "code": -32602,
+        "data": "",
         "message": "Invalid request parameters"
       }
     },
@@ -1393,6 +1507,45 @@
       },
       "rpc_error": {
         "code": -32602,
+        "data": "",
+        "message": "Invalid request parameters"
+      }
+    }
+  },
+  "MOUNT / [bad_request (no tool name)]": {
+    "2025-11-25": {
+      "content_type": "text/event-stream",
+      "http_status": 200,
+      "message": {
+        "error": {
+          "code": "int",
+          "data": "str",
+          "message": "str"
+        },
+        "id": "int",
+        "jsonrpc": "str"
+      },
+      "rpc_error": {
+        "code": -32602,
+        "data": "",
+        "message": "Invalid request parameters"
+      }
+    },
+    "2026-07-28": {
+      "content_type": "application/json",
+      "http_status": 400,
+      "message": {
+        "error": {
+          "code": "int",
+          "data": "str",
+          "message": "str"
+        },
+        "id": "int",
+        "jsonrpc": "str"
+      },
+      "rpc_error": {
+        "code": -32602,
+        "data": "",
         "message": "Invalid request parameters"
       }
     }
@@ -1408,7 +1561,10 @@
     },
     "content_type": "application/json",
     "error_text": {
-      "error": "Parse error: EOF while parsing an object at line 1 column 1"
+      "error": {
+        "code": -32700,
+        "message": "Parse error: EOF while parsing an object at line 1 column 1"
+      }
     },
     "status": 400
   },
@@ -1427,6 +1583,7 @@
       },
       "rpc_error": {
         "code": -32601,
+        "data": "no/such/method",
         "message": "Method not found"
       }
     },
@@ -1444,6 +1601,7 @@
       },
       "rpc_error": {
         "code": -32601,
+        "data": "no/such/method",
         "message": "Method not found"
       }
     }
@@ -4223,6 +4381,108 @@
     "content_type": "application/json",
     "status": 200
   },
+  "OPTIONS /mcp [method_not_allowed (2025-11-25)]": {
+    "allow": "GET, POST, DELETE",
+    "body": {
+      "error": {
+        "code": "int",
+        "message": "str"
+      },
+      "id": "null",
+      "jsonrpc": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": {
+        "code": -32600,
+        "message": "Method Not Allowed"
+      }
+    },
+    "status": 405
+  },
+  "OPTIONS /mcp [method_not_allowed (2026-07-28)]": {
+    "allow": "POST",
+    "body": "empty",
+    "content_type": "",
+    "status": 405
+  },
+  "OPTIONS /mcp [unauthorized (2025-11-25)]": {
+    "allow": null,
+    "body": {
+      "error": "str",
+      "error_description": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "invalid_token",
+      "error_description": "Authentication required"
+    },
+    "status": 401
+  },
+  "OPTIONS /mcp [unauthorized (2026-07-28)]": {
+    "allow": null,
+    "body": {
+      "error": "str",
+      "error_description": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "invalid_token",
+      "error_description": "Authentication required"
+    },
+    "status": 401
+  },
+  "PATCH /mcp [method_not_allowed (2025-11-25)]": {
+    "allow": "GET, POST, DELETE",
+    "body": {
+      "error": {
+        "code": "int",
+        "message": "str"
+      },
+      "id": "null",
+      "jsonrpc": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": {
+        "code": -32600,
+        "message": "Method Not Allowed"
+      }
+    },
+    "status": 405
+  },
+  "PATCH /mcp [method_not_allowed (2026-07-28)]": {
+    "allow": "POST",
+    "body": "empty",
+    "content_type": "",
+    "status": 405
+  },
+  "PATCH /mcp [unauthorized (2025-11-25)]": {
+    "allow": null,
+    "body": {
+      "error": "str",
+      "error_description": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "invalid_token",
+      "error_description": "Authentication required"
+    },
+    "status": 401
+  },
+  "PATCH /mcp [unauthorized (2026-07-28)]": {
+    "allow": null,
+    "body": {
+      "error": "str",
+      "error_description": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "invalid_token",
+      "error_description": "Authentication required"
+    },
+    "status": 401
+  },
   "POST /v1/ask [bad_request]": {
     "body": {
       "error": "str"
@@ -4715,6 +4975,57 @@
     "content_type": "application/json",
     "error_text": {
       "error": "unauthenticated"
+    },
+    "status": 401
+  },
+  "PUT /mcp [method_not_allowed (2025-11-25)]": {
+    "allow": "GET, POST, DELETE",
+    "body": {
+      "error": {
+        "code": "int",
+        "message": "str"
+      },
+      "id": "null",
+      "jsonrpc": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": {
+        "code": -32600,
+        "message": "Method Not Allowed"
+      }
+    },
+    "status": 405
+  },
+  "PUT /mcp [method_not_allowed (2026-07-28)]": {
+    "allow": "POST",
+    "body": "empty",
+    "content_type": "",
+    "status": 405
+  },
+  "PUT /mcp [unauthorized (2025-11-25)]": {
+    "allow": null,
+    "body": {
+      "error": "str",
+      "error_description": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "invalid_token",
+      "error_description": "Authentication required"
+    },
+    "status": 401
+  },
+  "PUT /mcp [unauthorized (2026-07-28)]": {
+    "allow": null,
+    "body": {
+      "error": "str",
+      "error_description": "str"
+    },
+    "content_type": "application/json",
+    "error_text": {
+      "error": "invalid_token",
+      "error_description": "Authentication required"
     },
     "status": 401
   }

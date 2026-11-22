@@ -10,15 +10,21 @@ HTTP kinds (the mount at `/`, the MCP transport, too): the same, and unauthorize
 request with HEAD, for the ok and for the main error case.
 """
 RUN = "run"
+ERAS = ("2025-11-25", "2026-07-28")  # the protocol eras the transport serves
 MCP_KINDS = ("ok", "not_found", "bad_request")
 HTTP_KINDS = ("ok", "not_found", "bad_request", "unauthorized")
 HEAD_KINDS = ("head_ok", "head_error")
+TRANSPORT_KINDS = ("ok", "method_not_allowed", "unauthorized")  # a method of /mcp: served, refused (405), no token
 
 
 def _row(kinds, reasons):
     unknown = set(reasons) - set(kinds)
     assert not unknown, unknown
     return {kind: reasons.get(kind, RUN) for kind in kinds}
+
+
+def transport(**reasons):
+    return _row(TRANSPORT_KINDS, reasons)
 
 
 def tool(**reasons):
@@ -63,6 +69,15 @@ HTTP = {
     # the mount at `/`: the MCP endpoint (/mcp, every tool above is called through it) and the protected-resource
     # metadata; its cases are JSON-RPC calls without a tool, plus a body that is not JSON and a missing token
     "MOUNT /": route("MOUNT"),
+    # the methods of the MCP endpoint, as the server answers them today (probed into http.json): the JSON-RPC calls
+    # are the cases of MOUNT /; the rest are what each other method gets, in each protocol era, with and without a token
+    "POST /mcp": _row(HTTP_KINDS, {k: "the JSON-RPC calls are the cases of MOUNT /" for k in HTTP_KINDS}),
+    "GET /mcp": transport(),
+    "HEAD /mcp": transport(ok="not served: 405"),
+    "DELETE /mcp": transport(ok="not served: 405"),
+    "PUT /mcp": transport(ok="not served: 405"),
+    "PATCH /mcp": transport(ok="not served: 405"),
+    "OPTIONS /mcp": transport(ok="not served: 405"),
     "GET /.well-known/oauth-protected-resource": route("GET", not_found=PUBLIC, bad_request=PUBLIC,
                                                        unauthorized=PUBLIC, head_error=PUBLIC),
     "OPTIONS /.well-known/oauth-protected-resource": route("OPTIONS", not_found=PUBLIC, bad_request=PUBLIC,
@@ -122,7 +137,7 @@ def kind_of(name: str) -> str:
 def entry_of(name: str) -> str:
     """The matrix key of a case: the tool, or `METHOD route` (a HEAD case belongs to its GET route)."""
     if "[" in name:
-        return ("GET " + name[5:] if name.startswith("HEAD ") else name).split(" [", 1)[0]
+        return ("GET " + name[5:] if name.startswith("HEAD ") and "[head_" in name else name).split(" [", 1)[0]
     return name.split(":", 1)[0]
 
 
@@ -161,9 +176,11 @@ def problems(tools: list[str], routes: list[dict], mcp: dict, http: dict) -> lis
     for r in routes:
         if "mount" in r:
             wanted[f"MOUNT {r['path']}"] = 0
-        for method in r.get("methods", []):  # a route of a mount without a method (/mcp) is the mount's own entry
+        for method in r.get("methods", []):
             if method != "HEAD":
                 wanted[f"{method} {r['path']}"] = 0
+        for method in r.get("answers", {}):  # the methods probed on the MCP endpoint
+            wanted[f"{method} {r['path']}"] = 0
     for key in sorted(set(wanted) - set(HTTP)):
         found.append(f"route without a matrix entry: {key}")
     for key in sorted(set(HTTP) - set(wanted)):

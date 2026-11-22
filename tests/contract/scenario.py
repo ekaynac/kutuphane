@@ -33,6 +33,7 @@ from test_identity import AUD, ISS, token  # noqa: E402
 from test_kstd import write_manifest  # noqa: E402
 from test_server import LEGACY, MCP_HEADERS, MODERN, _message, mcp_rpc  # noqa: E402
 
+from .matrix import ERAS as matrix_eras  # noqa: E402
 from .matrix import kind_of, label  # noqa: E402
 
 PUBLIC = "http://kutuphane.test"
@@ -293,6 +294,7 @@ def collect(dsn: str) -> dict[str, dict]:
 # era sends it (test_server.mcp_rpc), and the JSON-RPC message that comes back is recorded as it is serialized.
 
 ERAS = (LEGACY, MODERN)
+assert ERAS == matrix_eras, "the eras of the matrix and of the suite differ"
 
 
 def _is_error(message) -> bool:
@@ -329,7 +331,7 @@ def _rpc_outcome(status, message, content_type):
     if message is None:
         return out
     if "error" in message:
-        out["rpc_error"] = {"code": message["error"]["code"], "message": message["error"]["message"]}
+        out["rpc_error"] = error_object(message["error"])
         return out
     result = message["result"]
     if "content" not in result:
@@ -477,6 +479,34 @@ def mcp_results(ctx: Context) -> tuple[dict, dict]:
     return cases.result(), mount.result()
 
 
+def _answer(client, method, headers) -> dict:
+    """What `method /mcp` answers: status, content type, Allow, and the body by value (a stream is not read)."""
+    with client.stream(method, "/mcp", headers=headers) as r:
+        out = {"status": r.status_code, "content_type": _content_type(r), "allow": r.headers.get("allow")}
+        if r.status_code < 400 and out["content_type"] == "text/event-stream":
+            return {**out, "body": "stream, not read"}
+        r.read()
+        if not r.content:
+            return {**out, "body": "empty"}
+        try:
+            body = r.json()
+        except ValueError:
+            return {**out, "body_text": _normalised(r.text)}
+        return {**out, "body": shape(body), **({"error_text": error_values(body)} if error_values(body) else {})}
+
+
+def _methods(client, cases, agent):
+    """The other methods of the MCP endpoint, as it answers them today: for each protocol era, with a token (served,
+    or 405 with its Allow header) and without (401)."""
+    accept = {"Accept": "application/json, text/event-stream"}
+    for method in ("GET", "HEAD", "DELETE", "PUT", "PATCH", "OPTIONS"):
+        for era in ERAS:
+            for auth, served, refused in ((agent, "ok", "method_not_allowed"), ({}, None, "unauthorized")):
+                answer = _answer(client, method, {**auth, **accept, "MCP-Protocol-Version": era})
+                kind = served if auth and answer["status"] < 400 else refused
+                cases.add(f"{method} /mcp [{kind} ({era})]", answer, success=answer["status"] < 400)
+
+
 def _transport(client, cases, agent):
     """The mount at `/`: the MCP endpoint and the protected-resource metadata, without a tool."""
     def raw(kind, variant, r, *, success):
@@ -499,6 +529,7 @@ def _transport(client, cases, agent):
     rpc_cases("not_found", "unknown tool", "tools/call", {"name": "no_such_tool", "arguments": {}})
     rpc_cases("not_found", "unknown method", "no/such/method", {})
     rpc_cases("bad_request", "no tool name", "tools/call", {"arguments": {}})
+    rpc_cases("bad_request", "arguments not an object", "tools/call", {"name": "list_books", "arguments": "x"})
     meta = "/.well-known/oauth-protected-resource"  # public: a route of the mount, with its own matrix entries
     for method, kind, outcome in (("GET", "ok", _http_outcome), ("HEAD", "head_ok", _head_outcome),
                                   ("OPTIONS", "ok", _http_outcome)):
@@ -507,6 +538,7 @@ def _transport(client, cases, agent):
     raw("bad_request", "not json", client.post("/mcp", content=b"{", headers={**MCP_HEADERS, **agent}), success=False)
     raw("unauthorized", None, client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
                                           headers=MCP_HEADERS), success=False)
+    _methods(client, cases, agent)
 
 
 def _wait_job(status, timeout=30.0):
@@ -527,6 +559,25 @@ _ID = re.compile(r"\b(?:[a-z]{1,3}_)?[0-9a-f]{12,}\b|\b(?:ct|pf|nt|an|jb)_[0-9a-
 ERROR_KEYS = ("error", "error_description", "detail", "message")
 
 
+def _normalised(value):
+    """Strings with ids replaced; a list of validation details (pydantic: `type`, `loc`, `msg`, plus the rejected
+    input and a url) keeps those three fields of each item; other values are walked."""
+    if isinstance(value, str):
+        return _ID.sub(ID_PLACEHOLDER, value)
+    if isinstance(value, list):
+        return [{k: _normalised(item[k]) for k in ("type", "loc", "msg") if k in item}
+                if isinstance(item, dict) and {"type", "loc", "msg"} & set(item) else _normalised(item)
+                for item in value]
+    if isinstance(value, dict):
+        return {k: _normalised(v) for k, v in sorted(value.items())}
+    return value
+
+
+def error_object(error: dict) -> dict:
+    """A JSON-RPC `error` object by value: `code`, `message` and `data` (a string, or validation details)."""
+    return {k: _normalised(error[k]) for k in ("code", "message", "data") if k in error}
+
+
 def error_values(body) -> dict:
     """The strings a JSON error body carries (`error`, `error_description`, `detail`, or the `message` of an `error`
     object), by value, with ids replaced by ID_PLACEHOLDER."""
@@ -535,9 +586,9 @@ def error_values(body) -> dict:
         for key in ERROR_KEYS:
             value = body.get(key)
             if isinstance(value, dict):
-                value = value.get("message")
-            if isinstance(value, str):
-                found[key] = _ID.sub(ID_PLACEHOLDER, value)
+                found[key] = error_object(value)
+            elif isinstance(value, str):
+                found[key] = _normalised(value)
     return found
 
 
