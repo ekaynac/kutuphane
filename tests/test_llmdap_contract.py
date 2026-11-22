@@ -56,7 +56,7 @@ def test_single_run_with_an_audit_export_command_is_unchanged(bridge, monkeypatc
 
     def fake_run(argv, **kw):   # the export command prints the (prepared) chain of the stub bridge
         ran.append(argv)
-        return SimpleNamespace(returncode=0, stdout=export_of(bridge), stderr="")
+        return SimpleNamespace(returncode=0, stdout=export_of(bridge).encode(), stderr=b"")
 
     monkeypatch.setattr(module.subprocess, "run", fake_run)
     rc, lines, out = run(monkeypatch, capsys, "--audit-export", "export-cmd --path x", module=module)
@@ -103,6 +103,53 @@ def test_verify_without_the_rows_of_a_calls_phase_fails(bridge, monkeypatch, cap
     rc, lines, _ = run(monkeypatch, capsys, "--phase", "verify", "--audit-export-file", str(export))
     assert rc == 1
     assert lines == ["FAIL the calls phase left its rows in the database"]
+
+
+DAMAGED = {
+    "invalid UTF-8": b'{"seq": 0}\n\xff\xfe not utf-8\n',
+    "a line that is not JSON": b'{"seq": 0}\nthis is not json\n',
+    "a JSON array line": b'{"seq": 0}\n[1, 2, 3]\n',
+    "a JSON number line": b'42\n',
+}
+
+
+def assert_consistent_failure(rc, lines, out, reason_part):
+    assert rc == 1, out
+    chain = [line for line in lines if line.startswith("FAIL LLMDAP audit chain verifies")]
+    assert len(chain) == 1 and "export exit 0, but" in chain[0] and reason_part in chain[0], lines
+    assert any(line.startswith("FAIL unified audit") for line in lines)
+    summary = json.loads(out.splitlines()[-1])
+    assert summary["passed"] == sum(line.startswith("PASS ") for line in lines)
+    assert summary["of"] == len(lines) and summary["passed"] < summary["of"], summary
+
+
+@pytest.mark.parametrize("name,raw,reason", [
+    ("invalid UTF-8", DAMAGED["invalid UTF-8"], "not valid UTF-8"),
+    ("not JSON", DAMAGED["a line that is not JSON"], "line 2 of the export is not JSON"),
+    ("array", DAMAGED["a JSON array line"], "line 2 of the export is JSON but not an object (list)"),
+    ("number", DAMAGED["a JSON number line"], "line 1 of the export is JSON but not an object (int)"),
+])
+def test_verify_phase_with_a_damaged_export_that_exited_0_fails_explicitly(bridge, monkeypatch, capsys, tmp_path,
+                                                                           name, raw, reason):
+    assert run(monkeypatch, capsys, "--phase", "calls")[0] == 0
+    export = tmp_path / "export.jsonl"
+    export.write_bytes(raw)
+    rc, lines, out = run(monkeypatch, capsys, "--phase", "verify", "--audit-export-file", str(export))
+    assert len(lines) == 3, lines
+    assert_consistent_failure(rc, lines, out, reason)
+
+
+@pytest.mark.parametrize("raw,reason", [
+    (DAMAGED["invalid UTF-8"], "not valid UTF-8"),
+    (DAMAGED["a line that is not JSON"], "not JSON"),
+    (DAMAGED["a JSON array line"], "not an object"),
+])
+def test_single_run_with_a_damaged_export_that_exited_0_fails_explicitly(bridge, monkeypatch, capsys, raw, reason):
+    module = load()
+    monkeypatch.setattr(module.subprocess, "run", lambda argv, **kw: SimpleNamespace(returncode=0, stdout=raw, stderr=b""))
+    rc, lines, out = run(monkeypatch, capsys, "--audit-export", "export-cmd", module=module)
+    assert len(lines) == 11, lines   # every check still prints
+    assert_consistent_failure(rc, lines, out, reason)
 
 
 @pytest.mark.parametrize("args", [

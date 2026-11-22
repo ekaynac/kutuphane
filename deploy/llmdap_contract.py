@@ -37,6 +37,28 @@ SHARED_SECRET_ENV = "LLMDAP_GATEWAY_TRUST_SECRET"
 QUESTION = "Erişim kayıtları ne kadar süre saklanır?"
 
 
+def parse_export(raw: bytes | str) -> tuple[list[dict], str | None]:
+    """The entries of an export (JSON lines, each an object) and the reason it cannot be used, if any. An export that
+    exits 0 may still be damaged: invalid UTF-8, a line that is not JSON, or JSON that is not an object."""
+    if isinstance(raw, bytes):
+        try:
+            raw = raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            return [], f"the export is not valid UTF-8 ({exc.reason} at byte {exc.start})"
+    entries = []
+    for number, line in enumerate(raw.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+        except ValueError as exc:
+            return [], f"line {number} of the export is not JSON ({exc})"
+        if not isinstance(entry, dict):
+            return [], f"line {number} of the export is JSON but not an object ({type(entry).__name__})"
+        entries.append(entry)
+    return entries, None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("book_dir")
@@ -117,22 +139,22 @@ def main() -> int:
                     return 1
                 actor = Actor(AGENT, on_behalf_of=USER, correlation_id=row[0])
             if args.phase == "verify":
-                export_status, export_out = args.audit_export_status, ""
+                export_status, export_raw = args.audit_export_status, b""
                 if export_status == 0:
                     try:
-                        export_out = Path(args.audit_export_file).read_text()
+                        export_raw = Path(args.audit_export_file).read_bytes()
                     except OSError as exc:
                         export_status = 1
                         print(f"cannot read the export file: {exc}", file=sys.stderr)
             else:
-                export = subprocess.run(shlex.split(args.audit_export), capture_output=True, text=True, check=False)
-                export_status, export_out = export.returncode, export.stdout
-            check("LLMDAP audit chain verifies", export_status == 0, f"export exit {export_status}")
-            entries = [json.loads(line) for line in export_out.splitlines() if line.strip()] \
-                if export_status == 0 else []
+                export = subprocess.run(shlex.split(args.audit_export), capture_output=True, check=False)
+                export_status, export_raw = export.returncode, export.stdout
+            entries, problem = parse_export(export_raw) if export_status == 0 else ([], None)
+            check("LLMDAP audit chain verifies", export_status == 0 and problem is None,
+                  f"export exit {export_status}" if problem is None else f"export exit 0, but {problem}")
             check("unified audit is complete against LLMDAP's chain (AT-09)",
                   audit.explain(conn, actor.correlation_id, entries)["complete"])
-            mine = [e for e in entries if actor.correlation_id in e.get("correlationId", "")]
+            mine = [e for e in entries if actor.correlation_id in str(e.get("correlationId") or "")]
             subjects = {e.get("actor") for e in mine}
             check("LLMDAP records one authenticated Core subject and the user served",
                   len(subjects) == 1 and all(e.get("forSubject") == USER for e in mine), f"{subjects}")
