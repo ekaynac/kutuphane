@@ -126,9 +126,11 @@ cleanup() {
     fail "cannot list the run's volumes (none removed)"
   fi
   if [ -n "$network_id" ]; then
-    # the bridge the caller attached (alias = the URL's host): detach it, then remove the network; all by id
-    if names=$(docker network inspect -f '{{range .Containers}}{{.Name}} {{end}}' "$network_id"); then
+    # the bridge the caller attached (alias = the URL's host): detach it, then remove the network; all by id. The keys
+    # of .Containers are container ids; the alias is read from the same id.
+    if names=$(docker network inspect -f '{{range $cid, $c := .Containers}}{{$cid}} {{end}}' "$network_id"); then
       for c in $names; do
+        if ! [[ $c =~ ^[0-9a-f]{12,64}$ ]]; then fail "unexpected container id '$c' on the network (not detached)"; continue; fi
         if aliases=$(docker inspect -f "{{range (index .NetworkSettings.Networks \"$NETWORK\").Aliases}}{{.}} {{end}}" "$c"); then
           if printf '%s\n' "$aliases" | tr ' ' '\n' | grep -qx "$bridge_alias"; then
             out=$(docker network disconnect -f "$network_id" "$c" 2>&1) || fail "docker network disconnect $c: $out"
@@ -174,11 +176,13 @@ run_export() {
   while kill -0 "$leader" 2>/dev/null; do
     if [ "$waited" -ge "$export_timeout" ]; then
       echo "the export command ran longer than ${export_timeout}s and was killed" >>"$export_err"
-      if reap_group "$export_pgid"; then export_pgid=""; else
+      if reap_group "$export_pgid"; then
+        export_pgid=""
+        wait "$leader" 2>/dev/null   # the group is gone, so the leader is dead: this does not block
+      else
         echo "a process of the export command could not be ended" >>"$export_err"
-        export_stuck=1
+        export_stuck=1   # never wait for a leader that may still live
       fi
-      wait "$leader" 2>/dev/null
       return 124
     fi
     sleep 1

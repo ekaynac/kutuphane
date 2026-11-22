@@ -70,7 +70,10 @@ case "$1" in
     case "$args" in *" aaaaaaaaaaaa"*) rm -f "$st/containers" ;; esac
     case "$args" in *" cccccccccccc"*) rm -f "$st/lock" ;; esac
     exit 0 ;;
-  inspect) [ "$FAKE_FAIL" = ctr_inspect ] && cannot; echo "${FAKE_ALIASES:-}"; exit 0 ;;
+  inspect)   # aliases of a container, from FAKE_ALIAS_<container id>
+    [ "$FAKE_FAIL" = ctr_inspect ] && cannot
+    for last; do :; done
+    var="FAKE_ALIAS_$last"; echo "${!var:-}"; exit 0 ;;
 esac
 exit 0
 '''
@@ -157,19 +160,24 @@ def test_teardown_listing_fails_removes_no_listed_container_and_exits_3(run):
     assert all(c.split()[-1] in (LOCK_ID, NETWORK_ID) for c in removals(calls)), calls   # by known id only
 
 
+BRIDGE_ID, OTHER_ID = "d" * 64, "e" * 64
+
+
 @pytest.mark.parametrize("fail", ["net_inspect", "ctr_inspect"])
 def test_a_failed_detach_query_is_a_teardown_failure(run, fail):
-    proc, calls, _ = run(fail=fail, FAKE_NET_CONTAINERS="bridgex", FAKE_ALIASES="llmdap")
+    proc, calls, _ = run(fail=fail, FAKE_NET_CONTAINERS=BRIDGE_ID, **{f"FAKE_ALIAS_{BRIDGE_ID}": "llmdap"})
     assert proc.returncode == 3, proc.stderr
     assert "teardown failed: cannot inspect" in proc.stderr
     assert not [c for c in calls if c.startswith("network disconnect")], calls
     assert f"network rm {NETWORK_ID}" in calls   # the removal is still tried
 
 
-def test_the_bridge_with_the_alias_is_detached_by_network_id(run):
-    proc, calls, _ = run(FAKE_NET_CONTAINERS="bridgex other", FAKE_ALIASES="llmdap")
+def test_the_bridge_with_the_alias_is_detached_by_ids_and_the_other_container_is_not(run):
+    proc, calls, _ = run(FAKE_NET_CONTAINERS=f"{BRIDGE_ID} {OTHER_ID}",
+                         **{f"FAKE_ALIAS_{BRIDGE_ID}": "abc llmdap", f"FAKE_ALIAS_{OTHER_ID}": "abc other"})
     assert proc.returncode == 0, proc.stderr
-    assert f"network disconnect -f {NETWORK_ID} bridgex" in calls
+    disconnects = [c for c in calls if c.startswith("network disconnect")]
+    assert disconnects == [f"network disconnect -f {NETWORK_ID} {BRIDGE_ID}"], calls
 
 
 def test_export_group_is_ended_before_verify_and_the_file_stays(run):
@@ -203,3 +211,16 @@ def test_a_group_that_cannot_be_ended_stops_before_verify(run, tmp_path):
     assert "could not be ended" in proc.stderr
     assert not [c for c in calls if "--phase verify" in c], calls
     assert "still alive" in proc.stderr   # cleanup tried again and says so
+
+
+def test_a_leader_that_cannot_be_ended_does_not_block_the_run(run, tmp_path):
+    hook = tmp_path / "alive"
+    hook.write_text("")   # test hook: leader and group count as alive while this file exists
+    export = "sh -c 'trap \"\" TERM; sleep 60'"   # a leader that ignores TERM
+    start = time.monotonic()
+    proc, calls, _ = run(export, extra=("--export-timeout", "1"), timeout=60,
+                         LLMDAP_CONTRACT_CI_TEST_GROUP_ALIVE=str(hook))
+    assert proc.returncode == 125, proc.stderr
+    assert time.monotonic() - start < 40, "the run waited for the leader"
+    assert not [c for c in calls if "--phase verify" in c], calls
+    assert "ran longer than 1s and was killed" in proc.stderr and "could not be ended" in proc.stderr
