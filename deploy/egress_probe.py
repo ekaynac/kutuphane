@@ -6,7 +6,7 @@
 
 Allowed: postgres and llmdap; with `--light` (the light install, #76), postgres only, and llmdap is forbidden too.
 The ingress proxy shares the `web` network with core, so core can open a connection to
-it; that is a known peer, not a way out (`web` has no route out). It is reported, not failed. Three things are
+it (so can the embedder of the light install, `models`); that is a known peer, not a way out (`web` has no route out). It is reported, not failed. Three things are
 checked separately (Astra
 review #4), because one failed connection does not say which layer stopped it:
 - no default route: an internal compose network has none, so no address outside it is routable at all;
@@ -18,7 +18,9 @@ import socket
 import sys
 
 ALLOWED = [("postgres", 5432), ("llmdap", 8787)]
-KNOWN_PEERS = [("ingress", 8080)]  # reachable by design of compose networks; reported (Astra review #7)
+# Reachable by design of compose networks; reported (Astra review #7). The embedder is a peer of core in the light
+# install (compose.yaml, #242) on the internal network `models`; it has no way out either.
+KNOWN_PEERS = [("ingress", 8080), ("embedder", 8000)]
 OUTSIDE_NAMES = ["huggingface.co", "pypi.org", "host.docker.internal"]
 FORBIDDEN = [("1.1.1.1", 443), ("8.8.8.8", 53), ("172.17.0.1", 11434)]
 

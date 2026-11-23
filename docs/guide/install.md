@@ -3,8 +3,9 @@
 Four ways:
 
 - [Development](#development-install): a laptop, tests, the quick start; no models or the stub models.
-- [Light install](#light-install): `compose.yaml` (Postgres, Core, ingress proxy; no LLMDAP, only open source parts,
-  #76); full-text search, no answers. This is the public install.
+- [Light install](#light-install): `compose.yaml` (Postgres, Core, ingress proxy and a local CPU embedder; no LLMDAP,
+  only open source parts, #76, #242); search with vectors and rerank, no answers until you name an answer model.
+  This is the public install.
 - [Full stack](#full-stack): `deploy/compose.full.yaml`, one server (D15), plus LLMDAP for model calls. The LLMDAP
   bridge is a proprietary component, available only under an LLMDAP agreement.
 - [Local models](#local-models): the full stack with real models on the same machine (D61); nothing leaves it.
@@ -377,49 +378,74 @@ Enrollment and use: [operations.md](operations.md), section 7.
 
 ## Light install
 
-No LLMDAP, no model server (#76). `compose.yaml` starts `postgres` (`db`, `dev`,
-`curator-db`; `127.0.0.1:55432` for the host CLI), `core` (`db`, `web`; no model settings) and `ingress` (`edge`,
-`web`; publishes `${KUTUPHANE_BIND:-127.0.0.1}:8080`). Core reaches only Postgres.
+No LLMDAP (#76, #242). `compose.yaml` starts `postgres` (`db`, `dev`,
+`curator-db`; `127.0.0.1:55432` for the host CLI), `core` (`db`, `web`, `models`), `ingress` (`edge`, `web`; publishes
+`${KUTUPHANE_BIND:-127.0.0.1}:8080`), `embedder` (`models`) and the one-shot `models-fetch` (`fetch`). Core reaches
+Postgres and the embedder, nothing else. The first `up` downloads the model weights once
+([below](#model-weights-and-offline-install)).
 
 ### What works and what is lost
 
-- `search_library`, `GET /v1/search`: full text only; no vectors, rerank or question translation, so other words or
-  another language find less.
+- `search_library`, `GET /v1/search`: full text, vectors (bge-m3) and rerank (bge-reranker-v2-m3) from the local
+  `embedder`. Without it ([operations.md](operations.md#standalone-embedder)): full text only, so other words or
+  another language find less. Question translation needs an answer model.
 - `open_citation`, `read_document`, notes, links, outcomes, decisions, code citations: as in the full stack.
-- `ask_library`, `POST /v1/ask`, the job tools: not available. `tools/list` omits `ask_library`, `job_status`,
+- `ask_library`, `POST /v1/ask`, the job tools: not available until you set an answer model
+  ([operations.md](operations.md#standalone-embedder)). `tools/list` omits `ask_library`, `job_status`,
   `job_result` and `job_cancel`. `POST /v1/ask` gives HTTP `503` `answers are not available: this install has no
   model gateway (LLMDAP); search is full text only`, also with `background: true` (no job is made).
-- No `model_call` row and no LLMDAP audit chain (AT-09).
+- A direct call has a `model_call` row (route `openai:embedder:8000`) but no LLMDAP audit chain (AT-09).
 
 Core calls a model through LLMDAP or, if you set a direct provider, an OpenAI-compatible endpoint (D3, D88). The light
-install sets neither, so there is no embedder. An embedding or rerank route without `KUTUPHANE_LLMDAP_URL` stops the
-server (`LLMDAP not configured: set KUTUPHANE_LLMDAP_URL, …`); `KUTUPHANE_EMBED_PROVIDER=openai` needs no LLMDAP but
-needs a network path from Core to the endpoint, which the `db` and `web` networks do not give
-([operations.md](operations.md#direct-model-providers)).
+install uses the direct provider for the embedder (`KUTUPHANE_EMBED_PROVIDER=openai` and the rerank twin; the
+variables are in `compose.yaml`, [operations.md](operations.md#direct-model-providers)). An embedding or rerank route
+without `KUTUPHANE_LLMDAP_URL` stops the server (`LLMDAP not configured: set KUTUPHANE_LLMDAP_URL, …`), so to run
+with no model server set both providers to `llmdap` ([operations.md](operations.md#standalone-embedder)).
 
 ### Steps
 
 1. In `.env`: `KUTUPHANE_VERSION` (the release tag; `dev` for a source build), `KUTUPHANE_DB_PASSWORD`,
    `KUTUPHANE_APP_DB_PASSWORD`, `KUTUPHANE_PUBLIC_URL`, `KUTUPHANE_OIDC_ISSUER`, `KUTUPHANE_OIDC_JWKS_FILE`; optional
    `KUTUPHANE_OIDC_AUDIENCE`, `KUTUPHANE_BIND`, `KUTUPHANE_REPO_DIR` (paths absolute). No `COMPOSE_FILE` (except
-   `compose.yaml:compose.build.yaml` for a source build), `KUTUPHANE_LLMDAP_*` or `KUTUPHANE_ANSWER_MODEL`. Shell
+   `compose.yaml:compose.build.yaml` for a source build) and no `KUTUPHANE_LLMDAP_*`. Shell
    variables override `.env`. Without `KUTUPHANE_PUBLIC_URL` or `KUTUPHANE_OIDC_ISSUER`, Core does not start and
    its log names the setting.
 2. Do [full stack step 2](#2-database-roles) (without the curator web script).
 3. Add books, journals and rights with the host CLI (`README.md` quick start, step 2), with no
    `KUTUPHANE_LLMDAP_*` in that shell.
-4. Start Core and the ingress proxy: `docker compose up -d --wait` (from source: [see above](#image-release-or-source),
+4. Start the stack: `docker compose up -d --wait` (from source: [see above](#image-release-or-source),
    with `--build`).
 5. Check (with `--light`, `egress_probe.py` exits 0 only if Core reaches Postgres and nothing else):
 
    ```sh
    curl -s http://127.0.0.1:8080/healthz
-   docker compose exec -T core python -I - --light < deploy/egress_probe.py
+   docker compose exec -T core python -I - --light < deploy/egress_probe.py   # the embedder is a known peer
    KUTUPHANE_PROBE_TOKEN=<access token> python3 deploy/mcp_probe.py http://127.0.0.1:8080 --journal <journal>
    ```
 
 Development tokens (README quick start, step 3): `KUTUPHANE_OIDC_ISSUER` is `<KUTUPHANE_PUBLIC_URL>/dev`,
 `KUTUPHANE_OIDC_JWKS_FILE` the `jwks.json` of `kutuphane dev-keys`.
+
+### Model weights and offline install
+
+The embedder needs `BAAI/bge-m3` (2.3 GB) and `BAAI/bge-reranker-v2-m3` (2.2 GB) at the commits pinned in
+`deploy/models/server.py`. The first `docker compose up` runs `models-fetch`, which downloads them once into the named
+volume `models` (about 4.5 GB of disk; some minutes on a fast link, at most about an hour on a slow one); `embedder`
+starts after it, and is `healthy` about 20 s to 3 min later. A second `up` finds the files and downloads nothing. The
+`embedder` has no network out; only `models-fetch` reaches the Hub.
+
+With no route to the Hub, fill the volume first from a Hugging Face cache that has the two commits (the
+`snapshots/<commit>` folders of both repositories with the `blobs` that they link to, `HF_HOME` layout, `hub/…`). With
+project `kutuphane` and the image of your release:
+
+```sh
+docker volume create kutuphane_models
+docker run --rm --user 0 --entrypoint sh -v kutuphane_models:/hf -v /path/to/seed:/seed:ro \
+  ghcr.io/ekaynac/kutuphane-models:<release tag> -c 'cp -a /seed/. /hf/ && chown -R 65532 /hf'
+```
+
+`/path/to/seed` holds `hub/models--BAAI--bge-m3/…` and `hub/models--BAAI--bge-reranker-v2-m3/…`. Then `up`;
+`models-fetch` finds both commits in the volume and ends with success without any call to the Hub (it needs no network). With an empty volume and no route to the Hub it ends with an error that names the missing commit, and `embedder` and Core do not start.
 
 To publish packages without a person at the command line, the `publisher` profile of `compose.yaml` runs the owner
 credential loop (`imports publish-admitted`); it replaces a host timer, never run both ([operations.md](operations.md#publisher-service-compose)).
@@ -449,7 +475,7 @@ verdicts on known samples. What a scan blocks: [security.md](security.md#skill-s
 ## Reboot and restart
 
 - `postgres`, `core`, `ingress`, `llmdap`, `embedder`, `spark-chat` have `restart: unless-stopped` (light install
-  too): Docker restarts them after a crash or reboot if the daemon starts at boot (`systemctl is-enabled docker`);
+  too, with its own `embedder`; `models-fetch` runs once): Docker restarts them after a crash or reboot if the daemon starts at boot (`systemctl is-enabled docker`);
   `docker compose … stop` and `docker kill` keep one stopped (Docker counts both as a stop by a person; start it
   with `docker start`). `model-stub` and the curator services have no policy: run their `docker compose … up -d`
   again. `publisher` has `restart: unless-stopped`.

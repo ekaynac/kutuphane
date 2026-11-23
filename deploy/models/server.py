@@ -15,13 +15,15 @@ at most MAX_INFLIGHT POST requests read a body or wait for the model at once; on
 import json
 import logging
 import os
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import torch
-from huggingface_hub import snapshot_download
+from huggingface_hub import hf_hub_download, snapshot_download
 from transformers import AutoModel, AutoModelForSequenceClassification, AutoTokenizer
 
+MANIFEST = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "manifest.json")))
 EMBED, RERANK = "BAAI/bge-m3", "BAAI/bge-reranker-v2-m3"
 PINNED = {  # reviewed Hub commits; another revision needs a code change, never an environment variable
     EMBED: "5617a9f61b028005a4858fdac845db406aefb181",
@@ -76,6 +78,54 @@ def load(repo: str, cls):
     # Fails unless every needed file of the pinned commit is in the cache.
     path = snapshot_download(repo, revision=PINNED[repo], allow_patterns=FILES, local_files_only=True)
     return AutoTokenizer.from_pretrained(path), cls.from_pretrained(path, dtype=torch.float32).eval()
+
+
+def snapshot_problems(repo: str) -> dict[str, str]:
+    """What is wrong with the cached snapshot of the pinned commit, file -> reason: every file of manifest.json must be
+    there (a link to a missing blob counts as missing) with the exact size. Empty: complete. An interrupted download
+    leaves the snapshot folder without some of its files, so the folder alone proves nothing."""
+    entry = MANIFEST[repo]
+    assert entry["revision"] == PINNED[repo], f"manifest.json and PINNED differ for {repo}"
+    hub = os.environ.get("HF_HUB_CACHE") or os.path.join(os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface")), "hub")
+    path = os.path.join(hub, "models--" + repo.replace("/", "--"), "snapshots", PINNED[repo])
+    problems = {}
+    for name, want in entry["files"].items():
+        file = os.path.join(path, name)
+        if not os.path.exists(file):  # follows the link: a dangling link is missing too
+            problems[name] = "missing"
+        elif os.path.getsize(file) != want["size"]:
+            problems[name] = f"size {os.path.getsize(file)}, expected {want['size']}"
+    return problems
+
+
+def _describe(problems: dict[str, str]) -> str:
+    return ", ".join(f"{name} ({why})" for name, why in problems.items())
+
+
+def fetch() -> None:
+    """Fill the cache with the pinned commits (compose service `models-fetch`). A complete commit is not looked up
+    on the Hub at all, so a cache that was filled by hand needs no network. For each file that is missing or has a wrong
+    size, the file alone is downloaded: a missing one goes on where it stopped; a file of the wrong size is forced,
+    because the Hub client trusts a file that is there and would keep the truncated blob. Then everything is checked
+    again; a file that is still wrong is an error."""
+    for repo, revision in PINNED.items():
+        problems = snapshot_problems(repo)
+        if not problems:
+            log.info("%s@%s is in the cache and complete; no download", repo, revision)
+            continue
+        log.info("%s@%s is not complete in the cache (%s); downloading from the Hub", repo, revision, _describe(problems))
+        try:
+            for name, why in problems.items():
+                hf_hub_download(repo, name, revision=revision, force_download=why != "missing")
+        except Exception as exc:
+            log.error("cannot fetch %s@%s: the cache lacks %s and the Hub did not answer (%s: %s)",
+                      repo, revision, _describe(problems), type(exc).__name__, exc)
+            raise
+        problems = snapshot_problems(repo)
+        if problems:
+            log.error("cannot fetch %s@%s: still wrong after the download: %s", repo, revision, _describe(problems))
+            raise SystemExit(1)
+        log.info("%s@%s downloaded and complete", repo, revision)
 
 
 def batches(texts: list[str]):
@@ -217,6 +267,9 @@ def handler(models: Models, inflight: threading.BoundedSemaphore):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    if sys.argv[1:] == ["fetch"]:
+        fetch()
+        sys.exit(0)
     models = Models()
     log.info("loaded %s", ", ".join(f"{m}@{r}" for m, r in PINNED.items()))
     ThreadingHTTPServer(("0.0.0.0", 8000), handler(models, threading.BoundedSemaphore(MAX_INFLIGHT))).serve_forever()

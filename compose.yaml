@@ -1,17 +1,22 @@
-# Light install (#76): Postgres, Kütüphane Core and the ingress proxy. No LLMDAP and no model server: only open
-# source images and the Core image of this repository. The full stack (LLMDAP, models, curator web) is
+# Standalone install (#76, #242): Postgres, Kütüphane Core, the ingress proxy and a local CPU model server. No LLMDAP:
+# only open source images and the images of this repository. The full stack (LLMDAP, curator web) is
 # deploy/compose.full.yaml.
-#   db  (internal): postgres, core
-#   web (internal): ingress, core
-#   edge          : the ingress proxy, the only way in
-# Core has no network to any model. Search is full text only; answers (`ask_library`, `POST /v1/ask`) give 503.
-# The local embedder of the full stack is not part of this file: Core calls a model only through LLMDAP (D3), which
-# grants the call and keeps the signed audit chain (AT-09). A direct call would bypass both.
+#   db     (internal): postgres, core
+#   web    (internal): ingress, core
+#   models (internal): core, embedder
+#   edge             : the ingress proxy, the only way in
+#   fetch            : models-fetch only, the one service that reaches the Hugging Face Hub
+# Core has no network out. It calls the embedder (bge-m3 embeddings, bge-reranker-v2-m3 rerank) directly, through the
+# provider `openai` (D88, docs/guide/operations.md "Direct model providers"); the call stays on the internal network
+# `models` and has a `model_call` row. The embedder has no network out either: the weights come from the volume
+# `models`, which the one-shot `models-fetch` fills once (about 5 GB; a second `up` finds them and downloads nothing).
+# Answers (`ask_library`, `POST /v1/ask`) need an answer model that you name (docs/guide/operations.md): not set here,
+# so they give 503. No model server at all (full text search only): docs/guide/operations.md, "Standalone embedder".
 #
 # Dev and tests: `docker compose -f compose.yaml -f compose.build.yaml up -d --wait postgres` (port 55432 on localhost).
-# Light install (docs/guide/install.md, "Light install"): `KUTUPHANE_VERSION=<release tag> docker compose up -d --wait`;
+# Standalone install (docs/guide/install.md, "Light install"): `KUTUPHANE_VERSION=<release tag> docker compose up -d --wait`;
 # from this checkout: `docker compose -f compose.yaml -f compose.build.yaml up -d --build --wait`.
-# Restart (#141): postgres, core and ingress have `restart: unless-stopped`, so they come back after a crash or a
+# Restart (#141): postgres, core, ingress and embedder have `restart: unless-stopped`, so they come back after a crash or a
 # host reboot (the Docker daemon must start at boot). `docker compose stop` keeps them stopped.
 name: kutuphane
 
@@ -37,7 +42,7 @@ services:
     image: ghcr.io/ekaynac/kutuphane:${KUTUPHANE_VERSION:?set KUTUPHANE_VERSION to a release tag}
     restart: unless-stopped
     environment:
-      # The app role (deploy/db-roles.sql). No KUTUPHANE_LLMDAP_* and no KUTUPHANE_ANSWER_MODEL: no model calls.
+      # The app role (deploy/db-roles.sql). No KUTUPHANE_LLMDAP_*: no model goes through LLMDAP here.
       # The server refuses to start without the public URL and the issuer; the dev database needs neither.
       KUTUPHANE_DSN: postgresql://kutuphane_app:${KUTUPHANE_APP_DB_PASSWORD:-}@postgres:5432/kutuphane
       KUTUPHANE_PUBLIC_URL: ${KUTUPHANE_PUBLIC_URL:-}
@@ -45,13 +50,34 @@ services:
       KUTUPHANE_OIDC_AUDIENCE: ${KUTUPHANE_OIDC_AUDIENCE:-kutuphane}
       KUTUPHANE_OIDC_JWKS: /run/kutuphane/jwks.json
       KUTUPHANE_REPO_ROOTS: /srv/repos
+      # Embeddings and rerank: the embedder below, through the direct provider. The URL, the key and the class are one
+      # fixed set (C3): the class `local` belongs to this URL only, so no setting of yours changes one of them. For another
+      # endpoint use compose.nomodels.yaml, which gives no class. The key is a placeholder that the embedder ignores:
+      # it is not a secret. They are compose values, not code defaults (G13).
+      KUTUPHANE_EMBED_PROVIDER: ${KUTUPHANE_EMBED_PROVIDER:-openai}
+      KUTUPHANE_EMBED_OPENAI_URL: http://embedder:8000
+      KUTUPHANE_EMBED_OPENAI_KEY: not-a-secret
+      KUTUPHANE_EMBED_OPENAI_CLASS: local
+      KUTUPHANE_EMBED_MODEL: ${KUTUPHANE_EMBED_MODEL:-BAAI/bge-m3}
+      KUTUPHANE_RERANK_PROVIDER: ${KUTUPHANE_RERANK_PROVIDER:-openai}
+      KUTUPHANE_RERANK_OPENAI_URL: http://embedder:8000
+      KUTUPHANE_RERANK_OPENAI_KEY: not-a-secret
+      KUTUPHANE_RERANK_OPENAI_CLASS: local
+      KUTUPHANE_RERANK_MODEL: ${KUTUPHANE_RERANK_MODEL:-BAAI/bge-reranker-v2-m3}
+      # The answer model is external and not set: an OpenAI-compatible server that you name (operations.md).
+      KUTUPHANE_ANSWER_PROVIDER: ${KUTUPHANE_ANSWER_PROVIDER:-}
+      KUTUPHANE_ANSWER_OPENAI_URL: ${KUTUPHANE_ANSWER_OPENAI_URL:-}
+      KUTUPHANE_ANSWER_OPENAI_KEY: ${KUTUPHANE_ANSWER_OPENAI_KEY:-}
+      KUTUPHANE_ANSWER_OPENAI_CLASS: ${KUTUPHANE_ANSWER_OPENAI_CLASS:-}
+      KUTUPHANE_ANSWER_MODEL: ${KUTUPHANE_ANSWER_MODEL:-}
     volumes:
       - ${KUTUPHANE_OIDC_JWKS_FILE:-./deploy/jwks.json}:/run/kutuphane/jwks.json:ro
       # Bare mirrors for code citations (docs/24 §10.2), kept current by the operator: core only reads them.
       - ${KUTUPHANE_REPO_DIR:-./deploy/repos}:/srv/repos:ro
-    networks: [db, web]
+    networks: [db, web, models]
     depends_on:
       postgres: {condition: service_healthy}
+      embedder: {condition: service_healthy}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5)"]
       interval: 10s
@@ -72,6 +98,45 @@ services:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
       interval: 10s
       retries: 3
+
+  # Local CPU models (D61): the server of deploy/models, the same image and code as the full stack's embedder. The
+  # weights are in the volume `models`, read-only here. No network out.
+  embedder:
+    image: ghcr.io/ekaynac/kutuphane-models:${KUTUPHANE_VERSION:?set KUTUPHANE_VERSION to a release tag}
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    environment:
+      MODELS_THREADS: ${KUTUPHANE_EMBEDDER_THREADS:-4}   # compose setting; the CPU cores that one forward pass uses
+      OMP_NUM_THREADS: ${KUTUPHANE_EMBEDDER_THREADS:-4}
+    mem_limit: ${KUTUPHANE_EMBEDDER_MEMORY:-6g}
+    volumes:
+      - models:/hf:ro
+    networks: [models]
+    depends_on:
+      models-fetch: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 10s
+      start_period: 180s
+      retries: 3
+
+  # One-shot: puts the pinned revisions of both models into the volume `models` (nothing to do when they are there;
+  # then it needs no network). The only service with a way out to the Hub.
+  models-fetch:
+    image: ghcr.io/ekaynac/kutuphane-models:${KUTUPHANE_VERSION:?set KUTUPHANE_VERSION to a release tag}
+    command: ["python", "-I", "/srv/server.py", "fetch"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    environment:
+      HF_HUB_OFFLINE: "0"
+    volumes:
+      - models:/hf
+    networks: [fetch]
 
   publisher:   # owner-credential loop; profile `publisher`, off by default (docs/guide/operations.md)
     profiles: [publisher]
@@ -118,10 +183,13 @@ services:
 
 volumes:
   pgdata:
+  models:   # the model weights (about 5 GB), filled once by models-fetch
 
 networks:
   db: {internal: true}
   web: {internal: true}
+  models: {internal: true}   # core and embedder only
   curator-db: {internal: true}   # postgres only here; curator web joins it in the full stack
+  fetch: {}   # models-fetch: out to the Hugging Face Hub
   edge: {}
   dev: {}
