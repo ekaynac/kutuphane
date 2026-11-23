@@ -213,6 +213,31 @@ Rules:
   restart Core, and sign with the new key. When the last token of the old key has expired, remove the old key and
   restart Core again.
 
+### LLMDAP as its own compose project (#242)
+
+**Not usable with LLMDAP's official compose yet:** its network `llmdap` is not `internal`, so model servers that join
+it get an outbound route. Until LLMDAP makes it internal (ekaynac/LLMDAP#281), do not attach model servers to it; on
+Spark this setup is not applied before that change.
+
+LLMDAP can run as its own compose project `llmdap` (network `llmdap`, bridge published on `127.0.0.1:8787`). Then
+`deploy/compose.full.yaml` does not start its own `llmdap` service: leave out profile `app` for it, and run Core as a
+host process or on a network that reaches the bridge.
+
+1. Start the LLMDAP project first; its network must exist.
+2. Set `KUTUPHANE_LLMDAP_URL` to the address the bridge publishes, for example `http://127.0.0.1:8787` for a Core on the
+   host. `GATEWAY_ALLOWED_HOSTS` of the bridge must contain the host name that Core uses in that URL.
+3. Add `deploy/compose.external-llmdap.yaml`. It joins `embedder`, `spark-chat`, `reranker-gpu` and `model-stub` to the
+   external network named by `LLMDAP_NETWORK` (default `llmdap`), so the bridge reaches them by the same service names.
+   Their own networks stay, including the internal `models`. The external network must be `internal: true`: do not
+   attach model servers to a network that has outbound access, because they would get a route out.
+4. Set `KUTUPHANE_VERSION` (and `KUTUPHANE_DB_PASSWORD`) for every compose command with these files: the file
+   interpolates Core's image even when its profile is off.
+
+```sh
+docker compose -f deploy/compose.full.yaml -f deploy/compose.external-llmdap.yaml \
+  --profile local-models --profile gpu-rerank up -d
+```
+
 ### A shared LLMDAP (D76)
 
 One LLMDAP can serve several products, each with its own subject key (D52); Kütüphane's is `svc-kutuphane`.

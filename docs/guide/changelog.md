@@ -8,6 +8,10 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### LLMDAP as its own compose project (#242)
+
+- Added: `deploy/compose.external-llmdap.yaml` joins the model servers (`embedder`, `spark-chat`, `reranker-gpu`, `model-stub`) to the external network named by `LLMDAP_NETWORK` (default `llmdap`), so an LLMDAP that runs as its own project reaches them by the same names. Add it as a second `-f` file and do not use profile `app` (that profile starts the repo's own `llmdap` service; the override does not change or stop it). The external network must be `internal: true`: model servers must not get an outbound route. LLMDAP's official network is not internal yet (ekaynac/LLMDAP#281), so the file is not used on Spark before that. Set `KUTUPHANE_VERSION` for every compose command with these files ([operations.md](operations.md#llmdap-as-its-own-compose-project-242)). Nothing changes for an install that does not use the file.
+
 ### Compose `publisher` service for `publish-admitted` (#242, #254)
 
 - Added: the profile `publisher` (off by default) in `compose.yaml` and `deploy/compose.full.yaml` runs `kutuphane imports publish-admitted` every `KUTUPHANE_PUBLISH_INTERVAL` seconds (default 60; a positive whole number) with the owner credential from the file in `KUTUPHANE_PUBLISHER_ENV_FILE` (outside git and outside the image). One run at a time; a crash restarts the container; it is unhealthy when the last successful run is older than 3 intervals ([operations.md](operations.md#publisher-service-compose), `.env.example`). These two settings are compose settings; Core does not read them. No Core setting, route, error text or code changes.
