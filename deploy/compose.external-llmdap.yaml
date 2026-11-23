@@ -1,0 +1,28 @@
+# Override: the model servers join the network of an LLMDAP that runs as its own compose project (§5a of the
+# portfolio rules: a shared dependency is consumed from outside). The LLMDAP bridge reaches the model servers by their
+# service names (`embedder`, `spark-chat`, `reranker-gpu`, `model-stub`) on that network; they keep their own networks.
+# It does not start or change the `llmdap` service of deploy/compose.full.yaml: do not use profile `app` then.
+#
+# Use (the LLMDAP project and its network must exist first; KUTUPHANE_VERSION is needed for any command with these
+# files, because compose.full.yaml interpolates Core's image even when its profile is off):
+#   KUTUPHANE_VERSION=<tag> docker compose -f deploy/compose.full.yaml -f deploy/compose.external-llmdap.yaml \
+#     --profile local-models --profile gpu-rerank up -d
+# The external network MUST be `internal: true` (create it so: `docker network create --internal`). Do not attach model
+# servers to a network that has outbound access: they would get a route out, which the internal `models` network
+# denies today (docs/07 §3, AT-10). The services keep `models`; this file only adds the external network. The LLMDAP
+# project keeps its outbound and its published port on its own non-internal network.
+# LLMDAP_NETWORK is the name of the network; the default is `llmdap`. Services of a profile that is off are not started.
+services:
+  embedder:
+    networks: [llmdap]
+  spark-chat:
+    networks: [llmdap]
+  reranker-gpu:
+    networks: [llmdap]
+  model-stub:
+    networks: [llmdap]
+
+networks:
+  llmdap:
+    external: true
+    name: ${LLMDAP_NETWORK:-llmdap}

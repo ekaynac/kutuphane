@@ -161,3 +161,9 @@ The bridge routes are fixed (the same as `config/routes.json`):
 
 `GATEWAY_ALLOWED_HOSTS` must include `llmdap`, and the subject `svc-kutuphane` needs `llm:invoke` on the three routes.
 A change to the inputs, the network name, the route table or the exit codes is announced on issue #243 before it merges.
+
+## LLMDAP as its own compose project (#242)
+
+When LLMDAP runs as its own compose project (network `llmdap`), the model servers join that network with
+`deploy/compose.external-llmdap.yaml`; the bridge reaches them by the names above. See
+`docs/guide/operations.md`, "LLMDAP as its own compose project".
