@@ -458,8 +458,8 @@ On a shared host, read [Shared host](#shared-host) first.
    set -a; . ./.env; set +a
    docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 \
      -c "CREATE ROLE kutuphane_app LOGIN PASSWORD '${KUTUPHANE_APP_DB_PASSWORD}'"
-   KUTUPHANE_CURATOR_DSN="postgresql://kutuphane:${KUTUPHANE_DB_PASSWORD}@postgres:5432/kutuphane" \
-     docker compose run --rm --no-deps -e KUTUPHANE_CURATOR_DSN core kutuphane migrate
+   PGPASSWORD="$KUTUPHANE_DB_PASSWORD" docker compose run --rm --no-deps -e PGPASSWORD \
+     -e KUTUPHANE_CURATOR_DSN=postgresql://kutuphane@postgres:5432/kutuphane core kutuphane migrate
    docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 < deploy/db-roles.sql
    ```
 
@@ -603,8 +603,8 @@ models and gives full text search only, with no error. Read the release notes be
 
    ```sh
    docker compose stop core
-   KUTUPHANE_CURATOR_DSN="postgresql://kutuphane:${KUTUPHANE_DB_PASSWORD}@postgres:5432/kutuphane" \
-     docker compose run --rm --no-deps -e KUTUPHANE_CURATOR_DSN core kutuphane migrate
+   PGPASSWORD="$KUTUPHANE_DB_PASSWORD" docker compose run --rm --no-deps -e PGPASSWORD \
+     -e KUTUPHANE_CURATOR_DSN=postgresql://kutuphane@postgres:5432/kutuphane core kutuphane migrate
    docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 < deploy/db-roles.sql
    ```
    A migrate that has nothing to do prints `"applied": []`.
