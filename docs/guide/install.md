@@ -463,6 +463,8 @@ On a shared host, read [Shared host](#shared-host) first.
    docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 < deploy/db-roles.sql
    ```
 
+   `migrate` prints the applied migrations as JSON (`"applied": [...]`). Shell variables override `.env`: if the
+   migration fails with `password authentication failed`, check that your shell has no old `KUTUPHANE_DB_PASSWORD`.
    The roles are explained in [full stack step 2](#2-database-roles) (the curator web script is not needed).
 3. Start the stack: `docker compose up -d` (from source: [see above](#image-release-or-source), with `--build`).
    The first `up` downloads the model weights once, about 4.5 GB ([below](#model-weights-and-offline-install));
@@ -605,6 +607,7 @@ models and gives full text search only, with no error. Read the release notes be
      docker compose run --rm --no-deps -e KUTUPHANE_CURATOR_DSN core kutuphane migrate
    docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 < deploy/db-roles.sql
    ```
+   A migrate that has nothing to do prints `"applied": []`.
 
 5. Start the new version: `docker compose up -d` (full stack: `docker compose --profile app up -d`). If the new
    release pins other model commits, `models-fetch` downloads them once.
