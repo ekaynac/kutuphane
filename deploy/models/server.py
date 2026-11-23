@@ -24,6 +24,7 @@ from huggingface_hub import snapshot_download
 from huggingface_hub.errors import LocalEntryNotFoundError
 from transformers import AutoModel, AutoModelForSequenceClassification, AutoTokenizer
 
+MANIFEST = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "manifest.json")))
 EMBED, RERANK = "BAAI/bge-m3", "BAAI/bge-reranker-v2-m3"
 PINNED = {  # reviewed Hub commits; another revision needs a code change, never an environment variable
     EMBED: "5617a9f61b028005a4858fdac845db406aefb181",
@@ -80,23 +81,45 @@ def load(repo: str, cls):
     return AutoTokenizer.from_pretrained(path), cls.from_pretrained(path, dtype=torch.float32).eval()
 
 
+def snapshot_problems(repo: str) -> list[str]:
+    """What is wrong with the cached snapshot of the pinned commit: every file of manifest.json must be there (a link
+    to a missing blob counts as missing) with the exact size. Empty list: complete. An interrupted download leaves
+    the snapshot folder without some of its files, so the folder alone proves nothing."""
+    entry = MANIFEST[repo]
+    assert entry["revision"] == PINNED[repo], f"manifest.json and PINNED differ for {repo}"
+    hub = os.environ.get("HF_HUB_CACHE") or os.path.join(os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface")), "hub")
+    path = os.path.join(hub, "models--" + repo.replace("/", "--"), "snapshots", PINNED[repo])
+    problems = []
+    for name, want in entry["files"].items():
+        file = os.path.join(path, name)
+        if not os.path.exists(file):  # follows the link: a dangling link is missing too
+            problems.append(f"{name} (missing)")
+        elif os.path.getsize(file) != want["size"]:
+            problems.append(f"{name} (size {os.path.getsize(file)}, expected {want['size']})")
+    return problems
+
+
 def fetch() -> None:
-    """Fill the cache with the pinned commits (compose service `models-fetch`). A commit that is in the cache is not
-    looked up on the Hub at all, so a cache that was filled by hand needs no network; only a missing one is downloaded."""
+    """Fill the cache with the pinned commits (compose service `models-fetch`). A complete commit is not looked up
+    on the Hub at all, so a cache that was filled by hand needs no network; an incomplete or missing one is downloaded
+    (a started download goes on where it stopped) and checked again. Any file that is still wrong is an error."""
     for repo, revision in PINNED.items():
-        try:
-            snapshot_download(repo, revision=revision, allow_patterns=FILES, local_files_only=True)
-            log.info("%s@%s is in the cache; no download", repo, revision)
+        problems = snapshot_problems(repo)
+        if not problems:
+            log.info("%s@%s is in the cache and complete; no download", repo, revision)
             continue
-        except LocalEntryNotFoundError:
-            log.info("%s@%s is not in the cache; downloading from the Hub", repo, revision)
+        log.info("%s@%s is not complete in the cache (%s); downloading from the Hub", repo, revision, ", ".join(problems))
         try:
             snapshot_download(repo, revision=revision, allow_patterns=FILES)
         except Exception as exc:
-            log.error("cannot fetch %s@%s: not in the cache and the Hub did not answer (%s: %s)",
-                      repo, revision, type(exc).__name__, exc)
+            log.error("cannot fetch %s@%s: the cache lacks %s and the Hub did not answer (%s: %s)",
+                      repo, revision, ", ".join(problems), type(exc).__name__, exc)
             raise
-        log.info("%s@%s downloaded", repo, revision)
+        problems = snapshot_problems(repo)
+        if problems:
+            log.error("cannot fetch %s@%s: still wrong after the download: %s", repo, revision, ", ".join(problems))
+            raise SystemExit(1)
+        log.info("%s@%s downloaded and complete", repo, revision)
 
 
 def batches(texts: list[str]):
