@@ -591,13 +591,24 @@ Read `changelog.md` for the new release first: it names each action (a re-ingest
 models and gives full text search only, with no error. Read the release notes before an upgrade and before a
 [rollback](#rollback).
 
+Run every command in the checkout, in a shell that has the settings. Do this again in each new terminal, and
+again after each change of `.env`:
+
+```sh
+cd <checkout>
+set -a; . ./.env; set +a
+: "${KUTUPHANE_DB_PASSWORD:?set KUTUPHANE_DB_PASSWORD in .env}"
+```
+
 1. Back up: [operations.md](operations.md#12-backups) (`pg_dump -Fc`). Keep the file until the new version works.
-2. Check out the new tag (the compose files, `deploy/` SQL and scripts must match the image) and set
-   `KUTUPHANE_VERSION` in `.env` to it. For a [source build](#image-release-or-source), check out the new commit
-   and add `--build` at step 5.
-3. `docker compose pull` (full stack: add your `--profile` options).
-4. Migrate. Nothing runs a migration at start; the new Core refuses to start while one is pending. Stop `core`, run
-   `kutuphane migrate` with the owner DSN, then apply `deploy/db-roles.sql`
+2. Get the new version. The compose files, `deploy/` SQL and scripts must match the image.
+   - **Release:** `git fetch --tags && git checkout <new tag>`; set `KUTUPHANE_VERSION` in `.env` to the new tag and
+     load `.env` again; then `docker compose pull` (full stack: add your `--profile` options).
+   - **Source build** ([see above](#image-release-or-source)): `git checkout <new commit>`, then build the new image
+     now, before the migration: `docker compose build core`. Step 3 runs `kutuphane migrate` from the image that
+     exists; an old `dev` image would run the old migrations.
+3. Migrate. Nothing runs a migration at start; the new Core refuses to start while one is pending. Stop `core`, run
+   `kutuphane migrate` with the owner credential, then apply `deploy/db-roles.sql`
    (light: the commands of [Steps](#steps), step 2, without `CREATE ROLE`; full stack:
    [step 2](#2-database-roles)):
 
@@ -607,15 +618,16 @@ models and gives full text search only, with no error. Read the release notes be
      -e KUTUPHANE_CURATOR_DSN=postgresql://kutuphane@postgres:5432/kutuphane core kutuphane migrate
    docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 < deploy/db-roles.sql
    ```
-   A migrate that has nothing to do prints `"applied": []`.
 
-5. Start the new version: `docker compose up -d` (full stack: `docker compose --profile app up -d`). If the new
-   release pins other model commits, `models-fetch` downloads them once.
-6. Check: `curl -s http://127.0.0.1:8080/healthz`, `docker compose ps` (every service `healthy`), and `GET /v1/health`
+   A migrate that has nothing to do prints `"applied": []`.
+4. Start the new version: `docker compose up -d` (source build: `docker compose up -d --build`; full stack:
+   `docker compose --profile app up -d`). If the new release pins other model commits, `models-fetch` downloads them
+   once.
+5. Check: `curl -s http://127.0.0.1:8080/healthz`, `docker compose ps` (every service `healthy`), and `GET /v1/health`
    with a token: every stage that you use is `true`.
-7. If you use SkillSpector and the pin changed, install the new pin into a new folder, point
+6. If you use SkillSpector and the pin changed, install the new pin into a new folder, point
    `KUTUPHANE_SKILLSPECTOR_BIN` at it, and run `kutuphane skill rescan`.
-8. Do the actions that `changelog.md` names, for example a re-ingest or a re-index.
+7. Do the actions that `changelog.md` names, for example a re-ingest or a re-index.
 
 Use the same `-f` options and project name as at the install ([Shared host](#shared-host), the
 [no-models variant](#variants)).
@@ -624,14 +636,22 @@ Use the same `-f` options and project name as at the install ([Shared host](#sha
 
 Migrations go forward only: there is no down script. An older Core starts on a newer schema (it refuses only
 when a migration of its own is missing), but it can fail on tables or columns that it does not know. Go back only
-in one of these two ways:
+in one of these two ways. In both, load the settings first (the three lines at the start of [Upgrade](#upgrade)).
+Never run `kutuphane migrate`, and never start the newer release again, during a rollback.
 
-- **The release notes of the newer release say that the older one works with the new schema.** Set
-  `KUTUPHANE_VERSION` to the previous tag, check out that tag, and run `docker compose up -d` (full stack: with
-  your `--profile` options). No database step. Then check as in [Upgrade](#upgrade), step 6.
-- **Otherwise, or when the notes give no rollback SQL:** restore the backup from before the upgrade
-  ([operations.md](operations.md#12-backups)), then set the previous tag and run `docker compose up -d`. Everything
-  written after that backup is lost.
+- **The release notes of the newer release say that the older one works with the new schema.** `docker compose stop
+  core`, check out the previous tag, set `KUTUPHANE_VERSION` to it, load `.env` again, `docker compose pull`
+  (source build: `docker compose build core`), then `docker compose up -d` (full stack: with your `--profile`
+  options). No database step.
+- **Otherwise, or when the notes give no rollback SQL:** go back to the backup from before the upgrade, in this order:
+  1. `docker compose down` (stops the newer release; keeps every volume).
+  2. Check out the previous tag, set `KUTUPHANE_VERSION` to it in `.env`, load `.env` again, and get its image:
+     `docker compose pull` (source build: `docker compose build core`). Do not start anything yet.
+  3. Restore the backup into a new volume, as in [operations.md](operations.md#12-backups) ("Restore into a new
+     volume"), and start the previous release (its step 4). The old, newer-schema volume stays on the disk, and
+     nothing is migrated.
+  4. Check as in [Upgrade](#upgrade), step 5. Everything written after that backup is lost. When you have checked
+     the restored database, remove the old volume by hand.
 
-Read the release notes of both versions first. An older release ignores `KUTUPHANE_*_PROVIDER` and starts without
-models: after a rollback, check that `embedding` and `rerank` in `GET /v1/health` are `true`.
+An older release ignores `KUTUPHANE_*_PROVIDER` and starts without models: after a rollback, check that `embedding`
+and `rerank` in `GET /v1/health` are `true`.
