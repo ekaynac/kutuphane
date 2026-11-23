@@ -10,13 +10,42 @@ Four ways:
   bridge is a proprietary component, available only under an LLMDAP agreement.
 - [Local models](#local-models): the full stack with real models on the same machine (D61); nothing leaves it.
 
-Both compose files use project `kutuphane` and the same `postgres` service and volume (`kutuphane_pgdata`).
+Both compose files use project `kutuphane` and the same `postgres` service and volume (`kutuphane_pgdata`). On a
+host that already runs a Kütüphane install, read [Shared host](#shared-host) before you run any `docker compose`
+command of this page.
 
 ## Requirements
 
-- Docker with Compose v2; Python 3.11+ for the host CLI (the container uses 3.12).
+- Docker with Compose 2.24.4 or later (the override files use the `!override` tag; check with `docker compose version`);
+  Python 3.11+ for the host CLI (the container uses 3.12).
 - git 2.45+ in the Core container, for code citations (the image build checks it).
 - An encrypted disk volume for the database and the audit volume (D48). Kütüphane does not encrypt data.
+
+## Shared host
+
+> **Warning.** Both compose files set `name: kutuphane`. On a host that already runs a Kütüphane install, a
+> `docker compose` command without its own project name joins that install, and it can recreate its running
+> containers (same `postgres` service, same volumes). Every other install, development run or test run on that host
+> MUST use its own project name and other host ports.
+
+- Project name: `docker compose -p kutuphane-<name> …` on every command (`down` and `ps` too), or
+  `COMPOSE_PROJECT_NAME=kutuphane-<name>` in the `.env` of that checkout. The name sets the volume names
+  (`kutuphane-<name>_pgdata`, `kutuphane-<name>_models`), so the other install keeps its data.
+- Host ports: `compose.yaml` publishes Postgres on `127.0.0.1:55432` and the ingress proxy on
+  `${KUTUPHANE_BIND:-127.0.0.1}:8080`. A second install on the same host replaces them in an override file
+  (`-f compose.yaml -f ports.yaml`; `!override` needs Compose 2.24.4 or later):
+
+  ```yaml
+  services:
+    postgres:
+      ports: !override ["127.0.0.1:55433:5432"]
+    ingress:
+      ports: !override ["127.0.0.1:8081:8080"]
+  ```
+
+  Then use these ports in the DSN of the host CLI and in the `curl` checks of this page.
+- The commands of this page, [README.md](../../README.md) and [CONTRIBUTING.md](../../CONTRIBUTING.md) show no `-p`:
+  add yours on a shared host.
 
 ## Image: release or source
 
@@ -48,7 +77,9 @@ export KUTUPHANE_DSN="postgresql://kutuphane:${KUTUPHANE_DB_PASSWORD}@127.0.0.1:
 .venv/bin/kutuphane migrate
 ```
 
-Postgres listens on `127.0.0.1:55432` for development and tests only; remove that port in production. Tests:
+Postgres listens on `127.0.0.1:55432` for development and tests only; remove that port in production. These
+commands, and the test commands below, use no `-p`: on a shared host, add your own project name and ports
+([Shared host](#shared-host)). Tests:
 
 ```sh
 docker compose exec -T postgres psql -U kutuphane -c 'CREATE DATABASE kutuphane_test'
@@ -154,6 +185,8 @@ Routes files in `deploy/llmdap/config/`: `routes.json` (stub), `routes.local.jso
 `policy.csv` grants Core `llm:invoke` on the routes.
 
 ### 4. Start
+
+On a shared host, add your own `-p` and ports ([Shared host](#shared-host)) to every command here.
 
 ```sh
 docker compose --profile app up -d                        # real model servers
@@ -404,48 +437,124 @@ with no model server set both providers to `llmdap` ([operations.md](operations.
 
 ### Steps
 
-1. In `.env`: `KUTUPHANE_VERSION` (the release tag; `dev` for a source build), `KUTUPHANE_DB_PASSWORD`,
-   `KUTUPHANE_APP_DB_PASSWORD`, `KUTUPHANE_PUBLIC_URL`, `KUTUPHANE_OIDC_ISSUER`, `KUTUPHANE_OIDC_JWKS_FILE`; optional
+For a first install of the latest release. A release needs a checkout of its tag (`git clone`, then
+`git checkout <tag>`): the compose files, `deploy/` scripts and SQL come from it, and its tag is `KUTUPHANE_VERSION`.
+**No release exists yet.** Until the first release exists, build from source: check out `main`, set
+`KUTUPHANE_VERSION=dev` and `COMPOSE_FILE=compose.yaml:compose.build.yaml` in `.env` ([above](#image-release-or-source)).
+On a shared host, read [Shared host](#shared-host) first.
+
+1. `cp .env.example .env` (git-ignored). Set `KUTUPHANE_VERSION` (the release tag; `dev` for a source build),
+   `KUTUPHANE_DB_PASSWORD`, `KUTUPHANE_APP_DB_PASSWORD` (use letters and digits, `-` and `_` only: both go into a
+   database address), `KUTUPHANE_PUBLIC_URL`, `KUTUPHANE_OIDC_ISSUER`, `KUTUPHANE_OIDC_JWKS_FILE`; optional
    `KUTUPHANE_OIDC_AUDIENCE`, `KUTUPHANE_BIND`, `KUTUPHANE_REPO_DIR` (paths absolute). No `COMPOSE_FILE` (except
    `compose.yaml:compose.build.yaml` for a source build) and no `KUTUPHANE_LLMDAP_*`. Shell
    variables override `.env`. Without `KUTUPHANE_PUBLIC_URL` or `KUTUPHANE_OIDC_ISSUER`, Core does not start and
    its log names the setting.
-2. Do [full stack step 2](#2-database-roles) (without the curator web script).
-3. Add books, journals and rights with the host CLI (`README.md` quick start, step 2), with no
-   `KUTUPHANE_LLMDAP_*` in that shell.
-4. Start the stack: `docker compose up -d --wait` (from source: [see above](#image-release-or-source),
-   with `--build`).
-5. Check (with `--light`, `egress_probe.py` exits 0 only if Core reaches Postgres and nothing else):
+2. Make the database ready. Nothing runs a migration at start: Core refuses to start while one is pending
+   (`database needs migrations … run kutuphane migrate`). `kutuphane migrate` is in the Core image, so no host
+   Python is needed. **Source build:** run `docker compose build core` first. The migration runs from the image
+   that exists, and an older `dev` image would run the old migrations.
+
+   ```sh
+   docker compose up -d --wait postgres
+   set -a; . ./.env; set +a
+   docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 \
+     -c "CREATE ROLE kutuphane_app LOGIN PASSWORD '${KUTUPHANE_APP_DB_PASSWORD}'"
+   PGPASSWORD="$KUTUPHANE_DB_PASSWORD" docker compose run --rm --no-deps -e PGPASSWORD \
+     -e KUTUPHANE_CURATOR_DSN=postgresql://kutuphane@postgres:5432/kutuphane core kutuphane migrate
+   docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 < deploy/db-roles.sql
+   ```
+
+   `migrate` prints the applied migrations as JSON (`"applied": [...]`). Shell variables override `.env`: if the
+   migration fails with `password authentication failed`, check that your shell has no old `KUTUPHANE_DB_PASSWORD`.
+   The roles are explained in [full stack step 2](#2-database-roles) (the curator web script is not needed).
+3. Start the stack: `docker compose up -d` (from source: [see above](#image-release-or-source), with `--build`).
+   The first `up` downloads the model weights once, about 4.5 GB ([below](#model-weights-and-offline-install));
+   follow it with `docker compose logs -f models-fetch`. `docker compose ps` shows `core` and `embedder` `healthy`
+   when the start is complete.
+4. Check the start (with `--light`, `egress_probe.py` exits 0 only if Core reaches Postgres and nothing else):
 
    ```sh
    curl -s http://127.0.0.1:8080/healthz
    docker compose exec -T core python -I - --light < deploy/egress_probe.py   # the embedder is a known peer
-   KUTUPHANE_PROBE_TOKEN=<access token> python3 deploy/mcp_probe.py http://127.0.0.1:8080 --journal <journal>
+   ```
+
+   `GET /v1/health` with a token ([http-api.md](http-api.md#33-get-v1health)) shows `embedding` and `rerank` `true`.
+5. First owner steps: a journal and the grants for an agent. Install the host CLI from the same checkout, and use
+   the app role in a shell with no `KUTUPHANE_LLMDAP_*` (libpq reads the password from `PGPASSWORD`, so it is not in
+   the address):
+
+   ```sh
+   python3 -m venv .venv && .venv/bin/pip install .
+   export PGPASSWORD="$KUTUPHANE_APP_DB_PASSWORD"
+   export KUTUPHANE_DSN=postgresql://kutuphane_app@127.0.0.1:55432/kutuphane
+   .venv/bin/kutuphane journal create team-memory --search y --ai-input y \
+     --sensitivity normal --egress local_only --protection standard --by user:admin
+   for g in "book:team-memory read" "book:team-memory propose"; do .venv/bin/kutuphane grant $g agent:adc; done
+   ```
+
+   More books, rights and curation: `README.md` quick start, step 2, and [operations.md](operations.md). Publishing
+   needs the owner credential (`KUTUPHANE_CURATOR_DSN`) and a `curate` grant for `--by`.
+6. Check the MCP route through the proxy with an access token of the agent from step 5 (from your IdP; a
+   development token: see below). The probe proposes one note into the journal:
+
+   ```sh
+   KUTUPHANE_PROBE_TOKEN=<access token> python3 deploy/mcp_probe.py http://127.0.0.1:8080 --journal team-memory
    ```
 
 Development tokens (README quick start, step 3): `KUTUPHANE_OIDC_ISSUER` is `<KUTUPHANE_PUBLIC_URL>/dev`,
 `KUTUPHANE_OIDC_JWKS_FILE` the `jwks.json` of `kutuphane dev-keys`.
+
+### Variants
+
+- **No models** (full text search only): add `compose.nomodels.yaml` to every command, here and in the
+  [upgrade](#upgrade): `docker compose -f compose.yaml -f compose.nomodels.yaml up -d --wait` (or
+  `COMPOSE_FILE=compose.yaml:compose.nomodels.yaml` in `.env`). Nothing is downloaded
+  ([operations.md](operations.md#standalone-embedder)).
+- **Another embedder or rerank server:** the same file, and the provider, URL, key, class and model of the stage in
+  `.env` ([operations.md](operations.md#standalone-embedder)).
+- **An answer model:** an OpenAI-compatible server in `.env`
+  ([operations.md](operations.md#standalone-embedder), "Answers"). After the change, restart Core.
+- **An LLMDAP outside this project:** the [full stack](#full-stack) with `deploy/compose.external-llmdap.yaml`
+  ([operations.md](operations.md#llmdap-as-its-own-compose-project-242)). The network of that LLMDAP must be
+  `internal: true`; do not use profile `app` with it.
 
 ### Model weights and offline install
 
 The embedder needs `BAAI/bge-m3` (2.3 GB) and `BAAI/bge-reranker-v2-m3` (2.2 GB) at the commits pinned in
 `deploy/models/server.py`. The first `docker compose up` runs `models-fetch`, which downloads them once into the named
 volume `models` (about 4.5 GB of disk; some minutes on a fast link, at most about an hour on a slow one); `embedder`
-starts after it, and is `healthy` about 20 s to 3 min later. A second `up` finds the files and downloads nothing. The
-`embedder` has no network out; only `models-fetch` reaches the Hub.
+starts after it, and is `healthy` about 20 s to 3 min later. A second `up` makes no download: `models-fetch` finds the
+files and ends. (`models-fetch` always has its network `fetch`; it just does not use it.) The `embedder` has no
+network out. The volume `models` needs no backup: download it again or pre-seed it.
 
-With no route to the Hub, fill the volume first from a Hugging Face cache that has the two commits (the
-`snapshots/<commit>` folders of both repositories with the `blobs` that they link to, `HF_HOME` layout, `hub/…`). With
-project `kutuphane` and the image of your release:
+To start with no network at all, fill the volume first from a Hugging Face cache that has the two commits, then run
+`up`. `models-fetch` checks every file against the manifest and, with a complete volume, ends with success without
+any call to the Hub. With an empty volume and no route to the Hub, or with a missing or wrong file, it ends with an
+error that names the file (`missing` or the wrong size), and `embedder` and Core do not start.
+
+Copy the two pinned `snapshots/<commit>` folders **with their blobs**: follow the links (`cp -rL` or `rsync -rL`).
+Some caches keep the blobs in a shared store, and a plain copy (`cp -a`, `rsync -a`) leaves links that point to
+nothing, which `models-fetch` reports as `missing`. The commits are `PINNED` in `deploy/models/server.py`:
+
+```sh
+mkdir -p seed/hub
+for pair in bge-m3:5617a9f61b028005a4858fdac845db406aefb181 bge-reranker-v2-m3:953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e; do
+  d="models--BAAI--${pair%%:*}"; mkdir -p "seed/hub/$d/snapshots"
+  cp -rL "$HOME/.cache/huggingface/hub/$d/snapshots/${pair#*:}" "seed/hub/$d/snapshots/"
+done
+```
+
+Then put `seed` in the volume. The volume is `<project>_models` (`kutuphane_models` for project `kutuphane`), and the
+image is the one of your release:
 
 ```sh
 docker volume create kutuphane_models
-docker run --rm --user 0 --entrypoint sh -v kutuphane_models:/hf -v /path/to/seed:/seed:ro \
+docker run --rm --user 0 --entrypoint sh -v kutuphane_models:/hf -v "$PWD/seed:/seed:ro" \
   ghcr.io/ekaynac/kutuphane-models:<release tag> -c 'cp -a /seed/. /hf/ && chown -R 65532 /hf'
 ```
 
-`/path/to/seed` holds `hub/models--BAAI--bge-m3/…` and `hub/models--BAAI--bge-reranker-v2-m3/…`. Then `up`;
-`models-fetch` finds both commits in the volume and ends with success without any call to the Hub (it needs no network). With an empty volume and no route to the Hub it ends with an error that names the missing commit, and `embedder` and Core do not start.
+`seed` holds `hub/models--BAAI--bge-m3/…` and `hub/models--BAAI--bge-reranker-v2-m3/…`.
 
 To publish packages without a person at the command line, the `publisher` profile of `compose.yaml` runs the owner
 credential loop (`imports publish-admitted`); it replaces a host timer, never run both ([operations.md](operations.md#publisher-service-compose)).
@@ -495,11 +604,77 @@ verdicts on known samples. What a scan blocks: [security.md](security.md#skill-s
 
 ## Upgrade
 
-1. Pull or check out the new version.
-2. Run `kutuphane migrate` with the owner DSN, then apply `deploy/db-roles.sql` (step 2).
-3. Start the new version: set `KUTUPHANE_VERSION` in `.env` to the new release tag and run `docker compose --profile app
-   up -d` (light: `docker compose up -d --wait`). For a [source build](#image-release-or-source), pull or check out
-   the new version and add `--build`.
-4. If you use SkillSpector and the pin changed, install the new pin into a new folder, point
+Read `changelog.md` for the new release first: it names each action (a re-ingest, a re-index, a new setting).
+**An older release ignores the provider settings of a newer one** (`KUTUPHANE_*_PROVIDER`): it starts without
+models and gives full text search only, with no error. Read the release notes before an upgrade and before a
+[rollback](#rollback).
+
+Run every command in the checkout, in a shell that has the settings. Do this again in each new terminal, and
+again after each change of `.env`:
+
+```sh
+cd <checkout>
+set -a; . ./.env; set +a
+: "${KUTUPHANE_DB_PASSWORD:?set KUTUPHANE_DB_PASSWORD in .env}"
+```
+
+1. Back up: [operations.md](operations.md#12-backups) (`pg_dump -Fc`). Keep the file until the new version works.
+2. Get the new version. The compose files, `deploy/` SQL and scripts must match the image.
+   - **Release:** `git fetch --tags && git checkout <new tag>`; set `KUTUPHANE_VERSION` in `.env` to the new tag and
+     load `.env` again; then `docker compose pull` (full stack: add your `--profile` options).
+   - **Source build** ([see above](#image-release-or-source)): `git checkout <new commit>`, then build the new image
+     now, before the migration: `docker compose build core`. Step 3 runs `kutuphane migrate` from the image that
+     exists; an old `dev` image would run the old migrations.
+3. Migrate. Nothing runs a migration at start; the new Core refuses to start while one is pending. Stop `core`, run
+   `kutuphane migrate` with the owner credential, then apply `deploy/db-roles.sql`
+   (light: the commands of [Steps](#steps), step 2, without `CREATE ROLE`; full stack:
+   [step 2](#2-database-roles)):
+
+   ```sh
+   docker compose stop core
+   PGPASSWORD="$KUTUPHANE_DB_PASSWORD" docker compose run --rm --no-deps -e PGPASSWORD \
+     -e KUTUPHANE_CURATOR_DSN=postgresql://kutuphane@postgres:5432/kutuphane core kutuphane migrate
+   docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 < deploy/db-roles.sql
+   ```
+
+   A migrate that has nothing to do prints `"applied": []`.
+4. Start the new version: `docker compose up -d` (source build: `docker compose up -d --build`). If the new
+   release pins other model commits, `models-fetch` downloads them once. Full stack:
+   - with the built-in LLMDAP: `docker compose --profile app up -d`;
+   - with an [outside LLMDAP](#variants), and never `--profile app` (add the model profiles that you use):
+
+     ```sh
+     docker compose -f deploy/compose.full.yaml -f deploy/compose.external-llmdap.yaml --profile local-models up -d
+     ```
+5. Check: `curl -s http://127.0.0.1:8080/healthz`, `docker compose ps` (every service `healthy`), and `GET /v1/health`
+   with a token: every stage that you use is `true`.
+6. If you use SkillSpector and the pin changed, install the new pin into a new folder, point
    `KUTUPHANE_SKILLSPECTOR_BIN` at it, and run `kutuphane skill rescan`.
-5. Read `changelog.md` for changes that need an action, for example a re-ingest or a re-index.
+7. Do the actions that `changelog.md` names, for example a re-ingest or a re-index.
+
+Use the same `-f` options and project name as at the install ([Shared host](#shared-host), the
+[no-models variant](#variants)).
+
+## Rollback
+
+Migrations go forward only: there is no down script. An older Core starts on a newer schema (it refuses only
+when a migration of its own is missing), but it can fail on tables or columns that it does not know. Go back only
+in one of these two ways. In both, load the settings first (the three lines at the start of [Upgrade](#upgrade)).
+Never run `kutuphane migrate`, and never start the newer release again, during a rollback.
+
+- **The release notes of the newer release say that the older one works with the new schema.** `docker compose stop
+  core`, check out the previous tag, set `KUTUPHANE_VERSION` to it, load `.env` again, `docker compose pull`
+  (source build: `docker compose build core`), then `docker compose up -d` (full stack: with your `--profile`
+  options). No database step.
+- **Otherwise, or when the notes give no rollback SQL:** go back to the backup from before the upgrade, in this order:
+  1. `docker compose down` (stops the newer release; keeps every volume).
+  2. Check out the previous tag, set `KUTUPHANE_VERSION` to it in `.env`, load `.env` again, and get its image:
+     `docker compose pull` (source build: `docker compose build core`). Do not start anything yet.
+  3. Restore the backup into a new volume, as in [operations.md](operations.md#12-backups) ("Restore into a new
+     volume"), and start the previous release (its step 4). The old, newer-schema volume stays on the disk, and
+     nothing is migrated.
+  4. Check as in [Upgrade](#upgrade), step 5. Everything written after that backup is lost. When you have checked
+     the restored database, remove the old volume by hand.
+
+An older release ignores `KUTUPHANE_*_PROVIDER` and starts without models: after a rollback, check that `embedding`
+and `rerank` in `GET /v1/health` are `true`.

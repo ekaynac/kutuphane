@@ -1176,16 +1176,101 @@ WHERE created_at > now() - interval '24 hours' AND value = 'failed' GROUP BY key
 
 ## 12. Backups
 
-There is no backup command. Back up Postgres, the `llmdap-audit` volume, the signing key, the JWKS and the mirrors.
-Disk encryption is a deployment duty (D48).
+There is no backup command. Back up the Postgres database, `.env` (it holds the passwords), the JWKS file and the
+mirrors (`KUTUPHANE_REPO_DIR`); in the full stack also the `llmdap-audit` volume and the signing key. The `models`
+volume (the model weights of the standalone embedder) needs no backup: `models-fetch` downloads it again, or you
+pre-seed it ([install.md](install.md#model-weights-and-offline-install)). Disk encryption is a deployment duty (D48).
+The commands show no `-p`: on a host with more than one install, add the project name
+([install.md](install.md#shared-host)).
+
+**Back up** (a consistent copy while Core runs; the custom format `-Fc` is compressed and `pg_restore` reads it). The
+name has the time to the second and a random suffix, so a backup never gets the name of an earlier one. The dump goes
+into `<name>.partial`, and it gets its final name only if `pg_dump` and the readability check both succeed:
 
 ```sh
-docker compose exec -T postgres pg_dump -U kutuphane kutuphane > backup.sql
-docker compose exec -T postgres psql -U kutuphane -c 'CREATE DATABASE kutuphane_restore'
-docker compose exec -T postgres psql -U kutuphane -d kutuphane_restore -v ON_ERROR_STOP=1 < backup.sql
+(
+set -e
+mkdir -p backups
+p=$(mktemp backups/kutuphane-$(date +%Y%m%d-%H%M%S)-XXXXXX --suffix=.partial)
+docker compose exec -T postgres pg_dump -U kutuphane -Fc kutuphane > "$p"
+docker compose exec -T postgres pg_restore --list < "$p" > /dev/null
+mv -n "$p" "${p%.partial}.dump"
+echo "backup written: ${p%.partial}.dump (not yet tested: see below)"
+)
 ```
 
-Then point `KUTUPHANE_DSN` at it, or rename the databases while the app is stopped.
+If a command fails, the block stops, no `.dump` file is made, and no earlier backup changes; delete the `.partial`
+file. `pg_restore --list` reads only the table of contents, so it shows that the file is readable, not that it is
+complete: a file that is cut in its data section can still pass it. The real check of a backup is a test restore into a
+scratch volume (the restore steps below); do one after the first backup and after each upgrade.
+
+`pg_dump` does not save database roles. The dump has the table grants and row policies, and they name the roles, so
+each role that the dump grants to must exist before you restore: `kutuphane_app`, and `kutuphane_curator_web` if you
+use curator web (without it, `pg_restore --exit-on-error` stops with `role "kutuphane_curator_web" does not exist`).
+
+**Restore into a new volume.** A restore never deletes the old database: the new database goes into a new volume,
+and the old volume stays until you remove it by hand, after you have checked the new one. The volume name comes from
+the project name (`<project>_pgdata`; `kutuphane_pgdata` for project `kutuphane`), and a plain `docker volume rm`
+ignores `-p`, so the documented flow does not use it. Keep the dump until the check at the end works. To try a dump
+first, do the same in a scratch project (`-p kutuphane-t-<name>`, other host ports).
+
+1. Put the settings in the shell, stop the install (this keeps every volume), and choose a new volume name that does
+   not exist yet (the `grep` prints nothing):
+
+   ```sh
+   set -a; . ./.env; set +a
+   docker compose down
+   docker volume ls -q | grep -x kutuphane_pgdata_restored
+   ```
+
+2. Make `pgdata-restored.yaml` next to `compose.yaml`, and add it to the files that every command uses (for example
+   `COMPOSE_FILE=compose.yaml:pgdata-restored.yaml` in `.env`, then load `.env` again):
+
+   ```yaml
+   volumes:
+     pgdata:
+       name: kutuphane_pgdata_restored
+   ```
+
+3. Start `postgres` only (a new, empty database `kutuphane`; use the same `KUTUPHANE_DB_PASSWORD` as before), create
+   the roles, restore, and apply the role scripts. Do not run `kutuphane migrate`: the dump has the schema of the
+   release that made it. For curator web, also do the lines marked `# curator web`. The block is one subshell with
+   `set -e`: the first command that fails stops it, so a failed restore never reaches the role scripts. Use the
+   name of your dump file:
+
+   ```sh
+   (
+   set -e
+   docker compose up -d --wait postgres
+   docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 \
+     -c "CREATE ROLE kutuphane_app LOGIN PASSWORD '${KUTUPHANE_APP_DB_PASSWORD}'"
+   docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 \
+     -c "CREATE ROLE kutuphane_curator_web LOGIN PASSWORD '${KUTUPHANE_CURATOR_WEB_DB_PASSWORD}'"   # curator web
+   docker compose exec -T postgres pg_restore -U kutuphane -d kutuphane --exit-on-error < kutuphane-2026-11-23.dump
+   docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 < deploy/db-roles.sql
+   docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 < deploy/db-roles-curator.sql   # curator web
+   echo "restore ok"
+   )
+   ```
+
+   If the block stops with an error, do not start the rest. The new volume is half filled: remove it by hand later,
+   and for the next try go back to step 1 with another new volume name. Keep the block as it is: after
+   `( … ) && …`, the shell ignores `set -e` inside the subshell.
+4. Only after `restore ok`, start the rest with the same `-f` and `--profile` options as the install:
+   `docker compose up -d`. Check as in [install.md](install.md#upgrade), step 5. Writes after the dump are lost.
+   Embeddings and indexes are in the database, so no `kutuphane index` is needed.
+
+The new volume is now your database; keep `pgdata-restored.yaml` in the file list. After you have checked the new
+database, remove the old volume by hand (`docker volume ls`, then `docker volume rm <the old name>`): a project name
+in `-p` does not change the name that you give to `docker volume rm`.
+
+**Adopt an existing database volume.** To run a new install on a volume that an earlier install made (for example
+`kutuphane_pgdata`), use the project name that makes that volume name (`kutuphane` for `kutuphane_pgdata`; an install
+from the old light file has `kutuphane-light`), and set `KUTUPHANE_DB_PASSWORD` to the owner password that the
+volume was made with: Postgres ignores `POSTGRES_PASSWORD` for an existing data directory. The image
+`pgvector/pgvector:0.8.0-pg17` must be the major version (17) that made the data. Start `postgres` only, run the
+[migration and the role script](install.md#steps) (step 2, without `CREATE ROLE` if `kutuphane_app` exists), then
+start the rest. Test it first on a copy: restore a dump into a scratch project as above.
 
 ## 13. CLI reference
 

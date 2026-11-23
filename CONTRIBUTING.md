@@ -18,6 +18,10 @@
 
   The first command needs `KUTUPHANE_TEST_DSN` (see `docs/guide/install.md`).
 
+  On a host that already runs a Kütüphane install, run every compose command of a development or test run under
+  its own project name (`-p kutuphane-<name>`) and other host ports. Without them, the command joins the running
+  install and can recreate its containers (`docs/guide/install.md`, "Shared host").
+
 ## Documentation
 
 Rule D75: the documentation changes in the same PR as the feature.
