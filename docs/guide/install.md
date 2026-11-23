@@ -451,7 +451,8 @@ On a shared host, read [Shared host](#shared-host) first.
    its log names the setting.
 2. Make the database ready. Nothing runs a migration at start: Core refuses to start while one is pending
    (`database needs migrations … run kutuphane migrate`). `kutuphane migrate` is in the Core image, so no host
-   Python is needed:
+   Python is needed. **Source build:** run `docker compose build core` first. The migration runs from the image
+   that exists, and an older `dev` image would run the old migrations.
 
    ```sh
    docker compose up -d --wait postgres
@@ -620,9 +621,14 @@ set -a; . ./.env; set +a
    ```
 
    A migrate that has nothing to do prints `"applied": []`.
-4. Start the new version: `docker compose up -d` (source build: `docker compose up -d --build`; full stack:
-   `docker compose --profile app up -d`). If the new release pins other model commits, `models-fetch` downloads them
-   once.
+4. Start the new version: `docker compose up -d` (source build: `docker compose up -d --build`). If the new
+   release pins other model commits, `models-fetch` downloads them once. Full stack:
+   - with the built-in LLMDAP: `docker compose --profile app up -d`;
+   - with an [outside LLMDAP](#variants), and never `--profile app` (add the model profiles that you use):
+
+     ```sh
+     docker compose -f deploy/compose.full.yaml -f deploy/compose.external-llmdap.yaml --profile local-models up -d
+     ```
 5. Check: `curl -s http://127.0.0.1:8080/healthz`, `docker compose ps` (every service `healthy`), and `GET /v1/health`
    with a token: every stage that you use is `true`.
 6. If you use SkillSpector and the pin changed, install the new pin into a new folder, point
