@@ -14,7 +14,7 @@
 
 ## Kapsam içi (yetenekler)
 - **K1** The catalog: books, versions, files, publication facts, kstd item information (D69, #159, #160).
-- **K2** The RAG corpus: search and cited answers over books (D16). Item rights are applied before each model call. On Spark, Kütüphane's model calls go through LLMDAP (D52, D76); Kütüphane stays decoupled from it: the light install makes no model call, and a customer may use another gateway. `model_call` is a usage record, never an audit chain.
+- **K2** The RAG corpus: search and cited answers over books (D16). Item rights and `local_only` are applied in Kütüphane before each model call. Each model stage goes through a gateway (on Spark: LLMDAP, D52, D76) or directly to an OpenAI-compatible endpoint (D88); the standalone compose bundles a CPU embedder and reranker, and the answer model is always external. Kütüphane stays decoupled from LLMDAP: an install with no model provider set makes no model call. `model_call` is a usage record, never an audit chain.
 - **K3** Persistent agent memory: journals, notes, Standing, links, outcomes, expiry, sharing, journal export and import (D69, D80).
 - **K4** Acceptance and curation: curator web passkey acts (D72), CLI curation, use policies and the publish timer (D85). A passkey is only for curator acts and gives no session or token to another system.
 - **K5** Packages: `pack`, `export`, `receive`, `submit_package`, signing keys, `trust` (D29, D51, D83).
@@ -53,3 +53,4 @@ Tarihsel/bayat: `docs/05`, `docs/06`, `docs/10`, `docs/research/`. Gerekçe olar
 
 ## Değişiklik kaydı
 - 2026-11-18 · v1 · Enes onayı (spark-kart, `scope-onay`) · this PR
+- 2026-11-23 · v1.1 · Enes onayı (spark-kart, `hepsi-oneri`, İŞ-44) · K2 follows D88
