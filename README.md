@@ -38,6 +38,10 @@ air-gapped. The vision is in `docs/23-vision-v1.md` (version 1.2).
 You need Docker with Compose v2 and Python 3.11 or later. Postgres runs in Docker, the server on the host, with
 development tokens and no model service.
 
+> **Shared host.** Both compose files set `name: kutuphane`. On a host that already runs a Kütüphane install, the
+> `docker compose` commands below (no `-p`) join that install and can recreate its containers. Use your own project
+> name (`COMPOSE_PROJECT_NAME=kutuphane-<name>` in `.env`) and other host ports: `docs/guide/install.md`, "Shared host".
+
 ```sh
 # 1. Install, start Postgres, apply the migrations
 python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
