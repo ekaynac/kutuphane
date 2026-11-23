@@ -16,10 +16,6 @@ DEPLOY = Path(__file__).resolve().parent.parent / "deploy" / "models"
 SMALL = {"config.json": b"{}", "weights.bin": b"w" * 40}
 
 
-class LocalEntryNotFoundError(Exception):
-    pass
-
-
 def _layout(cache: Path, repo: str, revision: str, files: dict[str, bytes]) -> None:
     root = cache / f"models--{repo.replace('/', '--')}"
     (root / "snapshots" / revision).mkdir(parents=True, exist_ok=True)
@@ -33,30 +29,32 @@ def _layout(cache: Path, repo: str, revision: str, files: dict[str, bytes]) -> N
 
 @pytest.fixture
 def server(monkeypatch, tmp_path):
+    """The Hub client as it behaves: a file that is in the snapshot is trusted (no size check, never rewritten) unless
+    `force_download=True`; a missing file is downloaded (complete and linked) when the network answers."""
     cache, calls = tmp_path / "hub", []
-    state = {"network": True, "interrupt": False}
+    state = {"network": True}
 
-    def snapshot_download(repo, revision=None, allow_patterns=None, local_files_only=False):
-        calls.append({"repo": repo, "revision": revision, "local_files_only": local_files_only})
-        snap = cache / f"models--{repo.replace('/', '--')}" / "snapshots" / revision
-        if local_files_only:
-            if not snap.is_dir():
-                raise LocalEntryNotFoundError(repo)
-            return str(snap)
+    def hf_hub_download(repo, filename, revision=None, force_download=False):
+        calls.append({"repo": repo, "file": filename, "revision": revision, "force": force_download})
+        root = cache / f"models--{repo.replace('/', '--')}"
+        link = root / "snapshots" / revision / filename
+        if link.exists() and not force_download:
+            return str(link)  # present: trusted, whatever its size
         if not state["network"]:
             raise ConnectionError("Temporary failure in name resolution")
-        _layout(cache, repo, revision, SMALL)  # a download completes the whole snapshot (and repairs links)
-        for name, data in SMALL.items():
-            (cache / f"models--{repo.replace('/', '--')}" / "blobs" / f"blob-{name}").write_bytes(data)
-        return str(snap)
+        (root / "snapshots" / revision).mkdir(parents=True, exist_ok=True)
+        (root / "blobs").mkdir(exist_ok=True)
+        (root / "blobs" / f"blob-{filename}").write_bytes(SMALL[filename])
+        if not link.is_symlink():
+            link.symlink_to(f"../../blobs/blob-{filename}")
+        return str(link)
 
     monkeypatch.setenv("HF_HUB_CACHE", str(cache))
     stubs = {"torch": types.ModuleType("torch"), "transformers": types.ModuleType("transformers"),
-             "huggingface_hub": types.ModuleType("huggingface_hub"),
-             "huggingface_hub.errors": types.ModuleType("huggingface_hub.errors")}
+             "huggingface_hub": types.ModuleType("huggingface_hub")}
     stubs["torch"].inference_mode = lambda: (lambda fn: fn)  # a decorator at import
-    stubs["huggingface_hub"].snapshot_download = snapshot_download
-    stubs["huggingface_hub.errors"].LocalEntryNotFoundError = LocalEntryNotFoundError
+    stubs["huggingface_hub"].hf_hub_download = hf_hub_download
+    stubs["huggingface_hub"].snapshot_download = lambda *a, **k: pytest.fail("fetch must not use snapshot_download")
     for name in ("AutoModel", "AutoModelForSequenceClassification", "AutoTokenizer"):
         setattr(stubs["transformers"], name, object)
     for name, module in stubs.items():
@@ -66,7 +64,7 @@ def server(monkeypatch, tmp_path):
     spec.loader.exec_module(module)
     module.MANIFEST = {repo: {"revision": rev, "files": {n: {"size": len(d)} for n, d in SMALL.items()}}
                        for repo, rev in module.PINNED.items()}
-    module.calls, module.state, module.cache = calls, state, cache
+    module.calls, module.state, module.cache, module.download = calls, state, cache, hf_hub_download
     return module
 
 
@@ -96,9 +94,9 @@ def test_a_complete_cache_is_not_downloaded_and_needs_no_network(server, caplog)
     assert caplog.text.count("in the cache and complete; no download") == 2
 
 
-def test_an_empty_cache_is_downloaded_then_verified(server):
+def test_an_empty_cache_is_downloaded_file_by_file_then_verified(server):
     server.fetch()
-    assert [c["local_files_only"] for c in server.calls] == [False, False]
+    assert {c["file"] for c in server.calls} == set(SMALL) and not any(c["force"] for c in server.calls)
     server.calls.clear()
     server.fetch()
     assert server.calls == []
@@ -116,13 +114,24 @@ def _break(server, how: str) -> str:
     return repo
 
 
+def test_the_hub_client_stub_keeps_a_truncated_file_unless_forced(server):
+    """Why the first fix looped: the client trusts a file that is there, so only force_download repairs it."""
+    _seed(server)
+    repo = _break(server, "truncated")
+    revision = server.PINNED[repo]
+    server.download(repo, "weights.bin", revision=revision)
+    assert server.snapshot_problems(repo) == {"weights.bin": "size 7, expected 40"}
+    server.download(repo, "weights.bin", revision=revision, force_download=True)
+    assert server.snapshot_problems(repo) == {}
+
+
 @pytest.mark.parametrize("how", ["missing", "dangling", "truncated"])
-def test_an_incomplete_snapshot_is_downloaded_again_when_the_hub_answers(server, how):
+def test_an_incomplete_snapshot_is_repaired_file_by_file_when_the_hub_answers(server, how):
     _seed(server)
     repo = _break(server, how)
     server.fetch()
-    assert {"repo": repo, "revision": server.PINNED[repo], "local_files_only": False} in server.calls
-    assert server.snapshot_problems(repo) == []  # verified again after the download
+    assert [(c["file"], c["force"]) for c in server.calls] == [("weights.bin", how == "truncated")]
+    assert server.snapshot_problems(repo) == {}  # verified again after the download
 
 
 @pytest.mark.parametrize("how", ["missing", "dangling", "truncated"])

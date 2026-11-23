@@ -20,8 +20,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import torch
-from huggingface_hub import snapshot_download
-from huggingface_hub.errors import LocalEntryNotFoundError
+from huggingface_hub import hf_hub_download, snapshot_download
 from transformers import AutoModel, AutoModelForSequenceClassification, AutoTokenizer
 
 MANIFEST = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "manifest.json")))
@@ -81,43 +80,50 @@ def load(repo: str, cls):
     return AutoTokenizer.from_pretrained(path), cls.from_pretrained(path, dtype=torch.float32).eval()
 
 
-def snapshot_problems(repo: str) -> list[str]:
-    """What is wrong with the cached snapshot of the pinned commit: every file of manifest.json must be there (a link
-    to a missing blob counts as missing) with the exact size. Empty list: complete. An interrupted download leaves
-    the snapshot folder without some of its files, so the folder alone proves nothing."""
+def snapshot_problems(repo: str) -> dict[str, str]:
+    """What is wrong with the cached snapshot of the pinned commit, file -> reason: every file of manifest.json must be
+    there (a link to a missing blob counts as missing) with the exact size. Empty: complete. An interrupted download
+    leaves the snapshot folder without some of its files, so the folder alone proves nothing."""
     entry = MANIFEST[repo]
     assert entry["revision"] == PINNED[repo], f"manifest.json and PINNED differ for {repo}"
     hub = os.environ.get("HF_HUB_CACHE") or os.path.join(os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface")), "hub")
     path = os.path.join(hub, "models--" + repo.replace("/", "--"), "snapshots", PINNED[repo])
-    problems = []
+    problems = {}
     for name, want in entry["files"].items():
         file = os.path.join(path, name)
         if not os.path.exists(file):  # follows the link: a dangling link is missing too
-            problems.append(f"{name} (missing)")
+            problems[name] = "missing"
         elif os.path.getsize(file) != want["size"]:
-            problems.append(f"{name} (size {os.path.getsize(file)}, expected {want['size']})")
+            problems[name] = f"size {os.path.getsize(file)}, expected {want['size']}"
     return problems
+
+
+def _describe(problems: dict[str, str]) -> str:
+    return ", ".join(f"{name} ({why})" for name, why in problems.items())
 
 
 def fetch() -> None:
     """Fill the cache with the pinned commits (compose service `models-fetch`). A complete commit is not looked up
-    on the Hub at all, so a cache that was filled by hand needs no network; an incomplete or missing one is downloaded
-    (a started download goes on where it stopped) and checked again. Any file that is still wrong is an error."""
+    on the Hub at all, so a cache that was filled by hand needs no network. For each file that is missing or has a wrong
+    size, the file alone is downloaded: a missing one goes on where it stopped; a file of the wrong size is forced,
+    because the Hub client trusts a file that is there and would keep the truncated blob. Then everything is checked
+    again; a file that is still wrong is an error."""
     for repo, revision in PINNED.items():
         problems = snapshot_problems(repo)
         if not problems:
             log.info("%s@%s is in the cache and complete; no download", repo, revision)
             continue
-        log.info("%s@%s is not complete in the cache (%s); downloading from the Hub", repo, revision, ", ".join(problems))
+        log.info("%s@%s is not complete in the cache (%s); downloading from the Hub", repo, revision, _describe(problems))
         try:
-            snapshot_download(repo, revision=revision, allow_patterns=FILES)
+            for name, why in problems.items():
+                hf_hub_download(repo, name, revision=revision, force_download=why != "missing")
         except Exception as exc:
             log.error("cannot fetch %s@%s: the cache lacks %s and the Hub did not answer (%s: %s)",
-                      repo, revision, ", ".join(problems), type(exc).__name__, exc)
+                      repo, revision, _describe(problems), type(exc).__name__, exc)
             raise
         problems = snapshot_problems(repo)
         if problems:
-            log.error("cannot fetch %s@%s: still wrong after the download: %s", repo, revision, ", ".join(problems))
+            log.error("cannot fetch %s@%s: still wrong after the download: %s", repo, revision, _describe(problems))
             raise SystemExit(1)
         log.info("%s@%s downloaded and complete", repo, revision)
 
