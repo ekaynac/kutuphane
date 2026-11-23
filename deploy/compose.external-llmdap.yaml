@@ -1,3 +1,6 @@
+# NOT USABLE YET with LLMDAP's official compose: its network `llmdap` is not `internal` (ekaynac/LLMDAP#281). Do not
+# apply this override (on Spark or elsewhere) to such a network: the model servers would get a route out.
+#
 # Override: the model servers join the network of an LLMDAP that runs as its own compose project (§5a of the
 # portfolio rules: a shared dependency is consumed from outside). The LLMDAP bridge reaches the model servers by their
 # service names (`embedder`, `spark-chat`, `reranker-gpu`, `model-stub`) on that network; they keep their own networks.

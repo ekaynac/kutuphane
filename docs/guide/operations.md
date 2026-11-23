@@ -215,6 +215,10 @@ Rules:
 
 ### LLMDAP as its own compose project (#242)
 
+**Not usable with LLMDAP's official compose yet:** its network `llmdap` is not `internal`, so model servers that join
+it get an outbound route. Until LLMDAP makes it internal (ekaynac/LLMDAP#281), do not attach model servers to it; on
+Spark this setup is not applied before that change.
+
 LLMDAP can run as its own compose project `llmdap` (network `llmdap`, bridge published on `127.0.0.1:8787`). Then
 `deploy/compose.full.yaml` does not start its own `llmdap` service: leave out profile `app` for it, and run Core as a
 host process or on a network that reaches the bridge.
