@@ -1183,12 +1183,26 @@ pre-seed it ([install.md](install.md#model-weights-and-offline-install)). Disk e
 The commands show no `-p`: on a host with more than one install, add the project name
 ([install.md](install.md#shared-host)).
 
-**Back up** (a consistent copy while Core runs; the custom format `-Fc` is compressed and `pg_restore` reads it):
+**Back up** (a consistent copy while Core runs; the custom format `-Fc` is compressed and `pg_restore` reads it). The
+name has the time to the second and a random suffix, so a backup never gets the name of an earlier one. The dump goes
+into `<name>.partial`, and it gets its final name only if `pg_dump` and the readability check both succeed:
 
 ```sh
-docker compose exec -T postgres pg_dump -U kutuphane -Fc kutuphane > kutuphane-$(date +%F).dump
-docker compose exec -T postgres pg_restore --list < kutuphane-$(date +%F).dump > /dev/null && echo dump ok
+(
+set -e
+mkdir -p backups
+p=$(mktemp backups/kutuphane-$(date +%Y%m%d-%H%M%S)-XXXXXX --suffix=.partial)
+docker compose exec -T postgres pg_dump -U kutuphane -Fc kutuphane > "$p"
+docker compose exec -T postgres pg_restore --list < "$p" > /dev/null
+mv -n "$p" "${p%.partial}.dump"
+echo "backup written: ${p%.partial}.dump (not yet tested: see below)"
+)
 ```
+
+If a command fails, the block stops, no `.dump` file is made, and no earlier backup changes; delete the `.partial`
+file. `pg_restore --list` reads only the table of contents, so it shows that the file is readable, not that it is
+complete: a file that is cut in its data section can still pass it. The real check of a backup is a test restore into a
+scratch volume (the restore steps below); do one after the first backup and after each upgrade.
 
 `pg_dump` does not save database roles. The dump has the table grants and row policies, and they name the roles, so
 each role that the dump grants to must exist before you restore: `kutuphane_app`, and `kutuphane_curator_web` if you
