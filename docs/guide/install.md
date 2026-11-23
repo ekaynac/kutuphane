@@ -445,7 +445,7 @@ docker run --rm --user 0 --entrypoint sh -v kutuphane_models:/hf -v /path/to/see
 ```
 
 `/path/to/seed` holds `hub/models--BAAI--bge-m3/…` and `hub/models--BAAI--bge-reranker-v2-m3/…`. Then `up`;
-`models-fetch` finds the commits, cannot reach the Hub, and ends with success (it needs no network then).
+`models-fetch` finds both commits in the volume and ends with success without any call to the Hub (it needs no network). With an empty volume and no route to the Hub it ends with an error that names the missing commit, and `embedder` and Core do not start.
 
 To publish packages without a person at the command line, the `publisher` profile of `compose.yaml` runs the owner
 credential loop (`imports publish-admitted`); it replaces a host timer, never run both ([operations.md](operations.md#publisher-service-compose)).

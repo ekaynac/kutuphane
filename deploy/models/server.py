@@ -21,6 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import torch
 from huggingface_hub import snapshot_download
+from huggingface_hub.errors import LocalEntryNotFoundError
 from transformers import AutoModel, AutoModelForSequenceClassification, AutoTokenizer
 
 EMBED, RERANK = "BAAI/bge-m3", "BAAI/bge-reranker-v2-m3"
@@ -80,11 +81,22 @@ def load(repo: str, cls):
 
 
 def fetch() -> None:
-    """Fill the cache with the pinned commits (compose service `models-fetch`). Files that are there are not
-    downloaded again; when the Hub cannot be reached, a cache that has the commits is enough."""
+    """Fill the cache with the pinned commits (compose service `models-fetch`). A commit that is in the cache is not
+    looked up on the Hub at all, so a cache that was filled by hand needs no network; only a missing one is downloaded."""
     for repo, revision in PINNED.items():
-        snapshot_download(repo, revision=revision, allow_patterns=FILES)
-        log.info("%s@%s is in the cache", repo, revision)
+        try:
+            snapshot_download(repo, revision=revision, allow_patterns=FILES, local_files_only=True)
+            log.info("%s@%s is in the cache; no download", repo, revision)
+            continue
+        except LocalEntryNotFoundError:
+            log.info("%s@%s is not in the cache; downloading from the Hub", repo, revision)
+        try:
+            snapshot_download(repo, revision=revision, allow_patterns=FILES)
+        except Exception as exc:
+            log.error("cannot fetch %s@%s: not in the cache and the Hub did not answer (%s: %s)",
+                      repo, revision, type(exc).__name__, exc)
+            raise
+        log.info("%s@%s downloaded", repo, revision)
 
 
 def batches(texts: list[str]):
