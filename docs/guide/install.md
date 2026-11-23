@@ -471,19 +471,35 @@ On a shared host, read [Shared host](#shared-host) first.
    The first `up` downloads the model weights once, about 4.5 GB ([below](#model-weights-and-offline-install));
    follow it with `docker compose logs -f models-fetch`. `docker compose ps` shows `core` and `embedder` `healthy`
    when the start is complete.
-4. Check (with `--light`, `egress_probe.py` exits 0 only if Core reaches Postgres and nothing else):
+4. Check the start (with `--light`, `egress_probe.py` exits 0 only if Core reaches Postgres and nothing else):
 
    ```sh
    curl -s http://127.0.0.1:8080/healthz
    docker compose exec -T core python -I - --light < deploy/egress_probe.py   # the embedder is a known peer
-   KUTUPHANE_PROBE_TOKEN=<access token> python3 deploy/mcp_probe.py http://127.0.0.1:8080 --journal <journal>
    ```
 
    `GET /v1/health` with a token ([http-api.md](http-api.md#33-get-v1health)) shows `embedding` and `rerank` `true`.
-5. First owner steps: install the host CLI from the same checkout (`pip install .`), then add books, journals and
-   rights as in `README.md` quick start, step 2. Set `KUTUPHANE_DSN` (app role) and `KUTUPHANE_CURATOR_DSN` (owner)
-   to `postgresql://…@127.0.0.1:55432/kutuphane`, with no `KUTUPHANE_LLMDAP_*` in that shell. Publishing needs the
-   owner credential and a `curate` grant for `--by`.
+5. First owner steps: a journal and the grants for an agent. Install the host CLI from the same checkout, and use
+   the app role in a shell with no `KUTUPHANE_LLMDAP_*` (libpq reads the password from `PGPASSWORD`, so it is not in
+   the address):
+
+   ```sh
+   python3 -m venv .venv && .venv/bin/pip install .
+   export PGPASSWORD="$KUTUPHANE_APP_DB_PASSWORD"
+   export KUTUPHANE_DSN=postgresql://kutuphane_app@127.0.0.1:55432/kutuphane
+   .venv/bin/kutuphane journal create team-memory --search y --ai-input y \
+     --sensitivity normal --egress local_only --protection standard --by user:admin
+   for g in "book:team-memory read" "book:team-memory propose"; do .venv/bin/kutuphane grant $g agent:adc; done
+   ```
+
+   More books, rights and curation: `README.md` quick start, step 2, and [operations.md](operations.md). Publishing
+   needs the owner credential (`KUTUPHANE_CURATOR_DSN`) and a `curate` grant for `--by`.
+6. Check the MCP route through the proxy with an access token of the agent from step 5 (from your IdP; a
+   development token: see below). The probe proposes one note into the journal:
+
+   ```sh
+   KUTUPHANE_PROBE_TOKEN=<access token> python3 deploy/mcp_probe.py http://127.0.0.1:8080 --journal team-memory
+   ```
 
 Development tokens (README quick start, step 3): `KUTUPHANE_OIDC_ISSUER` is `<KUTUPHANE_PUBLIC_URL>/dev`,
 `KUTUPHANE_OIDC_JWKS_FILE` the `jwks.json` of `kutuphane dev-keys`.

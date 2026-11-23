@@ -1220,9 +1220,13 @@ first, do the same in a scratch project (`-p kutuphane-t-<name>`, other host por
 
 3. Start `postgres` only (a new, empty database `kutuphane`; use the same `KUTUPHANE_DB_PASSWORD` as before), create
    the roles, restore, and apply the role scripts. Do not run `kutuphane migrate`: the dump has the schema of the
-   release that made it. For curator web, also do the lines marked `# curator web`.
+   release that made it. For curator web, also do the lines marked `# curator web`. The block is one subshell with
+   `set -e`: the first command that fails stops it, so a failed restore never reaches the role scripts. Use the
+   name of your dump file:
 
    ```sh
+   (
+   set -e
    docker compose up -d --wait postgres
    docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 \
      -c "CREATE ROLE kutuphane_app LOGIN PASSWORD '${KUTUPHANE_APP_DB_PASSWORD}'"
@@ -1231,11 +1235,16 @@ first, do the same in a scratch project (`-p kutuphane-t-<name>`, other host por
    docker compose exec -T postgres pg_restore -U kutuphane -d kutuphane --exit-on-error < kutuphane-2026-11-23.dump
    docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 < deploy/db-roles.sql
    docker compose exec -T postgres psql -U kutuphane -d kutuphane -v ON_ERROR_STOP=1 < deploy/db-roles-curator.sql   # curator web
+   echo "restore ok"
+   )
    ```
 
-4. Start the rest with the same `-f` and `--profile` options as the install: `docker compose up -d`. Check as in
-   [install.md](install.md#upgrade), step 5. Writes after the dump are lost. Embeddings and indexes are in the
-   database, so no `kutuphane index` is needed.
+   If the block stops with an error, do not start the rest. The new volume is half filled: remove it by hand later,
+   and for the next try go back to step 1 with another new volume name. Keep the block as it is: after
+   `( … ) && …`, the shell ignores `set -e` inside the subshell.
+4. Only after `restore ok`, start the rest with the same `-f` and `--profile` options as the install:
+   `docker compose up -d`. Check as in [install.md](install.md#upgrade), step 5. Writes after the dump are lost.
+   Embeddings and indexes are in the database, so no `kutuphane index` is needed.
 
 The new volume is now your database; keep `pgdata-restored.yaml` in the file list. After you have checked the new
 database, remove the old volume by hand (`docker volume ls`, then `docker volume rm <the old name>`): a project name
