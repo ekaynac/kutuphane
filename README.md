@@ -35,7 +35,7 @@ air-gapped. The vision is in `docs/23-vision-v1.md` (version 1.2).
 
 ## Quick start (development)
 
-You need Docker with Compose v2 and Python 3.11 or later. Postgres runs in Docker, the server on the host, with
+You need Docker with Compose 2.24.4 or later and Python 3.11 or later. Postgres runs in Docker, the server on the host, with
 development tokens and no model service.
 
 > **Shared host.** Both compose files set `name: kutuphane`. On a host that already runs a Kütüphane install, the

@@ -16,7 +16,8 @@ command of this page.
 
 ## Requirements
 
-- Docker with Compose v2; Python 3.11+ for the host CLI (the container uses 3.12).
+- Docker with Compose 2.24.4 or later (the override files use the `!override` tag; check with `docker compose version`);
+  Python 3.11+ for the host CLI (the container uses 3.12).
 - git 2.45+ in the Core container, for code citations (the image build checks it).
 - An encrypted disk volume for the database and the audit volume (D48). Kütüphane does not encrypt data.
 
@@ -32,7 +33,7 @@ command of this page.
   (`kutuphane-<name>_pgdata`, `kutuphane-<name>_models`), so the other install keeps its data.
 - Host ports: `compose.yaml` publishes Postgres on `127.0.0.1:55432` and the ingress proxy on
   `${KUTUPHANE_BIND:-127.0.0.1}:8080`. A second install on the same host replaces them in an override file
-  (`-f compose.yaml -f ports.yaml`):
+  (`-f compose.yaml -f ports.yaml`; `!override` needs Compose 2.24.4 or later):
 
   ```yaml
   services:
