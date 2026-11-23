@@ -38,3 +38,17 @@ def test_model_servers_join_the_external_network():
     assert cfg["networks"]["llmdap"]["name"] == "x" and cfg["networks"]["llmdap"]["external"] is True
     for name, others in EXPECTED.items():
         assert set(cfg["services"][name]["networks"]) == others | {"llmdap"}, name
+
+
+def test_the_override_leaves_the_repos_own_llmdap_service_alone():
+    """Without profile `app` the repo's own bridge is not in the config; the override does not define or change it."""
+    env = {**os.environ, "LLMDAP_NETWORK": "x", "KUTUPHANE_VERSION": "v0", "KUTUPHANE_DB_PASSWORD": "x"}
+    files = ["-f", str(DEPLOY / "compose.full.yaml")]
+    over = files + ["-f", str(DEPLOY / "compose.external-llmdap.yaml")]
+    common = ["--profile", "local-models", "--profile", "gpu-rerank", "config", "--format", "json"]
+    with_over = subprocess.run(["docker", "compose", *over, *common], capture_output=True, text=True, env=env, timeout=60)
+    assert with_over.returncode == 0, with_over.stderr
+    assert "llmdap" not in json.loads(with_over.stdout)["services"]
+    import yaml
+    services = yaml.safe_load((DEPLOY / "compose.external-llmdap.yaml").read_text())["services"]
+    assert "llmdap" not in services
