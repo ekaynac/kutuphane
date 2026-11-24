@@ -106,7 +106,11 @@ the body; your reverse proxy must pass both unchanged.
   unknown` (the sender adds a `kstd.yaml` with a license);
   `agent instruction file (K3): <path>`; `the book policy changed after use policy <id>; a person decides` (a person
   published the book with another policy: approve a package by hand, or revoke the use policy and add one with the
-  book's policy); `the book policy is restricted or cloud_ok; a person decides`. A file with an internal IP address (for example `10.0.0.12` or
+  book's policy); `the book policy is restricted or cloud_ok; a person decides`; `the sender does not suggest a normal,
+  local_only book (restricted, cloud_ok, missing or not valid); a person decides` (#235, #246: the manifest's
+  `policy_suggestion` is not exactly `normal` + `local_only`, under any use policy. A person reads the package and
+  approves it with the stricter policy that the sender asked for, or rejects it; never loosen the sender's request to
+  make the timer publish it. A sender whose content is `normal`/`local_only` sends that suggestion). A file with an internal IP address (for example `10.0.0.12` or
   `192.168.4.7`) gives a `personal_data` finding with the rule `private-ipv4` (`private-ipv6` for fc00::/7), whatever
   `personal_data` says in `kstd.yaml`; the finding rules are not loosened, so a person reviews that package. Names
   on a deny list (`listed-name`) are not checked when a package is received.
