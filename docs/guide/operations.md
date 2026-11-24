@@ -958,7 +958,7 @@ kutuphane imports publish-admitted [--dry-run]
   4. the package has a `kstd.yaml` and no file has `license: unknown` (a license that is not stated counts as
      `unknown`, so a package without `kstd.yaml` always waits for a person);
   5. no file is an agent instruction (K3, [Agent instructions](#agent-instructions-k3));
-  6. under an **unattended** policy only: the manifest has a `policy_suggestion` that says `normal` and `local_only`.
+  6. under every use policy, attested or unattended (#246): the manifest has a `policy_suggestion` that says `normal` and `local_only`.
      A `restricted` or `cloud_ok` suggestion, a missing or `null` one, and one that is not an object all leave the
      package `verified` for a person (`receive` does not require the field, so such a package can be verified). The
      receiver's policy is still the use policy's;

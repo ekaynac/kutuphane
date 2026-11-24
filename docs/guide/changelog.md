@@ -8,6 +8,11 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+### Attested use policies apply the policy suggestion rule (#246)
+
+- Fixed (#246): under an **attested** use policy, `publish-admitted` ignored the manifest's `policy_suggestion`, so a package that the sender marked `restricted` or `cloud_ok` was published as `normal` / `local_only`. The rule that #235 set for unattended policies now holds for every use policy: a suggestion that is not `normal` with `local_only`, and a missing, `null` or malformed one, leaves the package `verified` with the reason, and a person decides. The reason text is the same. No live package changes (all suggest `normal` / `local_only`).
+- **Action:** a sender whose packages are published under a use policy must put `policy_suggestion` with `sensitivity` `normal` and `egress` `local_only` in the manifest; otherwise the package waits for a person.
+
 ### Install, upgrade, rollback, backup and restore docs (#242)
 
 - Changed (documentation only; no code, compose file or setting changes): [install.md](install.md) now has the first install of a release step by step (`.env` from `.env.example`, `KUTUPHANE_VERSION`, database role, `kutuphane migrate` in the Core image, first start with the one-time 4.5 GB model download, checks, first owner steps), the variants (no models, another embedder, an answer model, an outside LLMDAP), an upgrade with its migration step, and a rollback. No release exists yet: until the first one, build from source with `KUTUPHANE_VERSION=dev` and `compose.build.yaml`. Nothing runs a migration at start; Core refuses to start while one is pending. [operations.md](operations.md#12-backups) has `pg_dump -Fc` and `pg_restore` into a fresh volume, and how to adopt an existing `kutuphane_pgdata` volume. The `models` volume needs no backup. The offline pre-seed now says to copy the pinned snapshots with their blobs (`cp -rL`), because a plain copy can leave links that point to nothing.

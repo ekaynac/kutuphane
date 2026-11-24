@@ -126,8 +126,8 @@ def admission(conn, manifest: dict, files: list, findings: list) -> Admission:
             _book_policy(current[1])
         except ValueError:
             raise NotAdmitted("the book policy is restricted or cloud_ok; a person decides") from None
-    suggested = manifest.get("policy_suggestion")  # #235: with no person, the sender's advice must not be more strict
-    if unattended and not (isinstance(suggested, dict) and suggested.get("sensitivity") == "normal"
+    suggested = manifest.get("policy_suggestion")  # #235, #246: the sender's advice must not be more strict, attested or not
+    if not (isinstance(suggested, dict) and suggested.get("sensitivity") == "normal"
                            and suggested.get("egress") == "local_only"):  # fail closed: missing, null or malformed
         raise NotAdmitted("the sender does not suggest a normal, local_only book (restricted, cloud_ok, missing or "
                           "not valid); a person decides")

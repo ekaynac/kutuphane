@@ -294,18 +294,6 @@ def test_a_cloud_ok_book_stops_an_unattended_policy(world):
     assert status(conn, nxt) == ("verified", None)
 
 
-def test_an_attested_policy_still_publishes_a_package_that_suggests_cloud_ok_as_on_main(world):
-    """Pins today's behaviour: the suggestion is advice, and an attested policy ignores it. That gap is tracked in its
-    own issue; the unattended policy (no person at all) does not take it (the test above)."""
-    conn = world[0]
-    usepolicy.add(conn, "kitap", world[2], ["user:im."], sensitivity="normal", egress="local_only",
-                  protection="standard", by="user:ayse")
-    packages.receive(conn, build(world, CLEAN, extra={"policy_suggestion": {
-        "v": 1, "sensitivity": "normal", "egress": "cloud_ok", "protection": "standard"}}))
-    assert run(conn)[0]["status"] == "published"
-    assert catalog.book_state(conn, "kitap")["policy"] == POLICY  # the receiver's policy, not the suggestion
-
-
 def test_the_database_refuses_unattended_with_attesters_and_a_policy_publication_of_another_use_policy(world):
     import psycopg
     conn = world[0]
@@ -366,9 +354,30 @@ def test_an_unattended_policy_fails_closed_on_a_missing_null_or_malformed_sugges
     assert status(conn, got["id"]) == ("verified", None) and catalog.book_state(conn, "kitap") is None
 
 
-def test_an_attested_policy_still_publishes_a_package_without_a_suggestion(world):
+@pytest.mark.parametrize("how", [
+    {"extra": {"policy_suggestion": {"v": 1, "sensitivity": "normal", "egress": "cloud_ok", "protection": "standard"}}},
+    {"extra": {"policy_suggestion": {"v": 1, "sensitivity": "restricted", "egress": "local_only",
+                                     "protection": "standard"}}},
+    {"drop": ["policy_suggestion"]}, {"extra": {"policy_suggestion": None}},
+    {"extra": {"policy_suggestion": "normal"}},
+    {"extra": {"policy_suggestion": {"sensitivity": "normal"}}}],
+    ids=["cloud_ok", "restricted", "missing", "null", "string", "incomplete"])
+def test_an_attested_policy_waits_for_a_person_on_a_suggestion_that_is_not_normal_local_only(world, how):
+    """#246: the same rule as for an unattended policy; the sender's request for stricter handling is not dropped."""
     conn = world[0]
     usepolicy.add(conn, "kitap", world[2], ["user:im."], sensitivity="normal", egress="local_only",
                   protection="standard", by="user:ayse")
-    packages.receive(conn, build(world, CLEAN, drop=["policy_suggestion"]))
-    assert run(conn)[0]["status"] == "published"  # as on main
+    got = packages.receive(conn, build(world, CLEAN, **how))
+    assert got["status"] == "verified"
+    [result] = run(conn)
+    assert result["status"] == "skipped" and "does not suggest a normal, local_only book" in result["reason"]
+    assert status(conn, got["id"]) == ("verified", None) and catalog.book_state(conn, "kitap") is None
+
+
+def test_an_attested_policy_publishes_a_package_that_suggests_normal_local_only(world):
+    conn = world[0]
+    usepolicy.add(conn, "kitap", world[2], ["user:im."], sensitivity="normal", egress="local_only",
+                  protection="standard", by="user:ayse")
+    packages.receive(conn, build(world, CLEAN))
+    assert run(conn)[0]["status"] == "published"
+    assert catalog.book_state(conn, "kitap")["policy"] == POLICY
