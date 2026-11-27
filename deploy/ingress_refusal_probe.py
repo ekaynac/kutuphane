@@ -5,7 +5,7 @@ is Core's own JSON refusal and never a proxy 502. Run from the host against the 
         [--repeat 50] [--mib 20]
 
 The client streams the whole body like a real uploader, so the proxy is still sending when Core answers. Checks:
-- no token and a bad token: `--repeat` times each, 401 `{"error": "unauthenticated"}` every time;
+- no token, then a bad token, each `--repeat` times: 401 `{"error": "unauthenticated"}` every time;
 - with the token (read from the environment, never printed): a body of 250 MiB, above `MAX_PACKAGE_BYTES`, `--repeat`
   times (at least 1, at most 20), 413 with Core's text every time. Without a token this check is skipped.
 Nothing is stored: every request is refused before Core reads the package. Before the fix of #268 about one in ten
