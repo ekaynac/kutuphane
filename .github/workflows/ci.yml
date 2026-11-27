@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [main]
+    tags: ["v*.*.*"]
 
 permissions:
   contents: read
@@ -63,3 +64,90 @@ jobs:
         run: docker buildx build --file Dockerfile --tag kutuphane:ci .
       - name: Build the model server image (no push)
         run: docker buildx build --file deploy/models/Dockerfile --tag kutuphane-models:ci deploy/models
+
+  # Runs only for a version tag, and only after the tests job passed on that tag (both suites and the contract
+  # snapshot). It is the one job with write permission. No `latest` tag. The images are linux/amd64 and linux/arm64
+  # (every wheel of both images exists for both: torch CPU, numpy, psycopg-binary, cryptography, ...).
+  # Nothing is overwritten (deploy/release_check.sh --plan): the job stops when the GitHub release for the tag exists
+  # or when only one of the two image tags exists. When both image tags exist and the release does not (an earlier run
+  # failed after the push), it does not rebuild: it reads the digests of the existing images and creates the release.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    # One release run per tag at a time, never cancelled: the plan below then sees what an earlier run pushed.
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: write  # create the GitHub release
+      packages: write  # push the images to ghcr.io
+    env:
+      TAG: ${{ github.ref_name }}
+      IMAGE: ghcr.io/ekaynac/kutuphane
+      MODELS_IMAGE: ghcr.io/ekaynac/kutuphane-models
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the tag, the package version and the changelog
+        run: deploy/release_check.sh "$TAG"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Plan (stop, build or resume)
+        id: plan
+        # The assignment keeps the plan's exit status (1 = stop, 2 = error): with `set -e` the step fails and the job
+        # stops before any build, digest read or release. `echo "plan=$(…)"` would hide it.
+        run: |
+          set -euo pipefail
+          plan="$(deploy/release_check.sh --plan "$TAG")"
+          echo "plan=$plan" >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        if: steps.plan.outputs.plan == 'build'
+      - name: Push the Core image
+        if: steps.plan.outputs.plan == 'build'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.IMAGE }}:${{ env.TAG }}
+      - name: Push the model server image
+        if: steps.plan.outputs.plan == 'build'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: deploy/models
+          file: deploy/models/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.MODELS_IMAGE }}:${{ env.TAG }}
+      - name: Create the GitHub release
+        run: |
+          set -eu
+          core="$(docker buildx imagetools inspect "$IMAGE:$TAG" --format '{{.Manifest.Digest}}')"
+          models="$(docker buildx imagetools inspect "$MODELS_IMAGE:$TAG" --format '{{.Manifest.Digest}}')"
+          {
+            deploy/release_check.sh --notes "$TAG"
+            printf '\n## Images\n\n'
+            printf -- "- \`%s:%s@%s\`\n" "$IMAGE" "$TAG" "$core"
+            printf -- "- \`%s:%s@%s\`\n" "$MODELS_IMAGE" "$TAG" "$models"
+          } > release-body.md
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --notes-file release-body.md
+      # A new GHCR package is private, and only the owner can make it public (package settings, not the API or
+      # GITHUB_TOKEN). This must not fail the run after the release exists, so it only warns.
+      - name: Check that the images are public
+        continue-on-error: true
+        run: |
+          if ! deploy/release_check.sh --public "$TAG"; then
+            echo "::warning::A package is not public yet. The owner must set both ghcr.io packages (kutuphane, kutuphane-models) to Public in the package settings (docs/guide/operations.md, Release)."
+            exit 1
+          fi
