@@ -1272,6 +1272,18 @@ volume was made with: Postgres ignores `POSTGRES_PASSWORD` for an existing data 
 [migration and the role script](install.md#steps) (step 2, without `CREATE ROLE` if `kutuphane_app` exists), then
 start the rest. Test it first on a copy: restore a dump into a scratch project as above.
 
+## Release (maintainers)
+
+A release is a tag `vMAJOR.MINOR.PATCH` (no pre-release, no build metadata, no leading zero). The tag needs a matching
+`version` in `pyproject.toml` and a heading `## <tag> (date)` in [changelog.md](changelog.md). On the tag, the `release`
+job of `.github/workflows/ci.yml` runs after the tests, pushes `ghcr.io/ekaynac/kutuphane:<tag>` and
+`ghcr.io/ekaynac/kutuphane-models:<tag>` (linux/amd64, linux/arm64; no `latest`) and creates the GitHub release with
+the changelog section and the image digests. `deploy/release_check.sh` makes the checks.
+
+The job never overwrites. If the release for the tag exists, or only one of the two image tags exists, it stops and a
+person decides. If both image tags exist and the release does not (an earlier run failed after the push), run the job
+again: it does not rebuild, it reads the digests of the existing images and creates the release.
+
 ## 13. CLI reference
 
 | Section | Commands |
