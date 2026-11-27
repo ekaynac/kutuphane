@@ -1284,6 +1284,23 @@ The job never overwrites. If the release for the tag exists, or only one of the 
 person decides. If both image tags exist and the release does not (an earlier run failed after the push), run the job
 again: it does not rebuild, it reads the digests of the existing images and creates the release.
 
+**First release only: make the packages public.** A package that a workflow pushes to ghcr.io for the first time is
+private, and a push does not change that, but the install steps pull the images with no login. After the first release
+run, the owner sets both packages (`kutuphane` and `kutuphane-models`) to **Public**: open the package on GitHub,
+**Package settings**, **Danger Zone**, **Change visibility**, **Public**. A public package cannot be made private again.
+If a package is not linked to the repository, link it in the same settings. The GitHub documentation describes this
+change only as an action in the package settings ([Configuring a package's access control and
+visibility](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility#configuring-visibility-of-packages-for-your-personal-account));
+the job cannot do it with `GITHUB_TOKEN`. Then check it with no login:
+
+```sh
+docker logout ghcr.io
+IMAGE=ghcr.io/ekaynac/kutuphane MODELS_IMAGE=ghcr.io/ekaynac/kutuphane-models deploy/release_check.sh --public v1.0.0
+```
+
+The last step of the release job runs the same check. It cannot fail the run (the release exists by then): it ends
+with a warning that names the package that is not public.
+
 ## 13. CLI reference
 
 | Section | Commands |

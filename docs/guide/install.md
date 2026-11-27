@@ -440,7 +440,7 @@ with no model server set both providers to `llmdap` ([operations.md](operations.
 For a first install of the latest release. A release needs a checkout of its tag (`git clone`, then
 `git checkout <tag>`): the compose files, `deploy/` scripts and SQL come from it, and its tag is `KUTUPHANE_VERSION`.
 Example: `git checkout v1.0.0`, then `KUTUPHANE_VERSION=v1.0.0` in `.env`; compose pulls the release images
-`ghcr.io/ekaynac/kutuphane:v1.0.0` and `ghcr.io/ekaynac/kutuphane-models:v1.0.0`, so nothing is built.
+`ghcr.io/ekaynac/kutuphane:v1.0.0` and `ghcr.io/ekaynac/kutuphane-models:v1.0.0`, so nothing is built. If `pull` asks for a login, the image is not public yet: tell the maintainer.
 For development, build from source instead: check out `main`, set `KUTUPHANE_VERSION=dev` and
 `COMPOSE_FILE=compose.yaml:compose.build.yaml` in `.env` ([above](#image-release-or-source)).
 On a shared host, read [Shared host](#shared-host) first.

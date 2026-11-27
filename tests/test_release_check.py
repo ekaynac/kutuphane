@@ -148,3 +148,41 @@ def test_plan_needs_both_tools(repo, missing):
 def test_plan_checks_the_tag_first(repo):
     r = run(repo, "--plan", "v1.0.0rc1")
     assert r.returncode == 1 and not (repo / "docker.log").exists()
+
+
+def run_public(repo, **kw):
+    env = {**os.environ, "ROOT": str(repo), "PATH": f"{repo / 'bin'}:{os.environ['PATH']}",
+           "FAKE_CORE": kw.get("core", "yes"), "FAKE_MODELS": kw.get("models", "yes"), "FAKE_LOG": str(repo / "docker.log"),
+           "DOCKER_CONFIG": str(repo / "real-config"), "IMAGE": "ghcr.io/o/core", "MODELS_IMAGE": "ghcr.io/o/kutuphane-models"}
+    return subprocess.run(["bash", str(SCRIPT), "--public", "v1.0.0"], env=env, capture_output=True, text=True)
+
+
+def test_public_both_readable(repo):
+    r = run_public(repo)
+    assert r.returncode == 0
+    # no login is used: the DOCKER_CONFIG of the user is replaced by an empty directory
+    for line in (repo / "docker.log").read_text().splitlines():
+        assert "imagetools inspect" in line
+
+
+def test_public_uses_an_empty_docker_config(repo):
+    (repo / "bin" / "docker").write_text('#!/bin/sh\n[ -d "$DOCKER_CONFIG" ] && [ -z "$(ls -A "$DOCKER_CONFIG")" ] '
+                                         '&& [ "$DOCKER_CONFIG" != "$REAL" ] || exit 1\n')
+    env = {**os.environ, "ROOT": str(repo), "PATH": f"{repo / 'bin'}:{os.environ['PATH']}", "REAL": "/x",
+           "DOCKER_CONFIG": "/x", "IMAGE": "a", "MODELS_IMAGE": "b"}
+    r = subprocess.run(["bash", str(SCRIPT), "--public", "v1.0.0"], env=env, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+
+
+@pytest.mark.parametrize("core,models,named", [("forbidden", "yes", "ghcr.io/o/core:v1.0.0"),
+                                               ("yes", "forbidden", "ghcr.io/o/kutuphane-models:v1.0.0")])
+def test_public_names_the_unreadable_image(repo, core, models, named):
+    r = run_public(repo, core=core, models=models)
+    assert r.returncode == 1 and named in r.stderr
+    other = "ghcr.io/o/kutuphane-models:v1.0.0" if "core" in named else "ghcr.io/o/core:v1.0.0"
+    assert other not in r.stderr
+
+
+def test_public_both_unreadable(repo):
+    r = run_public(repo, core="forbidden", models="forbidden")
+    assert r.returncode == 1 and "core:v1.0.0" in r.stderr and "kutuphane-models:v1.0.0" in r.stderr

@@ -142,3 +142,12 @@ jobs:
             printf -- "- \`%s:%s@%s\`\n" "$MODELS_IMAGE" "$TAG" "$models"
           } > release-body.md
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --notes-file release-body.md
+      # A new GHCR package is private, and only the owner can make it public (package settings, not the API or
+      # GITHUB_TOKEN). This must not fail the run after the release exists, so it only warns.
+      - name: Check that the images are public
+        continue-on-error: true
+        run: |
+          if ! deploy/release_check.sh --public "$TAG"; then
+            echo "::warning::A package is not public yet. The owner must set both ghcr.io packages (kutuphane, kutuphane-models) to Public in the package settings (docs/guide/operations.md, Release)."
+            exit 1
+          fi
