@@ -73,8 +73,9 @@ For an agent (`agent:…`), the kstd rights of each item apply: when `ai_use.ai_
 
 ### 1.7 Limits of the ingress proxy
 
-The ingress proxy (`deploy/nginx.conf`) accepts a body of at most 1 MiB (`413` above it) and waits at most
-300 seconds. For a long `POST /v1/ask`, use `"background": true`.
+The ingress proxy (`deploy/nginx.conf`) accepts a body of at most 8 MiB (above the 4 MiB limit of the MCP transport, so that
+Core's own error shows) on every route and at most 300 MiB on `POST /v1/packages` (above the package limit; Core
+refuses a larger package with `413` and its own error), and waits at most 300 seconds. For a long `POST /v1/ask`, use `"background": true`.
 
 ## 2. All routes
 
