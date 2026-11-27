@@ -8,6 +8,23 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+## v1.0.0 (2026-11-27)
+
+This is the first release of Kütüphane. Install it from the release images `ghcr.io/ekaynac/kutuphane:v1.0.0` and `ghcr.io/ekaynac/kutuphane-models:v1.0.0` (linux/amd64 and linux/arm64): check out the tag `v1.0.0`, set `KUTUPHANE_VERSION=v1.0.0` and follow [install.md](install.md). There is no `latest` tag. Build from source only for development.
+
+### Breaking changes for installers
+
+- **Action:** both compose files need `KUTUPHANE_VERSION` (the release tag, for example `v1.0.0`). Compose stops with `set KUTUPHANE_VERSION to a release tag` when it is empty. Use a checkout of the same tag.
+- **Action:** Docker Compose 2.24.4 or later is required.
+- **Action:** the standalone `compose.yaml` now runs a bundled embedder and reranker (the models image). The first start downloads about 4.5 GB of model files once into a volume. For an install with no models, add `compose.nomodels.yaml` as [install.md](install.md) shows; search is then full text only.
+- **Action:** the compose service `publisher` (profile `publisher`) and the host timer `kutuphane-publish-admitted` do the same job. Run only one of them: on a host that has the timer, stop and disable it before you start the service.
+- Nothing runs a migration at start. Run `kutuphane migrate` in the Core image before the first start and before each upgrade; Core refuses to start while a migration is pending. Migrations go forward only (see the rollback steps in [install.md](install.md)).
+
+### Migration notes for consumers
+
+- No change for nöbetçi-mcp, the harness sessions (kutuphane-memory) and InfraMedic: the MCP tools, the HTTP routes, the result shapes and the error texts are the same as in the snapshot in `tests/contract/`, which passes on this release.
+- New in results: the acceptance kind `policy` (an unattended use policy published the package; see "Unattended use policy" below). A consumer that lists the acceptance kinds must accept `policy`; one that ignores unknown kinds needs no change.
+
 ### Attested use policies apply the policy suggestion rule (#246)
 
 - Fixed (#246): under an **attested** use policy, `publish-admitted` ignored the manifest's `policy_suggestion`, so a package that the sender marked `restricted` or `cloud_ok` was published as `normal` / `local_only`. The rule that #235 set for unattended policies now holds for every use policy: a suggestion that is not `normal` with `local_only`, and a missing, `null` or malformed one, leaves the package `verified` with the reason, and a person decides. The reason text is the same. No live package changes (all suggest `normal` / `local_only`).

@@ -439,11 +439,13 @@ with no model server set both providers to `llmdap` ([operations.md](operations.
 
 For a first install of the latest release. A release needs a checkout of its tag (`git clone`, then
 `git checkout <tag>`): the compose files, `deploy/` scripts and SQL come from it, and its tag is `KUTUPHANE_VERSION`.
-**No release exists yet.** Until the first release exists, build from source: check out `main`, set
-`KUTUPHANE_VERSION=dev` and `COMPOSE_FILE=compose.yaml:compose.build.yaml` in `.env` ([above](#image-release-or-source)).
+Example: `git checkout v1.0.0`, then `KUTUPHANE_VERSION=v1.0.0` in `.env`; compose pulls the release images
+`ghcr.io/ekaynac/kutuphane:v1.0.0` and `ghcr.io/ekaynac/kutuphane-models:v1.0.0`, so nothing is built.
+For development, build from source instead: check out `main`, set `KUTUPHANE_VERSION=dev` and
+`COMPOSE_FILE=compose.yaml:compose.build.yaml` in `.env` ([above](#image-release-or-source)).
 On a shared host, read [Shared host](#shared-host) first.
 
-1. `cp .env.example .env` (git-ignored). Set `KUTUPHANE_VERSION` (the release tag; `dev` for a source build),
+1. `cp .env.example .env` (git-ignored). Set `KUTUPHANE_VERSION` (the release tag, for example `v1.0.0`; `dev` for a source build),
    `KUTUPHANE_DB_PASSWORD`, `KUTUPHANE_APP_DB_PASSWORD` (use letters and digits, `-` and `_` only: both go into a
    database address), `KUTUPHANE_PUBLIC_URL`, `KUTUPHANE_OIDC_ISSUER`, `KUTUPHANE_OIDC_JWKS_FILE`; optional
    `KUTUPHANE_OIDC_AUDIENCE`, `KUTUPHANE_BIND`, `KUTUPHANE_REPO_DIR` (paths absolute). No `COMPOSE_FILE` (except

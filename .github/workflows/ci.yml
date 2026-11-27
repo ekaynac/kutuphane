@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [main]
+    tags: ["v*.*.*"]
 
 permissions:
   contents: read
@@ -63,3 +64,74 @@ jobs:
         run: docker buildx build --file Dockerfile --tag kutuphane:ci .
       - name: Build the model server image (no push)
         run: docker buildx build --file deploy/models/Dockerfile --tag kutuphane-models:ci deploy/models
+
+  # Runs only for a version tag, and only after the tests job passed on that tag (both suites and the contract
+  # snapshot). It is the one job with write permission. No `latest` tag. The images are linux/amd64 and linux/arm64
+  # (every wheel of both images exists for both: torch CPU, numpy, psycopg-binary, cryptography, ...).
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: write  # create the GitHub release
+      packages: write  # push the images to ghcr.io
+    env:
+      TAG: ${{ github.ref_name }}
+      IMAGE: ghcr.io/ekaynac/kutuphane
+      MODELS_IMAGE: ghcr.io/ekaynac/kutuphane-models
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the tag, the package version and the changelog
+        run: |
+          set -eu
+          case "$TAG" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "tag $TAG is not vMAJOR.MINOR.PATCH"; exit 1 ;; esac
+          version="${TAG#v}"
+          grep -q "^version = \"$version\"\$" pyproject.toml || { echo "pyproject.toml version is not $version"; exit 1; }
+          awk -v tag="$TAG" '
+            $0 ~ "^## " tag " " { on = 1; next }
+            on && /^## / { exit }
+            on { print }
+          ' docs/guide/changelog.md > release-notes.md
+          [ -s release-notes.md ] || { echo "docs/guide/changelog.md has no section '## $TAG (date)'"; exit 1; }
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push the Core image
+        id: core
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.IMAGE }}:${{ env.TAG }}
+      - name: Push the model server image
+        id: models
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: deploy/models
+          file: deploy/models/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.MODELS_IMAGE }}:${{ env.TAG }}
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CORE_DIGEST: ${{ steps.core.outputs.digest }}
+          MODELS_DIGEST: ${{ steps.models.outputs.digest }}
+        run: |
+          set -eu
+          {
+            cat release-notes.md
+            printf '\n## Images\n\n'
+            printf -- "- \`%s:%s@%s\`\n" "$IMAGE" "$TAG" "$CORE_DIGEST"
+            printf -- "- \`%s:%s@%s\`\n" "$MODELS_IMAGE" "$TAG" "$MODELS_DIGEST"
+          } > release-body.md
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --notes-file release-body.md
