@@ -505,7 +505,17 @@ On a shared host, read [Shared host](#shared-host) first.
    ```
 
 Development tokens (README quick start, step 3): `KUTUPHANE_OIDC_ISSUER` is `<KUTUPHANE_PUBLIC_URL>/dev`,
-`KUTUPHANE_OIDC_JWKS_FILE` the `jwks.json` of `kutuphane dev-keys`.
+`KUTUPHANE_OIDC_JWKS_FILE` the `jwks.json` of `kutuphane dev-keys`. The JWKS file must exist before step 3 (a missing
+path is mounted as an empty folder, and Core does not start), so make the keys first, from the release image, as
+your own user (the key file is then yours to read):
+
+```sh
+mkdir -p dev-keys
+docker run --rm --user "$(id -u):$(id -g)" -e KUTUPHANE_DEV=1 -v "$PWD/dev-keys:/o" \
+  ghcr.io/ekaynac/kutuphane:<release tag> kutuphane dev-keys /o   # dev-keys/jwks.json, dev-keys/dev-private.pem
+```
+
+Set `KUTUPHANE_OIDC_JWKS_FILE` to the absolute path of `dev-keys/jwks.json`.
 
 ### Variants
 
@@ -548,13 +558,16 @@ done
 ```
 
 Then put `seed` in the volume. The volume is `<project>_models` (`kutuphane_models` for project `kutuphane`), and the
-image is the one of your release:
+image is the one of your release. Make the volume with the two labels that Compose sets (without them, Compose warns
+`volume … already exists but was not created by Docker Compose`):
 
 ```sh
-docker volume create kutuphane_models
+docker volume create --label com.docker.compose.project=kutuphane --label com.docker.compose.volume=models kutuphane_models
 docker run --rm --user 0 --entrypoint sh -v kutuphane_models:/hf -v "$PWD/seed:/seed:ro" \
   ghcr.io/ekaynac/kutuphane-models:<release tag> -c 'cp -a /seed/. /hf/ && chown -R 65532 /hf'
 ```
+
+With another project name, use it in the volume name and in the first label.
 
 `seed` holds `hub/models--BAAI--bge-m3/…` and `hub/models--BAAI--bge-reranker-v2-m3/…`.
 
