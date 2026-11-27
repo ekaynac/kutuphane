@@ -601,7 +601,8 @@ class DrainUnreadBody:
             return await self.app(scope, receive, send)
         headers = dict(scope["headers"])
         declared = headers.get(b"content-length", b"")
-        unread = not (declared.isdigit() and int(declared) > self.limit)
+        oversized = declared.isdigit() and int(declared) > self.limit
+        unread = True  # the body is not all read yet
         asked = False  # the app has called receive(): uvicorn has sent `100 Continue` if the client waits for it
 
         async def tracked_receive():
@@ -616,10 +617,11 @@ class DrainUnreadBody:
             nonlocal unread
             if message["type"] == "http.response.start" and unread:
                 unread = False
-                if (asked or headers.get(b"expect", b"").lower() != b"100-continue") \
-                        and not await _discard_body(receive, self.limit):
-                    # The drain is cut short (too slow, too long): refuse now and close. A reset may follow for this
-                    # client, and a proxy may then show 502: a sender that is this slow gets no more of Core's time.
+                waits_for_continue = not asked and headers.get(b"expect", b"").lower() == b"100-continue"
+                if oversized or waits_for_continue or not await _discard_body(receive, self.limit):
+                    # The body stays unread (above the bound, not sent, too slow, too long, or the client left): the
+                    # connection is not fit for a next request, so the answer closes it. A reset may follow for a
+                    # client that still sends, and a proxy may then show 502: such a sender gets no more of Core's time.
                     message = {**message, "headers": [*message.get("headers", []), (b"connection", b"close")]}
             await send(message)
 

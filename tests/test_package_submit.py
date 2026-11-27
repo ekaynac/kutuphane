@@ -273,10 +273,32 @@ def test_a_request_that_waits_for_100_continue_gets_the_refusal_and_sends_no_bod
     not ask for the body (a drain would)."""
     import socket
     request = (f"POST /v1/packages HTTP/1.1\r\nHost: 127.0.0.1:{live}\r\nContent-Length: 4194304\r\n"
-               "Expect: 100-continue\r\nConnection: close\r\n\r\n")
+               "Expect: 100-continue\r\nConnection: keep-alive\r\n\r\n")
     with socket.create_connection(("127.0.0.1", live), timeout=10) as s:
         s.sendall(request.encode())
-        assert s.recv(65536).startswith(b"HTTP/1.1 401 ")
+        raw = s.recv(65536)
+        assert raw.startswith(b"HTTP/1.1 401 ") and b"connection: close" in raw.lower()   # its body is unread
+
+
+def test_a_declared_length_above_the_drain_bound_gets_the_refusal_and_a_closed_connection(live):
+    """The declared body (400 MiB) is above the bound of the drain (300 MiB): it is not drained, so the answer must
+    close the connection, which is not fit for a next request with that body unread."""
+    import socket
+    request = (f"POST /v1/packages HTTP/1.1\r\nHost: 127.0.0.1:{live}\r\nContent-Length: {400 * 1024 * 1024}\r\n"
+               "Connection: keep-alive\r\n\r\n")
+    with socket.create_connection(("127.0.0.1", live), timeout=10) as s:
+        s.sendall(request.encode() + b"x" * 1024)
+        raw = b""
+        while b"\r\n\r\n" not in raw or b'"error"' not in raw:
+            part = s.recv(65536)
+            assert part, "the connection closed before the whole answer"
+            raw += part
+        assert raw.startswith(b"HTTP/1.1 401 ") and b"connection: close" in raw.lower()
+        s.settimeout(5)
+        try:
+            assert s.recv(65536) == b""  # Core closed it (a reset is allowed too)
+        except ConnectionResetError:
+            pass
 
 
 def asgi_request(chunks, headers=(), ends=True):
@@ -295,6 +317,8 @@ def asgi_request(chunks, headers=(), ends=True):
 
     async def send(message):
         log["sent"].append((message["type"], log["received"]))
+        if message["type"] == "http.response.start":
+            log["headers"] = message.get("headers", [])
 
     scope = {"type": "http", "headers": [(k.encode(), v.encode()) for k, v in headers]}
     return scope, receive, send, log
@@ -331,6 +355,11 @@ def test_drain_is_bounded_and_skips_a_declared_length_above_the_bound():
     scope, receive, send, log = asgi_request([b"a"], headers=[("content-length", "11")])
     asyncio.run(packages.DrainUnreadBody(refuse, 10)(scope, receive, send))
     assert log["received"] == 0                                    # the proxy refuses such a body itself
+    assert (b"connection", b"close") in log["headers"]             # the unread body is not left on a reusable connection
+
+    scope, receive, send, log = asgi_request([b"a"], headers=[("content-length", "10")])
+    asyncio.run(packages.DrainUnreadBody(refuse, 10)(scope, receive, send))
+    assert log["received"] == 1 and (b"connection", b"close") not in log["headers"]   # drained whole: keep-alive stays
 
 
 def test_drain_stops_when_the_client_leaves():
