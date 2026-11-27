@@ -33,6 +33,10 @@ def test_package_upload_limit_covers_max_package_bytes_as_base64():
         "nginx would refuse a package that Core accepts: raise client_max_body_size in the /v1/packages location")
 
 
+def test_package_upload_is_streamed():
+    assert re.search(r"^\s*proxy_request_buffering\s+off\s*;", _location_package_upload(), re.M)
+
+
 def test_default_limit_covers_the_mcp_transport_limit():
     from mcp.server.sse import DEFAULT_MAX_REQUEST_BODY_SIZE
     assert _limit(_server_level()) >= DEFAULT_MAX_REQUEST_BODY_SIZE
