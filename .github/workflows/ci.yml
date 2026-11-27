@@ -76,6 +76,10 @@ jobs:
     needs: tests
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    # One release run per tag at a time, never cancelled: the plan below then sees what an earlier run pushed.
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
     permissions:
       contents: write  # create the GitHub release
       packages: write  # push the images to ghcr.io
@@ -98,7 +102,12 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Plan (stop, build or resume)
         id: plan
-        run: echo "plan=$(deploy/release_check.sh --plan "$TAG")" >> "$GITHUB_OUTPUT"
+        # The assignment keeps the plan's exit status (1 = stop, 2 = error): with `set -e` the step fails and the job
+        # stops before any build, digest read or release. `echo "plan=$(…)"` would hide it.
+        run: |
+          set -euo pipefail
+          plan="$(deploy/release_check.sh --plan "$TAG")"
+          echo "plan=$plan" >> "$GITHUB_OUTPUT"
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
