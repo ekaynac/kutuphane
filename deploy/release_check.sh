@@ -5,7 +5,7 @@
 #   release_check.sh --notes <tag>  print the changelog section of <tag> (after the check)
 #   release_check.sh --plan <tag>   print `build` (nothing exists), or `resume` (both images exist, release missing).
 #                                   Exit 1 when the release exists or only one image exists: nothing is overwritten.
-#                                   Exit 2 when `gh` or `docker` fails for another reason than "not found".
+#                                   Exit 2 when `gh` or `docker` is missing or fails for another reason than the exact "not found" message.
 #                                   Needs GITHUB_REPOSITORY, IMAGE and MODELS_IMAGE (image names without the tag).
 set -eu
 
@@ -33,21 +33,35 @@ notes() {
   ' "$ROOT/docs/guide/changelog.md"
 }
 
-# exists <command...>: 0 = exists, 1 = "not found", 2 = any other failure
+# exists <ref> <command...>: 0 = exists; 1 = absent; 2 = any other failure (the output goes to stderr).
+# Absent is only the exact message of the tool with exit status 1: `release not found` (gh) or a last line that ends
+# with `<ref>: not found` (docker buildx imagetools inspect). `gh: command not found` (127), a missing credential
+# helper, a 403 or a network error are failures, not absence.
 exists() {
-  local out
-  if out="$("$@" 2>&1)"; then return 0; fi
-  case "$out" in *"not found"*|*"Not Found"*|*"NOT_FOUND"*|*"no such manifest"*) return 1 ;; esac
-  echo "$out" >&2
+  local ref="$1" out rc=0 last
+  shift
+  out="$("$@" 2>&1)" || rc=$?
+  [ "$rc" -eq 0 ] && return 0
+  if [ "$rc" -eq 1 ]; then
+    if [ "$1" = gh ]; then
+      [ "$(printf '%s' "$out" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')" = "release not found" ] && return 1
+    else
+      last="$(printf '%s\n' "$out" | tr -d '\r' | sed -e '/^[[:space:]]*$/d' | tail -n 1)"
+      case "$last" in *"$ref: not found") return 1 ;; esac
+    fi
+  fi
+  printf '%s (exit status %s)\n' "$out" "$rc" >&2
   return 2
 }
 
 plan() {
   local rc=0 core models
-  exists gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null || rc=$?
+  command -v gh >/dev/null || { echo "gh is not installed" >&2; exit 2; }
+  command -v docker >/dev/null || { echo "docker is not installed" >&2; exit 2; }
+  exists "$tag" gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null || rc=$?
   case $rc in 0) echo "the GitHub release $tag exists: nothing is overwritten" >&2; exit 1 ;; 2) exit 2 ;; esac
-  rc=0; exists docker buildx imagetools inspect "$IMAGE:$tag" >/dev/null || rc=$?; core=$rc
-  rc=0; exists docker buildx imagetools inspect "$MODELS_IMAGE:$tag" >/dev/null || rc=$?; models=$rc
+  rc=0; exists "$IMAGE:$tag" docker buildx imagetools inspect "$IMAGE:$tag" >/dev/null || rc=$?; core=$rc
+  rc=0; exists "$MODELS_IMAGE:$tag" docker buildx imagetools inspect "$MODELS_IMAGE:$tag" >/dev/null || rc=$?; models=$rc
   [ "$core" -ne 2 ] && [ "$models" -ne 2 ] || exit 2
   if [ "$core" -eq 1 ] && [ "$models" -eq 1 ]; then echo build; return; fi
   if [ "$core" -eq 0 ] && [ "$models" -eq 0 ]; then echo resume; return; fi

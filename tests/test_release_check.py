@@ -12,11 +12,13 @@ SCRIPT = Path(__file__).resolve().parents[1] / "deploy" / "release_check.sh"
 CHANGELOG = "# Changelog\n\n## Unreleased\n\n## v1.0.0 (2026-11-27)\n\nBody one.\n\n### Part\n\nBody two.\n\n## 2026-10-27\n\nOld.\n"
 PYPROJECT = '[project]\nname = "kutuphane"\nversion = "1.0.0"\n'
 
-# The fakes read the state from FAKE_RELEASE, FAKE_CORE, FAKE_MODELS: "yes", "no" or "error".
+# The fakes read the state from FAKE_RELEASE, FAKE_CORE, FAKE_MODELS: "yes", "no" or a failure kind (see below).
 FAKE_GH = """#!/bin/sh
 case "$FAKE_RELEASE" in
   yes) echo "title: v1.0.0"; exit 0 ;;
   no) echo "release not found" >&2; exit 1 ;;
+  other-message) echo "release not found in this repository" >&2; exit 1 ;;
+  forbidden) echo "HTTP 403: Resource not accessible by integration" >&2; exit 1 ;;
   *) echo "HTTP 502: bad gateway" >&2; exit 1 ;;
 esac
 """
@@ -25,8 +27,12 @@ echo "$@" >> "$FAKE_LOG"
 case "$*" in *kutuphane-models:*) state="$FAKE_MODELS" ;; *) state="$FAKE_CORE" ;; esac
 case "$state" in
   yes) echo "Name: $4"; exit 0 ;;
-  no) echo "$4: not found" >&2; exit 1 ;;
-  *) echo "unauthorized: authentication required" >&2; exit 1 ;;
+  no) echo "ERROR: $4: not found" >&2; exit 1 ;;
+  other-ref) echo "ERROR: ghcr.io/other/image:v9: not found" >&2; exit 1 ;;
+  credential-helper) echo "error getting credentials - err: exec: docker-credential-x: executable file not found in path" >&2; exit 1 ;;
+  not-found-127) echo "docker-buildx: command not found" >&2; exit 127 ;;
+  forbidden) echo "ERROR: failed to authorize: 403 Forbidden" >&2; exit 1 ;;
+  *) echo "ERROR: dial tcp: lookup ghcr.io: no such host" >&2; exit 1 ;;
 esac
 """
 
@@ -113,10 +119,30 @@ def test_plan_stops_when_one_image_exists(repo, core, models):
     assert r.returncode == 1 and r.stdout == ""
 
 
-@pytest.mark.parametrize("kw", [{"release": "error"}, {"core": "error"}, {"models": "error"}])
-def test_plan_other_failure_is_not_not_found(repo, kw):
+FAILURES = [{"release": k} for k in ("other-message", "forbidden", "network")] + \
+    [{key: k} for key in ("core", "models") for k in ("other-ref", "credential-helper", "not-found-127", "forbidden", "network")]
+
+
+@pytest.mark.parametrize("kw", FAILURES)
+def test_plan_other_failure_is_not_absence(repo, kw):
     r = run(repo, "--plan", "v1.0.0", **kw)
-    assert r.returncode == 2 and r.stdout == ""
+    assert r.returncode == 2 and r.stdout == "" and r.stderr
+
+
+@pytest.mark.parametrize("missing", ["gh", "docker"])
+def test_plan_needs_both_tools(repo, missing):
+    (repo / "bin" / missing).unlink()
+    # a PATH with only the fake bin dir and the basic tools of the script; the other real tool is not reachable
+    tools = repo / "tools"
+    tools.mkdir()
+    for name in ("awk", "sed", "tr", "tail", "grep", "dirname", "cat"):
+        (tools / name).symlink_to(subprocess.run(["which", name], capture_output=True, text=True).stdout.strip())
+    env = {"ROOT": str(repo), "PATH": f"{repo / 'bin'}:{tools}", "FAKE_RELEASE": "no", "FAKE_CORE": "no",
+           "FAKE_MODELS": "no", "FAKE_LOG": str(repo / "docker.log"), "GITHUB_REPOSITORY": "o/r",
+           "IMAGE": "ghcr.io/o/core", "MODELS_IMAGE": "ghcr.io/o/kutuphane-models"}
+    r = subprocess.run([subprocess.run(["which", "bash"], capture_output=True, text=True).stdout.strip(),
+                        str(SCRIPT), "--plan", "v1.0.0"], env=env, capture_output=True, text=True)
+    assert r.returncode == 2 and r.stdout == "" and missing in r.stderr
 
 
 def test_plan_checks_the_tag_first(repo):
