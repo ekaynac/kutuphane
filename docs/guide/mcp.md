@@ -37,7 +37,7 @@ The MCP SDK checks before a tool runs:
 | 2026-07-28: `Mcp-Name` differs from the tool name or URI in the body. | `400` | JSON-RPC code `-32020` |
 
 The `Host` and `Origin` checks stop DNS rebinding: set `KUTUPHANE_PUBLIC_URL` to the URL that clients use, and let
-the proxy pass `Host` unchanged. The ingress proxy (`deploy/nginx.conf`) adds `client_max_body_size 1m` and
+the proxy pass `Host` unchanged. The ingress proxy (`deploy/nginx.conf`) adds `client_max_body_size 8m` (above the 4 MiB limit above) and
 `proxy_read_timeout 300s`; run a long `ask_library` as a background job (section 6).
 
 ## 2. Protocol versions

@@ -262,7 +262,7 @@ contains code text; files over 2 MiB and binary files are `unverifiable`.
 - Every response has a strict Content Security Policy (`default-src 'none'`, only this origin), `nosniff`,
   `no-referrer` and `X-Frame-Options: DENY`.
 - The UI shows model output as plain text; only `[n]` becomes a button.
-- The ingress terminates TLS in a real installation and limits a request body to 1 MiB.
+- The ingress terminates TLS in a real installation and limits a request body to 8 MiB (300 MiB for a package upload, where Core's package limit applies).
 
 ## Signed packages
 

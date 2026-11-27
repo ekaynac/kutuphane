@@ -8,6 +8,15 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+## v1.0.1 (2026-11-27)
+
+A patch release for v1.0.0: images `ghcr.io/ekaynac/kutuphane:v1.0.1` and `ghcr.io/ekaynac/kutuphane-models:v1.0.1`. Install and upgrade as [install.md](install.md) shows; this release has no migration.
+
+- Fixed: the release ingress (`deploy/nginx.conf`, both compose files) limited every request body to 1 MiB, so a package or an MCP call over 1 MiB got an nginx `413` and never reached Core's own limit and error. Now the limit is 8 MiB on every route (above the 4 MiB limit of the MCP transport) and 300 MiB on `POST /v1/packages` (above the base64 size of `MAX_PACKAGE_BYTES`, 200 MiB source + 1 MiB); the upload is streamed, not buffered on the ingress. Core's limits and error texts are unchanged. A test fails when the ingress limit is below Core's.
+- **Action:** an install that mounts its own copy of `deploy/nginx.conf` must copy the new limits.
+- Fixed (documentation, #266): [install.md](install.md) now says to make the development JWKS keys before the first start, with `--user` so the files belong to the user that runs Core, and to label a pre-seeded `models` volume with the compose project and volume labels so compose accepts it.
+- Consumers: no change for nöbetçi-mcp, harness sessions (kutuphane-memory) and InfraMedic: no MCP tool, HTTP route, result shape or error text changes.
+
 ## v1.0.0 (2026-11-27)
 
 This is the first release of Kütüphane. Install it from the release images `ghcr.io/ekaynac/kutuphane:v1.0.0` and `ghcr.io/ekaynac/kutuphane-models:v1.0.0` (linux/amd64 and linux/arm64): check out the tag `v1.0.0`, set `KUTUPHANE_VERSION=v1.0.0` and follow [install.md](install.md). There is no `latest` tag. Build from source only for development.
