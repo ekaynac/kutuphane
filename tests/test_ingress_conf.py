@@ -45,3 +45,10 @@ def test_default_limit_covers_the_mcp_transport_limit():
 def test_both_compose_files_mount_this_conf():
     assert "./deploy/nginx.conf:/etc/nginx/conf.d/default.conf" in (ROOT / "compose.yaml").read_text()
     assert "./nginx.conf:/etc/nginx/conf.d/default.conf" in (ROOT / "deploy" / "compose.full.yaml").read_text()
+
+
+def test_core_drains_every_upload_body_that_the_ingress_forwards():
+    """#268: Core reads and drops the rest of an upload that it refuses early (401, 413), so that the proxy that still
+    streams the body gets Core's answer and not a reset. That works only for bodies up to `MAX_INGRESS_BODY`; the ingress
+    forwards nothing larger."""
+    assert _limit(_location_package_upload()) <= packages.MAX_INGRESS_BODY

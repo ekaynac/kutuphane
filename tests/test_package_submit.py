@@ -198,3 +198,139 @@ def test_package_status_names_who_decided_it_and_null_before(setup, keys, conn_b
         assert receipt["decided_by"] is None and receipt["decided_at"] is None
         packages.approve(conn_b, receipt["id"], by="user:admin", policy=POLICY)
         assert client.get(f"/v1/packages/{receipt['id']}", headers=auth).json()["decided_by"] == "user:admin"
+
+
+# --- #268: an early refusal must not reset the connection while the body is still sent ---------------------------
+# The release ingress streams the upload (`proxy_request_buffering off`). When Core answered 401 or 413 and closed with
+# the body unread, the kernel reset the connection; nginx saw the reset and showed 502 instead of Core's answer.
+
+@pytest.fixture
+def live(setup):
+    """The app of `setup` behind a real uvicorn on a free local port (HTTP over a socket, not the test client)."""
+    import threading
+    import time
+
+    import uvicorn
+    server_ = uvicorn.Server(uvicorn.Config(setup[0], host="127.0.0.1", port=0, log_level="warning"))
+    thread = threading.Thread(target=server_.run, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 10
+    while not server_.started and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert server_.started, "uvicorn did not start"
+    yield server_.servers[0].sockets[0].getsockname()[1]
+    server_.should_exit = True
+    thread.join(10)
+
+
+def post_raw(port: int, size: int, headers: dict | None = None) -> tuple[bool, int, dict]:
+    """POST `size` bytes to /v1/packages like a streaming client: headers first, then the whole body.
+    Returns (the whole body was sent without a reset, the status, the JSON of the answer)."""
+    import socket
+    head = {"Host": f"127.0.0.1:{port}", "Content-Type": "application/x-tar", "Content-Length": str(size),
+            "Connection": "close", **(headers or {})}
+    with socket.create_connection(("127.0.0.1", port), timeout=30) as s:
+        s.sendall(("POST /v1/packages HTTP/1.1\r\n" + "".join(f"{k}: {v}\r\n" for k, v in head.items()) + "\r\n").encode())
+        chunk, sent_whole = b"x" * 65536, True
+        try:
+            for _ in range(size // len(chunk)):
+                s.sendall(chunk)
+        except OSError:
+            sent_whole = False
+        raw = b""
+        try:
+            while part := s.recv(65536):
+                raw += part
+        except OSError:
+            pass
+    assert raw.startswith(b"HTTP/1.1 "), "no answer from Core"
+    status = int(raw.split(b" ", 2)[1])
+    return sent_whole, status, json.loads(raw.partition(b"\r\n\r\n")[2])
+
+
+@pytest.mark.parametrize("headers", [None, {"Authorization": "Bearer x.y.z"}], ids=["no-token", "bad-token"])
+def test_refusal_without_a_valid_token_reaches_a_client_that_still_sends(live, headers, conn_b):
+    for _ in range(3):
+        sent_whole, status, body = post_raw(live, 16 * 1024 * 1024, headers)
+        assert sent_whole, "Core closed the connection with the body unread (a proxy would answer 502)"
+        assert status == 401 and body == {"error": "unauthenticated"}
+    assert conn_b.execute("SELECT count(*) FROM package_import").fetchone()[0] == 0
+
+
+def test_size_refusal_reaches_a_client_that_still_sends(live, keys, conn_b, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(packages, "MAX_PACKAGE_BYTES", 1024 * 1024)
+    for _ in range(3):  # a declared length above the limit, and nothing is stored
+        sent_whole, status, body = post_raw(live, 4 * 1024 * 1024, agent_auth(keys))
+        assert sent_whole and status == 413 and "too large" in body["error"]
+    assert conn_b.execute("SELECT count(*) FROM package_import").fetchone()[0] == 0
+
+
+def test_a_request_that_waits_for_100_continue_gets_the_refusal_and_sends_no_body(live):
+    """The client holds its body back until the server says `100 Continue`: the refusal is the answer, and Core must
+    not ask for the body (a drain would)."""
+    import socket
+    request = (f"POST /v1/packages HTTP/1.1\r\nHost: 127.0.0.1:{live}\r\nContent-Length: 4194304\r\n"
+               "Expect: 100-continue\r\nConnection: close\r\n\r\n")
+    with socket.create_connection(("127.0.0.1", live), timeout=10) as s:
+        s.sendall(request.encode())
+        assert s.recv(65536).startswith(b"HTTP/1.1 401 ")
+
+
+def asgi_request(chunks, headers=(), ends=True):
+    """(scope, receive, send, log): a fake ASGI request that delivers `chunks` one by one. `ends`: the last chunk
+    closes the body; otherwise the body goes on until the client leaves (`http.disconnect`)."""
+    log = {"received": 0, "sent": []}
+    index = 0
+
+    async def receive():
+        nonlocal index
+        log["received"] += 1
+        if index == len(chunks):
+            return {"type": "http.disconnect"}
+        index += 1
+        return {"type": "http.request", "body": chunks[index - 1], "more_body": not (ends and index == len(chunks))}
+
+    async def send(message):
+        log["sent"].append((message["type"], log["received"]))
+
+    scope = {"type": "http", "headers": [(k.encode(), v.encode()) for k, v in headers]}
+    return scope, receive, send, log
+
+
+async def refuse(scope, receive, send):  # an app that answers without reading
+    await send({"type": "http.response.start", "status": 401, "headers": []})
+    await send({"type": "http.response.body", "body": b"{}"})
+
+
+def test_drain_reads_the_rest_of_the_body_before_the_response_starts():
+    scope, receive, send, log = asgi_request([b"a" * 10] * 5)
+    asyncio.run(packages.DrainUnreadBody(refuse, 1000)(scope, receive, send))
+    assert log["received"] == 5 and log["sent"][0] == ("http.response.start", 5)
+
+
+def test_drain_does_not_read_again_a_body_the_app_has_read():
+    scope, receive, send, log = asgi_request([b"a" * 10] * 3)
+
+    async def reads_all(scope, receive, send):
+        while (await receive())["more_body"]:
+            pass
+        await refuse(scope, receive, send)
+
+    asyncio.run(packages.DrainUnreadBody(reads_all, 1000)(scope, receive, send))
+    assert log["received"] == 3                                    # a second read would wait for ever
+
+
+def test_drain_is_bounded_and_skips_a_declared_length_above_the_bound():
+    scope, receive, send, log = asgi_request([b"a" * 4] * 100, ends=False)
+    asyncio.run(packages.DrainUnreadBody(refuse, 10)(scope, receive, send))
+    assert log["received"] == 3 and log["sent"][0][0] == "http.response.start"   # stops after 12 bytes: above the bound
+
+    scope, receive, send, log = asgi_request([b"a"], headers=[("content-length", "11")])
+    asyncio.run(packages.DrainUnreadBody(refuse, 10)(scope, receive, send))
+    assert log["received"] == 0                                    # the proxy refuses such a body itself
+
+
+def test_drain_stops_when_the_client_leaves():
+    scope, receive, send, log = asgi_request([b"a" * 4] * 2, ends=False)
+    asyncio.run(packages.DrainUnreadBody(refuse, 10 ** 6)(scope, receive, send))
+    assert log["received"] == 3 and log["sent"][0][0] == "http.response.start"

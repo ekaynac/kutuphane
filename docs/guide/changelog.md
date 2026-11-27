@@ -8,6 +8,9 @@ For the terms, read [concepts.md](concepts.md).
 
 ## Unreleased
 
+- Fixed (#268): through the release ingress, a large upload to `POST /v1/packages` that Core refuses early (`401` without a valid token, `403`, `413` for a body above the package limit) sometimes got an nginx `502 Bad Gateway` instead of Core's own JSON error. Core answered at once and closed the connection while nginx still streamed the body, and the reset destroyed the answer. Now Core reads and drops the rest of the body of this route before it sends the answer (up to 300 MiB, the ingress limit of the route; nothing is stored or kept in memory), so the client always gets Core's refusal. The ingress configuration is unchanged. `deploy/ingress_refusal_probe.py` checks it against a running ingress (no `502` in 50 repeats). A client that sends `Expect: 100-continue` still gets the refusal at once, without sending the body.
+- Consumers: no change for nöbetçi-mcp, harness sessions (kutuphane-memory) and InfraMedic: no MCP tool, HTTP route, result shape or error text changes.
+
 ## v1.0.1 (2026-11-27)
 
 A patch release for v1.0.0: images `ghcr.io/ekaynac/kutuphane:v1.0.1` and `ghcr.io/ekaynac/kutuphane-models:v1.0.1`. Install and upgrade as [install.md](install.md) shows; this release has no migration.
