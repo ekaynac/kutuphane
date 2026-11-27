@@ -250,6 +250,9 @@ def post_raw(port: int, size: int, headers: dict | None = None) -> tuple[bool, i
 
 @pytest.mark.parametrize("headers", [None, {"Authorization": "Bearer x.y.z"}], ids=["no-token", "bad-token"])
 def test_refusal_without_a_valid_token_reaches_a_client_that_still_sends(live, headers, conn_b):
+    """The drain is response-agnostic (it runs before any response that is sent with the body unread), so the same path
+    covers every early status: 401 here, 413 below. The package route has no early 403 of its own: `gate.Denied` comes
+    from `submit`, after the whole body is read, so there is nothing unread to drain for it."""
     for _ in range(3):
         sent_whole, status, body = post_raw(live, 16 * 1024 * 1024, headers)
         assert sent_whole, "Core closed the connection with the body unread (a proxy would answer 502)"
@@ -334,3 +337,61 @@ def test_drain_stops_when_the_client_leaves():
     scope, receive, send, log = asgi_request([b"a" * 4] * 2, ends=False)
     asyncio.run(packages.DrainUnreadBody(refuse, 10 ** 6)(scope, receive, send))
     assert log["received"] == 3 and log["sent"][0][0] == "http.response.start"
+
+
+def test_drain_reads_the_rest_after_the_app_read_the_body_partly():
+    scope, receive, send, log = asgi_request([b"a" * 10] * 5)
+
+    async def reads_one_chunk_then_refuses(scope, receive, send):
+        assert (await receive())["more_body"]
+        await refuse(scope, receive, send)
+
+    asyncio.run(packages.DrainUnreadBody(reads_one_chunk_then_refuses, 1000)(scope, receive, send))
+    assert log["received"] == 5 and log["sent"][0] == ("http.response.start", 5)   # the response waits for the rest
+
+
+def test_drain_gives_up_when_its_time_budget_ends_and_the_answer_closes_the_connection(monkeypatch):
+    monkeypatch.setattr(packages, "DRAIN_SECONDS", 0.2)
+    sent = []
+
+    async def receive():  # a client that sends nothing more and does not leave
+        await asyncio.sleep(3600)
+
+    async def send(message):
+        sent.append(message)
+
+    async def run():
+        await asyncio.wait_for(packages.DrainUnreadBody(refuse, 1000)({"type": "http", "headers": []}, receive, send), 5)
+
+    asyncio.run(run())
+    assert sent[0]["type"] == "http.response.start" and (b"connection", b"close") in sent[0]["headers"]
+
+
+def test_a_client_that_trickles_its_body_gets_the_refusal_when_the_drain_budget_ends(live, monkeypatch):
+    """nginx `client_body_timeout` is an idle timeout between two reads: a client that sends one byte after the other
+    would hold Core for ever. The refusal comes when the budget ends, with `Connection: close`, and Core closes."""
+    import select
+    import socket
+    import time
+    monkeypatch.setattr(packages, "DRAIN_SECONDS", 1.0)
+    request = (f"POST /v1/packages HTTP/1.1\r\nHost: 127.0.0.1:{live}\r\nContent-Length: 1048576\r\n"
+               "Connection: keep-alive\r\n\r\n")
+    with socket.create_connection(("127.0.0.1", live), timeout=10) as s:
+        s.sendall(request.encode())
+        started, trickled, raw = time.monotonic(), 0, b""
+        while time.monotonic() - started < 8:      # one byte every 0.1 s: 1 MiB would need more than a day
+            s.sendall(b"x")
+            trickled += 1
+            if select.select([s], [], [], 0.1)[0]:
+                raw = s.recv(65536)
+                break
+        answered_in = time.monotonic() - started
+        assert raw.startswith(b"HTTP/1.1 401 "), "no refusal while the client trickles"
+        assert 0.9 <= answered_in < 4, answered_in   # the budget (1 s) plus a margin
+        assert trickled < 1048576 and b"connection: close" in raw.lower()
+        s.settimeout(5)
+        try:
+            while s.recv(65536):  # the server task has ended: Core closes the connection (a reset is allowed)
+                pass
+        except ConnectionResetError:
+            pass
