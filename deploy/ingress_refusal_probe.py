@@ -70,6 +70,8 @@ def main(argv=None) -> int:
     p.add_argument("--repeat", type=int, default=50)
     p.add_argument("--mib", type=int, default=20, help="body size of the 401 checks")
     args = p.parse_args(argv)
+    if args.repeat < 1 or args.mib < 1:
+        p.error("--repeat and --mib must be positive: with 0 the probe sends no request or no body and proves nothing")
     token = os.environ.get("KUTUPHANE_PROBE_TOKEN")
     ok = check(args.base, "no token", args.repeat, args.mib * MIB, None, 401, "unauthenticated")
     ok = check(args.base, "bad token", args.repeat, args.mib * MIB, "x.y.z", 401, "unauthenticated") and ok
