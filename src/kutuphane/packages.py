@@ -11,6 +11,7 @@ kept. Nothing reaches the catalog until a person approves: approve() re-checks k
 publishes in ONE transaction, with the receiving installation's own policy (D23). Any failure leaves the catalog
 unchanged and the failure on record.
 """
+import asyncio
 import base64
 import io
 import json
@@ -24,7 +25,7 @@ from psycopg.types.json import Jsonb
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from starlette.routing import Route
+from starlette.routing import Route, request_response
 
 from . import agentfiles, authz, catalog, db, gate, ids, kstd, profiles, signing, skillscan
 from .gate import Actor
@@ -34,6 +35,14 @@ from .source import MAX_FILE_BYTES, MAX_SOURCE_BYTES, TEXT_TYPES, AcceptedFindin
 FORMAT = "kutuphane-package/1"
 MANIFEST, SIGNATURE, CONTENT = "MANIFEST.json", "MANIFEST.sig", "content/"
 MAX_PACKAGE_BYTES = MAX_SOURCE_BYTES + 1024 * 1024
+# The most that the release ingress forwards to `POST /v1/packages` (`client_max_body_size` of that location in
+# deploy/nginx.conf; a test keeps the drain limit at or above it). A larger body never reaches Core.
+MAX_INGRESS_BODY = 300 * 1024 * 1024
+# The total time that Core spends to drain one refused upload. nginx `client_body_timeout` limits only the pause between
+# two reads, so a client that sends one byte a second would hold the connection for ever. 60 s for 300 MiB is 5 MiB/s
+# (40 Mbit/s), far below loopback and LAN speed, where the proxy and its clients are; a slower sender (a long WAN
+# upload that is refused anyway) gets the answer with `Connection: close` and may see a reset.
+DRAIN_SECONDS = 60.0
 # Instruction-like phrases worth a human look before approval (findings never approve or reject by themselves).
 MANIFEST_FIELDS = {"issuer": str, "book": str, "title": str, "content_id": str, "sequence": int, "created_at": int,
                    "files": list}
@@ -571,6 +580,73 @@ async def _package_body(request: Request) -> bytes:
     return bytes(data)
 
 
+class DrainUnreadBody:
+    """ASGI wrapper (#268): before the first byte of the response, read and discard the rest of the request body, up to
+    `limit` bytes and `DRAIN_SECONDS` seconds. The drain is response-agnostic: it runs for every answer that is sent
+    with the body unread, so 401, 413 and any other early status take the same path (the package route has no 403 of
+    its own: `gate.Denied` comes from `submit`, after the whole body is read). Core refuses early and must not close
+    the connection while the client or the proxy still sends: closing a socket with unread data makes the kernel send
+    a reset, which destroys the answer on its way (nginx then shows 502 instead of Core's error). Nothing is stored or
+    kept: each chunk is dropped. When the byte bound or the time budget runs out, the answer goes out with
+    `Connection: close` and the rest of the body stays unread (a reset may follow). A declared length above `limit` is
+    not drained (the proxy refuses these itself; a direct client gets the answer and a closed connection), and a
+    request that waits for `100 Continue` is not drained either (its body is not sent: the refusal is the answer to
+    it). A class, so that `Route` takes it as an ASGI app."""
+
+    def __init__(self, app, limit: int):
+        self.app, self.limit = app, limit
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        headers = dict(scope["headers"])
+        declared = headers.get(b"content-length", b"")
+        oversized = declared.isdigit() and int(declared) > self.limit
+        unread = True  # the body is not all read yet
+        asked = False  # the app has called receive(): uvicorn has sent `100 Continue` if the client waits for it
+
+        async def tracked_receive():
+            nonlocal unread, asked
+            asked = True
+            message = await receive()
+            if message["type"] != "http.request" or not message.get("more_body", False):
+                unread = False
+            return message
+
+        async def drained_send(message):
+            nonlocal unread
+            if message["type"] == "http.response.start" and unread:
+                unread = False
+                waits_for_continue = not asked and headers.get(b"expect", b"").lower() == b"100-continue"
+                if oversized or waits_for_continue or not await _discard_body(receive, self.limit):
+                    # The body stays unread (above the bound, not sent, too slow, too long, or the client left): the
+                    # connection is not fit for a next request, so the answer closes it. A reset may follow for a
+                    # client that still sends, and a proxy may then show 502: such a sender gets no more of Core's time.
+                    message = {**message, "headers": [*message.get("headers", []), (b"connection", b"close")]}
+            await send(message)
+
+        await self.app(scope, tracked_receive, drained_send)
+
+
+async def _discard_body(receive, limit: int) -> bool:
+    """Read and drop the rest of the body. True: it is all read. False: the byte bound or the time budget
+    `DRAIN_SECONDS` ran out first, or the client left."""
+    async def read_all() -> bool:
+        seen = 0
+        while seen <= limit:
+            message = await receive()
+            if message["type"] != "http.request":
+                return False  # the client left
+            seen += len(message.get("body", b""))
+            if not message.get("more_body", False):
+                return True
+        return False
+    try:
+        return await asyncio.wait_for(read_all(), DRAIN_SECONDS)
+    except asyncio.TimeoutError:
+        return False
+
+
 def http_routes(deps, endpoint) -> list[Route]:
     async def h_submit(request, actor):
         try:
@@ -584,5 +660,6 @@ def http_routes(deps, endpoint) -> list[Route]:
         import_id = int(raw) if raw.isdigit() and len(raw) < 20 else 0
         return JSONResponse(await run_in_threadpool(op_status, deps.dsn, actor, import_id))
 
-    return [Route("/v1/packages", endpoint(h_submit), methods=["POST"]),
+    return [Route("/v1/packages", DrainUnreadBody(request_response(endpoint(h_submit)), MAX_INGRESS_BODY),
+                  methods=["POST"]),
             Route("/v1/packages/{import_id}", endpoint(h_status), methods=["GET"])]

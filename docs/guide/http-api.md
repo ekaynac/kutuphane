@@ -77,6 +77,11 @@ The ingress proxy (`deploy/nginx.conf`) accepts a body of at most 8 MiB (above t
 Core's own error shows) on every route and at most 300 MiB on `POST /v1/packages` (above the package limit; Core
 refuses a larger package with `413` and its own error), and waits at most 300 seconds. For a long `POST /v1/ask`, use `"background": true`.
 
+When Core refuses an upload early (`401`, `413`), it first reads and drops the rest of the body of `POST /v1/packages` (up to
+300 MiB, nothing is stored), so that the proxy, which still sends the body, passes Core's answer on and never shows `502`.
+The drain has a total budget of 60 seconds (5 MiB/s for 300 MiB). A client that sends slower than that gets the refusal with
+`Connection: close` when the budget ends, and the connection may be reset (a proxy then shows `502`).
+
 ## 2. All routes
 
 `GET` routes also answer `HEAD`. Each route has its own section below. Every route needs a bearer token, except
