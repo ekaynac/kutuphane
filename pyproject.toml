@@ -1,6 +1,6 @@
 [project]
 name = "kutuphane"
-version = "1.0.1"
+version = "1.0.2"
 description = "Kütüphane Core: versioned, explainable knowledge access for people and agents"
 requires-python = ">=3.11"
 license = "Apache-2.0"
